@@ -33,7 +33,6 @@ package() {
   install -m644 "${startdir}/share/cava.conf" "${plugindir}/share/cava.conf"
   install -m755 "${startdir}/bin/bandarchy" "${plugindir}/bin/bandarchy"
   install -m755 "${startdir}/bin/bandarchy-player" "${plugindir}/bin/bandarchy-player"
-  ln -sf bandarchy "${plugindir}/bin/bandcamp"
 
   ln -sf "/usr/share/omarchy/plugins/io.github.layolayo.bandarchy/bin/bandarchy" "${pkgdir}/usr/bin/bandarchy"
   ln -sf "/usr/share/omarchy/plugins/io.github.layolayo.bandarchy/bin/bandarchy-player" "${pkgdir}/usr/bin/bandarchy-player"

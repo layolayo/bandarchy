@@ -490,6 +490,23 @@ class BandarchyTestSuite(unittest.TestCase):
             self.assertIn("Configuration Loaded", out, f"App.qml did not load cleanly: {out}")
             self.assertNotIn("ERROR:", out, f"App.qml had QML errors: {out}")
 
+        # Verify no symlinks exist inside the plugin directory (Omarchy PluginRegistry rejects symlinks)
+        for root, dirs, files in os.walk(REPO_ROOT):
+            if ".git" in dirs:
+                dirs.remove(".git")
+            for name in dirs + files:
+                full = os.path.join(root, name)
+                self.assertFalse(os.path.islink(full), f"Symlink not allowed inside plugin directory: {full}")
+
+        if shutil.which("omarchy"):
+            val = subprocess.run(
+                ["omarchy", "plugin", "validate", REPO_ROOT],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(val.returncode, 0, f"omarchy plugin validate failed: {val.stdout} {val.stderr}")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
