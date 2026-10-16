@@ -63,8 +63,8 @@ Item {
     property var smartPlaylist: ({ title: "Sonic Radio", description: "", tracks: [], seed: null })
     property var playlists: []
 
-    // Omarchy Screensaver / ASCII Album Art state
-    property bool useAlbumArt: true
+    // Omarchy Screensaver / ASCII Album Art state (optional — not fixed on top of every mode)
+    property bool useAlbumArt: false
     property string asciiMode: "braille"
     property string asciiSource: "album-art"
     property var asciiLines: []
@@ -188,6 +188,34 @@ Item {
         }
     }
 
+    // Album full-tracklist resolver process (for cloud Bandcamp purchases)
+    Process {
+        id: albumDetailProc
+        property string outBuf: ""
+        stdout: SplitParser {
+            onRead: line => { albumDetailProc.outBuf += line }
+        }
+        onExited: {
+            var raw = albumDetailProc.outBuf.trim()
+            albumDetailProc.outBuf = ""
+            if (!raw) return
+            try {
+                var d = JSON.parse(raw)
+                if (d.ok && d.album && d.album.id) {
+                    var updated = []
+                    for (var i = 0; i < root.albums.length; i++) {
+                        if (root.albums[i].id === d.album.id) {
+                            updated.push(d.album)
+                        } else {
+                            updated.push(root.albums[i])
+                        }
+                    }
+                    root.albums = updated
+                }
+            } catch (e) {}
+        }
+    }
+
     // ASCII Art transcoder process (`omarchy-transcode-ascii` / `omarchy-ascii` + `/usr/bin/ttfx`)
     Process {
         id: asciiProc
@@ -207,7 +235,6 @@ Item {
                     if (d.ttfxEffect) root.ttfxEffect = d.ttfxEffect
                     root.asciiSource = d.source || "album-art"
                     if (d.mode) root.asciiMode = d.mode
-                    if (d.useAlbumArt !== undefined) root.useAlbumArt = Boolean(d.useAlbumArt)
                 }
             } catch (e) {}
         }
@@ -339,6 +366,23 @@ Item {
         collectionProc.running = true
     }
 
+    function ensureAlbumTracks(albumId) {
+        if (!albumId) return
+        for (var i = 0; i < root.albums.length; i++) {
+            var a = root.albums[i]
+            if (a.id === albumId) {
+                var tr = a.tracks || []
+                if (!a.isLocal && a.url && (tr.length <= 1 && (a.numTracks || 0) > 1 || tr.length === 0)) {
+                    if (albumDetailProc.running) albumDetailProc.running = false
+                    albumDetailProc.outBuf = ""
+                    albumDetailProc.command = [root.binPath, "album", "--id", albumId]
+                    albumDetailProc.running = true
+                }
+                return
+            }
+        }
+    }
+
     function refreshAsciiArt(customAlbumId, customEffect) {
         if (customEffect) root.ttfxEffect = customEffect
         if (asciiProc.running) asciiProc.running = false
@@ -346,7 +390,7 @@ Item {
         var cmd = [
             root.binPath, "ascii-art",
             "--mode", root.asciiMode,
-            "--use-album-art", root.useAlbumArt ? "1" : "0",
+            "--use-album-art", "1",
             "--effect", root.ttfxEffect || "waves",
             "--width", "68",
             "--height", "30"

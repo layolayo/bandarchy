@@ -312,7 +312,7 @@ def load_settings() -> dict:
         "localDirs": DEFAULT_LOCAL_DIRS,
         "preferredFormat": "flac",
         "autoImportZips": True,
-        "useAlbumArt": True,
+        "useAlbumArt": False,
         "asciiMode": "braille",
         "apiBase": os.environ.get("BANDARCHY_API_BASE") or os.environ.get("BANDCAMP_API_BASE") or "https://bandcamp.com",
     }
@@ -663,10 +663,10 @@ def fetch_fan_collection(username: str, api_base: str = "https://bandcamp.com") 
         tracks = []
         feat_title = bounded_text(item.get("featured_track_title") or "")
         stream_url = bounded_text(item.get("featured_track_url") or "", MAX_URL_CHARS)
-        if feat_title:
+        if feat_title or item_url:
             tracks.append({
-                "id": f"bc-track-{item.get('featured_track') or item_id}-1",
-                "title": feat_title,
+                "id": f"bc-track-{item.get('featured_track') or item_id or slugify(title)}-1",
+                "title": feat_title or title,
                 "artist": artist,
                 "album": title,
                 "index": bounded_int(item.get("featured_track_number") or 1, 1),
@@ -2095,7 +2095,7 @@ def cmd_status(args) -> None:
         "hasBrowserSession": bool(idx.get("hasBrowserSession")),
         "downloadDir": settings.get("downloadDir") or DEFAULT_DOWNLOAD_DIR,
         "preferredFormat": settings.get("preferredFormat") or "flac",
-        "useAlbumArt": bool(settings.get("useAlbumArt", True)),
+        "useAlbumArt": bool(settings.get("useAlbumArt", False)),
         "asciiMode": settings.get("asciiMode") or "braille",
         "albumCount": len(idx.get("albums") or []),
         "purchasedCount": idx.get("purchasedCount") or 0,
@@ -2277,8 +2277,37 @@ def cmd_auth(args) -> None:
         "hasIdentity": bool(auth.get("identity")),
         "downloadDir": settings.get("downloadDir") or DEFAULT_DOWNLOAD_DIR,
         "preferredFormat": settings.get("preferredFormat") or "flac",
-        "useAlbumArt": bool(settings.get("useAlbumArt", True)),
+        "useAlbumArt": bool(settings.get("useAlbumArt", False)),
         "asciiMode": settings.get("asciiMode") or "braille",
+    })
+
+
+def cmd_album(args) -> None:
+    """Resolve and return the full tracklist for an album (fetching Bandcamp tralbum details if needed)."""
+    settings = load_settings()
+    idx = ensure_index()
+    albums = list(idx.get("albums") or [])
+    target = next((a for a in albums if a.get("id") == args.id or a.get("url") == args.id), None)
+    if not target:
+        die(f"album not found: {args.id}")
+
+    tracks = list(target.get("tracks") or [])
+    api_base = settings.get("apiBase") or "https://bandcamp.com"
+    if not target.get("isLocal") and target.get("url"):
+        if len(tracks) <= 1 or any(not t.get("streamUrl") for t in tracks):
+            det = fetch_album_details(target["url"], api_base=api_base)
+            if det and det.get("tracks"):
+                target["tracks"] = det["tracks"]
+                target["numTracks"] = len(det["tracks"])
+                idx["albums"] = albums
+                idx["trackCount"] = sum(len(a.get("tracks") or []) for a in albums)
+                write_json(INDEX_FILE, idx)
+
+    emit({
+        "album": target,
+        "tracks": target.get("tracks") or [],
+        "trackCount": len(target.get("tracks") or []),
+        "albums": albums,
     })
 
 
@@ -2291,7 +2320,7 @@ def cmd_ascii_art(args) -> None:
     idx = ensure_index()
     albums = list(idx.get("albums") or [])
 
-    use_album_art = settings.get("useAlbumArt", True)
+    use_album_art = bool(settings.get("useAlbumArt", False))
     if args.use_album_art is not None:
         use_album_art = bool(int(args.use_album_art))
 
@@ -2851,6 +2880,10 @@ def main() -> None:
     p.add_argument("--scope", choices=["all", "purchased", "local", "cloud"], default="all")
     p.add_argument("--query", default="")
     p.set_defaults(func=cmd_collection)
+
+    p = sub.add_parser("album", help="resolve and return full tracklist for an album")
+    p.add_argument("--id", required=True, help="album id or URL")
+    p.set_defaults(func=cmd_album)
 
     p = sub.add_parser("search", help="search across albums and tracks")
     p.add_argument("query", nargs="?", default="")

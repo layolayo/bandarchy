@@ -2,11 +2,18 @@ import QtQuick
 import QtQuick.Layouts
 import "PsychedelicEngine.js" as Engine
 
-// Visualiser.qml — Psychedelic Full-Screen Audio-Reactive Visualiser
-// Retains the Omarchy look and feel, uses the Omarchy screensaver TTE
-// character matrix paradigm, and supports the "Use Album Art" option that
-// translates album cover art via `omarchy-transcode-ascii` (Braille / Block)
-// and manipulates the character grid live as the song plays.
+// Visualiser.qml — Multi-Coloured, Multi-Faceted Psychedelic Full-Screen
+// Audio-Reactive Visualiser for Bandarchy (`io.github.layolayo.bandarchy`).
+//
+// Provides 12 standalone visualiser modes (Fractals, Swirls, Randomised Shapes,
+// Space-Time Warp Matrix Landscape, Alien Mycelium & Bioluminescence,
+// Multi-Faceted Crystal Hypercube, Sacred Mandala, Blackhole Singularity,
+// Cyber SynthGrid, VHS Glitch & Matrix Rain, Album Art ASCII Matrix, and
+// Cosmic Chimera Overdrive) and 10 multi-coloured palettes.
+//
+// The Album Art ASCII/TTE implementation is NOT fixed on top of every mode —
+// it is simply one of the selectable options (Mode 10 or the toggleable
+// "Album Art: OFF/ON" overlay option).
 
 FocusScope {
     id: root
@@ -22,19 +29,38 @@ FocusScope {
     property real position: 0.0
     property real duration: 0.0
 
-    // Omarchy screensaver / ASCII album art properties
+    // Optional Omarchy screensaver / ASCII album art properties
     property var asciiLines: []
     property var ttfxFrames: []
-    property bool useAlbumArt: true
+    property bool useAlbumArt: false
     property string asciiMode: "braille"
     property string asciiSource: "album-art"
 
     // Visualiser state
     property int visualMode: 0
     property int paletteIndex: 0
+    property int symmetryIndex: 0
+    property bool autoCycle: false
     property real sensitivity: 1.15
     property bool showHud: true
     property bool isFullscreen: false
+
+    readonly property int symmetryFolds: Engine.SYMMETRY_OPTIONS[symmetryIndex % Engine.SYMMETRY_OPTIONS.length] || 1
+
+    readonly property var shortModeLabels: [
+        "1 Fractals",
+        "2 Swirls",
+        "3 Shapes",
+        "4 Space-Time",
+        "5 Alien",
+        "6 Hypercube",
+        "7 Mandala",
+        "8 Blackhole",
+        "9 SynthGrid",
+        "0 Matrix",
+        "[ Album Art",
+        "] Chimera"
+    ]
 
     // Omarchy theme colours
     property color accentColour: "#6ee7b7"
@@ -70,8 +96,32 @@ FocusScope {
         vizCanvas.requestPaint()
     }
 
+    function cycleSymmetry() {
+        symmetryIndex = (symmetryIndex + 1) % Engine.SYMMETRY_OPTIONS.length
+        vizCanvas.requestPaint()
+    }
+
+    function randomiseVisuals() {
+        Engine.randomiseState(root.engineState)
+        paletteIndex = (paletteIndex + 1 + Math.floor(Math.random() * (Engine.PALETTE_NAMES.length - 1))) % Engine.PALETTE_NAMES.length
+        vizCanvas.requestPaint()
+    }
+
     function currentTtfxEffect() {
-        var map = ["waves", "blackhole", "beams", "rings", "vhstape", "matrix"]
+        var map = [
+            "colorshift",      // 0: Julia & Mandelbrot Fractals
+            "blackhole",       // 1: Hyperspace Swirls & Vortex
+            "fireworks",       // 2: Randomised Shapes & Kaleidoscope
+            "synthgrid",       // 3: Space-Time Warp Matrix
+            "swarm",           // 4: Alien Mycelium & Bioluminescence
+            "laseretch",       // 5: Multi-Faceted Crystal Hypercube
+            "rings",           // 6: Voyage 34 Sacred Mandala
+            "orbittingvolley", // 7: Blackhole Singularity
+            "beams",           // 8: Cyber SynthGrid & Beams
+            "vhstape",         // 9: VHS Glitch & Matrix Rain
+            "waves",           // 10: Album Art ASCII Matrix (TTE)
+            "matrix"           // 11: Cosmic Chimera Overdrive
+        ]
         return map[visualMode % map.length] || "waves"
     }
 
@@ -89,8 +139,23 @@ FocusScope {
         else if (event.key === Qt.Key_4) { visualMode = 3; event.accepted = true }
         else if (event.key === Qt.Key_5) { visualMode = 4; event.accepted = true }
         else if (event.key === Qt.Key_6) { visualMode = 5; event.accepted = true }
-        else if (event.key === Qt.Key_M) { cycleMode(1); event.accepted = true }
-        else if (event.key === Qt.Key_C) { cyclePalette(1); event.accepted = true }
+        else if (event.key === Qt.Key_7) { visualMode = 6; event.accepted = true }
+        else if (event.key === Qt.Key_8) { visualMode = 7; event.accepted = true }
+        else if (event.key === Qt.Key_9) { visualMode = 8; event.accepted = true }
+        else if (event.key === Qt.Key_0) { visualMode = 9; event.accepted = true }
+        else if (event.key === Qt.Key_BracketLeft) { visualMode = 10; event.accepted = true }
+        else if (event.key === Qt.Key_BracketRight) { visualMode = 11; event.accepted = true }
+        else if (event.key === Qt.Key_M) {
+            cycleMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+            event.accepted = true
+        }
+        else if (event.key === Qt.Key_C) {
+            cyclePalette((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+            event.accepted = true
+        }
+        else if (event.key === Qt.Key_K) { cycleSymmetry(); event.accepted = true }
+        else if (event.key === Qt.Key_R) { randomiseVisuals(); event.accepted = true }
+        else if (event.key === Qt.Key_X) { autoCycle = !autoCycle; event.accepted = true }
         else if (event.key === Qt.Key_A) { root.requestToggleUseAlbumArt(); event.accepted = true }
         else if (event.key === Qt.Key_B) { root.requestToggleAsciiMode(); event.accepted = true }
         else if (event.key === Qt.Key_T) { root.requestLaunchTtfxScreensaver(currentTtfxEffect()); event.accepted = true }
@@ -104,8 +169,8 @@ FocusScope {
             event.accepted = true
         }
         else if (event.key === Qt.Key_Space) { root.requestPlayPause(); event.accepted = true }
-        else if (event.key === Qt.Key_Right) { root.requestNext(); event.accepted = true }
-        else if (event.key === Qt.Key_Left) { root.requestPrev(); event.accepted = true }
+        else if (event.key === Qt.Key_N || event.key === Qt.Key_Right) { root.requestNext(); event.accepted = true }
+        else if (event.key === Qt.Key_P || event.key === Qt.Key_Left) { root.requestPrev(); event.accepted = true }
         else if (event.key === Qt.Key_F || event.key === Qt.Key_V) {
             root.requestToggleFullscreen()
             event.accepted = true
@@ -122,11 +187,24 @@ FocusScope {
         color: root.backgroundColour
     }
 
+    // 60 FPS Render Loop
     Timer {
         interval: 16
         running: root.visible
         repeat: true
         onTriggered: vizCanvas.requestPaint()
+    }
+
+    // Auto-Morph Evolution Timer (when `autoCycle` is toggled ON)
+    Timer {
+        interval: 11000
+        running: root.visible && root.autoCycle
+        repeat: true
+        onTriggered: {
+            root.cycleMode(1)
+            Engine.randomiseState(root.engineState)
+            root.paletteIndex = (root.paletteIndex + 1) % Engine.PALETTE_NAMES.length
+        }
     }
 
     Canvas {
@@ -141,6 +219,7 @@ FocusScope {
                 playing: root.playing,
                 mode: root.visualMode,
                 palette: root.paletteIndex,
+                symmetryFolds: root.symmetryFolds,
                 sensitivity: root.sensitivity,
                 asciiLines: root.asciiLines,
                 ttfxFrames: root.ttfxFrames,
@@ -156,7 +235,7 @@ FocusScope {
         }
     }
 
-    // Subtle double-click anywhere on canvas toggles fullscreen
+    // Click to focus for keyboard shortcuts; double-click toggles fullscreen
     MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton
@@ -164,187 +243,320 @@ FocusScope {
         onDoubleClicked: root.requestToggleFullscreen()
     }
 
-    // Top Omarchy HUD Bar
+    // Top Omarchy HUD Bar + 12-Mode Selector Strip
     Rectangle {
         id: topHud
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.margins: 12
-        height: 44
+        anchors.margins: 10
+        height: 76
         radius: 8
-        color: Qt.rgba(0.04, 0.05, 0.08, 0.84)
+        color: Qt.rgba(0.04, 0.05, 0.08, 0.86)
         border.width: 1
         border.color: Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.35)
         visible: root.showHud
 
-        RowLayout {
+        ColumnLayout {
             anchors.fill: parent
-            anchors.leftMargin: 12
-            anchors.rightMargin: 12
-            spacing: 8
+            anchors.margins: 8
+            spacing: 6
 
-            // Mode selector pill
-            Rectangle {
-                Layout.preferredHeight: 28
-                Layout.preferredWidth: modeLabel.implicitWidth + 20
-                radius: 6
-                color: Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.16)
-                border.width: 1
-                border.color: root.accentColour
+            // Row 1: Primary Visualiser Controls
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 6
 
-                Text {
-                    id: modeLabel
-                    anchors.centerIn: parent
-                    text: "Auto  " + (Engine.MODE_NAMES[root.visualMode] || "TTE Waves")
-                    textFormat: Text.PlainText
-                    font.family: "JetBrainsMono Nerd Font"
-                    font.pixelSize: 11
-                    font.bold: true
-                    color: root.accentColour
+                // Mode selector pill
+                Rectangle {
+                    Layout.preferredHeight: 26
+                    Layout.preferredWidth: modeLabel.implicitWidth + 18
+                    radius: 5
+                    color: Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.18)
+                    border.width: 1
+                    border.color: root.accentColour
+
+                    Text {
+                        id: modeLabel
+                        anchors.centerIn: parent
+                        text: "󰍹 " + (Engine.MODE_NAMES[root.visualMode] || "Fractals")
+                        textFormat: Text.PlainText
+                        font.family: "JetBrainsMono Nerd Font"
+                        font.pixelSize: 10
+                        font.bold: true
+                        color: root.accentColour
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.cycleMode(1)
+                    }
                 }
 
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.cycleMode(1)
+                // Multi-coloured Palette selector pill
+                Rectangle {
+                    Layout.preferredHeight: 26
+                    Layout.preferredWidth: palLabel.implicitWidth + 16
+                    radius: 5
+                    color: Qt.rgba(1, 1, 1, 0.07)
+                    border.width: 1
+                    border.color: Qt.rgba(1, 1, 1, 0.18)
+
+                    Text {
+                        id: palLabel
+                        anchors.centerIn: parent
+                        text: "󰏘 " + (Engine.PALETTE_NAMES[root.paletteIndex] || "Prism")
+                        textFormat: Text.PlainText
+                        font.family: "JetBrainsMono Nerd Font"
+                        font.pixelSize: 10
+                        color: root.foregroundColour
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.cyclePalette(1)
+                    }
+                }
+
+                // Multi-Facet Kaleidoscope Symmetry pill
+                Rectangle {
+                    Layout.preferredHeight: 26
+                    Layout.preferredWidth: symLabel.implicitWidth + 14
+                    radius: 5
+                    color: root.symmetryFolds > 1
+                        ? Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.20)
+                        : Qt.rgba(1, 1, 1, 0.07)
+                    border.width: 1
+                    border.color: root.symmetryFolds > 1 ? root.accentColour : Qt.rgba(1, 1, 1, 0.18)
+
+                    Text {
+                        id: symLabel
+                        anchors.centerIn: parent
+                        text: "󰕮 Facets: " + root.symmetryFolds + "x"
+                        textFormat: Text.PlainText
+                        font.family: "JetBrainsMono Nerd Font"
+                        font.pixelSize: 10
+                        font.bold: root.symmetryFolds > 1
+                        color: root.symmetryFolds > 1 ? root.accentColour : root.foregroundColour
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.cycleSymmetry()
+                    }
+                }
+
+                // Randomise / Mutate Seed pill
+                Rectangle {
+                    Layout.preferredHeight: 26
+                    Layout.preferredWidth: randLabel.implicitWidth + 14
+                    radius: 5
+                    color: Qt.rgba(root.urgentColour.r, root.urgentColour.g, root.urgentColour.b, 0.16)
+                    border.width: 1
+                    border.color: root.urgentColour
+
+                    Text {
+                        id: randLabel
+                        anchors.centerIn: parent
+                        text: "󰒟 Mutate"
+                        textFormat: Text.PlainText
+                        font.family: "JetBrainsMono Nerd Font"
+                        font.pixelSize: 10
+                        font.bold: true
+                        color: root.urgentColour
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.randomiseVisuals()
+                    }
+                }
+
+                // Auto-Morph toggle pill
+                Rectangle {
+                    Layout.preferredHeight: 26
+                    Layout.preferredWidth: autoLabel.implicitWidth + 14
+                    radius: 5
+                    color: root.autoCycle
+                        ? Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.24)
+                        : Qt.rgba(1, 1, 1, 0.06)
+                    border.width: 1
+                    border.color: root.autoCycle ? root.accentColour : Qt.rgba(1, 1, 1, 0.18)
+
+                    Text {
+                        id: autoLabel
+                        anchors.centerIn: parent
+                        text: root.autoCycle ? "󰑐 Auto: ON" : "󰑐 Auto: OFF"
+                        textFormat: Text.PlainText
+                        font.family: "JetBrainsMono Nerd Font"
+                        font.pixelSize: 10
+                        font.bold: root.autoCycle
+                        color: root.autoCycle ? root.accentColour : root.foregroundColour
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.autoCycle = !root.autoCycle
+                    }
+                }
+
+                // Optional Album Art Overlay toggle (not fixed — simply one of the options)
+                Rectangle {
+                    Layout.preferredHeight: 26
+                    Layout.preferredWidth: albumArtToggleLabel.implicitWidth + 14
+                    radius: 5
+                    color: (root.useAlbumArt || root.visualMode === 10)
+                        ? Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.24)
+                        : Qt.rgba(1, 1, 1, 0.06)
+                    border.width: 1
+                    border.color: (root.useAlbumArt || root.visualMode === 10) ? root.accentColour : Qt.rgba(1, 1, 1, 0.18)
+
+                    Text {
+                        id: albumArtToggleLabel
+                        anchors.centerIn: parent
+                        text: (root.useAlbumArt || root.visualMode === 10) ? "󰀥 Album Art: ON" : "󰀥 Album Art: OFF"
+                        textFormat: Text.PlainText
+                        font.family: "JetBrainsMono Nerd Font"
+                        font.pixelSize: 10
+                        font.bold: root.useAlbumArt || root.visualMode === 10
+                        color: (root.useAlbumArt || root.visualMode === 10) ? root.accentColour : root.foregroundColour
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.requestToggleUseAlbumArt()
+                    }
+                }
+
+                // Braille / Block ASCII transcoding mode toggle (shown when Album Art option or Mode 10 is active)
+                Rectangle {
+                    Layout.preferredHeight: 26
+                    Layout.preferredWidth: asciiModeLabel.implicitWidth + 14
+                    radius: 5
+                    visible: root.useAlbumArt || root.visualMode === 10
+                    color: Qt.rgba(1, 1, 1, 0.07)
+                    border.width: 1
+                    border.color: Qt.rgba(1, 1, 1, 0.18)
+
+                    Text {
+                        id: asciiModeLabel
+                        anchors.centerIn: parent
+                        text: root.asciiMode === "block" ? "█ Block" : "⣿ Braille"
+                        textFormat: Text.PlainText
+                        font.family: "JetBrainsMono Nerd Font"
+                        font.pixelSize: 10
+                        color: root.foregroundColour
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.requestToggleAsciiMode()
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
+
+                // Launch native Omarchy `ttfx` screensaver terminal
+                Rectangle {
+                    Layout.preferredHeight: 26
+                    Layout.preferredWidth: ttfxBtnLabel.implicitWidth + 14
+                    radius: 5
+                    color: Qt.rgba(root.urgentColour.r, root.urgentColour.g, root.urgentColour.b, 0.16)
+                    border.width: 1
+                    border.color: root.urgentColour
+
+                    Text {
+                        id: ttfxBtnLabel
+                        anchors.centerIn: parent
+                        text: "󰍹 TTE"
+                        textFormat: Text.PlainText
+                        font.family: "JetBrainsMono Nerd Font"
+                        font.pixelSize: 10
+                        font.bold: true
+                        color: root.urgentColour
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.requestLaunchTtfxScreensaver(root.currentTtfxEffect())
+                    }
+                }
+
+                // Fullscreen button
+                Rectangle {
+                    Layout.preferredHeight: 26
+                    Layout.preferredWidth: fsLabel.implicitWidth + 14
+                    radius: 5
+                    color: Qt.rgba(1, 1, 1, 0.08)
+                    border.width: 1
+                    border.color: Qt.rgba(1, 1, 1, 0.2)
+
+                    Text {
+                        id: fsLabel
+                        anchors.centerIn: parent
+                        text: root.isFullscreen ? "󰊓 Exit" : "󰊓 Full"
+                        textFormat: Text.PlainText
+                        font.family: "JetBrainsMono Nerd Font"
+                        font.pixelSize: 10
+                        color: root.foregroundColour
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.requestToggleFullscreen()
+                    }
                 }
             }
 
-            // Palette selector pill
-            Rectangle {
-                Layout.preferredHeight: 28
-                Layout.preferredWidth: palLabel.implicitWidth + 18
-                radius: 6
-                color: Qt.rgba(1, 1, 1, 0.07)
-                border.width: 1
-                border.color: Qt.rgba(1, 1, 1, 0.18)
+            // Row 2: Direct 12-Mode Quick-Select Strip
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 4
 
-                Text {
-                    id: palLabel
-                    anchors.centerIn: parent
-                    text: "󰏘 " + (Engine.PALETTE_NAMES[root.paletteIndex] || "Omarchy")
-                    textFormat: Text.PlainText
-                    font.family: "JetBrainsMono Nerd Font"
-                    font.pixelSize: 11
-                    color: root.foregroundColour
-                }
+                Repeater {
+                    model: root.shortModeLabels.length
 
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.cyclePalette(1)
-                }
-            }
+                    delegate: Rectangle {
+                        required property int index
+                        readonly property bool isCurrent: root.visualMode === index
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 22
+                        radius: 4
+                        color: isCurrent
+                            ? Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.24)
+                            : Qt.rgba(1, 1, 1, 0.05)
+                        border.width: 1
+                        border.color: isCurrent ? root.accentColour : Qt.rgba(1, 1, 1, 0.12)
 
-            // Use Album Art toggle (Requirement #3: "use album art" option)
-            Rectangle {
-                Layout.preferredHeight: 28
-                Layout.preferredWidth: albumArtToggleLabel.implicitWidth + 18
-                radius: 6
-                color: root.useAlbumArt
-                    ? Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.24)
-                    : Qt.rgba(1, 1, 1, 0.06)
-                border.width: 1
-                border.color: root.useAlbumArt ? root.accentColour : Qt.rgba(1, 1, 1, 0.18)
+                        Text {
+                            anchors.centerIn: parent
+                            text: root.shortModeLabels[index]
+                            textFormat: Text.PlainText
+                            font.family: "JetBrainsMono Nerd Font"
+                            font.pixelSize: 9
+                            font.bold: parent.isCurrent
+                            color: parent.isCurrent ? root.accentColour : root.foregroundColour
+                            elide: Text.ElideRight
+                        }
 
-                Text {
-                    id: albumArtToggleLabel
-                    anchors.centerIn: parent
-                    text: root.useAlbumArt ? "󰀥 Use Album Art: ON" : "󰀥 Use Album Art: OFF"
-                    textFormat: Text.PlainText
-                    font.family: "JetBrainsMono Nerd Font"
-                    font.pixelSize: 11
-                    font.bold: root.useAlbumArt
-                    color: root.useAlbumArt ? root.accentColour : root.foregroundColour
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.requestToggleUseAlbumArt()
-                }
-            }
-
-            // Braille / Block ASCII transcoding mode toggle
-            Rectangle {
-                Layout.preferredHeight: 28
-                Layout.preferredWidth: asciiModeLabel.implicitWidth + 16
-                radius: 6
-                visible: root.useAlbumArt
-                color: Qt.rgba(1, 1, 1, 0.07)
-                border.width: 1
-                border.color: Qt.rgba(1, 1, 1, 0.18)
-
-                Text {
-                    id: asciiModeLabel
-                    anchors.centerIn: parent
-                    text: root.asciiMode === "block" ? "█ Block Art" : "⣿ Braille Art"
-                    textFormat: Text.PlainText
-                    font.family: "JetBrainsMono Nerd Font"
-                    font.pixelSize: 11
-                    color: root.foregroundColour
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.requestToggleAsciiMode()
-                }
-            }
-
-            // Launch native Omarchy `ttfx` screensaver terminal with transcoded album art
-            Rectangle {
-                Layout.preferredHeight: 28
-                Layout.preferredWidth: ttfxBtnLabel.implicitWidth + 16
-                radius: 6
-                color: Qt.rgba(root.urgentColour.r, root.urgentColour.g, root.urgentColour.b, 0.18)
-                border.width: 1
-                border.color: root.urgentColour
-
-                Text {
-                    id: ttfxBtnLabel
-                    anchors.centerIn: parent
-                    text: "󰍹 TTE Screensaver"
-                    textFormat: Text.PlainText
-                    font.family: "JetBrainsMono Nerd Font"
-                    font.pixelSize: 11
-                    font.bold: true
-                    color: root.urgentColour
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.requestLaunchTtfxScreensaver(root.currentTtfxEffect())
-                }
-            }
-
-            Item { Layout.fillWidth: true }
-
-            // Fullscreen button
-            Rectangle {
-                Layout.preferredHeight: 28
-                Layout.preferredWidth: fsLabel.implicitWidth + 16
-                radius: 6
-                color: Qt.rgba(1, 1, 1, 0.08)
-                border.width: 1
-                border.color: Qt.rgba(1, 1, 1, 0.2)
-
-                Text {
-                    id: fsLabel
-                    anchors.centerIn: parent
-                    text: root.isFullscreen ? "󰊓 Exit Fullscreen" : "󰊓 Fullscreen"
-                    textFormat: Text.PlainText
-                    font.family: "JetBrainsMono Nerd Font"
-                    font.pixelSize: 11
-                    color: root.foregroundColour
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: root.requestToggleFullscreen()
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                root.visualMode = index
+                                root.forceActiveFocus()
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -356,7 +568,7 @@ FocusScope {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.margins: 12
+        anchors.margins: 10
         height: 54
         radius: 8
         color: Qt.rgba(0.04, 0.05, 0.08, 0.84)
@@ -385,7 +597,7 @@ FocusScope {
 
                 Text {
                     Layout.fillWidth: true
-                    text: root.trackTitle || "Omarchy Psychedelic Visualiser"
+                    text: root.trackTitle || "Bandarchy Psychedelic Visualiser"
                     textFormat: Text.PlainText
                     font.family: "JetBrainsMono Nerd Font"
                     font.pixelSize: 12
@@ -398,7 +610,7 @@ FocusScope {
                     Layout.fillWidth: true
                     text: (root.trackArtist ? root.trackArtist : "Bandarchy") +
                           (root.trackAlbum ? (" · " + root.trackAlbum) : "") +
-                          "  [Keys: 1-6 Mode · A Album Art · B Braille/Block · C Palette · T ttfx · F Fullscreen · H HUD]"
+                          "  [Keys: 1-0/[/] Modes · C Palette · K Facets · R Mutate · X Auto · A Album Art · F Full · H HUD]"
                     textFormat: Text.PlainText
                     font.family: "JetBrainsMono Nerd Font"
                     font.pixelSize: 10

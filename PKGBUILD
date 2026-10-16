@@ -36,6 +36,11 @@ package() {
 
   ln -sf "/usr/share/omarchy/plugins/io.github.layolayo.bandarchy/bin/bandarchy" "${pkgdir}/usr/bin/bandarchy"
   ln -sf "/usr/share/omarchy/plugins/io.github.layolayo.bandarchy/bin/bandarchy-player" "${pkgdir}/usr/bin/bandarchy-player"
-  install -m644 "${startdir}/io.github.layolayo.bandarchy.desktop" "${pkgdir}/usr/share/applications/io.github.layolayo.bandarchy.desktop"
+  install -Dm644 "${startdir}/icon.svg" "${pkgdir}/usr/share/icons/hicolor/scalable/apps/io.github.layolayo.bandarchy.svg"
+  sed -e 's|^Exec=.*|Exec=/usr/bin/bandarchy-player|' \
+      -e 's|^Icon=.*|Icon=/usr/share/omarchy/plugins/io.github.layolayo.bandarchy/icon.svg|' \
+      "${startdir}/io.github.layolayo.bandarchy.desktop" \
+      > "${pkgdir}/usr/share/applications/io.github.layolayo.bandarchy.desktop"
+  chmod 644 "${pkgdir}/usr/share/applications/io.github.layolayo.bandarchy.desktop"
   install -Dm644 "${startdir}/LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }

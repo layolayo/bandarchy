@@ -1,8 +1,11 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Window
 import Quickshell
 import Quickshell.Wayland
 import qs.Commons as Commons
+import qs.Commons
+import qs.Ui
 
 // Panel.qml — Bandarchy Omarchy Shell Overlay Panel
 // Provides:
@@ -15,11 +18,24 @@ import qs.Commons as Commons
 Item {
     id: root
 
+    property var bar: null
+    property var shell: null
+    property var manifest: null
+    property string omarchyPath: ""
+    property var barWidgetRegistry: null
+    property var pluginRegistry: null
     property var pluginApi: null
     property var customService: null
     property bool standaloneMode: false
+    property bool opened: false
 
-    readonly property var service: customService ? customService : (pluginApi ? pluginApi.mainInstance : null)
+    property var service: customService
+        ? customService
+        : (pluginApi
+            ? pluginApi.mainInstance
+            : (shell && typeof shell.serviceFor === "function"
+                ? shell.serviceFor("io.github.layolayo.bandarchy")
+                : null))
 
     readonly property var geometryPlaceholder: panelFrame
     property real contentPreferredWidth: activeTab === 2 ? 860 : 720
@@ -39,6 +55,220 @@ Item {
     property string selectedAlbumId: ""
     property string selectedPlaylistId: ""
     property string targetPlaylistForAdd: ""
+    property int focusedAlbumIndex: 0
+    property int focusedTrackIndex: -1
+    property int focusedSmartTrackIndex: 0
+    property int focusedPlaylistIndex: 0
+    property int playlistPaneFocus: 0
+
+    function toggleAlbumExpand(albumId, albumIdx) {
+        if (albumIdx !== undefined && albumIdx >= 0) {
+            root.focusedAlbumIndex = albumIdx
+        }
+        if (root.selectedAlbumId === albumId) {
+            root.selectedAlbumId = ""
+            root.focusedTrackIndex = -1
+        } else {
+            root.selectedAlbumId = albumId
+            root.focusedTrackIndex = 0
+            if (root.service) root.service.ensureAlbumTracks(albumId)
+        }
+    }
+
+    function handleKeyNavigation(event) {
+        if (searchInput.activeFocus || newPlaylistInput.activeFocus || userInput.activeFocus) {
+            if (event.key === Qt.Key_Escape || event.key === Qt.Key_Down || event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                if (searchInput.activeFocus && (event.key === Qt.Key_Down || event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
+                    root.focusedAlbumIndex = 0
+                    root.focusedTrackIndex = -1
+                }
+                panelFrame.forceActiveFocus()
+                event.accepted = true
+            }
+            return
+        }
+        if (root.activeTab === 2) return
+
+        if (event.key === Qt.Key_Slash) {
+            root.activeTab = 0
+            searchInput.forceActiveFocus()
+            searchInput.selectAll()
+            event.accepted = true
+            return
+        }
+        if (event.key === Qt.Key_Tab) {
+            root.activeTab = (root.activeTab + 1) % 4
+            if (root.activeTab !== 2) panelFrame.forceActiveFocus()
+            event.accepted = true
+            return
+        }
+        if (event.key === Qt.Key_Backtab) {
+            root.activeTab = (root.activeTab + 3) % 4
+            if (root.activeTab !== 2) panelFrame.forceActiveFocus()
+            event.accepted = true
+            return
+        }
+        if (event.key === Qt.Key_Space) {
+            if (root.service) root.service.togglePlayPause()
+            event.accepted = true
+            return
+        }
+
+        if (root.activeTab === 0) {
+            var albums = (root.service && root.service.albums) ? root.service.albums : []
+            if (albums.length === 0) return
+            var curIdx = Math.max(0, Math.min(albums.length - 1, root.focusedAlbumIndex))
+            root.focusedAlbumIndex = curIdx
+            var curAlbum = albums[curIdx]
+            var tracks = (curAlbum && curAlbum.tracks) ? curAlbum.tracks : []
+            var isExpanded = curAlbum && root.selectedAlbumId === curAlbum.id
+
+            if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
+                if (isExpanded && tracks.length > 0 && root.focusedTrackIndex < tracks.length - 1) {
+                    root.focusedTrackIndex = root.focusedTrackIndex + 1
+                } else if (curIdx < albums.length - 1) {
+                    root.focusedAlbumIndex = curIdx + 1
+                    root.focusedTrackIndex = -1
+                    albumList.positionViewAtIndex(root.focusedAlbumIndex, ListView.Contain)
+                }
+                event.accepted = true
+            } else if (event.key === Qt.Key_Up || event.key === Qt.Key_K) {
+                if (isExpanded && root.focusedTrackIndex >= 0) {
+                    root.focusedTrackIndex = root.focusedTrackIndex - 1
+                } else if (curIdx > 0) {
+                    root.focusedAlbumIndex = curIdx - 1
+                    var prevAlb = albums[root.focusedAlbumIndex]
+                    if (prevAlb && root.selectedAlbumId === prevAlb.id && prevAlb.tracks && prevAlb.tracks.length > 0) {
+                        root.focusedTrackIndex = prevAlb.tracks.length - 1
+                    } else {
+                        root.focusedTrackIndex = -1
+                    }
+                    albumList.positionViewAtIndex(root.focusedAlbumIndex, ListView.Contain)
+                }
+                event.accepted = true
+            } else if (event.key === Qt.Key_Right || event.key === Qt.Key_L) {
+                if (curAlbum) {
+                    if (!isExpanded) {
+                        root.selectedAlbumId = curAlbum.id
+                        root.focusedTrackIndex = 0
+                        if (root.service) root.service.ensureAlbumTracks(curAlbum.id)
+                    } else if (root.focusedTrackIndex < 0 && tracks.length > 0) {
+                        root.focusedTrackIndex = 0
+                    }
+                    albumList.positionViewAtIndex(curIdx, ListView.Contain)
+                }
+                event.accepted = true
+            } else if (event.key === Qt.Key_Left || event.key === Qt.Key_H || event.key === Qt.Key_Backspace) {
+                if (isExpanded) {
+                    if (root.focusedTrackIndex >= 0) {
+                        root.focusedTrackIndex = -1
+                    } else {
+                        root.selectedAlbumId = ""
+                    }
+                    event.accepted = true
+                }
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                if (!curAlbum) return
+                if ((event.modifiers & Qt.ShiftModifier) && root.service) {
+                    root.service.playAlbum(curAlbum.id, Math.max(0, root.focusedTrackIndex), "auto", false)
+                } else if (isExpanded && root.focusedTrackIndex >= 0 && root.service) {
+                    root.service.playAlbum(curAlbum.id, root.focusedTrackIndex, "auto", false)
+                } else {
+                    root.toggleAlbumExpand(curAlbum.id, curIdx)
+                    albumList.positionViewAtIndex(curIdx, ListView.Contain)
+                }
+                event.accepted = true
+            } else if (event.key === Qt.Key_P) {
+                if (curAlbum && root.service) {
+                    root.service.playAlbum(curAlbum.id, Math.max(0, root.focusedTrackIndex), "auto", false)
+                }
+                event.accepted = true
+            } else if (event.key === Qt.Key_Escape) {
+                if (root.selectedAlbumId !== "") {
+                    root.selectedAlbumId = ""
+                    root.focusedTrackIndex = -1
+                    event.accepted = true
+                }
+            }
+        } else if (root.activeTab === 1) {
+            var smartTracks = (root.service && root.service.smartPlaylist && root.service.smartPlaylist.tracks) ? root.service.smartPlaylist.tracks : []
+            var customPls = (root.service && root.service.playlists) ? root.service.playlists : []
+            if (event.key === Qt.Key_Left || event.key === Qt.Key_H) {
+                root.playlistPaneFocus = 0
+                event.accepted = true
+            } else if (event.key === Qt.Key_Right || event.key === Qt.Key_L) {
+                root.playlistPaneFocus = 1
+                event.accepted = true
+            } else if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
+                if (root.playlistPaneFocus === 0 && smartTracks.length > 0) {
+                    root.focusedSmartTrackIndex = Math.min(smartTracks.length - 1, root.focusedSmartTrackIndex + 1)
+                } else if (root.playlistPaneFocus === 1 && customPls.length > 0) {
+                    root.focusedPlaylistIndex = Math.min(customPls.length - 1, root.focusedPlaylistIndex + 1)
+                }
+                event.accepted = true
+            } else if (event.key === Qt.Key_Up || event.key === Qt.Key_K) {
+                if (root.playlistPaneFocus === 0 && smartTracks.length > 0) {
+                    root.focusedSmartTrackIndex = Math.max(0, root.focusedSmartTrackIndex - 1)
+                } else if (root.playlistPaneFocus === 1 && customPls.length > 0) {
+                    root.focusedPlaylistIndex = Math.max(0, root.focusedPlaylistIndex - 1)
+                }
+                event.accepted = true
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                if (root.playlistPaneFocus === 0 && smartTracks.length > 0 && root.service) {
+                    root.service.playSmartPlaylist(root.service.smartPreset, "", root.focusedSmartTrackIndex)
+                } else if (root.playlistPaneFocus === 1 && customPls.length > 0) {
+                    var pl = customPls[root.focusedPlaylistIndex]
+                    if (pl) {
+                        if ((event.modifiers & Qt.ShiftModifier) && root.service) {
+                            root.service.playPlaylist(pl.id, 0, false)
+                        } else {
+                            root.selectedPlaylistId = (root.selectedPlaylistId === pl.id) ? "" : pl.id
+                        }
+                    }
+                }
+                event.accepted = true
+            }
+        }
+    }
+
+    Timer {
+        interval: 250
+        repeat: true
+        running: Boolean(!root.service && root.shell && typeof root.shell.serviceFor === "function")
+        onTriggered: {
+            var svc = root.shell.serviceFor("io.github.layolayo.bandarchy")
+            if (svc) root.service = svc
+        }
+    }
+
+    function open(payloadJson) {
+        root.opened = true
+        if (!root.service && root.shell && typeof root.shell.serviceFor === "function") {
+            root.service = root.shell.serviceFor("io.github.layolayo.bandarchy")
+        }
+        if (root.service) {
+            root.service.refreshStatus()
+            root.service.loadCollection(root.service.activeScope, root.service.searchQuery)
+            root.service.loadPlaylists()
+            root.service.refreshSmartPlaylist(root.service.smartPreset, "")
+            if (root.activeTab === 2) {
+                root.service.visualiserActive = true
+                root.service.refreshAsciiArt()
+            }
+        }
+    }
+
+    function close() {
+        root.opened = false
+        if (root.service) {
+            root.service.visualiserActive = false
+        }
+    }
+
+    function toggle() {
+        if (root.opened) root.close()
+        else root.open("{}")
+    }
 
     onActiveTabChanged: {
         if (service) {
@@ -99,7 +329,7 @@ Item {
                 duration: root.service ? root.service.duration : 0.0
                 asciiLines: root.service ? root.service.asciiLines : []
                 ttfxFrames: root.service ? root.service.ttfxFrames : []
-                useAlbumArt: root.service ? root.service.useAlbumArt : true
+                useAlbumArt: root.service ? root.service.useAlbumArt : false
                 asciiMode: root.service ? root.service.asciiMode : "braille"
                 asciiSource: root.service ? root.service.asciiSource : "album-art"
                 accentColour: root.colAccent
@@ -128,14 +358,49 @@ Item {
         }
     }
 
+    FloatingWindow {
+        id: panelWindow
+        title: "Bandarchy — Bandcamp & Local Lossless Player"
+        implicitWidth: root.contentPreferredWidth
+        implicitHeight: root.contentPreferredHeight
+        minimumSize: Qt.size(680, 520)
+        color: root.colBg
+        visible: root.opened || root.standaloneMode
+
+        onVisibleChanged: {
+            if (visible) {
+                Qt.callLater(function() { panelFrame.forceActiveFocus() })
+                return
+            }
+            if (root.opened) {
+                root.close()
+                if (root.shell && typeof root.shell.hide === "function") {
+                    root.shell.hide("io.github.layolayo.bandarchy")
+                }
+            }
+        }
+
     Rectangle {
         id: panelFrame
         anchors.fill: parent
-        radius: root.standaloneMode ? 0 : Commons.Style.radiusL
+        focus: true
+        radius: root.standaloneMode ? 0 : Commons.Style.cornerRadius
         color: root.colBg
         border.width: root.standaloneMode ? 0 : 1
         border.color: root.colBorder
         clip: true
+
+        Keys.onPressed: event => {
+            root.handleKeyNavigation(event)
+            if (!event.accepted && event.key === Qt.Key_Escape) {
+                if (root.shell && typeof root.shell.hide === "function") {
+                    root.shell.hide("io.github.layolayo.bandarchy")
+                } else {
+                    root.close()
+                }
+                event.accepted = true
+            }
+        }
 
         ColumnLayout {
             anchors.fill: parent
@@ -306,15 +571,18 @@ Item {
                                     clip: true
                                     selectByMouse: true
                                     onTextEdited: {
+                                        root.focusedAlbumIndex = 0
+                                        root.focusedTrackIndex = -1
                                         if (root.service) {
                                             root.service.loadCollection(root.service.activeScope, text)
                                         }
                                     }
+                                    Keys.onPressed: event => root.handleKeyNavigation(event)
 
                                     Text {
                                         anchors.fill: parent
                                         verticalAlignment: Text.AlignVCenter
-                                        text: "Search Bandcamp purchases, artists, albums, or local tracks…"
+                                        text: "Search Bandcamp purchases, artists, albums, or local tracks… (/)"
                                         textFormat: Text.PlainText
                                         font.family: "JetBrainsMono Nerd Font"
                                         font.pixelSize: 11
@@ -335,7 +603,10 @@ Item {
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
                                             searchInput.text = ""
+                                            root.focusedAlbumIndex = 0
+                                            root.focusedTrackIndex = -1
                                             if (root.service) root.service.loadCollection(root.service.activeScope, "")
+                                            panelFrame.forceActiveFocus()
                                         }
                                     }
                                 }
@@ -378,9 +649,12 @@ Item {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
+                                        root.focusedAlbumIndex = 0
+                                        root.focusedTrackIndex = -1
                                         if (root.service) {
                                             root.service.loadCollection(modelData.scope, searchInput.text)
                                         }
+                                        panelFrame.forceActiveFocus()
                                     }
                                 }
                             }
@@ -419,6 +693,21 @@ Item {
                         }
                     }
 
+                    // Keyboard Navigation Hint Bar
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Text {
+                            Layout.fillWidth: true
+                            text: "󰌌 Keys: ↑↓/jk Navigate · Enter/→ Open Tracks & Play · ←/Esc Collapse · p Play Album · / Search · Tab Switch"
+                            textFormat: Text.PlainText
+                            font.family: "JetBrainsMono Nerd Font"
+                            font.pixelSize: 9
+                            color: root.colMuted
+                            elide: Text.ElideRight
+                        }
+                    }
+
                     // Album List View
                     ListView {
                         id: albumList
@@ -431,18 +720,22 @@ Item {
                         delegate: Rectangle {
                             id: albumCard
                             required property var modelData
+                            required property int index
                             readonly property bool expanded: root.selectedAlbumId === modelData.id
                             readonly property bool isCurrentAlbum: root.service && root.service.albumId === modelData.id
+                            readonly property bool isKeyboardFocused: root.focusedAlbumIndex === index
                             readonly property var tracksList: modelData.tracks || []
 
                             width: albumList.width
-                            height: expanded ? (66 + Math.min(tracksList.length, 8) * 28 + 14) : 64
+                            height: expanded ? (66 + Math.min(Math.max(tracksList.length, 1), 8) * 28 + 14) : 64
                             radius: 8
                             color: isCurrentAlbum
-                                ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.12)
-                                : root.colSurface
-                            border.width: 1
-                            border.color: isCurrentAlbum ? root.colAccent : root.colBorder
+                                ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.14)
+                                : (isKeyboardFocused
+                                    ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.08)
+                                    : root.colSurface)
+                            border.width: (isCurrentAlbum || isKeyboardFocused || expanded) ? 1.5 : 1
+                            border.color: (isCurrentAlbum || isKeyboardFocused || expanded) ? root.colAccent : root.colBorder
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -487,83 +780,99 @@ Item {
                                             anchors.fill: parent
                                             cursorShape: Qt.PointingHandCursor
                                             onClicked: {
+                                                root.focusedAlbumIndex = albumCard.index
                                                 if (root.service) root.service.playAlbum(modelData.id, 0, "auto", false)
+                                                panelFrame.forceActiveFocus()
                                             }
                                         }
                                     }
 
-                                    // Artist, Album Title & Badges
-                                    ColumnLayout {
+                                    // Artist, Album Title & Badges (click to expand/collapse tracks)
+                                    Item {
                                         Layout.fillWidth: true
-                                        spacing: 3
+                                        Layout.preferredHeight: 44
 
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 6
+                                        ColumnLayout {
+                                            anchors.fill: parent
+                                            spacing: 3
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 6
+
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: (modelData.title || "Untitled Album")
+                                                    textFormat: Text.PlainText
+                                                    font.family: "JetBrainsMono Nerd Font"
+                                                    font.pixelSize: 12
+                                                    font.bold: true
+                                                    color: albumCard.isKeyboardFocused ? root.colAccent : root.colFg
+                                                    elide: Text.ElideRight
+                                                }
+
+                                                // PURCHASED badge
+                                                Rectangle {
+                                                    visible: Boolean(modelData.purchased)
+                                                    Layout.preferredHeight: 18
+                                                    Layout.preferredWidth: purTxt.implicitWidth + 10
+                                                    radius: 4
+                                                    color: Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.20)
+                                                    border.width: 1
+                                                    border.color: root.colAccent
+                                                    Text {
+                                                        id: purTxt
+                                                        anchors.centerIn: parent
+                                                        text: "PURCHASED"
+                                                        textFormat: Text.PlainText
+                                                        font.family: "JetBrainsMono Nerd Font"
+                                                        font.pixelSize: 9
+                                                        font.bold: true
+                                                        color: root.colAccent
+                                                    }
+                                                }
+
+                                                // LOCAL vs CLOUD badge
+                                                Rectangle {
+                                                    Layout.preferredHeight: 18
+                                                    Layout.preferredWidth: locTxt.implicitWidth + 10
+                                                    radius: 4
+                                                    color: modelData.isLocal
+                                                        ? Qt.rgba(0.2, 0.85, 0.6, 0.16)
+                                                        : Qt.rgba(root.colUrgent.r, root.colUrgent.g, root.colUrgent.b, 0.16)
+                                                    border.width: 1
+                                                    border.color: modelData.isLocal ? root.colAccent : root.colUrgent
+                                                    Text {
+                                                        id: locTxt
+                                                        anchors.centerIn: parent
+                                                        text: modelData.isLocal ? "LOCAL" : "STREAM"
+                                                        textFormat: Text.PlainText
+                                                        font.family: "JetBrainsMono Nerd Font"
+                                                        font.pixelSize: 9
+                                                        color: modelData.isLocal ? root.colAccent : root.colUrgent
+                                                    }
+                                                }
+                                            }
 
                                             Text {
                                                 Layout.fillWidth: true
-                                                text: (modelData.title || "Untitled Album")
+                                                text: (modelData.artist || "Unknown Artist") +
+                                                      " · " + (modelData.numTracks || tracksList.length || 0) + " tracks · Click or Enter to view tracks"
                                                 textFormat: Text.PlainText
                                                 font.family: "JetBrainsMono Nerd Font"
-                                                font.pixelSize: 12
-                                                font.bold: true
-                                                color: root.colFg
+                                                font.pixelSize: 11
+                                                color: root.colMuted
                                                 elide: Text.ElideRight
-                                            }
-
-                                            // PURCHASED badge
-                                            Rectangle {
-                                                visible: Boolean(modelData.purchased)
-                                                Layout.preferredHeight: 18
-                                                Layout.preferredWidth: purTxt.implicitWidth + 10
-                                                radius: 4
-                                                color: Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.20)
-                                                border.width: 1
-                                                border.color: root.colAccent
-                                                Text {
-                                                    id: purTxt
-                                                    anchors.centerIn: parent
-                                                    text: "PURCHASED"
-                                                    textFormat: Text.PlainText
-                                                    font.family: "JetBrainsMono Nerd Font"
-                                                    font.pixelSize: 9
-                                                    font.bold: true
-                                                    color: root.colAccent
-                                                }
-                                            }
-
-                                            // LOCAL vs CLOUD badge
-                                            Rectangle {
-                                                Layout.preferredHeight: 18
-                                                Layout.preferredWidth: locTxt.implicitWidth + 10
-                                                radius: 4
-                                                color: modelData.isLocal
-                                                    ? Qt.rgba(0.2, 0.85, 0.6, 0.16)
-                                                    : Qt.rgba(root.colUrgent.r, root.colUrgent.g, root.colUrgent.b, 0.16)
-                                                border.width: 1
-                                                border.color: modelData.isLocal ? root.colAccent : root.colUrgent
-                                                Text {
-                                                    id: locTxt
-                                                    anchors.centerIn: parent
-                                                    text: modelData.isLocal ? "LOCAL" : "STREAM"
-                                                    textFormat: Text.PlainText
-                                                    font.family: "JetBrainsMono Nerd Font"
-                                                    font.pixelSize: 9
-                                                    color: modelData.isLocal ? root.colAccent : root.colUrgent
-                                                }
                                             }
                                         }
 
-                                        Text {
-                                            Layout.fillWidth: true
-                                            text: (modelData.artist || "Unknown Artist") +
-                                                  " · " + (modelData.numTracks || tracksList.length || 0) + " tracks"
-                                            textFormat: Text.PlainText
-                                            font.family: "JetBrainsMono Nerd Font"
-                                            font.pixelSize: 11
-                                            color: root.colMuted
-                                            elide: Text.ElideRight
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                root.toggleAlbumExpand(modelData.id, albumCard.index)
+                                                panelFrame.forceActiveFocus()
+                                            }
                                         }
                                     }
 
@@ -593,7 +902,9 @@ Item {
                                                 anchors.fill: parent
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: {
+                                                    root.focusedAlbumIndex = albumCard.index
                                                     if (root.service) root.service.playAlbum(modelData.id, 0, "auto", false)
+                                                    panelFrame.forceActiveFocus()
                                                 }
                                             }
                                         }
@@ -624,6 +935,7 @@ Item {
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: {
                                                     if (root.service) root.service.downloadAlbum(modelData.id, "flac")
+                                                    panelFrame.forceActiveFocus()
                                                 }
                                             }
                                         }
@@ -663,6 +975,7 @@ Item {
                                                             ""
                                                         )
                                                     }
+                                                    panelFrame.forceActiveFocus()
                                                 }
                                             }
                                         }
@@ -670,26 +983,31 @@ Item {
                                         // Expand Tracks button
                                         Rectangle {
                                             Layout.preferredHeight: 28
-                                            Layout.preferredWidth: 28
+                                            Layout.preferredWidth: expTracksTxt.implicitWidth + 14
                                             radius: 6
-                                            color: root.colSurface
+                                            color: albumCard.expanded
+                                                ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.20)
+                                                : root.colSurface
                                             border.width: 1
-                                            border.color: root.colBorder
+                                            border.color: albumCard.expanded ? root.colAccent : root.colBorder
 
                                             Text {
+                                                id: expTracksTxt
                                                 anchors.centerIn: parent
-                                                text: albumCard.expanded ? "󰅃" : "󰅀"
+                                                text: (albumCard.expanded ? "󰅃 " : "󰅀 ") + "Tracks"
                                                 textFormat: Text.PlainText
                                                 font.family: "JetBrainsMono Nerd Font"
-                                                font.pixelSize: 13
-                                                color: root.colFg
+                                                font.pixelSize: 10
+                                                font.bold: albumCard.expanded
+                                                color: albumCard.expanded ? root.colAccent : root.colFg
                                             }
 
                                             MouseArea {
                                                 anchors.fill: parent
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: {
-                                                    root.selectedAlbumId = albumCard.expanded ? "" : modelData.id
+                                                    root.toggleAlbumExpand(modelData.id, albumCard.index)
+                                                    panelFrame.forceActiveFocus()
                                                 }
                                             }
                                         }
@@ -708,12 +1026,18 @@ Item {
                                     delegate: Rectangle {
                                         required property var modelData
                                         required property int index
+                                        readonly property bool isTrackPlaying: Boolean(root.service && root.service.trackId === modelData.id)
+                                        readonly property bool isTrackFocused: albumCard.isKeyboardFocused && root.focusedTrackIndex === index
                                         width: ListView.view.width
                                         height: 26
                                         radius: 4
-                                        color: (root.service && root.service.trackId === modelData.id)
-                                            ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.20)
-                                            : Qt.rgba(1, 1, 1, index % 2 === 0 ? 0.03 : 0.0)
+                                        color: isTrackPlaying
+                                            ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.24)
+                                            : (isTrackFocused
+                                                ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.16)
+                                                : Qt.rgba(1, 1, 1, index % 2 === 0 ? 0.03 : 0.0))
+                                        border.width: isTrackFocused ? 1 : 0
+                                        border.color: root.colAccent
 
                                         RowLayout {
                                             anchors.fill: parent
@@ -722,11 +1046,12 @@ Item {
                                             spacing: 8
 
                                             Text {
-                                                text: (index + 1) + "."
+                                                text: isTrackPlaying ? "󰐊" : ((index + 1) + ".")
                                                 textFormat: Text.PlainText
                                                 font.family: "JetBrainsMono Nerd Font"
                                                 font.pixelSize: 10
-                                                color: root.colMuted
+                                                font.bold: isTrackPlaying || isTrackFocused
+                                                color: (isTrackPlaying || isTrackFocused) ? root.colAccent : root.colMuted
                                             }
 
                                             Text {
@@ -735,7 +1060,8 @@ Item {
                                                 textFormat: Text.PlainText
                                                 font.family: "JetBrainsMono Nerd Font"
                                                 font.pixelSize: 11
-                                                color: root.colFg
+                                                font.bold: isTrackPlaying || isTrackFocused
+                                                color: (isTrackPlaying || isTrackFocused) ? root.colAccent : root.colFg
                                                 elide: Text.ElideRight
                                             }
 
@@ -780,9 +1106,12 @@ Item {
                                             anchors.rightMargin: 70
                                             cursorShape: Qt.PointingHandCursor
                                             onClicked: {
+                                                root.focusedAlbumIndex = albumCard.index
+                                                root.focusedTrackIndex = index
                                                 if (root.service) {
                                                     root.service.playAlbum(albumCard.modelData.id, index, "auto", false)
                                                 }
+                                                panelFrame.forceActiveFocus()
                                             }
                                         }
                                     }
@@ -990,12 +1319,17 @@ Item {
                                 delegate: Rectangle {
                                     required property var modelData
                                     required property int index
+                                    readonly property bool isSmartFocused: root.playlistPaneFocus === 0 && root.focusedSmartTrackIndex === index
                                     width: ListView.view.width
                                     height: 28
                                     radius: 5
-                                    color: index === 0
-                                        ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.14)
-                                        : Qt.rgba(1, 1, 1, 0.03)
+                                    color: isSmartFocused
+                                        ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.22)
+                                        : (index === 0
+                                            ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.14)
+                                            : Qt.rgba(1, 1, 1, 0.03))
+                                    border.width: isSmartFocused ? 1 : 0
+                                    border.color: root.colAccent
 
                                     RowLayout {
                                         anchors.fill: parent
@@ -1008,7 +1342,7 @@ Item {
                                             textFormat: Text.PlainText
                                             font.family: "JetBrainsMono Nerd Font"
                                             font.pixelSize: 10
-                                            color: index === 0 ? root.colAccent : root.colMuted
+                                            color: (index === 0 || isSmartFocused) ? root.colAccent : root.colMuted
                                         }
 
                                         Text {
@@ -1017,7 +1351,8 @@ Item {
                                             textFormat: Text.PlainText
                                             font.family: "JetBrainsMono Nerd Font"
                                             font.pixelSize: 10
-                                            color: root.colFg
+                                            font.bold: isSmartFocused
+                                            color: isSmartFocused ? root.colAccent : root.colFg
                                             elide: Text.ElideRight
                                         }
 
@@ -1034,7 +1369,10 @@ Item {
                                         anchors.fill: parent
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
+                                            root.playlistPaneFocus = 0
+                                            root.focusedSmartTrackIndex = index
                                             if (root.service) root.service.playSmartPlaylist(root.service.smartPreset, "", index)
+                                            panelFrame.forceActiveFocus()
                                         }
                                     }
                                 }
@@ -1088,6 +1426,7 @@ Item {
                                         font.pixelSize: 11
                                         color: root.colFg
                                         clip: true
+                                        Keys.onPressed: event => root.handleKeyNavigation(event)
 
                                         Text {
                                             anchors.fill: parent
@@ -1127,6 +1466,7 @@ Item {
                                                 root.service.createPlaylist(t, "User playlist", "", root.service.albumId, "")
                                                 newPlaylistInput.text = ""
                                             }
+                                            panelFrame.forceActiveFocus()
                                         }
                                     }
                                 }
@@ -1143,7 +1483,9 @@ Item {
                                 delegate: Rectangle {
                                     id: plCard
                                     required property var modelData
+                                    required property int index
                                     readonly property bool isExpanded: root.selectedPlaylistId === modelData.id
+                                    readonly property bool isPlFocused: root.playlistPaneFocus === 1 && root.focusedPlaylistIndex === index
                                     readonly property var plTracks: modelData.tracks || []
 
                                     width: ListView.view.width
@@ -1151,9 +1493,11 @@ Item {
                                     radius: 6
                                     color: isExpanded
                                         ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.14)
-                                        : Qt.rgba(1, 1, 1, 0.04)
-                                    border.width: 1
-                                    border.color: isExpanded ? root.colAccent : root.colBorder
+                                        : (isPlFocused
+                                            ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.10)
+                                            : Qt.rgba(1, 1, 1, 0.04))
+                                    border.width: (isExpanded || isPlFocused) ? 1.5 : 1
+                                    border.color: (isExpanded || isPlFocused) ? root.colAccent : root.colBorder
 
                                     ColumnLayout {
                                         anchors.fill: parent
@@ -1171,14 +1515,17 @@ Item {
                                                 font.family: "JetBrainsMono Nerd Font"
                                                 font.pixelSize: 11
                                                 font.bold: true
-                                                color: root.colFg
+                                                color: isPlFocused ? root.colAccent : root.colFg
                                                 elide: Text.ElideRight
 
                                                 MouseArea {
                                                     anchors.fill: parent
                                                     cursorShape: Qt.PointingHandCursor
                                                     onClicked: {
+                                                        root.playlistPaneFocus = 1
+                                                        root.focusedPlaylistIndex = plCard.index
                                                         root.selectedPlaylistId = plCard.isExpanded ? "" : modelData.id
+                                                        panelFrame.forceActiveFocus()
                                                     }
                                                 }
                                             }
@@ -1200,6 +1547,7 @@ Item {
                                                     cursorShape: Qt.PointingHandCursor
                                                     onClicked: {
                                                         if (root.service) root.service.playPlaylist(modelData.id, 0, false)
+                                                        panelFrame.forceActiveFocus()
                                                     }
                                                 }
                                             }
@@ -1220,6 +1568,7 @@ Item {
                                                     cursorShape: Qt.PointingHandCursor
                                                     onClicked: {
                                                         if (root.service) root.service.deletePlaylist(modelData.id)
+                                                        panelFrame.forceActiveFocus()
                                                     }
                                                 }
                                             }
@@ -1261,6 +1610,7 @@ Item {
                                                             cursorShape: Qt.PointingHandCursor
                                                             onClicked: {
                                                                 if (root.service) root.service.playPlaylist(plCard.modelData.id, index, false)
+                                                                panelFrame.forceActiveFocus()
                                                             }
                                                         }
                                                     }
@@ -1276,6 +1626,7 @@ Item {
                                                             cursorShape: Qt.PointingHandCursor
                                                             onClicked: {
                                                                 if (root.service) root.service.removeTrackFromPlaylist(plCard.modelData.id, index)
+                                                                panelFrame.forceActiveFocus()
                                                             }
                                                         }
                                                     }
@@ -1307,7 +1658,7 @@ Item {
                     duration: root.service ? root.service.duration : 0.0
                     asciiLines: root.service ? root.service.asciiLines : []
                     ttfxFrames: root.service ? root.service.ttfxFrames : []
-                    useAlbumArt: root.service ? root.service.useAlbumArt : true
+                    useAlbumArt: root.service ? root.service.useAlbumArt : false
                     asciiMode: root.service ? root.service.asciiMode : "braille"
                     asciiSource: root.service ? root.service.asciiSource : "album-art"
                     accentColour: root.colAccent
@@ -1667,5 +2018,6 @@ Item {
                 }
             }
         }
+    }
     }
 }

@@ -125,7 +125,7 @@ Item {
             radius: 4
             color: "#090c10"
             border.width: 1
-            border.color: Qt.rgba(1, 1, 1, 0.35)
+            border.color: "#59ffffff"
         }
     }
 }

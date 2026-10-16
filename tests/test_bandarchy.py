@@ -309,6 +309,15 @@ class BandarchyTestSuite(unittest.TestCase):
         search_res = self.run_cli("search", "Voyage 34", "--scope", "purchased")
         self.assertEqual(len(search_res["albums"]), 1)
         self.assertEqual(search_res["albums"][0]["artist"], "Porcupine Tree")
+        # Even before on-demand resolution, cloud albums must have a fallback track entry so they can be expanded/played
+        self.assertGreaterEqual(len(search_res["albums"][0].get("tracks", [])), 1)
+
+        # On-demand `bandarchy album --id bc-album-300` resolves full remote tracklist (Phase I, Phase II)
+        alb_detail = self.run_cli("album", "--id", "bc-album-300")
+        self.assertEqual(alb_detail["album"]["id"], "bc-album-300")
+        self.assertEqual(alb_detail["trackCount"], 2)
+        self.assertEqual(alb_detail["album"]["tracks"][0]["title"], "Phase I")
+        self.assertEqual(alb_detail["album"]["tracks"][1]["title"], "Phase II")
 
     def test_03_ascii_art_transcoding_and_use_album_art_option(self):
         # 1. Braille mode with Use Album Art = 1 + ttfxFrames extraction
@@ -468,6 +477,52 @@ class BandarchyTestSuite(unittest.TestCase):
                 plain_formats,
                 f"{qf} has {text_blocks} Text blocks but {plain_formats} textFormat: Text.PlainText declarations",
             )
+
+        # Verify PsychedelicEngine.js has 12 modes, 10 palettes, kaleidoscope symmetry, randomiseState,
+        # and gates drawAsciiMatrix on mode === 10 || useAlbumArt (so album art is an option, not fixed)
+        engine_path = os.path.join(REPO_ROOT, "PsychedelicEngine.js")
+        with open(engine_path, "r", encoding="utf-8") as f:
+            engine_js = f.read()
+        for expected_mode in (
+            "Julia & Mandelbrot Fractals",
+            "Hyperspace Swirls & Vortex",
+            "Randomised Shapes & Kaleidoscope",
+            "Space-Time Warp Matrix",
+            "Alien Mycelium & Bioluminescence",
+            "Multi-Faceted Crystal Hypercube",
+            "Voyage 34 Sacred Mandala",
+            "Blackhole Singularity",
+            "Cyber SynthGrid & Beams",
+            "VHS Glitch & Matrix Rain",
+            "Album Art ASCII Matrix (TTE)",
+            "Cosmic Chimera Overdrive",
+        ):
+            self.assertIn(expected_mode, engine_js)
+        for expected_palette in (
+            "DMT Hyperspace Prism",
+            "Omarchy Screensaver",
+            "Voyage 34 LSD",
+            "Alien Flora & Mycelium",
+            "Space-Time Event Horizon",
+            "Chromatic Fractal Acid",
+            "Aeterna Nebula",
+            "Iridescent Scarab & Opal",
+            "Solar Flare & Plasma",
+            "Abyssal Bioluminescence",
+        ):
+            self.assertIn(expected_palette, engine_js)
+        self.assertIn("function randomiseState", engine_js)
+        self.assertIn("if (useAlbumArt && mode !== 10)", engine_js)
+
+        # Verify both Panel.qml and App.qml implement expandable album track drawers and keyboard navigation
+        for nav_qml in ("Panel.qml", "App.qml"):
+            with open(os.path.join(REPO_ROOT, nav_qml), "r", encoding="utf-8") as f:
+                nav_src = f.read()
+            self.assertIn("function toggleAlbumExpand", nav_src, f"{nav_qml} missing toggleAlbumExpand")
+            self.assertIn("function handleKeyNavigation", nav_src, f"{nav_qml} missing handleKeyNavigation")
+            self.assertIn("ensureAlbumTracks", nav_src, f"{nav_qml} missing ensureAlbumTracks call")
+            self.assertIn("focusedAlbumIndex", nav_src, f"{nav_qml} missing focusedAlbumIndex")
+            self.assertIn("focusedTrackIndex", nav_src, f"{nav_qml} missing focusedTrackIndex")
 
         # Verify App.qml loads cleanly in Quickshell with zero QML errors
         if shutil.which("quickshell") and (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):
