@@ -101,12 +101,18 @@ BarWidget {
         try {
             var raw = root.service ? root.service.spectrumBands : []
             if (!raw || raw.length === 0) return []
+            var maxRaw = 85.0
+            for (var r = 0; r < raw.length; r++) {
+                var rv = Number(raw[r]) || 0
+                if (rv > maxRaw) maxRaw = rv
+            }
             var count = 8
             var step = Math.max(1, Math.floor(raw.length / count))
             var out = []
             for (var i = 0; i < count; i++) {
                 var idx = Math.min(raw.length - 1, i * step)
-                out.push(Math.min(1.0, Math.max(0.08, (Number(raw[idx]) || 0) / 1000.0)))
+                var norm = Math.pow(Math.min(1.0, Math.max(0.0, (Number(raw[idx]) || 0) / maxRaw)), 0.78)
+                out.push(Math.min(1.0, Math.max(0.10, norm)))
             }
             return out
         } catch (e) {
@@ -119,6 +125,14 @@ BarWidget {
     implicitWidth: button.implicitWidth + (meter.visible ? meter.width + 2 : 0)
     implicitHeight: root.vertical ? button.implicitHeight : root.barSize
 
+    property bool clickFlash: false
+    Timer {
+        id: clickFlashTimer
+        interval: 160
+        repeat: false
+        onTriggered: root.clickFlash = false
+    }
+
     WidgetButton {
         id: button
         anchors.left: parent.left
@@ -126,11 +140,13 @@ BarWidget {
         anchors.bottom: parent.bottom
         bar: root.bar
         tooltipText: root.tooltipText()
-        dimmed: !root.isPlaying && !root.hasTrack
-        foreground: root.isPlaying ? Commons.Color.accent : Commons.Color.foreground
+        dimmed: !root.isPlaying && !root.hasTrack && !root.clickFlash
+        foreground: root.clickFlash ? Commons.Color.urgent : (root.isPlaying ? Commons.Color.accent : Commons.Color.foreground)
         fontSize: Style.font.body
         horizontalMargin: 6
         verticalPadding: 2
+        scale: root.clickFlash ? 0.96 : 1.0
+        Behavior on scale { NumberAnimation { duration: 100 } }
 
         text: {
             var icon = root.isPlaying ? "󰀥" : (root.hasTrack ? "󰏤" : "󰎆")
@@ -140,6 +156,8 @@ BarWidget {
         }
 
         onPressed: function(mouseButton) {
+            root.clickFlash = true
+            clickFlashTimer.restart()
             if (mouseButton === Qt.MiddleButton) {
                 if (root.service) root.service.togglePlayPause()
                 return

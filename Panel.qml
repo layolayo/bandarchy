@@ -9,11 +9,10 @@ import qs.Ui
 
 // Panel.qml — Bandarchy Omarchy Shell Overlay Panel
 // Provides:
-// 1. Unified Bandcamp Purchased Collection + Local Library browser & search
+// 1. Unified Bandcamp Purchased Collection + Local Library browser, search, and expandable Album Info Breakdown
 // 2. Intelligent Playlists (seeded from last track played) + Custom Playlists CRUD
-// 3. Psychedelic Audio-Reactive Visualiser (Omarchy TTE character matrix +
-//    "Use Album Art" omarchy-transcode-ascii Braille/Block option + full-screen)
-// 4. Bandcamp Sync, ZIP importer, download manager, and mpv transport deck
+// 3. 4-Stage Mode Deck (Off, Album Art, Turntable, 3-Layer Psychedelic Visualiser) + full-screen Wayland overlay
+// 4. Bandcamp Account Log In / Log Out, Collection Sync, ZIP importer, live download progress footer, and mpv transport deck
 
 Item {
     id: root
@@ -38,8 +37,8 @@ Item {
                 : null))
 
     readonly property var geometryPlaceholder: panelFrame
-    property real contentPreferredWidth: activeTab === 2 ? 860 : 720
-    property real contentPreferredHeight: activeTab === 2 ? 620 : 600
+    property real contentPreferredWidth: activeTab === 2 ? 900 : 760
+    property real contentPreferredHeight: activeTab === 2 ? 640 : 620
     readonly property bool allowAttach: true
 
     // Omarchy theme colours
@@ -51,7 +50,7 @@ Item {
     readonly property color colBorder: Qt.rgba(colFg.r, colFg.g, colFg.b, 0.14)
     readonly property color colMuted: Qt.rgba(colFg.r, colFg.g, colFg.b, 0.62)
 
-    property int activeTab: 0 // 0: Library, 1: Playlists & Radio, 2: Visualiser, 3: Settings
+    property int activeTab: 0 // 0: Library, 1: Playlists & Radio, 2: Stage & Visualiser, 3: Account & Sync
     property string selectedAlbumId: ""
     property string selectedPlaylistId: ""
     property string targetPlaylistForAdd: ""
@@ -61,6 +60,149 @@ Item {
     property int focusedPlaylistIndex: 0
     property int focusedPlaylistTrackIndex: -1
     property int playlistPaneFocus: 0
+
+    // Reusable tactile button with immediate hover/click flash & scale response
+    component ActionPill: Rectangle {
+        id: pill
+        property string text: ""
+        property bool active: false
+        property bool primary: false
+        property bool danger: false
+        property int fontSize: 10
+        property int horizontalPad: 11
+        property int pillHeight: 26
+        signal clicked()
+
+        property real flashOpacity: 0.0
+        NumberAnimation on flashOpacity {
+            id: pillFlashAnim
+            from: 0.45
+            to: 0.0
+            duration: 240
+            running: false
+        }
+
+        Layout.preferredHeight: pillHeight
+        Layout.preferredWidth: pillLabel.implicitWidth + horizontalPad * 2
+        implicitHeight: pillHeight
+        implicitWidth: pillLabel.implicitWidth + horizontalPad * 2
+        radius: 5
+        scale: pillMouse.pressed ? 0.95 : (pillMouse.containsMouse ? 1.02 : 1.0)
+        Behavior on scale { NumberAnimation { duration: 85; easing.type: Easing.OutQuad } }
+
+        color: {
+            if (pill.primary) {
+                return pillMouse.pressed ? Qt.darker(root.colAccent, 1.18)
+                     : (pillMouse.containsMouse ? Qt.lighter(root.colAccent, 1.12) : root.colAccent)
+            }
+            if (pill.danger) {
+                return pillMouse.pressed ? Qt.rgba(root.colUrgent.r, root.colUrgent.g, root.colUrgent.b, 0.36)
+                     : (pillMouse.containsMouse ? Qt.rgba(root.colUrgent.r, root.colUrgent.g, root.colUrgent.b, 0.25)
+                     : (pill.active ? Qt.rgba(root.colUrgent.r, root.colUrgent.g, root.colUrgent.b, 0.20) : root.colSurface))
+            }
+            if (pill.active) {
+                return pillMouse.pressed
+                    ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.34)
+                    : (pillMouse.containsMouse
+                        ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.28)
+                        : Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.20))
+            }
+            return pillMouse.pressed
+                ? Qt.rgba(root.colFg.r, root.colFg.g, root.colFg.b, 0.16)
+                : (pillMouse.containsMouse
+                    ? Qt.rgba(root.colFg.r, root.colFg.g, root.colFg.b, 0.11)
+                    : root.colSurface)
+        }
+        border.width: (pill.active || pill.primary || pill.danger || pillMouse.containsMouse) ? 1.2 : 1
+        border.color: pill.primary
+            ? root.colAccent
+            : (pill.danger
+                ? root.colUrgent
+                : (pill.active || pillMouse.containsMouse ? root.colAccent : root.colBorder))
+
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            color: "#ffffff"
+            opacity: pill.flashOpacity
+        }
+
+        Text {
+            id: pillLabel
+            anchors.centerIn: parent
+            text: pill.text
+            textFormat: Text.PlainText
+            font.family: "JetBrainsMono Nerd Font"
+            font.pixelSize: pill.fontSize
+            font.bold: pill.primary || pill.active || pill.danger
+            color: pill.primary
+                ? "#07090e"
+                : (pill.danger
+                    ? root.colUrgent
+                    : (pill.active ? root.colAccent : root.colFg))
+        }
+
+        MouseArea {
+            id: pillMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+                pillFlashAnim.restart()
+                pill.clicked()
+            }
+        }
+    }
+
+    // Visible, interactive vertical scrollbar for ListViews
+    component ListScroller: Rectangle {
+        id: scroller
+        property Flickable flickable: null
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.margins: 2
+        width: 7
+        radius: 3.5
+        z: 20
+        visible: Boolean(flickable && flickable.contentHeight > flickable.height + 4)
+        color: Qt.rgba(root.colFg.r, root.colFg.g, root.colFg.b, scrollerMouse.containsMouse || scrollerMouse.pressed ? 0.16 : 0.08)
+
+        Rectangle {
+            id: thumb
+            width: parent.width
+            radius: parent.radius
+            readonly property real ratio: scroller.flickable
+                ? Math.min(1.0, Math.max(0.08, scroller.flickable.height / Math.max(1, scroller.flickable.contentHeight)))
+                : 1.0
+            height: Math.max(24, parent.height * ratio)
+            y: {
+                if (!scroller.flickable) return 0
+                var maxScroll = Math.max(1, scroller.flickable.contentHeight - scroller.flickable.height)
+                var availTrack = Math.max(0, scroller.height - height)
+                return Math.max(0, Math.min(availTrack, (scroller.flickable.contentY / maxScroll) * availTrack))
+            }
+            color: (scrollerMouse.pressed || scrollerMouse.containsMouse)
+                ? root.colAccent
+                : Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.58)
+        }
+
+        MouseArea {
+            id: scrollerMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            function scrollToY(mouseY) {
+                if (!scroller.flickable) return
+                var maxScroll = Math.max(0, scroller.flickable.contentHeight - scroller.flickable.height)
+                var availTrack = Math.max(1, scroller.height - thumb.height)
+                var norm = Math.max(0, Math.min(1, (mouseY - thumb.height * 0.5) / availTrack))
+                scroller.flickable.contentY = norm * maxScroll
+            }
+            onPressed: mouse => scrollToY(mouse.y)
+            onPositionChanged: mouse => { if (pressed) scrollToY(mouse.y) }
+        }
+    }
 
     function toggleAlbumExpand(albumId, albumIdx) {
         if (albumIdx !== undefined && albumIdx >= 0) {
@@ -77,7 +219,7 @@ Item {
     }
 
     function handleKeyNavigation(event) {
-        if (searchInput.activeFocus || newPlaylistInput.activeFocus || userInput.activeFocus) {
+        if (searchInput.activeFocus || newPlaylistInput.activeFocus || userInput.activeFocus || cookieInput.activeFocus) {
             if (event.key === Qt.Key_Escape || event.key === Qt.Key_Down || event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                 if (searchInput.activeFocus && (event.key === Qt.Key_Down || event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
                     root.focusedAlbumIndex = 0
@@ -151,7 +293,7 @@ Item {
             else if (event.key === Qt.Key_X) { panelVisualiser.autoCycle = !panelVisualiser.autoCycle; event.accepted = true }
             else if (event.key === Qt.Key_A) { if (root.service) root.service.toggleUseAlbumArt(); event.accepted = true }
             else if (event.key === Qt.Key_B) { if (root.service) root.service.toggleAsciiMode(); event.accepted = true }
-            else if (event.key === Qt.Key_T) { if (root.service) root.service.launchTtfxScreensaver(panelVisualiser.currentTtfxEffect()); event.accepted = true }
+            else if (event.key === Qt.Key_T) { panelVisualiser.toggleInCanvasTte(); event.accepted = true }
             else if (event.key === Qt.Key_H) { panelVisualiser.showHud = !panelVisualiser.showHud; event.accepted = true }
             else if (event.key === Qt.Key_F || event.key === Qt.Key_V) {
                 if (root.service) root.service.fullscreenVisualiserOpen = !root.service.fullscreenVisualiserOpen
@@ -408,7 +550,7 @@ Item {
         return m + ":" + (r < 10 ? "0" + r : r)
     }
 
-    // Full-screen Wayland Overlay Window for the Psychedelic Visualiser
+    // Full-screen Wayland Overlay Window for the 4-Stage / 3-Layer Visualiser
     Variants {
         model: (root.service && root.service.fullscreenVisualiserOpen) ? Quickshell.screens : []
 
@@ -444,6 +586,8 @@ Item {
                 position: root.service ? root.service.position : 0.0
                 duration: root.service ? root.service.duration : 0.0
                 asciiLines: root.service ? root.service.asciiLines : []
+                bannerLines: root.service ? root.service.bannerLines : []
+                artLines: root.service ? root.service.artLines : []
                 ttfxFrames: root.service ? root.service.ttfxFrames : []
                 useAlbumArt: root.service ? root.service.useAlbumArt : false
                 asciiMode: root.service ? root.service.asciiMode : "braille"
@@ -462,6 +606,7 @@ Item {
                 onRequestPlayPause: if (root.service) root.service.togglePlayPause()
                 onRequestNext: if (root.service) root.service.nextTrack()
                 onRequestPrev: if (root.service) root.service.prevTrack()
+                onRequestSeek: sec => { if (root.service) root.service.seekTo(sec) }
                 onRequestToggleUseAlbumArt: if (root.service) root.service.toggleUseAlbumArt()
                 onRequestToggleAsciiMode: if (root.service) root.service.toggleAsciiMode()
                 onRequestLaunchTtfxScreensaver: effectName => {
@@ -469,6 +614,9 @@ Item {
                 }
                 onRequestSelectTtfxEffect: effectName => {
                     if (root.service) root.service.setTtfxEffect(effectName)
+                }
+                onRequestActionFeedback: msg => {
+                    if (root.service) root.service.notifyAction(msg)
                 }
             }
         }
@@ -479,7 +627,7 @@ Item {
         title: "Bandarchy — Bandcamp & Local Lossless Player"
         implicitWidth: root.contentPreferredWidth
         implicitHeight: root.contentPreferredHeight
-        minimumSize: Qt.size(680, 520)
+        minimumSize: Qt.size(700, 540)
         color: root.colBg
         visible: root.opened || root.standaloneMode
 
@@ -496,274 +644,263 @@ Item {
             }
         }
 
-    Rectangle {
-        id: panelFrame
-        anchors.fill: parent
-        focus: true
-        radius: root.standaloneMode ? 0 : Commons.Style.cornerRadius
-        color: root.colBg
-        border.width: root.standaloneMode ? 0 : 1
-        border.color: root.colBorder
-        clip: true
-
-        Keys.onPressed: event => {
-            root.handleKeyNavigation(event)
-            if (!event.accepted && event.key === Qt.Key_Escape) {
-                if (root.shell && typeof root.shell.hide === "function") {
-                    root.shell.hide("io.github.layolayo.bandarchy")
-                } else {
-                    root.close()
-                }
-                event.accepted = true
-            }
-        }
-
-        ColumnLayout {
+        Rectangle {
+            id: panelFrame
             anchors.fill: parent
-            anchors.margins: 14
-            spacing: 10
+            focus: true
+            radius: root.standaloneMode ? 0 : Commons.Style.cornerRadius
+            color: root.colBg
+            border.width: root.standaloneMode ? 0 : 1
+            border.color: root.colBorder
+            clip: true
 
-            // ---------------------------------------------------------------
-            // 1. Header & Navigation Tabs
-            // ---------------------------------------------------------------
-            RowLayout {
-                Layout.fillWidth: true
+            Keys.onPressed: event => {
+                root.handleKeyNavigation(event)
+                if (!event.accepted && event.key === Qt.Key_Escape) {
+                    if (root.shell && typeof root.shell.hide === "function") {
+                        root.shell.hide("io.github.layolayo.bandarchy")
+                    } else {
+                        root.close()
+                    }
+                    event.accepted = true
+                }
+            }
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 12
                 spacing: 8
 
-                Rectangle {
-                    width: 28; height: 28; radius: 6
-                    color: Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.18)
-                    border.width: 1
-                    border.color: root.colAccent
-                    Text {
-                        anchors.centerIn: parent
-                        text: "󰀥"
-                        textFormat: Text.PlainText
-                        font.family: "JetBrainsMono Nerd Font"
-                        font.pixelSize: 15
-                        color: root.colAccent
-                    }
-                }
+                // ---------------------------------------------------------------
+                // 1. Header, Account Pill, Activity Toast & Navigation Tabs
+                // ---------------------------------------------------------------
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
 
-                ColumnLayout {
-                    spacing: 0
-                    Text {
-                        text: "BANDARCHY"
-                        textFormat: Text.PlainText
-                        font.family: "JetBrainsMono Nerd Font"
-                        font.pixelSize: 13
-                        font.bold: true
-                        color: root.colFg
-                    }
-                    Text {
-                        text: root.service
-                            ? ((root.service.username ? ("@" + root.service.username + " · ") : "") +
-                               root.service.purchasedCount + " Purchased · " +
-                               root.service.localCount + " Local (" + root.service.trackCount + " tracks)")
-                            : "Bandcamp & Local Lossless Player"
-                        textFormat: Text.PlainText
-                        font.family: "JetBrainsMono Nerd Font"
-                        font.pixelSize: 10
-                        color: root.colMuted
-                    }
-                }
-
-                Item { Layout.fillWidth: true }
-
-                // Navigation Tab Pills
-                Repeater {
-                    model: [
-                        { idx: 0, label: "󰲸 Library" },
-                        { idx: 1, label: "󰐑 Playlists & Radio" },
-                        { idx: 2, label: "󰍹 Visualiser" },
-                        { idx: 3, label: "󰒓 Sync" }
-                    ]
-
-                    delegate: Rectangle {
-                        required property var modelData
-                        Layout.preferredHeight: 28
-                        Layout.preferredWidth: tabTxt.implicitWidth + 18
-                        radius: 6
-                        color: root.activeTab === modelData.idx
-                            ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.22)
-                            : root.colSurface
+                    Rectangle {
+                        width: 28; height: 28; radius: 6
+                        color: Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.18)
                         border.width: 1
-                        border.color: root.activeTab === modelData.idx ? root.colAccent : root.colBorder
-
+                        border.color: root.colAccent
                         Text {
-                            id: tabTxt
                             anchors.centerIn: parent
-                            text: modelData.label
+                            text: "󰀥"
                             textFormat: Text.PlainText
                             font.family: "JetBrainsMono Nerd Font"
-                            font.pixelSize: 11
-                            font.bold: root.activeTab === modelData.idx
-                            color: root.activeTab === modelData.idx ? root.colAccent : root.colFg
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.activeTab = modelData.idx
+                            font.pixelSize: 15
+                            color: root.colAccent
                         }
                     }
-                }
 
-                // Launch Standalone Window button (when in panel mode)
-                Rectangle {
-                    visible: !root.standaloneMode
-                    Layout.preferredHeight: 28
-                    Layout.preferredWidth: 28
-                    radius: 6
-                    color: root.colSurface
-                    border.width: 1
-                    border.color: root.colBorder
+                    ColumnLayout {
+                        spacing: 1
+                        RowLayout {
+                            spacing: 6
+                            Text {
+                                text: "BANDARCHY"
+                                textFormat: Text.PlainText
+                                font.family: "JetBrainsMono Nerd Font"
+                                font.pixelSize: 13
+                                font.bold: true
+                                color: root.colFg
+                            }
 
-                    Text {
-                        anchors.centerIn: parent
+                            ActionPill {
+                                text: (root.service && root.service.username)
+                                    ? ("󰀄 @" + root.service.username + (root.service.authenticated ? " · Verified" : ""))
+                                    : "󰍂 Log In"
+                                active: Boolean(root.service && root.service.username)
+                                danger: Boolean(!root.service || !root.service.username)
+                                fontSize: 9
+                                horizontalPad: 7
+                                pillHeight: 20
+                                onClicked: {
+                                    root.activeTab = 3
+                                    panelFrame.forceActiveFocus()
+                                }
+                            }
+                        }
+                        Text {
+                            text: root.service
+                                ? (root.service.purchasedCount + " Purchased · " +
+                                   root.service.localCount + " Local (" + root.service.trackCount + " tracks)")
+                                : "Bandcamp & Local Lossless Player"
+                            textFormat: Text.PlainText
+                            font.family: "JetBrainsMono Nerd Font"
+                            font.pixelSize: 10
+                            color: root.colMuted
+                        }
+                    }
+
+                    // Activity Toast Banner
+                    Rectangle {
+                        visible: Boolean(root.service && root.service.activityMessage !== "")
+                        Layout.preferredHeight: 22
+                        Layout.preferredWidth: Math.min(240, panelActivityTxt.implicitWidth + 14)
+                        radius: 4
+                        color: Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.18)
+                        border.width: 1
+                        border.color: root.colAccent
+
+                        Text {
+                            id: panelActivityTxt
+                            anchors.centerIn: parent
+                            width: parent.width - 10
+                            text: "󰄬 " + (root.service ? root.service.activityMessage : "")
+                            textFormat: Text.PlainText
+                            font.family: "JetBrainsMono Nerd Font"
+                            font.pixelSize: 9
+                            font.bold: true
+                            color: root.colAccent
+                            elide: Text.ElideRight
+                        }
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    // Navigation Tab Pills
+                    Repeater {
+                        model: [
+                            { idx: 0, label: "󰲸 Library" },
+                            { idx: 1, label: "󰐑 Playlists" },
+                            { idx: 2, label: "󰍹 Stage & Viz" },
+                            { idx: 3, label: "󰀄 Account & Sync" }
+                        ]
+
+                        delegate: ActionPill {
+                            required property var modelData
+                            text: modelData.label
+                            active: root.activeTab === modelData.idx
+                            fontSize: 10
+                            horizontalPad: 10
+                            pillHeight: 28
+                            onClicked: {
+                                root.activeTab = modelData.idx
+                                panelFrame.forceActiveFocus()
+                            }
+                        }
+                    }
+
+                    // Launch Standalone Window button (when in panel mode)
+                    ActionPill {
+                        visible: !root.standaloneMode
                         text: "󰖯"
-                        textFormat: Text.PlainText
-                        font.family: "JetBrainsMono Nerd Font"
-                        font.pixelSize: 13
-                        color: root.colFg
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
+                        fontSize: 12
+                        horizontalPad: 8
+                        pillHeight: 28
                         onClicked: if (root.service) root.service.launchStandalonePlayer()
                     }
                 }
-            }
 
-            // ---------------------------------------------------------------
-            // 2. Main Tab Content Stack
-            // ---------------------------------------------------------------
-            Item {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
+                // ---------------------------------------------------------------
+                // 2. Main Tab Content Stack
+                // ---------------------------------------------------------------
+                Item {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
 
-                // ===========================================================
-                // TAB 0: LIBRARY & BANDCAMP PURCHASES
-                // ===========================================================
-                ColumnLayout {
-                    anchors.fill: parent
-                    visible: root.activeTab === 0
-                    spacing: 8
-
-                    // Search Bar + Scope Filter Pills
-                    RowLayout {
-                        Layout.fillWidth: true
+                    // ===========================================================
+                    // TAB 0: LIBRARY & BANDCAMP PURCHASES
+                    // ===========================================================
+                    ColumnLayout {
+                        anchors.fill: parent
+                        visible: root.activeTab === 0
                         spacing: 6
 
-                        Rectangle {
+                        // Search Bar + Scope Filter Pills
+                        RowLayout {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 32
-                            radius: 6
-                            color: root.colSurface
-                            border.width: 1
-                            border.color: searchInput.activeFocus ? root.colAccent : root.colBorder
+                            spacing: 6
 
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 10
-                                anchors.rightMargin: 8
-                                spacing: 6
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 30
+                                radius: 6
+                                color: root.colSurface
+                                border.width: 1
+                                border.color: searchInput.activeFocus ? root.colAccent : root.colBorder
 
-                                Text {
-                                    text: "󰍉"
-                                    textFormat: Text.PlainText
-                                    font.family: "JetBrainsMono Nerd Font"
-                                    font.pixelSize: 13
-                                    color: root.colMuted
-                                }
-
-                                TextInput {
-                                    id: searchInput
-                                    Layout.fillWidth: true
-                                    font.family: "JetBrainsMono Nerd Font"
-                                    font.pixelSize: 12
-                                    color: root.colFg
-                                    clip: true
-                                    selectByMouse: true
-                                    onTextEdited: {
-                                        root.focusedAlbumIndex = 0
-                                        root.focusedTrackIndex = -1
-                                        if (root.service) {
-                                            root.service.loadCollection(root.service.activeScope, text)
-                                        }
-                                    }
-                                    Keys.onPressed: event => root.handleKeyNavigation(event)
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 10
+                                    anchors.rightMargin: 8
+                                    spacing: 6
 
                                     Text {
-                                        anchors.fill: parent
-                                        verticalAlignment: Text.AlignVCenter
-                                        text: "Search Bandcamp purchases, artists, albums, or local tracks… (/)"
+                                        text: "󰍉"
                                         textFormat: Text.PlainText
                                         font.family: "JetBrainsMono Nerd Font"
-                                        font.pixelSize: 11
+                                        font.pixelSize: 13
                                         color: root.colMuted
-                                        visible: !searchInput.text && !searchInput.activeFocus
                                     }
-                                }
 
-                                Text {
-                                    visible: searchInput.text.length > 0
-                                    text: "󰅖"
-                                    textFormat: Text.PlainText
-                                    font.family: "JetBrainsMono Nerd Font"
-                                    font.pixelSize: 12
-                                    color: root.colMuted
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            searchInput.text = ""
+                                    TextInput {
+                                        id: searchInput
+                                        Layout.fillWidth: true
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 11
+                                        color: root.colFg
+                                        clip: true
+                                        selectByMouse: true
+                                        onTextEdited: {
                                             root.focusedAlbumIndex = 0
                                             root.focusedTrackIndex = -1
-                                            if (root.service) root.service.loadCollection(root.service.activeScope, "")
-                                            panelFrame.forceActiveFocus()
+                                            if (root.service) {
+                                                root.service.loadCollection(root.service.activeScope, text)
+                                            }
+                                        }
+                                        Keys.onPressed: event => root.handleKeyNavigation(event)
+
+                                        Text {
+                                            anchors.fill: parent
+                                            verticalAlignment: Text.AlignVCenter
+                                            text: "Search Bandcamp purchases, artists, albums, or local tracks… (/)"
+                                            textFormat: Text.PlainText
+                                            font.family: "JetBrainsMono Nerd Font"
+                                            font.pixelSize: 10
+                                            color: root.colMuted
+                                            visible: !searchInput.text && !searchInput.activeFocus
+                                        }
+                                    }
+
+                                    Text {
+                                        visible: searchInput.text.length > 0
+                                        text: "󰅖"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 12
+                                        color: root.colMuted
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                searchInput.text = ""
+                                                root.focusedAlbumIndex = 0
+                                                root.focusedTrackIndex = -1
+                                                if (root.service) root.service.loadCollection(root.service.activeScope, "")
+                                                panelFrame.forceActiveFocus()
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
 
-                        // Scope filter buttons: All, Purchased, Local, Cloud
-                        Repeater {
-                            model: [
-                                { scope: "all", label: "All" },
-                                { scope: "purchased", label: "Purchased" },
-                                { scope: "local", label: "Local" },
-                                { scope: "cloud", label: "Cloud" }
-                            ]
+                            Repeater {
+                                model: [
+                                    { scope: "all", label: "All" },
+                                    { scope: "purchased", label: "Purchased" },
+                                    { scope: "local", label: "Local" },
+                                    { scope: "cloud", label: "Stream" }
+                                ]
 
-                            delegate: Rectangle {
-                                required property var modelData
-                                property bool isCurrent: root.service && root.service.activeScope === modelData.scope
-                                Layout.preferredHeight: 32
-                                Layout.preferredWidth: scopeLbl.implicitWidth + 16
-                                radius: 6
-                                color: isCurrent
-                                    ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.22)
-                                    : root.colSurface
-                                border.width: 1
-                                border.color: isCurrent ? root.colAccent : root.colBorder
-
-                                Text {
-                                    id: scopeLbl
-                                    anchors.centerIn: parent
+                                delegate: ActionPill {
+                                    required property var modelData
                                     text: modelData.label
-                                    textFormat: Text.PlainText
-                                    font.family: "JetBrainsMono Nerd Font"
-                                    font.pixelSize: 11
-                                    font.bold: parent.isCurrent
-                                    color: parent.isCurrent ? root.colAccent : root.colFg
-                                }
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
+                                    active: Boolean(root.service && root.service.activeScope === modelData.scope)
+                                    fontSize: 10
+                                    horizontalPad: 9
+                                    pillHeight: 30
                                     onClicked: {
                                         root.focusedAlbumIndex = 0
                                         root.focusedTrackIndex = -1
@@ -774,627 +911,654 @@ Item {
                                     }
                                 }
                             }
-                        }
 
-                        // Shuffle Play Scope button
-                        Rectangle {
-                            Layout.preferredHeight: 32
-                            Layout.preferredWidth: shufScopeTxt.implicitWidth + 16
-                            radius: 6
-                            color: Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.16)
-                            border.width: 1
-                            border.color: root.colAccent
-
-                            Text {
-                                id: shufScopeTxt
-                                anchors.centerIn: parent
+                            ActionPill {
                                 text: "󰒟 Shuffle"
-                                textFormat: Text.PlainText
-                                font.family: "JetBrainsMono Nerd Font"
-                                font.pixelSize: 11
-                                font.bold: true
-                                color: root.colAccent
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
+                                active: true
+                                fontSize: 10
+                                horizontalPad: 9
+                                pillHeight: 30
                                 onClicked: {
                                     if (root.service) {
                                         var sc = root.service.activeScope === "cloud" ? "purchased" : root.service.activeScope
                                         root.service.playScope(sc, true)
                                     }
+                                    panelFrame.forceActiveFocus()
                                 }
                             }
                         }
-                    }
 
-                    // Keyboard Navigation Hint Bar
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
+                        // Keyboard Navigation Hint Bar
                         Text {
                             Layout.fillWidth: true
-                            text: "󰌌 Keys: ↑↓/jk Navigate · Enter/→ Open Tracks & Play · ←/Esc Collapse · p Play Album · a/+ +Playlist · / Search · 1-4/Tab Switch"
+                            text: "󰌌 Keys: ↑↓/jk Navigate · Enter/→ Expand Tracks & Info · ←/Esc Collapse · p Play Album · a/+ +Playlist · / Search"
                             textFormat: Text.PlainText
                             font.family: "JetBrainsMono Nerd Font"
                             font.pixelSize: 9
                             color: root.colMuted
                             elide: Text.ElideRight
                         }
-                    }
 
-                    // Album List View
-                    ListView {
-                        id: albumList
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        clip: true
-                        spacing: 6
-                        model: root.service ? root.service.albums : []
-                        onModelChanged: {
-                            Qt.callLater(function() {
-                                if (root.focusedAlbumIndex >= 0 && albumList.count > root.focusedAlbumIndex) {
-                                    albumList.positionViewAtIndex(root.focusedAlbumIndex, ListView.Contain)
-                                }
-                            })
-                        }
+                        // Album List View + Interactive Vertical Scrollbar
+                        Item {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
 
-                        delegate: Rectangle {
-                            id: albumCard
-                            required property var modelData
-                            required property int index
-                            readonly property bool expanded: root.selectedAlbumId === modelData.id
-                            readonly property bool isCurrentAlbum: root.service && root.service.albumId === modelData.id
-                            readonly property bool isKeyboardFocused: root.focusedAlbumIndex === index
-                            readonly property var tracksList: modelData.tracks || []
-
-                            width: albumList.width
-                            height: expanded ? (66 + Math.min(Math.max(tracksList.length, 1), 8) * 28 + 14) : 64
-                            radius: 8
-                            color: isCurrentAlbum
-                                ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.14)
-                                : (isKeyboardFocused
-                                    ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.08)
-                                    : root.colSurface)
-                            border.width: (isCurrentAlbum || isKeyboardFocused || expanded) ? 1.5 : 1
-                            border.color: (isCurrentAlbum || isKeyboardFocused || expanded) ? root.colAccent : root.colBorder
-
-                            ColumnLayout {
+                            ListView {
+                                id: albumList
                                 anchors.fill: parent
-                                anchors.margins: 8
+                                clip: true
                                 spacing: 6
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 48
-                                    spacing: 10
-
-                                    // Cover Art thumbnail
-                                    Rectangle {
-                                        Layout.preferredWidth: 46
-                                        Layout.preferredHeight: 46
-                                        radius: 6
-                                        color: "#121620"
-                                        border.width: 1
-                                        border.color: root.colBorder
-                                        clip: true
-
-                                        Image {
-                                            id: artThumb
-                                            anchors.fill: parent
-                                            source: modelData.artPath ? ("file://" + modelData.artPath) : ""
-                                            fillMode: Image.PreserveAspectCrop
-                                            asynchronous: true
-                                            visible: status === Image.Ready
+                                boundsBehavior: Flickable.StopAtBounds
+                                model: root.service ? root.service.albums : []
+                                onModelChanged: {
+                                    Qt.callLater(function() {
+                                        if (root.focusedAlbumIndex >= 0 && albumList.count > root.focusedAlbumIndex) {
+                                            albumList.positionViewAtIndex(root.focusedAlbumIndex, ListView.Contain)
                                         }
+                                    })
+                                }
 
-                                        Text {
-                                            anchors.centerIn: parent
-                                            visible: artThumb.status !== Image.Ready
-                                            text: "󰀥"
-                                            textFormat: Text.PlainText
-                                            font.family: "JetBrainsMono Nerd Font"
-                                            font.pixelSize: 18
-                                            color: root.colAccent
-                                        }
+                                delegate: Rectangle {
+                                    id: albumCard
+                                    required property var modelData
+                                    required property int index
+                                    readonly property bool expanded: root.selectedAlbumId === modelData.id
+                                    readonly property bool isCurrentAlbum: root.service && root.service.albumId === modelData.id
+                                    readonly property bool isKeyboardFocused: root.focusedAlbumIndex === index
+                                    readonly property var tracksList: modelData.tracks || []
+                                    readonly property bool isAlbumDownloading: Boolean(root.service && root.service.downloading && root.service.downloadingAlbumId === modelData.id)
 
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                root.focusedAlbumIndex = albumCard.index
-                                                if (root.service) root.service.playAlbum(modelData.id, 0, "auto", false)
-                                                panelFrame.forceActiveFocus()
+                                    width: albumList.width - 12
+                                    height: expanded
+                                        ? (66 + panelAlbumInfoBox.implicitHeight + Math.min(Math.max(tracksList.length, 1), 8) * 28 + 24)
+                                        : 62
+                                    radius: 8
+                                    color: isCurrentAlbum
+                                        ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.14)
+                                        : (isKeyboardFocused
+                                            ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.08)
+                                            : root.colSurface)
+                                    border.width: (isCurrentAlbum || isKeyboardFocused || expanded) ? 1.5 : 1
+                                    border.color: (isCurrentAlbum || isKeyboardFocused || expanded) ? root.colAccent : root.colBorder
+
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 8
+                                        spacing: 6
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 46
+                                            spacing: 8
+
+                                            // Cover Art thumbnail
+                                            Rectangle {
+                                                Layout.preferredWidth: 44
+                                                Layout.preferredHeight: 44
+                                                radius: 6
+                                                color: "#121620"
+                                                border.width: 1
+                                                border.color: root.colBorder
+                                                clip: true
+
+                                                Image {
+                                                    id: artThumb
+                                                    anchors.fill: parent
+                                                    source: modelData.artPath ? ("file://" + modelData.artPath) : ""
+                                                    fillMode: Image.PreserveAspectCrop
+                                                    asynchronous: true
+                                                    visible: status === Image.Ready
+                                                }
+
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    visible: artThumb.status !== Image.Ready
+                                                    text: "󰀥"
+                                                    textFormat: Text.PlainText
+                                                    font.family: "JetBrainsMono Nerd Font"
+                                                    font.pixelSize: 18
+                                                    color: root.colAccent
+                                                }
+
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        root.focusedAlbumIndex = albumCard.index
+                                                        if (root.service) root.service.playAlbum(modelData.id, 0, "auto", false)
+                                                        panelFrame.forceActiveFocus()
+                                                    }
+                                                }
+                                            }
+
+                                            // Artist, Album Title & Non-Truncating Pill Badges
+                                            Item {
+                                                Layout.fillWidth: true
+                                                Layout.preferredHeight: 44
+
+                                                ColumnLayout {
+                                                    anchors.fill: parent
+                                                    spacing: 3
+
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 6
+
+                                                        Text {
+                                                            Layout.fillWidth: true
+                                                            text: (modelData.title || "Untitled Album")
+                                                            textFormat: Text.PlainText
+                                                            font.family: "JetBrainsMono Nerd Font"
+                                                            font.pixelSize: 12
+                                                            font.bold: true
+                                                            color: albumCard.isKeyboardFocused ? root.colAccent : root.colFg
+                                                            elide: Text.ElideRight
+                                                        }
+
+                                                        // PURCHASED badge
+                                                        Rectangle {
+                                                            visible: Boolean(modelData.purchased)
+                                                            Layout.preferredHeight: 18
+                                                            Layout.preferredWidth: purTxt.implicitWidth + 10
+                                                            radius: 4
+                                                            color: Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.20)
+                                                            border.width: 1
+                                                            border.color: root.colAccent
+                                                            Text {
+                                                                id: purTxt
+                                                                anchors.centerIn: parent
+                                                                text: "PURCHASED"
+                                                                textFormat: Text.PlainText
+                                                                font.family: "JetBrainsMono Nerd Font"
+                                                                font.pixelSize: 9
+                                                                font.bold: true
+                                                                color: root.colAccent
+                                                            }
+                                                        }
+
+                                                        // LOCAL vs STREAM badge
+                                                        Rectangle {
+                                                            Layout.preferredHeight: 18
+                                                            Layout.preferredWidth: locTxt.implicitWidth + 10
+                                                            radius: 4
+                                                            color: modelData.isLocal
+                                                                ? Qt.rgba(0.2, 0.85, 0.6, 0.16)
+                                                                : Qt.rgba(root.colUrgent.r, root.colUrgent.g, root.colUrgent.b, 0.16)
+                                                            border.width: 1
+                                                            border.color: modelData.isLocal ? root.colAccent : root.colUrgent
+                                                            Text {
+                                                                id: locTxt
+                                                                anchors.centerIn: parent
+                                                                text: modelData.isLocal ? "LOCAL" : "STREAM"
+                                                                textFormat: Text.PlainText
+                                                                font.family: "JetBrainsMono Nerd Font"
+                                                                font.pixelSize: 9
+                                                                font.bold: true
+                                                                color: modelData.isLocal ? root.colAccent : root.colUrgent
+                                                            }
+                                                        }
+                                                    }
+
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 6
+
+                                                        Text {
+                                                            Layout.fillWidth: true
+                                                            text: modelData.artist || "Unknown Artist"
+                                                            textFormat: Text.PlainText
+                                                            font.family: "JetBrainsMono Nerd Font"
+                                                            font.pixelSize: 11
+                                                            color: root.colMuted
+                                                            elide: Text.ElideRight
+                                                        }
+
+                                                        Text {
+                                                            text: (modelData.numTracks || tracksList.length || 0) + " trk" +
+                                                                  (modelData.audioFormat ? (" · " + modelData.audioFormat) : "")
+                                                            textFormat: Text.PlainText
+                                                            font.family: "JetBrainsMono Nerd Font"
+                                                            font.pixelSize: 9
+                                                            color: root.colAccent
+                                                        }
+                                                    }
+                                                }
+
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        root.toggleAlbumExpand(modelData.id, albumCard.index)
+                                                        panelFrame.forceActiveFocus()
+                                                    }
+                                                }
+                                            }
+
+                                            // Action buttons: Play/Stream, Download (with live X/Y %), +Playlist, Expand Tracks
+                                            RowLayout {
+                                                spacing: 5
+
+                                                ActionPill {
+                                                    visible: !modelData.isLocal && Boolean(modelData.purchased || modelData.tralbumId || modelData.url)
+                                                    text: albumCard.isAlbumDownloading
+                                                        ? ("󰇚 " + (root.service.downloadTrackTotal > 0
+                                                            ? (root.service.downloadTrackIndex + "/" + root.service.downloadTrackTotal + " (" + root.service.downloadPercent + "%)")
+                                                            : (root.service.downloadPercent + "%")))
+                                                        : "󰇚 Download"
+                                                    active: albumCard.isAlbumDownloading
+                                                    danger: !albumCard.isAlbumDownloading
+                                                    fontSize: 10
+                                                    horizontalPad: 8
+                                                    pillHeight: 28
+                                                    onClicked: {
+                                                        if (root.service) root.service.downloadAlbum(modelData.id, "flac")
+                                                        panelFrame.forceActiveFocus()
+                                                    }
+                                                }
+
+                                                ActionPill {
+                                                    text: modelData.isLocal ? "󰐊 Play" : "󰐊 Stream"
+                                                    primary: true
+                                                    fontSize: 10
+                                                    horizontalPad: 9
+                                                    pillHeight: 28
+                                                    onClicked: {
+                                                        root.focusedAlbumIndex = albumCard.index
+                                                        if (root.service) root.service.playAlbum(modelData.id, 0, "auto", false)
+                                                        panelFrame.forceActiveFocus()
+                                                    }
+                                                }
+
+                                                ActionPill {
+                                                    text: "󰐑"
+                                                    fontSize: 12
+                                                    horizontalPad: 8
+                                                    pillHeight: 28
+                                                    onClicked: {
+                                                        if (!root.service) return
+                                                        root.service.addAlbumOrCreatePlaylist(
+                                                            modelData.id,
+                                                            modelData.title,
+                                                            modelData.artist,
+                                                            root.selectedPlaylistId
+                                                        )
+                                                        panelFrame.forceActiveFocus()
+                                                    }
+                                                }
+
+                                                ActionPill {
+                                                    text: (albumCard.expanded ? "󰅃 " : "󰅀 ") + "Tracks"
+                                                    active: albumCard.expanded
+                                                    fontSize: 10
+                                                    horizontalPad: 8
+                                                    pillHeight: 28
+                                                    onClicked: {
+                                                        root.toggleAlbumExpand(modelData.id, albumCard.index)
+                                                        panelFrame.forceActiveFocus()
+                                                    }
+                                                }
                                             }
                                         }
-                                    }
 
-                                    // Artist, Album Title & Badges (click to expand/collapse tracks)
-                                    Item {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 44
+                                        // =======================================================
+                                        // EXPANDED ALBUM INFO BREAKDOWN BOX (UN-TRUNCATED)
+                                        // =======================================================
+                                        Rectangle {
+                                            id: panelAlbumInfoBox
+                                            visible: albumCard.expanded
+                                            Layout.fillWidth: true
+                                            implicitHeight: panelAlbumInfoCol.implicitHeight + 14
+                                            radius: 6
+                                            color: Qt.rgba(root.colFg.r, root.colFg.g, root.colFg.b, 0.04)
+                                            border.width: 1
+                                            border.color: Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.35)
 
-                                        ColumnLayout {
-                                            anchors.fill: parent
-                                            spacing: 3
+                                            ColumnLayout {
+                                                id: panelAlbumInfoCol
+                                                anchors.fill: parent
+                                                anchors.margins: 7
+                                                spacing: 4
 
-                                            RowLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 6
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 6
+
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: "󰋼 ALBUM BREAKDOWN · " + (modelData.title || "Untitled") + " — " + (modelData.artist || "Unknown Artist")
+                                                        textFormat: Text.PlainText
+                                                        font.family: "JetBrainsMono Nerd Font"
+                                                        font.pixelSize: 10
+                                                        font.bold: true
+                                                        color: root.colAccent
+                                                        wrapMode: Text.WordWrap
+                                                    }
+
+                                                    ActionPill {
+                                                        visible: Boolean(modelData.url)
+                                                        text: "󰖟 Bandcamp Page"
+                                                        fontSize: 9
+                                                        horizontalPad: 7
+                                                        pillHeight: 20
+                                                        onClicked: if (root.service) root.service.openExternal(modelData.url, "Opened Bandcamp page in browser")
+                                                    }
+
+                                                    ActionPill {
+                                                        visible: Boolean(modelData.localPath)
+                                                        text: "󰉋 Local Folder"
+                                                        fontSize: 9
+                                                        horizontalPad: 7
+                                                        pillHeight: 20
+                                                        onClicked: if (root.service) root.service.openExternal(modelData.localPath, "Opened local album folder")
+                                                    }
+                                                }
 
                                                 Text {
                                                     Layout.fillWidth: true
-                                                    text: (modelData.title || "Untitled Album")
+                                                    text: "• Collection Status: " +
+                                                          (modelData.purchased
+                                                            ? ("PURCHASED — Owned in Bandcamp Collection" + (root.service && root.service.username ? (" (@" + root.service.username + ")") : ""))
+                                                            : "LOCAL LIBRARY — Imported from local disk") +
+                                                          "\n• Playback & Format: " +
+                                                          (modelData.isLocal
+                                                            ? ("LOCAL DISK — " + (modelData.audioFormat || "Local Audio") + " · " + (modelData.numTracks || tracksList.length || 0) + " tracks" + (modelData.totalDuration > 0 ? (" · Total " + root.formatDuration(modelData.totalDuration)) : ""))
+                                                            : ("BANDCAMP CLOUD STREAM — Direct bcbits stream · " + (modelData.numTracks || tracksList.length || 0) + " tracks (Click 󰇚 Download to save lossless copy locally)")) +
+                                                          (modelData.localPath ? ("\n• Local Path: " + modelData.localPath) : "") +
+                                                          (modelData.url ? ("\n• Bandcamp URL: " + modelData.url) : "")
                                                     textFormat: Text.PlainText
                                                     font.family: "JetBrainsMono Nerd Font"
-                                                    font.pixelSize: 12
-                                                    font.bold: true
-                                                    color: albumCard.isKeyboardFocused ? root.colAccent : root.colFg
-                                                    elide: Text.ElideRight
-                                                }
-
-                                                // PURCHASED badge
-                                                Rectangle {
-                                                    visible: Boolean(modelData.purchased)
-                                                    Layout.preferredHeight: 18
-                                                    Layout.preferredWidth: purTxt.implicitWidth + 10
-                                                    radius: 4
-                                                    color: Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.20)
-                                                    border.width: 1
-                                                    border.color: root.colAccent
-                                                    Text {
-                                                        id: purTxt
-                                                        anchors.centerIn: parent
-                                                        text: "PURCHASED"
-                                                        textFormat: Text.PlainText
-                                                        font.family: "JetBrainsMono Nerd Font"
-                                                        font.pixelSize: 9
-                                                        font.bold: true
-                                                        color: root.colAccent
-                                                    }
-                                                }
-
-                                                // LOCAL vs CLOUD badge
-                                                Rectangle {
-                                                    Layout.preferredHeight: 18
-                                                    Layout.preferredWidth: locTxt.implicitWidth + 10
-                                                    radius: 4
-                                                    color: modelData.isLocal
-                                                        ? Qt.rgba(0.2, 0.85, 0.6, 0.16)
-                                                        : Qt.rgba(root.colUrgent.r, root.colUrgent.g, root.colUrgent.b, 0.16)
-                                                    border.width: 1
-                                                    border.color: modelData.isLocal ? root.colAccent : root.colUrgent
-                                                    Text {
-                                                        id: locTxt
-                                                        anchors.centerIn: parent
-                                                        text: modelData.isLocal ? "LOCAL" : "STREAM"
-                                                        textFormat: Text.PlainText
-                                                        font.family: "JetBrainsMono Nerd Font"
-                                                        font.pixelSize: 9
-                                                        color: modelData.isLocal ? root.colAccent : root.colUrgent
-                                                    }
-                                                }
-                                            }
-
-                                            Text {
-                                                Layout.fillWidth: true
-                                                text: (modelData.artist || "Unknown Artist") +
-                                                      " · " + (modelData.numTracks || tracksList.length || 0) + " tracks · Click or Enter to view tracks"
-                                                textFormat: Text.PlainText
-                                                font.family: "JetBrainsMono Nerd Font"
-                                                font.pixelSize: 11
-                                                color: root.colMuted
-                                                elide: Text.ElideRight
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                root.toggleAlbumExpand(modelData.id, albumCard.index)
-                                                panelFrame.forceActiveFocus()
-                                            }
-                                        }
-                                    }
-
-                                    // Action buttons: Play, Stream, Download (if cloud), Expand tracks
-                                    RowLayout {
-                                        spacing: 5
-
-                                        // Play Local / Auto
-                                        Rectangle {
-                                            Layout.preferredHeight: 28
-                                            Layout.preferredWidth: playBtnTxt.implicitWidth + 16
-                                            radius: 6
-                                            color: root.colAccent
-
-                                            Text {
-                                                id: playBtnTxt
-                                                anchors.centerIn: parent
-                                                text: modelData.isLocal ? "󰐊 Play" : "󰐊 Stream"
-                                                textFormat: Text.PlainText
-                                                font.family: "JetBrainsMono Nerd Font"
-                                                font.pixelSize: 11
-                                                font.bold: true
-                                                color: "#07090e"
-                                            }
-
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    root.focusedAlbumIndex = albumCard.index
-                                                    if (root.service) root.service.playAlbum(modelData.id, 0, "auto", false)
-                                                    panelFrame.forceActiveFocus()
+                                                    font.pixelSize: 9
+                                                    color: root.colMuted
+                                                    wrapMode: Text.WrapAnywhere
                                                 }
                                             }
                                         }
 
-                                        // Download Purchased Album for Local Playback
-                                        Rectangle {
-                                            visible: Boolean(modelData.purchased && !modelData.isLocal)
-                                            Layout.preferredHeight: 28
-                                            Layout.preferredWidth: dlBtnTxt.implicitWidth + 14
-                                            radius: 6
-                                            color: Qt.rgba(root.colUrgent.r, root.colUrgent.g, root.colUrgent.b, 0.18)
-                                            border.width: 1
-                                            border.color: root.colUrgent
-
-                                            Text {
-                                                id: dlBtnTxt
-                                                anchors.centerIn: parent
-                                                text: "󰇚 Download"
-                                                textFormat: Text.PlainText
-                                                font.family: "JetBrainsMono Nerd Font"
-                                                font.pixelSize: 10
-                                                font.bold: true
-                                                color: root.colUrgent
-                                            }
-
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    if (root.service) root.service.downloadAlbum(modelData.id, "flac")
-                                                    panelFrame.forceActiveFocus()
-                                                }
-                                            }
-                                        }
-
-                                        // Add Album to first custom playlist (or create one)
-                                        Rectangle {
-                                            Layout.preferredHeight: 28
-                                            Layout.preferredWidth: 28
-                                            radius: 6
-                                            color: root.colSurface
-                                            border.width: 1
-                                            border.color: root.colBorder
-
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: "󰐑"
-                                                textFormat: Text.PlainText
-                                                font.family: "JetBrainsMono Nerd Font"
-                                                font.pixelSize: 13
-                                                color: root.colFg
-                                            }
-
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    if (!root.service) return
-                                                    root.service.addAlbumOrCreatePlaylist(
-                                                        modelData.id,
-                                                        modelData.title,
-                                                        modelData.artist,
-                                                        root.selectedPlaylistId
-                                                    )
-                                                    panelFrame.forceActiveFocus()
-                                                }
-                                            }
-                                        }
-
-                                        // Expand Tracks button
-                                        Rectangle {
-                                            Layout.preferredHeight: 28
-                                            Layout.preferredWidth: expTracksTxt.implicitWidth + 14
-                                            radius: 6
-                                            color: albumCard.expanded
-                                                ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.20)
-                                                : root.colSurface
-                                            border.width: 1
-                                            border.color: albumCard.expanded ? root.colAccent : root.colBorder
-
-                                            Text {
-                                                id: expTracksTxt
-                                                anchors.centerIn: parent
-                                                text: (albumCard.expanded ? "󰅃 " : "󰅀 ") + "Tracks"
-                                                textFormat: Text.PlainText
-                                                font.family: "JetBrainsMono Nerd Font"
-                                                font.pixelSize: 10
-                                                font.bold: albumCard.expanded
-                                                color: albumCard.expanded ? root.colAccent : root.colFg
-                                            }
-
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    root.toggleAlbumExpand(modelData.id, albumCard.index)
-                                                    panelFrame.forceActiveFocus()
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Expanded Track List Drawer
-                                ListView {
-                                    id: albumTracksListView
-                                    Layout.fillWidth: true
-                                    Layout.fillHeight: true
-                                    visible: albumCard.expanded
-                                    clip: true
-                                    spacing: 2
-                                    model: albumCard.tracksList
-                                    currentIndex: albumCard.isKeyboardFocused ? root.focusedTrackIndex : -1
-                                    onCurrentIndexChanged: {
-                                        if (currentIndex >= 0 && count > currentIndex) {
-                                            positionViewAtIndex(currentIndex, ListView.Contain)
-                                        }
-                                    }
-
-                                    delegate: Rectangle {
-                                        required property var modelData
-                                        required property int index
-                                        readonly property bool isTrackPlaying: Boolean(root.service && root.service.trackId === modelData.id)
-                                        readonly property bool isTrackFocused: albumCard.isKeyboardFocused && root.focusedTrackIndex === index
-                                        width: ListView.view.width
-                                        height: 26
-                                        radius: 4
-                                        color: isTrackPlaying
-                                            ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.24)
-                                            : (isTrackFocused
-                                                ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.16)
-                                                : Qt.rgba(1, 1, 1, index % 2 === 0 ? 0.03 : 0.0))
-                                        border.width: isTrackFocused ? 1 : 0
-                                        border.color: root.colAccent
-
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 8
-                                            anchors.rightMargin: 8
-                                            spacing: 6
-
-                                            Text {
-                                                text: isTrackPlaying ? "󰐊" : ((index + 1) + ".")
-                                                textFormat: Text.PlainText
-                                                font.family: "JetBrainsMono Nerd Font"
-                                                font.pixelSize: 10
-                                                font.bold: isTrackPlaying || isTrackFocused
-                                                color: (isTrackPlaying || isTrackFocused) ? root.colAccent : root.colMuted
-                                            }
-
-                                            Text {
-                                                Layout.fillWidth: true
-                                                text: modelData.title || ("Track " + (index + 1))
-                                                textFormat: Text.PlainText
-                                                font.family: "JetBrainsMono Nerd Font"
-                                                font.pixelSize: 11
-                                                font.bold: isTrackPlaying || isTrackFocused
-                                                color: (isTrackPlaying || isTrackFocused) ? root.colAccent : root.colFg
-                                                elide: Text.ElideRight
-
-                                                MouseArea {
-                                                    anchors.fill: parent
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: {
-                                                        root.focusedAlbumIndex = albumCard.index
-                                                        root.focusedTrackIndex = index
-                                                        if (root.service) {
-                                                            root.service.playAlbum(albumCard.modelData.id, index, "auto", false)
-                                                        }
-                                                        panelFrame.forceActiveFocus()
-                                                    }
+                                        // Expanded Track List Drawer
+                                        ListView {
+                                            id: albumTracksListView
+                                            Layout.fillWidth: true
+                                            Layout.fillHeight: true
+                                            visible: albumCard.expanded
+                                            clip: true
+                                            spacing: 2
+                                            model: albumCard.tracksList
+                                            currentIndex: albumCard.isKeyboardFocused ? root.focusedTrackIndex : -1
+                                            onCurrentIndexChanged: {
+                                                if (currentIndex >= 0 && count > currentIndex) {
+                                                    positionViewAtIndex(currentIndex, ListView.Contain)
                                                 }
                                             }
 
-                                            // Explicit Play Track Action Button
-                                            Rectangle {
-                                                Layout.preferredHeight: 20
-                                                Layout.preferredWidth: playTrkBtnTxt.implicitWidth + 10
+                                            delegate: Rectangle {
+                                                required property var modelData
+                                                required property int index
+                                                readonly property bool isTrackPlaying: Boolean(root.service && root.service.trackId === modelData.id)
+                                                readonly property bool isTrackFocused: albumCard.isKeyboardFocused && root.focusedTrackIndex === index
+                                                width: ListView.view.width
+                                                height: 26
                                                 radius: 4
                                                 color: isTrackPlaying
-                                                    ? root.colAccent
-                                                    : Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.18)
-                                                border.width: 1
+                                                    ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.24)
+                                                    : (isTrackFocused
+                                                        ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.16)
+                                                        : Qt.rgba(1, 1, 1, index % 2 === 0 ? 0.03 : 0.0))
+                                                border.width: isTrackFocused ? 1 : 0
                                                 border.color: root.colAccent
-                                                Text {
-                                                    id: playTrkBtnTxt
-                                                    anchors.centerIn: parent
-                                                    text: "󰐊 Play"
-                                                    textFormat: Text.PlainText
-                                                    font.family: "JetBrainsMono Nerd Font"
-                                                    font.pixelSize: 9
-                                                    font.bold: true
-                                                    color: isTrackPlaying ? "#07090e" : root.colAccent
-                                                }
-                                                MouseArea {
+
+                                                RowLayout {
                                                     anchors.fill: parent
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: {
-                                                        root.focusedAlbumIndex = albumCard.index
-                                                        root.focusedTrackIndex = index
-                                                        if (root.service) {
-                                                            root.service.playAlbum(albumCard.modelData.id, index, "auto", false)
+                                                    anchors.leftMargin: 8
+                                                    anchors.rightMargin: 8
+                                                    spacing: 6
+
+                                                    Text {
+                                                        text: isTrackPlaying ? "󰐊" : ((index + 1) + ".")
+                                                        textFormat: Text.PlainText
+                                                        font.family: "JetBrainsMono Nerd Font"
+                                                        font.pixelSize: 10
+                                                        font.bold: isTrackPlaying || isTrackFocused
+                                                        color: (isTrackPlaying || isTrackFocused) ? root.colAccent : root.colMuted
+                                                    }
+
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: modelData.title || ("Track " + (index + 1))
+                                                        textFormat: Text.PlainText
+                                                        font.family: "JetBrainsMono Nerd Font"
+                                                        font.pixelSize: 11
+                                                        font.bold: isTrackPlaying || isTrackFocused
+                                                        color: (isTrackPlaying || isTrackFocused) ? root.colAccent : root.colFg
+                                                        elide: Text.ElideRight
+
+                                                        MouseArea {
+                                                            anchors.fill: parent
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: {
+                                                                root.focusedAlbumIndex = albumCard.index
+                                                                root.focusedTrackIndex = index
+                                                                if (root.service) {
+                                                                    root.service.playAlbum(albumCard.modelData.id, index, "auto", false)
+                                                                }
+                                                                panelFrame.forceActiveFocus()
+                                                            }
                                                         }
-                                                        panelFrame.forceActiveFocus()
+                                                    }
+
+                                                    ActionPill {
+                                                        text: "󰐊 Play"
+                                                        primary: isTrackPlaying
+                                                        active: !isTrackPlaying
+                                                        fontSize: 9
+                                                        horizontalPad: 6
+                                                        pillHeight: 20
+                                                        onClicked: {
+                                                            root.focusedAlbumIndex = albumCard.index
+                                                            root.focusedTrackIndex = index
+                                                            if (root.service) {
+                                                                root.service.playAlbum(albumCard.modelData.id, index, "auto", false)
+                                                            }
+                                                            panelFrame.forceActiveFocus()
+                                                        }
+                                                    }
+
+                                                    ActionPill {
+                                                        text: "󰐑 +List"
+                                                        fontSize: 9
+                                                        horizontalPad: 6
+                                                        pillHeight: 20
+                                                        onClicked: {
+                                                            root.focusedAlbumIndex = albumCard.index
+                                                            root.focusedTrackIndex = index
+                                                            if (root.service) {
+                                                                root.service.addTrackOrCreatePlaylist(
+                                                                    modelData.id,
+                                                                    modelData.title,
+                                                                    albumCard.modelData.artist,
+                                                                    root.selectedPlaylistId
+                                                                )
+                                                            }
+                                                            panelFrame.forceActiveFocus()
+                                                        }
+                                                    }
+
+                                                    ActionPill {
+                                                        text: "󰐑 Radio"
+                                                        active: true
+                                                        fontSize: 9
+                                                        horizontalPad: 6
+                                                        pillHeight: 20
+                                                        onClicked: {
+                                                            if (root.service) {
+                                                                root.service.refreshSmartPlaylist("radio", modelData.id)
+                                                                root.activeTab = 1
+                                                            }
+                                                            panelFrame.forceActiveFocus()
+                                                        }
+                                                    }
+
+                                                    Text {
+                                                        text: root.formatDuration(modelData.duration)
+                                                        textFormat: Text.PlainText
+                                                        font.family: "JetBrainsMono Nerd Font"
+                                                        font.pixelSize: 10
+                                                        color: root.colMuted
                                                     }
                                                 }
-                                            }
-
-                                            // Add Track to Playlist Action Button
-                                            Rectangle {
-                                                Layout.preferredHeight: 20
-                                                Layout.preferredWidth: addPlRowTxt.implicitWidth + 10
-                                                radius: 4
-                                                color: Qt.rgba(1, 1, 1, 0.06)
-                                                border.width: 1
-                                                border.color: root.colBorder
-                                                Text {
-                                                    id: addPlRowTxt
-                                                    anchors.centerIn: parent
-                                                    text: "󰐑 +List"
-                                                    textFormat: Text.PlainText
-                                                    font.family: "JetBrainsMono Nerd Font"
-                                                    font.pixelSize: 9
-                                                    color: root.colFg
-                                                }
-                                                MouseArea {
-                                                    anchors.fill: parent
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: {
-                                                        root.focusedAlbumIndex = albumCard.index
-                                                        root.focusedTrackIndex = index
-                                                        if (root.service) {
-                                                            root.service.addTrackOrCreatePlaylist(
-                                                                modelData.id,
-                                                                modelData.title,
-                                                                albumCard.modelData.artist,
-                                                                root.selectedPlaylistId
-                                                            )
-                                                        }
-                                                        panelFrame.forceActiveFocus()
-                                                    }
-                                                }
-                                            }
-
-                                            // Seed Intelligent Radio from this track
-                                            Rectangle {
-                                                Layout.preferredHeight: 20
-                                                Layout.preferredWidth: seedRowTxt.implicitWidth + 10
-                                                radius: 4
-                                                color: Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.14)
-                                                Text {
-                                                    id: seedRowTxt
-                                                    anchors.centerIn: parent
-                                                    text: "󰐑 Radio"
-                                                    textFormat: Text.PlainText
-                                                    font.family: "JetBrainsMono Nerd Font"
-                                                    font.pixelSize: 9
-                                                    color: root.colAccent
-                                                }
-                                                MouseArea {
-                                                    anchors.fill: parent
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: {
-                                                        if (root.service) {
-                                                            root.service.refreshSmartPlaylist("radio", modelData.id)
-                                                            root.activeTab = 1
-                                                        }
-                                                        panelFrame.forceActiveFocus()
-                                                    }
-                                                }
-                                            }
-
-                                            Text {
-                                                text: root.formatDuration(modelData.duration)
-                                                textFormat: Text.PlainText
-                                                font.family: "JetBrainsMono Nerd Font"
-                                                font.pixelSize: 10
-                                                color: root.colMuted
                                             }
                                         }
                                     }
                                 }
                             }
+
+                            ListScroller {
+                                flickable: albumList
+                            }
                         }
-                    }
-                }
 
-                // ===========================================================
-                // TAB 1: INTELLIGENT PLAYLISTS (LAST TRACK PLAYED) & CUSTOM PLAYLISTS
-                // ===========================================================
-                RowLayout {
-                    anchors.fill: parent
-                    visible: root.activeTab === 1
-                    spacing: 12
+                        // =======================================================
+                        // PERSISTENT BOTTOM OF COLLECTION LIST:
+                        // LIVE DOWNLOAD & SYNC PROGRESS FOOTER ("Downloading 4/10 (23%)")
+                        // =======================================================
+                        Rectangle {
+                            id: panelDownloadFooter
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: (root.service && (root.service.downloading || root.service.syncing)) ? 42 : 26
+                            radius: 6
+                            color: (root.service && (root.service.downloading || root.service.syncing))
+                                ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.14)
+                                : root.colSurface
+                            border.width: 1
+                            border.color: (root.service && (root.service.downloading || root.service.syncing))
+                                ? root.colAccent
+                                : root.colBorder
 
-                    // Left Column: Intelligent Playlist Generator (seeded from last track played)
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        radius: 8
-                        color: root.colSurface
-                        border.width: 1
-                        border.color: root.colBorder
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
+                                anchors.topMargin: 3
+                                anchors.bottomMargin: 3
+                                spacing: 2
 
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 10
-                            spacing: 8
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 6
 
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 8
-
-                                Text {
-                                    text: "Auto  INTELLIGENT PLAYLIST"
-                                    textFormat: Text.PlainText
-                                    font.family: "JetBrainsMono Nerd Font"
-                                    font.pixelSize: 12
-                                    font.bold: true
-                                    color: root.colAccent
-                                }
-
-                                Item { Layout.fillWidth: true }
-
-                                Rectangle {
-                                    Layout.preferredHeight: 24
-                                    Layout.preferredWidth: playSmartTxt.implicitWidth + 14
-                                    radius: 5
-                                    color: root.colAccent
                                     Text {
-                                        id: playSmartTxt
-                                        anchors.centerIn: parent
-                                        text: "󰐊 Play Mix"
+                                        Layout.fillWidth: true
+                                        text: {
+                                            if (!root.service) return "Bandarchy Collection"
+                                            if (root.service.downloading || root.service.syncing) {
+                                                return "󰇚 " + root.service.downloadStatusSummary +
+                                                       (root.service.downloadQueue && root.service.downloadQueue.length > 0
+                                                         ? (" · +" + root.service.downloadQueue.length + " queued")
+                                                         : "")
+                                            }
+                                            if (root.service.downloadStatusText !== "") {
+                                                return "󰄬 " + root.service.downloadStatusText
+                                            }
+                                            return "󰀥 Collection Ready · " + root.service.purchasedCount + " Purchased · " + root.service.localCount + " Local"
+                                        }
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 10
+                                        font.bold: Boolean(root.service && (root.service.downloading || root.service.syncing))
+                                        color: (root.service && (root.service.downloading || root.service.syncing)) ? root.colAccent : root.colMuted
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Text {
+                                        visible: Boolean(root.service && root.service.downloading)
+                                        text: root.service
+                                            ? ((root.service.downloadTrackTotal > 0
+                                                ? (root.service.downloadTrackIndex + "/" + root.service.downloadTrackTotal + " ")
+                                                : "") + "(" + root.service.downloadPercent + "%)")
+                                            : ""
                                         textFormat: Text.PlainText
                                         font.family: "JetBrainsMono Nerd Font"
                                         font.pixelSize: 10
                                         font.bold: true
-                                        color: "#07090e"
-                                    }
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            if (root.service) root.service.playSmartPlaylist(root.service.smartPreset, "")
-                                        }
+                                        color: root.colAccent
                                     }
                                 }
 
                                 Rectangle {
-                                    Layout.preferredHeight: 24
-                                    Layout.preferredWidth: saveSmartTxt.implicitWidth + 14
-                                    radius: 5
-                                    color: Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.18)
-                                    border.width: 1
-                                    border.color: root.colAccent
+                                    visible: Boolean(root.service && (root.service.downloading || root.service.syncing))
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 5
+                                    radius: 2.5
+                                    color: Qt.rgba(0, 0, 0, 0.35)
+
+                                    Rectangle {
+                                        width: (root.service && root.service.downloading)
+                                            ? Math.max(6, parent.width * Math.min(1.0, Math.max(0.0, root.service.downloadPercent / 100.0)))
+                                            : parent.width * 0.35
+                                        height: parent.height
+                                        radius: 2.5
+                                        color: root.colAccent
+                                        Behavior on width { NumberAnimation { duration: 180; easing.type: Easing.OutQuad } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ===========================================================
+                    // TAB 1: INTELLIGENT PLAYLISTS (LAST TRACK PLAYED) & CUSTOM PLAYLISTS
+                    // ===========================================================
+                    RowLayout {
+                        anchors.fill: parent
+                        visible: root.activeTab === 1
+                        spacing: 12
+
+                        // Left Column: Intelligent Playlist Generator (seeded from last track played)
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            radius: 8
+                            color: root.colSurface
+                            border.width: 1
+                            border.color: root.colBorder
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 8
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
                                     Text {
-                                        id: saveSmartTxt
-                                        anchors.centerIn: parent
-                                        text: "󰆓 Save"
+                                        text: "Auto  INTELLIGENT PLAYLIST"
                                         textFormat: Text.PlainText
                                         font.family: "JetBrainsMono Nerd Font"
-                                        font.pixelSize: 10
+                                        font.pixelSize: 12
+                                        font.bold: true
                                         color: root.colAccent
                                     }
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
+
+                                    Item { Layout.fillWidth: true }
+
+                                    ActionPill {
+                                        text: "󰐊 Play Mix"
+                                        primary: true
+                                        fontSize: 10
+                                        horizontalPad: 9
+                                        pillHeight: 24
+                                        onClicked: {
+                                            if (root.service) root.service.playSmartPlaylist(root.service.smartPreset, "")
+                                        }
+                                    }
+
+                                    ActionPill {
+                                        text: "󰆓 Save"
+                                        active: true
+                                        fontSize: 10
+                                        horizontalPad: 9
+                                        pillHeight: 24
                                         onClicked: {
                                             if (root.service && root.service.smartPlaylist) {
                                                 root.service.saveSmartPlaylistAs(
@@ -1406,254 +1570,234 @@ Item {
                                         }
                                     }
                                 }
-                            }
 
-                            // Seed Track indicator (Last Track Played)
-                            Rectangle {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 38
-                                radius: 6
-                                color: Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.10)
-                                border.width: 1
-                                border.color: Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.30)
+                                // Seed Track indicator (Last Track Played)
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 38
+                                    radius: 6
+                                    color: Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.10)
+                                    border.width: 1
+                                    border.color: Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.30)
 
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    anchors.leftMargin: 8
-                                    anchors.rightMargin: 8
-                                    spacing: 1
-
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: {
-                                            var seed = (root.service && root.service.smartPlaylist && root.service.smartPlaylist.seed)
-                                                ? root.service.smartPlaylist.seed
-                                                : (root.service ? root.service.lastPlayedTrack : null)
-                                            if (!seed) return "Seeded from your collection"
-                                            return "Seeded from Last Track: " + (seed.title || "Track") + " — " + (seed.artist || "")
-                                        }
-                                        textFormat: Text.PlainText
-                                        font.family: "JetBrainsMono Nerd Font"
-                                        font.pixelSize: 10
-                                        font.bold: true
-                                        color: root.colAccent
-                                        elide: Text.ElideRight
-                                    }
-
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: (root.service && root.service.smartPlaylist && root.service.smartPlaylist.description)
-                                            ? root.service.smartPlaylist.description
-                                            : "Automatically adapts as you listen to tracks."
-                                        textFormat: Text.PlainText
-                                        font.family: "JetBrainsMono Nerd Font"
-                                        font.pixelSize: 9
-                                        color: root.colMuted
-                                        elide: Text.ElideRight
-                                    }
-                                }
-                            }
-
-                            // Preset Selector Pills: Radio, Kindred, Journey, Purchased
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 4
-
-                                Repeater {
-                                    model: [
-                                        { id: "radio", label: "Sonic Radio" },
-                                        { id: "kindred", label: "Kindred" },
-                                        { id: "journey", label: "Journey" },
-                                        { id: "purchased", label: "Purchased" }
-                                    ]
-
-                                    delegate: Rectangle {
-                                        required property var modelData
-                                        property bool active: root.service && root.service.smartPreset === modelData.id
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 24
-                                        radius: 5
-                                        color: active
-                                            ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.24)
-                                            : Qt.rgba(1, 1, 1, 0.05)
-                                        border.width: 1
-                                        border.color: active ? root.colAccent : root.colBorder
+                                    ColumnLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 8
+                                        anchors.rightMargin: 8
+                                        spacing: 1
 
                                         Text {
-                                            anchors.centerIn: parent
-                                            text: modelData.label
+                                            Layout.fillWidth: true
+                                            text: {
+                                                var seed = (root.service && root.service.smartPlaylist && root.service.smartPlaylist.seed)
+                                                    ? root.service.smartPlaylist.seed
+                                                    : (root.service ? root.service.lastPlayedTrack : null)
+                                                if (!seed) return "Seeded from your collection"
+                                                return "Seeded from Last Track: " + (seed.title || "Track") + " — " + (seed.artist || "")
+                                            }
                                             textFormat: Text.PlainText
                                             font.family: "JetBrainsMono Nerd Font"
                                             font.pixelSize: 10
-                                            font.bold: parent.active
-                                            color: parent.active ? root.colAccent : root.colFg
+                                            font.bold: true
+                                            color: root.colAccent
+                                            elide: Text.ElideRight
                                         }
 
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            cursorShape: Qt.PointingHandCursor
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: (root.service && root.service.smartPlaylist && root.service.smartPlaylist.description)
+                                                ? root.service.smartPlaylist.description
+                                                : "Automatically adapts as you listen to tracks."
+                                            textFormat: Text.PlainText
+                                            font.family: "JetBrainsMono Nerd Font"
+                                            font.pixelSize: 9
+                                            color: root.colMuted
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+                                }
+
+                                // Preset Selector Pills: Radio, Kindred, Journey, Purchased
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    Repeater {
+                                        model: [
+                                            { id: "radio", label: "Sonic Radio" },
+                                            { id: "kindred", label: "Kindred" },
+                                            { id: "journey", label: "Journey" },
+                                            { id: "purchased", label: "Purchased" }
+                                        ]
+
+                                        delegate: ActionPill {
+                                            required property var modelData
+                                            Layout.fillWidth: true
+                                            text: modelData.label
+                                            active: Boolean(root.service && root.service.smartPreset === modelData.id)
+                                            fontSize: 10
+                                            horizontalPad: 8
+                                            pillHeight: 24
                                             onClicked: {
                                                 if (root.service) root.service.refreshSmartPlaylist(modelData.id, "")
                                             }
                                         }
                                     }
                                 }
-                            }
 
-                            // Generated Intelligent Playlist Track List
-                            ListView {
-                                id: smartPlaylistList
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
-                                clip: true
-                                spacing: 3
-                                model: (root.service && root.service.smartPlaylist && root.service.smartPlaylist.tracks)
-                                    ? root.service.smartPlaylist.tracks
-                                    : []
+                                // Generated Intelligent Playlist Track List
+                                Item {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
 
-                                delegate: Rectangle {
-                                    required property var modelData
-                                    required property int index
-                                    readonly property bool isSmartFocused: root.playlistPaneFocus === 0 && root.focusedSmartTrackIndex === index
-                                    width: ListView.view.width
-                                    height: 28
-                                    radius: 5
-                                    color: isSmartFocused
-                                        ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.22)
-                                        : (index === 0
-                                            ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.14)
-                                            : Qt.rgba(1, 1, 1, 0.03))
-                                    border.width: isSmartFocused ? 1 : 0
-                                    border.color: root.colAccent
-
-                                    RowLayout {
+                                    ListView {
+                                        id: smartPlaylistList
                                         anchors.fill: parent
-                                        anchors.leftMargin: 8
-                                        anchors.rightMargin: 8
-                                        spacing: 6
+                                        clip: true
+                                        spacing: 3
+                                        model: (root.service && root.service.smartPlaylist && root.service.smartPlaylist.tracks)
+                                            ? root.service.smartPlaylist.tracks
+                                            : []
 
-                                        Text {
-                                            text: index === 0 ? "★" : (index + 1) + "."
-                                            textFormat: Text.PlainText
-                                            font.family: "JetBrainsMono Nerd Font"
-                                            font.pixelSize: 10
-                                            color: (index === 0 || isSmartFocused) ? root.colAccent : root.colMuted
-                                        }
+                                        delegate: Rectangle {
+                                            required property var modelData
+                                            required property int index
+                                            readonly property bool isSmartFocused: root.playlistPaneFocus === 0 && root.focusedSmartTrackIndex === index
+                                            width: ListView.view.width - 12
+                                            height: 28
+                                            radius: 5
+                                            color: isSmartFocused
+                                                ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.22)
+                                                : (index === 0
+                                                    ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.14)
+                                                    : Qt.rgba(1, 1, 1, index % 2 === 0 ? 0.04 : 0.0))
+                                            border.width: isSmartFocused ? 1 : 0
+                                            border.color: root.colAccent
 
-                                        Text {
-                                            Layout.fillWidth: true
-                                            text: (modelData.title || "Track") + " — " + (modelData.artist || "")
-                                            textFormat: Text.PlainText
-                                            font.family: "JetBrainsMono Nerd Font"
-                                            font.pixelSize: 10
-                                            font.bold: isSmartFocused
-                                            color: isSmartFocused ? root.colAccent : root.colFg
-                                            elide: Text.ElideRight
-                                        }
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 8
+                                                anchors.rightMargin: 8
+                                                spacing: 6
 
-                                        Text {
-                                            text: root.formatDuration(modelData.duration)
-                                            textFormat: Text.PlainText
-                                            font.family: "JetBrainsMono Nerd Font"
-                                            font.pixelSize: 9
-                                            color: root.colMuted
+                                                Text {
+                                                    text: index === 0 ? "󰀥" : ((index + 1) + ".")
+                                                    textFormat: Text.PlainText
+                                                    font.family: "JetBrainsMono Nerd Font"
+                                                    font.pixelSize: 10
+                                                    font.bold: isSmartFocused
+                                                    color: (index === 0 || isSmartFocused) ? root.colAccent : root.colMuted
+                                                }
+
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: (modelData.title || "Track") + " — " + (modelData.artist || "")
+                                                    textFormat: Text.PlainText
+                                                    font.family: "JetBrainsMono Nerd Font"
+                                                    font.pixelSize: 10
+                                                    font.bold: index === 0 || isSmartFocused
+                                                    color: (index === 0 || isSmartFocused) ? root.colAccent : root.colFg
+                                                    elide: Text.ElideRight
+                                                }
+
+                                                Text {
+                                                    text: root.formatDuration(modelData.duration)
+                                                    textFormat: Text.PlainText
+                                                    font.family: "JetBrainsMono Nerd Font"
+                                                    font.pixelSize: 9
+                                                    color: root.colMuted
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    root.playlistPaneFocus = 0
+                                                    root.focusedSmartTrackIndex = index
+                                                    if (root.service) {
+                                                        root.service.playSmartPlaylist(root.service.smartPreset, "", index)
+                                                    }
+                                                    panelFrame.forceActiveFocus()
+                                                }
+                                            }
                                         }
                                     }
 
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            root.playlistPaneFocus = 0
-                                            root.focusedSmartTrackIndex = index
-                                            if (root.service) root.service.playSmartPlaylist(root.service.smartPreset, "", index)
-                                            panelFrame.forceActiveFocus()
-                                        }
+                                    ListScroller {
+                                        flickable: smartPlaylistList
                                     }
                                 }
                             }
                         }
-                    }
 
-                    // Right Column: User-Created Custom Playlists
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        radius: 8
-                        color: root.colSurface
-                        border.width: 1
-                        border.color: root.colBorder
+                        // Right Column: Custom User Playlists
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            radius: 8
+                            color: root.colSurface
+                            border.width: 1
+                            border.color: root.colBorder
 
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 10
-                            spacing: 8
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 8
 
-                            Text {
-                                text: "󰐑 CUSTOM PLAYLISTS"
-                                textFormat: Text.PlainText
-                                font.family: "JetBrainsMono Nerd Font"
-                                font.pixelSize: 12
-                                font.bold: true
-                                color: root.colFg
-                            }
-
-                            // Create New Playlist Row
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 6
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 28
-                                    radius: 5
-                                    color: Qt.rgba(1, 1, 1, 0.05)
-                                    border.width: 1
-                                    border.color: newPlaylistInput.activeFocus ? root.colAccent : root.colBorder
-
-                                    TextInput {
-                                        id: newPlaylistInput
-                                        anchors.fill: parent
-                                        anchors.leftMargin: 8
-                                        anchors.rightMargin: 8
-                                        verticalAlignment: Text.AlignVCenter
-                                        font.family: "JetBrainsMono Nerd Font"
-                                        font.pixelSize: 11
-                                        color: root.colFg
-                                        clip: true
-                                        Keys.onPressed: event => root.handleKeyNavigation(event)
-
-                                        Text {
-                                            anchors.fill: parent
-                                            verticalAlignment: Text.AlignVCenter
-                                            text: "New playlist name…"
-                                            textFormat: Text.PlainText
-                                            font.family: "JetBrainsMono Nerd Font"
-                                            font.pixelSize: 10
-                                            color: root.colMuted
-                                            visible: !newPlaylistInput.text && !newPlaylistInput.activeFocus
-                                        }
-                                    }
+                                Text {
+                                    text: "󰐑 CUSTOM PLAYLISTS"
+                                    textFormat: Text.PlainText
+                                    font.family: "JetBrainsMono Nerd Font"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                    color: root.colFg
                                 }
 
-                                Rectangle {
-                                    Layout.preferredHeight: 28
-                                    Layout.preferredWidth: createPlTxt.implicitWidth + 14
-                                    radius: 5
-                                    color: root.colAccent
-                                    Text {
-                                        id: createPlTxt
-                                        anchors.centerIn: parent
-                                        text: "+ Create"
-                                        textFormat: Text.PlainText
-                                        font.family: "JetBrainsMono Nerd Font"
-                                        font.pixelSize: 10
-                                        font.bold: true
-                                        color: "#07090e"
+                                // Create New Playlist Row
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 6
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 28
+                                        radius: 5
+                                        color: Qt.rgba(1, 1, 1, 0.05)
+                                        border.width: 1
+                                        border.color: newPlaylistInput.activeFocus ? root.colAccent : root.colBorder
+
+                                        TextInput {
+                                            id: newPlaylistInput
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 8
+                                            anchors.rightMargin: 8
+                                            verticalAlignment: Text.AlignVCenter
+                                            font.family: "JetBrainsMono Nerd Font"
+                                            font.pixelSize: 11
+                                            color: root.colFg
+                                            clip: true
+                                            Keys.onPressed: event => root.handleKeyNavigation(event)
+
+                                            Text {
+                                                anchors.fill: parent
+                                                verticalAlignment: Text.AlignVCenter
+                                                text: "New playlist name…"
+                                                textFormat: Text.PlainText
+                                                font.family: "JetBrainsMono Nerd Font"
+                                                font.pixelSize: 10
+                                                color: root.colMuted
+                                                visible: !newPlaylistInput.text && !newPlaylistInput.activeFocus
+                                            }
+                                        }
                                     }
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
+
+                                    ActionPill {
+                                        text: "+ Create"
+                                        primary: true
+                                        fontSize: 10
+                                        horizontalPad: 10
+                                        pillHeight: 28
                                         onClicked: {
                                             var t = newPlaylistInput.text.trim()
                                             if (!t) t = "Custom Mix " + ((root.service && root.service.playlists) ? (root.service.playlists.length + 1) : 1)
@@ -1665,153 +1809,55 @@ Item {
                                         }
                                     }
                                 }
-                            }
 
-                            // User Playlists ListView
-                            ListView {
-                                id: customPlaylistList
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
-                                clip: true
-                                spacing: 5
-                                model: root.service ? root.service.playlists : []
+                                // User Playlists ListView
+                                Item {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
 
-                                delegate: Rectangle {
-                                    id: plCard
-                                    required property var modelData
-                                    required property int index
-                                    readonly property bool isExpanded: root.selectedPlaylistId === modelData.id
-                                    readonly property bool isPlFocused: root.playlistPaneFocus === 1 && root.focusedPlaylistIndex === index
-                                    readonly property var plTracks: modelData.tracks || []
-
-                                    width: ListView.view.width
-                                    height: isExpanded ? (42 + Math.min(plTracks.length, 6) * 24 + 8) : 38
-                                    radius: 6
-                                    color: isExpanded
-                                        ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.14)
-                                        : (isPlFocused
-                                            ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.10)
-                                            : Qt.rgba(1, 1, 1, 0.04))
-                                    border.width: (isExpanded || isPlFocused) ? 1.5 : 1
-                                    border.color: (isExpanded || isPlFocused) ? root.colAccent : root.colBorder
-
-                                    ColumnLayout {
+                                    ListView {
+                                        id: customPlaylistList
                                         anchors.fill: parent
-                                        anchors.margins: 6
-                                        spacing: 4
+                                        clip: true
+                                        spacing: 5
+                                        model: root.service ? root.service.playlists : []
 
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 6
+                                        delegate: Rectangle {
+                                            id: plCard
+                                            required property var modelData
+                                            required property int index
+                                            readonly property bool isExpanded: root.selectedPlaylistId === modelData.id
+                                            readonly property bool isPlFocused: root.playlistPaneFocus === 1 && root.focusedPlaylistIndex === index
+                                            readonly property var plTracks: modelData.tracks || []
 
-                                            Text {
-                                                Layout.fillWidth: true
-                                                text: (modelData.title || "Playlist") + " (" + (modelData.trackCount || plTracks.length) + ")"
-                                                textFormat: Text.PlainText
-                                                font.family: "JetBrainsMono Nerd Font"
-                                                font.pixelSize: 11
-                                                font.bold: true
-                                                color: isPlFocused ? root.colAccent : root.colFg
-                                                elide: Text.ElideRight
+                                            width: ListView.view.width - 12
+                                            height: isExpanded ? (42 + Math.min(plTracks.length, 6) * 24 + 8) : 38
+                                            radius: 6
+                                            color: isExpanded
+                                                ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.14)
+                                                : (isPlFocused
+                                                    ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.10)
+                                                    : Qt.rgba(1, 1, 1, 0.04))
+                                            border.width: (isExpanded || isPlFocused) ? 1.5 : 1
+                                            border.color: (isExpanded || isPlFocused) ? root.colAccent : root.colBorder
 
-                                                MouseArea {
-                                                    anchors.fill: parent
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: {
-                                                        root.playlistPaneFocus = 1
-                                                        root.focusedPlaylistIndex = plCard.index
-                                                        root.selectedPlaylistId = plCard.isExpanded ? "" : modelData.id
-                                                        root.focusedPlaylistTrackIndex = root.selectedPlaylistId ? 0 : -1
-                                                        panelFrame.forceActiveFocus()
-                                                    }
-                                                }
-                                            }
-
-                                            Rectangle {
-                                                width: 48; height: 22; radius: 4
-                                                color: root.colAccent
-                                                Text {
-                                                    anchors.centerIn: parent
-                                                    text: "󰐊 Play"
-                                                    textFormat: Text.PlainText
-                                                    font.family: "JetBrainsMono Nerd Font"
-                                                    font.pixelSize: 10
-                                                    font.bold: true
-                                                    color: "#07090e"
-                                                }
-                                                MouseArea {
-                                                    anchors.fill: parent
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: {
-                                                        if (root.service) root.service.playPlaylist(modelData.id, 0, false)
-                                                        panelFrame.forceActiveFocus()
-                                                    }
-                                                }
-                                            }
-
-                                            Rectangle {
-                                                width: 22; height: 22; radius: 4
-                                                color: Qt.rgba(root.colUrgent.r, root.colUrgent.g, root.colUrgent.b, 0.18)
-                                                Text {
-                                                    anchors.centerIn: parent
-                                                    text: "󰆴"
-                                                    textFormat: Text.PlainText
-                                                    font.family: "JetBrainsMono Nerd Font"
-                                                    font.pixelSize: 11
-                                                    color: root.colUrgent
-                                                }
-                                                MouseArea {
-                                                    anchors.fill: parent
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: {
-                                                        if (root.service) root.service.deletePlaylist(modelData.id)
-                                                        panelFrame.forceActiveFocus()
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        ListView {
-                                            Layout.fillWidth: true
-                                            Layout.fillHeight: true
-                                            visible: plCard.isExpanded
-                                            clip: true
-                                            spacing: 2
-                                            model: plCard.plTracks
-                                            currentIndex: plCard.isPlFocused ? root.focusedPlaylistTrackIndex : -1
-                                            onCurrentIndexChanged: {
-                                                if (currentIndex >= 0 && count > currentIndex) {
-                                                    positionViewAtIndex(currentIndex, ListView.Contain)
-                                                }
-                                            }
-
-                                            delegate: Rectangle {
-                                                required property var modelData
-                                                required property int index
-                                                readonly property bool isPlTrackFocused: plCard.isPlFocused && root.focusedPlaylistTrackIndex === index
-                                                width: ListView.view.width
-                                                height: 22
-                                                radius: 3
-                                                color: isPlTrackFocused
-                                                    ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.20)
-                                                    : Qt.rgba(1, 1, 1, 0.03)
-                                                border.width: isPlTrackFocused ? 1 : 0
-                                                border.color: root.colAccent
+                                            ColumnLayout {
+                                                anchors.fill: parent
+                                                anchors.margins: 6
+                                                spacing: 4
 
                                                 RowLayout {
-                                                    anchors.fill: parent
-                                                    anchors.leftMargin: 6
-                                                    anchors.rightMargin: 6
+                                                    Layout.fillWidth: true
                                                     spacing: 6
 
                                                     Text {
                                                         Layout.fillWidth: true
-                                                        text: (index + 1) + ". " + (modelData.title || "Track") + " — " + (modelData.artist || "")
+                                                        text: (modelData.title || "Playlist") + " (" + (modelData.trackCount || plTracks.length) + ")"
                                                         textFormat: Text.PlainText
                                                         font.family: "JetBrainsMono Nerd Font"
-                                                        font.pixelSize: 10
-                                                        font.bold: isPlTrackFocused
-                                                        color: isPlTrackFocused ? root.colAccent : root.colFg
+                                                        font.pixelSize: 11
+                                                        font.bold: true
+                                                        color: isPlFocused ? root.colAccent : root.colFg
                                                         elide: Text.ElideRight
 
                                                         MouseArea {
@@ -1820,25 +1866,108 @@ Item {
                                                             onClicked: {
                                                                 root.playlistPaneFocus = 1
                                                                 root.focusedPlaylistIndex = plCard.index
-                                                                root.focusedPlaylistTrackIndex = index
-                                                                if (root.service) root.service.playPlaylist(plCard.modelData.id, index, false)
+                                                                root.selectedPlaylistId = plCard.isExpanded ? "" : modelData.id
+                                                                root.focusedPlaylistTrackIndex = root.selectedPlaylistId ? 0 : -1
                                                                 panelFrame.forceActiveFocus()
                                                             }
                                                         }
                                                     }
 
-                                                    Text {
-                                                        text: "󰅖"
-                                                        textFormat: Text.PlainText
-                                                        font.family: "JetBrainsMono Nerd Font"
-                                                        font.pixelSize: 10
-                                                        color: root.colMuted
-                                                        MouseArea {
+                                                    ActionPill {
+                                                        text: "󰐊 Play"
+                                                        primary: true
+                                                        fontSize: 10
+                                                        horizontalPad: 8
+                                                        pillHeight: 22
+                                                        onClicked: {
+                                                            if (root.service) root.service.playPlaylist(modelData.id, 0, false)
+                                                            panelFrame.forceActiveFocus()
+                                                        }
+                                                    }
+
+                                                    ActionPill {
+                                                        text: "󰆴"
+                                                        danger: true
+                                                        fontSize: 10
+                                                        horizontalPad: 6
+                                                        pillHeight: 22
+                                                        onClicked: {
+                                                            if (root.service) root.service.deletePlaylist(modelData.id)
+                                                            panelFrame.forceActiveFocus()
+                                                        }
+                                                    }
+                                                }
+
+                                                ListView {
+                                                    Layout.fillWidth: true
+                                                    Layout.fillHeight: true
+                                                    visible: plCard.isExpanded
+                                                    clip: true
+                                                    spacing: 2
+                                                    model: plCard.plTracks
+                                                    currentIndex: plCard.isPlFocused ? root.focusedPlaylistTrackIndex : -1
+                                                    onCurrentIndexChanged: {
+                                                        if (currentIndex >= 0 && count > currentIndex) {
+                                                            positionViewAtIndex(currentIndex, ListView.Contain)
+                                                        }
+                                                    }
+
+                                                    delegate: Rectangle {
+                                                        required property var modelData
+                                                        required property int index
+                                                        readonly property bool isPlTrackFocused: plCard.isPlFocused && root.focusedPlaylistTrackIndex === index
+                                                        width: ListView.view.width
+                                                        height: 22
+                                                        radius: 3
+                                                        color: isPlTrackFocused
+                                                            ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.20)
+                                                            : Qt.rgba(1, 1, 1, 0.03)
+                                                        border.width: isPlTrackFocused ? 1 : 0
+                                                        border.color: root.colAccent
+
+                                                        RowLayout {
                                                             anchors.fill: parent
-                                                            cursorShape: Qt.PointingHandCursor
-                                                            onClicked: {
-                                                                if (root.service) root.service.removeTrackFromPlaylist(plCard.modelData.id, index)
-                                                                panelFrame.forceActiveFocus()
+                                                            anchors.leftMargin: 6
+                                                            anchors.rightMargin: 6
+                                                            spacing: 6
+
+                                                            Text {
+                                                                Layout.fillWidth: true
+                                                                text: (index + 1) + ". " + (modelData.title || "Track") + " — " + (modelData.artist || "")
+                                                                textFormat: Text.PlainText
+                                                                font.family: "JetBrainsMono Nerd Font"
+                                                                font.pixelSize: 10
+                                                                font.bold: isPlTrackFocused
+                                                                color: isPlTrackFocused ? root.colAccent : root.colFg
+                                                                elide: Text.ElideRight
+
+                                                                MouseArea {
+                                                                    anchors.fill: parent
+                                                                    cursorShape: Qt.PointingHandCursor
+                                                                    onClicked: {
+                                                                        root.playlistPaneFocus = 1
+                                                                        root.focusedPlaylistIndex = plCard.index
+                                                                        root.focusedPlaylistTrackIndex = index
+                                                                        if (root.service) root.service.playPlaylist(plCard.modelData.id, index, false)
+                                                                        panelFrame.forceActiveFocus()
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            Text {
+                                                                text: "󰅖"
+                                                                textFormat: Text.PlainText
+                                                                font.family: "JetBrainsMono Nerd Font"
+                                                                font.pixelSize: 10
+                                                                color: root.colMuted
+                                                                MouseArea {
+                                                                    anchors.fill: parent
+                                                                    cursorShape: Qt.PointingHandCursor
+                                                                    onClicked: {
+                                                                        if (root.service) root.service.removeTrackFromPlaylist(plCard.modelData.id, index)
+                                                                        panelFrame.forceActiveFocus()
+                                                                    }
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -1846,379 +1975,487 @@ Item {
                                             }
                                         }
                                     }
+
+                                    ListScroller {
+                                        flickable: customPlaylistList
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                // ===========================================================
-                // TAB 2: PSYCHEDELIC OMARCHY SCREENSAVER VISUALISER
-                // ===========================================================
-                Visualiser {
-                    id: panelVisualiser
-                    anchors.fill: parent
-                    visible: root.activeTab === 2
-                    isFullscreen: false
-                    bands: root.service ? root.service.spectrumBands : []
-                    playing: root.service ? root.service.activelyPlaying : false
-                    trackTitle: root.service ? root.service.trackTitle : ""
-                    trackArtist: root.service ? root.service.trackArtist : ""
-                    trackAlbum: root.service ? root.service.trackAlbum : ""
-                    artPath: root.service ? root.service.artPath : ""
-                    playSource: root.service ? root.service.playSource : "local"
-                    position: root.service ? root.service.position : 0.0
-                    duration: root.service ? root.service.duration : 0.0
-                    asciiLines: root.service ? root.service.asciiLines : []
-                    ttfxFrames: root.service ? root.service.ttfxFrames : []
-                    useAlbumArt: root.service ? root.service.useAlbumArt : false
-                    asciiMode: root.service ? root.service.asciiMode : "braille"
-                    asciiSource: root.service ? root.service.asciiSource : "album-art"
-                    accentColour: root.colAccent
-                    urgentColour: root.colUrgent
-                    foregroundColour: root.colFg
-                    backgroundColour: root.colBg
+                    // ===========================================================
+                    // TAB 2: 4-STAGE DECK & 3-LAYER PSYCHEDELIC VISUALISER
+                    // ===========================================================
+                    Visualiser {
+                        id: panelVisualiser
+                        anchors.fill: parent
+                        visible: root.activeTab === 2
+                        isFullscreen: false
+                        bands: root.service ? root.service.spectrumBands : []
+                        playing: root.service ? root.service.activelyPlaying : false
+                        trackTitle: root.service ? root.service.trackTitle : ""
+                        trackArtist: root.service ? root.service.trackArtist : ""
+                        trackAlbum: root.service ? root.service.trackAlbum : ""
+                        artPath: root.service ? root.service.artPath : ""
+                        playSource: root.service ? root.service.playSource : "local"
+                        position: root.service ? root.service.position : 0.0
+                        duration: root.service ? root.service.duration : 0.0
+                        asciiLines: root.service ? root.service.asciiLines : []
+                        bannerLines: root.service ? root.service.bannerLines : []
+                        artLines: root.service ? root.service.artLines : []
+                        ttfxFrames: root.service ? root.service.ttfxFrames : []
+                        useAlbumArt: root.service ? root.service.useAlbumArt : false
+                        asciiMode: root.service ? root.service.asciiMode : "braille"
+                        asciiSource: root.service ? root.service.asciiSource : "album-art"
+                        accentColour: root.colAccent
+                        urgentColour: root.colUrgent
+                        foregroundColour: root.colFg
+                        backgroundColour: root.colBg
 
-                    onRequestToggleFullscreen: {
-                        if (root.service) {
-                            root.service.fullscreenVisualiserOpen = !root.service.fullscreenVisualiserOpen
+                        onRequestToggleFullscreen: {
+                            if (root.service) {
+                                root.service.fullscreenVisualiserOpen = !root.service.fullscreenVisualiserOpen
+                            }
+                        }
+                        onRequestCloseVisualiser: root.activeTab = 0
+                        onRequestPlayPause: if (root.service) root.service.togglePlayPause()
+                        onRequestNext: if (root.service) root.service.nextTrack()
+                        onRequestPrev: if (root.service) root.service.prevTrack()
+                        onRequestSeek: sec => { if (root.service) root.service.seekTo(sec) }
+                        onRequestToggleUseAlbumArt: if (root.service) root.service.toggleUseAlbumArt()
+                        onRequestToggleAsciiMode: if (root.service) root.service.toggleAsciiMode()
+                        onRequestLaunchTtfxScreensaver: effectName => {
+                            if (root.service) root.service.launchTtfxScreensaver(effectName)
+                        }
+                        onRequestSelectTtfxEffect: effectName => {
+                            if (root.service) root.service.setTtfxEffect(effectName)
+                        }
+                        onRequestActionFeedback: msg => {
+                            if (root.service) root.service.notifyAction(msg)
                         }
                     }
-                    onRequestCloseVisualiser: root.activeTab = 0
-                    onRequestPlayPause: if (root.service) root.service.togglePlayPause()
-                    onRequestNext: if (root.service) root.service.nextTrack()
-                    onRequestPrev: if (root.service) root.service.prevTrack()
-                    onRequestToggleUseAlbumArt: if (root.service) root.service.toggleUseAlbumArt()
-                    onRequestToggleAsciiMode: if (root.service) root.service.toggleAsciiMode()
-                    onRequestLaunchTtfxScreensaver: effectName => {
-                        if (root.service) root.service.launchTtfxScreensaver(effectName)
-                    }
-                    onRequestSelectTtfxEffect: effectName => {
-                        if (root.service) root.service.setTtfxEffect(effectName)
+
+                    // ===========================================================
+                    // TAB 3: BANDCAMP ACCOUNT LOG IN / LOG OUT, SYNC & ZIP IMPORT
+                    // ===========================================================
+                    ColumnLayout {
+                        anchors.fill: parent
+                        visible: root.activeTab === 3
+                        spacing: 10
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: panelAuthCol.implicitHeight + 24
+                            radius: 8
+                            color: root.colSurface
+                            border.width: 1
+                            border.color: root.colBorder
+
+                            ColumnLayout {
+                                id: panelAuthCol
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                spacing: 10
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "󰀄 BANDCAMP ACCOUNT LOG IN & COLLECTION SYNCHRONISATION"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                        color: root.colAccent
+                                    }
+
+                                    Rectangle {
+                                        Layout.preferredHeight: 20
+                                        Layout.preferredWidth: panelAuthBadgeTxt.implicitWidth + 12
+                                        radius: 4
+                                        color: (root.service && root.service.username)
+                                            ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.18)
+                                            : Qt.rgba(root.colUrgent.r, root.colUrgent.g, root.colUrgent.b, 0.18)
+                                        border.width: 1
+                                        border.color: (root.service && root.service.username) ? root.colAccent : root.colUrgent
+
+                                        Text {
+                                            id: panelAuthBadgeTxt
+                                            anchors.centerIn: parent
+                                            text: (root.service && root.service.username)
+                                                ? ("LOGGED IN: @" + root.service.username + (root.service.authenticated ? " (Cookie)" : " (Public Fan)"))
+                                                : "LOGGED OUT"
+                                            textFormat: Text.PlainText
+                                            font.family: "JetBrainsMono Nerd Font"
+                                            font.pixelSize: 9
+                                            font.bold: true
+                                            color: (root.service && root.service.username) ? root.colAccent : root.colUrgent
+                                        }
+                                    }
+                                }
+
+                                // Browser Login + Auto-Detect + Log Out Row
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    ActionPill {
+                                        text: "󰖟 Open Bandcamp Login"
+                                        active: true
+                                        fontSize: 10
+                                        horizontalPad: 11
+                                        pillHeight: 28
+                                        onClicked: if (root.service) root.service.openBandcampLogin()
+                                    }
+
+                                    ActionPill {
+                                        text: "󰑐 Detect From Browser"
+                                        primary: true
+                                        fontSize: 10
+                                        horizontalPad: 11
+                                        pillHeight: 28
+                                        onClicked: if (root.service) root.service.loginFromBrowser(userInput.text.trim())
+                                    }
+
+                                    Item { Layout.fillWidth: true }
+
+                                    ActionPill {
+                                        visible: Boolean(root.service && (root.service.username || root.service.authenticated))
+                                        text: "󰍃 Log Out"
+                                        danger: true
+                                        fontSize: 10
+                                        horizontalPad: 11
+                                        pillHeight: 28
+                                        onClicked: {
+                                            userInput.text = ""
+                                            cookieInput.text = ""
+                                            if (root.service) root.service.logoutBandcamp()
+                                        }
+                                    }
+                                }
+
+                                // Fan Username Row
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Text {
+                                        Layout.preferredWidth: 120
+                                        text: "Fan Username:"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 11
+                                        color: root.colFg
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 28
+                                        radius: 5
+                                        color: Qt.rgba(1, 1, 1, 0.05)
+                                        border.width: 1
+                                        border.color: userInput.activeFocus ? root.colAccent : root.colBorder
+
+                                        TextInput {
+                                            id: userInput
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 8
+                                            anchors.rightMargin: 8
+                                            verticalAlignment: Text.AlignVCenter
+                                            text: root.service ? root.service.username : ""
+                                            font.family: "JetBrainsMono Nerd Font"
+                                            font.pixelSize: 11
+                                            color: root.colFg
+                                            selectByMouse: true
+                                            clip: true
+                                            Keys.onPressed: event => root.handleKeyNavigation(event)
+
+                                            Text {
+                                                anchors.fill: parent
+                                                verticalAlignment: Text.AlignVCenter
+                                                text: "e.g. layolayo"
+                                                textFormat: Text.PlainText
+                                                font.family: "JetBrainsMono Nerd Font"
+                                                font.pixelSize: 10
+                                                color: root.colMuted
+                                                visible: !userInput.text && !userInput.activeFocus
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Optional Identity Cookie Row
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Text {
+                                        Layout.preferredWidth: 120
+                                        text: "Identity Cookie:"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 11
+                                        color: root.colFg
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 28
+                                        radius: 5
+                                        color: Qt.rgba(1, 1, 1, 0.05)
+                                        border.width: 1
+                                        border.color: cookieInput.activeFocus ? root.colAccent : root.colBorder
+
+                                        TextInput {
+                                            id: cookieInput
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 8
+                                            anchors.rightMargin: 8
+                                            verticalAlignment: Text.AlignVCenter
+                                            font.family: "JetBrainsMono Nerd Font"
+                                            font.pixelSize: 10
+                                            color: root.colFg
+                                            selectByMouse: true
+                                            clip: true
+                                            echoMode: TextInput.Password
+                                            Keys.onPressed: event => root.handleKeyNavigation(event)
+
+                                            Text {
+                                                anchors.fill: parent
+                                                verticalAlignment: Text.AlignVCenter
+                                                text: (root.service && root.service.authenticated)
+                                                    ? "Saved in settings (leave blank to keep)"
+                                                    : "Optional Bandcamp 'identity' cookie…"
+                                                textFormat: Text.PlainText
+                                                font.family: "JetBrainsMono Nerd Font"
+                                                font.pixelSize: 10
+                                                color: root.colMuted
+                                                visible: !cookieInput.text && !cookieInput.activeFocus
+                                            }
+                                        }
+                                    }
+
+                                    ActionPill {
+                                        text: "󰌋 Log In & Sync"
+                                        primary: true
+                                        fontSize: 10
+                                        horizontalPad: 11
+                                        pillHeight: 28
+                                        onClicked: {
+                                            if (root.service) {
+                                                root.service.saveAuth(userInput.text.trim(), cookieInput.text.trim(), "", "")
+                                                root.service.syncCollection(false)
+                                            }
+                                            panelFrame.forceActiveFocus()
+                                        }
+                                    }
+                                }
+
+                                // Sync & ZIP Import Actions
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    ActionPill {
+                                        text: (root.service && root.service.syncing) ? "󰑐 Syncing Collection…" : "󰑐 Sync Bandcamp & Local"
+                                        primary: true
+                                        fontSize: 10
+                                        horizontalPad: 12
+                                        pillHeight: 28
+                                        onClicked: {
+                                            if (root.service) {
+                                                root.service.syncCollection(false)
+                                            }
+                                        }
+                                    }
+
+                                    ActionPill {
+                                        text: "󰗄 Import Downloads ZIPs"
+                                        active: true
+                                        fontSize: 10
+                                        horizontalPad: 12
+                                        pillHeight: 28
+                                        onClicked: {
+                                            if (root.service) root.service.importZips()
+                                        }
+                                    }
+
+                                    ActionPill {
+                                        text: "󰉋 Open Music Folder"
+                                        fontSize: 10
+                                        horizontalPad: 12
+                                        pillHeight: 28
+                                        onClicked: {
+                                            if (root.service) root.service.openExternal("~/Music/Bandcamp", "Opened ~/Music/Bandcamp")
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "Discovers all items in your Bandcamp fan collection with full tracklists & direct streams, and merges them with ~/Music/Bandcamp and ~/Music."
+                                    textFormat: Text.PlainText
+                                    font.family: "JetBrainsMono Nerd Font"
+                                    font.pixelSize: 10
+                                    color: root.colMuted
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
+                        }
+
+                        Item { Layout.fillHeight: true }
                     }
                 }
 
-                // ===========================================================
-                // TAB 3: BANDCAMP SYNC, ZIP IMPORT & SETTINGS
-                // ===========================================================
-                ColumnLayout {
-                    anchors.fill: parent
-                    visible: root.activeTab === 3
-                    spacing: 10
+                // ---------------------------------------------------------------
+                // 3. Persistent Bottom Now Playing Transport & Live Spectrum Deck
+                // ---------------------------------------------------------------
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 74
+                    radius: 8
+                    color: Qt.rgba(root.colFg.r, root.colFg.g, root.colFg.b, 0.05)
+                    border.width: 1
+                    border.color: root.colBorder
 
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 150
-                        radius: 8
-                        color: root.colSurface
-                        border.width: 1
-                        border.color: root.colBorder
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 10
+                        anchors.rightMargin: 10
+                        spacing: 12
+
+                        Vinyl {
+                            Layout.preferredWidth: 54
+                            Layout.preferredHeight: 54
+                            artPath: root.service ? root.service.artPath : ""
+                            spinning: root.service ? root.service.activelyPlaying : false
+                            accentColour: root.colAccent
+                        }
 
                         ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 12
-                            spacing: 8
-
-                            Text {
-                                text: "BANDCAMP ACCOUNT & COLLECTION SYNCHRONISATION"
-                                textFormat: Text.PlainText
-                                font.family: "JetBrainsMono Nerd Font"
-                                font.pixelSize: 11
-                                font.bold: true
-                                color: root.colAccent
-                            }
+                            Layout.fillWidth: true
+                            spacing: 4
 
                             RowLayout {
                                 Layout.fillWidth: true
                                 spacing: 8
 
                                 Text {
-                                    text: "Username:"
+                                    Layout.fillWidth: true
+                                    text: (root.service && root.service.trackTitle)
+                                        ? root.service.trackTitle
+                                        : "Ready to Play — Select any Bandcamp purchase or local album"
                                     textFormat: Text.PlainText
                                     font.family: "JetBrainsMono Nerd Font"
-                                    font.pixelSize: 11
+                                    font.pixelSize: 12
+                                    font.bold: true
                                     color: root.colFg
+                                    elide: Text.ElideRight
                                 }
 
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 28
-                                    radius: 5
-                                    color: Qt.rgba(1, 1, 1, 0.05)
-                                    border.width: 1
-                                    border.color: root.colBorder
-
-                                    TextInput {
-                                        id: userInput
-                                        anchors.fill: parent
-                                        anchors.leftMargin: 8
-                                        anchors.rightMargin: 8
-                                        verticalAlignment: Text.AlignVCenter
-                                        text: root.service ? root.service.username : "layolayo"
-                                        font.family: "JetBrainsMono Nerd Font"
-                                        font.pixelSize: 11
-                                        color: root.colFg
-                                    }
-                                }
-
-                                Rectangle {
-                                    Layout.preferredHeight: 28
-                                    Layout.preferredWidth: syncNowTxt.implicitWidth + 16
-                                    radius: 5
+                                Text {
+                                    text: root.service
+                                        ? (root.formatDuration(root.service.position) + " / " + root.formatDuration(root.service.duration))
+                                        : "0:00 / 0:00"
+                                    textFormat: Text.PlainText
+                                    font.family: "JetBrainsMono Nerd Font"
+                                    font.pixelSize: 10
                                     color: root.colAccent
-                                    Text {
-                                        id: syncNowTxt
-                                        anchors.centerIn: parent
-                                        text: (root.service && root.service.syncing) ? "󰑐 Syncing…" : "󰑐 Sync Collection"
-                                        textFormat: Text.PlainText
-                                        font.family: "JetBrainsMono Nerd Font"
-                                        font.pixelSize: 11
-                                        font.bold: true
-                                        color: "#07090e"
-                                    }
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            if (root.service) {
-                                                root.service.saveAuth(userInput.text.trim(), "", "", "")
-                                                root.service.syncCollection(false)
-                                            }
-                                        }
-                                    }
-                                }
-
-                                Rectangle {
-                                    Layout.preferredHeight: 28
-                                    Layout.preferredWidth: importZipTxt.implicitWidth + 16
-                                    radius: 5
-                                    color: Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.18)
-                                    border.width: 1
-                                    border.color: root.colAccent
-                                    Text {
-                                        id: importZipTxt
-                                        anchors.centerIn: parent
-                                        text: "󰗄 Import Downloads ZIPs"
-                                        textFormat: Text.PlainText
-                                        font.family: "JetBrainsMono Nerd Font"
-                                        font.pixelSize: 11
-                                        color: root.colAccent
-                                    }
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            if (root.service) root.service.importZips()
-                                        }
-                                    }
                                 }
                             }
 
                             Text {
                                 Layout.fillWidth: true
-                                text: "Discovers your Bandcamp purchases from your fan profile and browser session, and merges them with ~/Music/Bandcamp and ~/Music."
+                                text: (root.service && root.service.trackArtist)
+                                    ? (root.service.trackArtist + (root.service.trackAlbum ? (" — " + root.service.trackAlbum) : ""))
+                                    : "Lossless mpv playback + 4-Stage Turntable & 3-Layer Visualiser"
                                 textFormat: Text.PlainText
                                 font.family: "JetBrainsMono Nerd Font"
                                 font.pixelSize: 10
                                 color: root.colMuted
-                                wrapMode: Text.WordWrap
-                            }
-                        }
-                    }
-
-                    Item { Layout.fillHeight: true }
-                }
-            }
-
-            // ---------------------------------------------------------------
-            // 3. Persistent Bottom Now Playing Transport & Live Spectrum Deck
-            // ---------------------------------------------------------------
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 74
-                radius: 8
-                color: Qt.rgba(root.colFg.r, root.colFg.g, root.colFg.b, 0.05)
-                border.width: 1
-                border.color: root.colBorder
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 10
-                    anchors.rightMargin: 10
-                    spacing: 12
-
-                    Vinyl {
-                        Layout.preferredWidth: 54
-                        Layout.preferredHeight: 54
-                        artPath: root.service ? root.service.artPath : ""
-                        spinning: root.service ? root.service.activelyPlaying : false
-                        accentColour: root.colAccent
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 4
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 8
-
-                            Text {
-                                Layout.fillWidth: true
-                                text: (root.service && root.service.trackTitle)
-                                    ? root.service.trackTitle
-                                    : "Ready to Play — Select any Bandcamp purchase or local album"
-                                textFormat: Text.PlainText
-                                font.family: "JetBrainsMono Nerd Font"
-                                font.pixelSize: 12
-                                font.bold: true
-                                color: root.colFg
                                 elide: Text.ElideRight
                             }
 
-                            Text {
-                                text: root.service
-                                    ? (root.formatDuration(root.service.position) + " / " + root.formatDuration(root.service.duration))
-                                    : "0:00 / 0:00"
-                                textFormat: Text.PlainText
-                                font.family: "JetBrainsMono Nerd Font"
-                                font.pixelSize: 10
-                                color: root.colAccent
-                            }
-                        }
-
-                        Text {
-                            Layout.fillWidth: true
-                            text: (root.service && root.service.trackArtist)
-                                ? (root.service.trackArtist + (root.service.trackAlbum ? (" — " + root.service.trackAlbum) : ""))
-                                : "Lossless mpv playback + 60 FPS Cava & Omarchy TTE Visualiser"
-                            textFormat: Text.PlainText
-                            font.family: "JetBrainsMono Nerd Font"
-                            font.pixelSize: 10
-                            color: root.colMuted
-                            elide: Text.ElideRight
-                        }
-
-                        // Interactive Progress Seek Bar
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 6
-                            radius: 3
-                            color: Qt.rgba(1, 1, 1, 0.12)
-
+                            // Interactive Progress Seek Bar
                             Rectangle {
-                                width: {
-                                    if (!root.service || root.service.duration <= 0) return 0
-                                    return Math.min(parent.width, (root.service.position / root.service.duration) * parent.width)
-                                }
-                                height: parent.height
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 6
                                 radius: 3
-                                color: root.colAccent
-                            }
+                                color: Qt.rgba(1, 1, 1, 0.12)
 
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: mouse => {
-                                    if (root.service && root.service.duration > 0) {
-                                        var targetSec = (mouse.x / width) * root.service.duration
-                                        root.service.seekTo(targetSec)
+                                Rectangle {
+                                    width: {
+                                        if (!root.service || root.service.duration <= 0) return 0
+                                        return Math.min(parent.width, (root.service.position / root.service.duration) * parent.width)
+                                    }
+                                    height: parent.height
+                                    radius: 3
+                                    color: root.colAccent
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: mouse => {
+                                        if (root.service && root.service.duration > 0) {
+                                            var targetSec = (mouse.x / width) * root.service.duration
+                                            root.service.seekTo(targetSec)
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    // Live 24-Bar Mini Spectrum Strip
-                    Spectrum {
-                        Layout.preferredWidth: 96
-                        Layout.preferredHeight: 38
-                        barCount: 24
-                        bands: root.service ? root.service.spectrumBands : []
-                        active: root.service ? root.service.activelyPlaying : false
-                        accentColour: root.colAccent
-                        peakColour: root.colUrgent
-                    }
+                        // Live 24-Bar Mini Spectrum Strip
+                        Spectrum {
+                            Layout.preferredWidth: 96
+                            Layout.preferredHeight: 38
+                            barCount: 24
+                            bands: root.service ? root.service.spectrumBands : []
+                            active: root.service ? root.service.activelyPlaying : false
+                            accentColour: root.colAccent
+                            peakColour: root.colUrgent
+                        }
 
-                    // Transport Controls
-                    RowLayout {
-                        spacing: 6
+                        // Transport Controls
+                        RowLayout {
+                            spacing: 6
 
-                        Rectangle {
-                            width: 30; height: 30; radius: 6
-                            color: root.colSurface
-                            border.width: 1
-                            border.color: root.colBorder
-                            Text {
-                                anchors.centerIn: parent
+                            ActionPill {
                                 text: "󰒮"
-                                textFormat: Text.PlainText
-                                font.family: "JetBrainsMono Nerd Font"
-                                font.pixelSize: 14
-                                color: root.colFg
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
+                                fontSize: 13
+                                horizontalPad: 8
+                                pillHeight: 30
                                 onClicked: if (root.service) root.service.prevTrack()
                             }
-                        }
 
-                        Rectangle {
-                            width: 36; height: 32; radius: 6
-                            color: root.colAccent
-                            Text {
-                                anchors.centerIn: parent
+                            ActionPill {
                                 text: (root.service && root.service.activelyPlaying) ? "󰏤" : "󰐊"
-                                textFormat: Text.PlainText
-                                font.family: "JetBrainsMono Nerd Font"
-                                font.pixelSize: 16
-                                color: "#07090e"
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
+                                primary: true
+                                fontSize: 15
+                                horizontalPad: 10
+                                pillHeight: 32
                                 onClicked: if (root.service) root.service.togglePlayPause()
                             }
-                        }
 
-                        Rectangle {
-                            width: 30; height: 30; radius: 6
-                            color: root.colSurface
-                            border.width: 1
-                            border.color: root.colBorder
-                            Text {
-                                anchors.centerIn: parent
+                            ActionPill {
                                 text: "󰒭"
-                                textFormat: Text.PlainText
-                                font.family: "JetBrainsMono Nerd Font"
-                                font.pixelSize: 14
-                                color: root.colFg
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
+                                fontSize: 13
+                                horizontalPad: 8
+                                pillHeight: 30
                                 onClicked: if (root.service) root.service.nextTrack()
                             }
-                        }
 
-                        // Fullscreen Visualiser quick-launch button
-                        Rectangle {
-                            width: 32; height: 30; radius: 6
-                            color: Qt.rgba(root.colUrgent.r, root.colUrgent.g, root.colUrgent.b, 0.18)
-                            border.width: 1
-                            border.color: root.colUrgent
-                            Text {
-                                anchors.centerIn: parent
+                            // Fullscreen Visualiser quick-launch button
+                            ActionPill {
                                 text: "󰍹"
-                                textFormat: Text.PlainText
-                                font.family: "JetBrainsMono Nerd Font"
-                                font.pixelSize: 14
-                                color: root.colUrgent
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
+                                danger: true
+                                fontSize: 13
+                                horizontalPad: 8
+                                pillHeight: 30
                                 onClicked: {
                                     root.activeTab = 2
                                     if (root.service) {
@@ -2231,6 +2468,5 @@ Item {
                 }
             }
         }
-    }
     }
 }

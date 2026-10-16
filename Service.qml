@@ -3,7 +3,8 @@ import Quickshell
 import Quickshell.Io
 
 // Service.qml — Bandarchy background state, mpv IPC, Cava 60 FPS spectrum
-// stream, ASCII album art transcoder, and intelligent/user playlist manager.
+// stream, ASCII album art & banner transcoder, Bandcamp auth/login/logout,
+// real-time download progress tracker, and intelligent/user playlist manager.
 
 Item {
     id: root
@@ -39,9 +40,14 @@ Item {
     property bool loop: false
     property var queue: []
 
-    // Collection & search state
+    // Collection, Auth & Search state
     property string username: ""
     property bool authenticated: false
+    property bool loggedOut: false
+    property bool hasIdentity: false
+    property bool hasBrowserSession: false
+    property string downloadDir: ""
+    property string preferredFormat: "flac"
     property int albumCount: 0
     property int purchasedCount: 0
     property int localCount: 0
@@ -53,8 +59,57 @@ Item {
     property var availableZips: []
     property var favourites: []
     property bool syncing: false
+    property var syncState: ({ running: false })
     property var downloadState: ({ running: false })
+    property var downloadQueue: []
     property string lastError: ""
+
+    // Live download progress convenience properties for UI footers & buttons
+    readonly property bool downloading: Boolean(root.downloadState && root.downloadState.running)
+    readonly property string downloadAlbumId: (root.downloadState && root.downloadState.albumId) ? String(root.downloadState.albumId) : ""
+    readonly property string downloadTitle: (root.downloadState && root.downloadState.title) ? String(root.downloadState.title) : ""
+    readonly property string downloadStage: (root.downloadState && root.downloadState.stage) ? String(root.downloadState.stage) : ""
+    readonly property int downloadPercent: (root.downloadState && root.downloadState.percent !== undefined) ? Math.max(0, Math.min(100, Number(root.downloadState.percent) || 0)) : 0
+    readonly property int downloadTrackIndex: (root.downloadState && root.downloadState.trackIndex !== undefined) ? Math.max(0, Number(root.downloadState.trackIndex) || 0) : 0
+    readonly property int downloadTrackTotal: (root.downloadState && root.downloadState.trackTotal !== undefined) ? Math.max(0, Number(root.downloadState.trackTotal) || 0) : 0
+    readonly property string downloadStatusSummary: {
+        if (root.downloading) {
+            var titlePart = root.downloadTitle ? (" " + root.downloadTitle) : ""
+            var trackPart = root.downloadTrackTotal > 0
+                ? (" " + root.downloadTrackIndex + "/" + root.downloadTrackTotal)
+                : ""
+            var pctPart = " (" + root.downloadPercent + "%)"
+            var stageVerb = "Downloading"
+            if (root.downloadStage === "extracting") stageVerb = "Extracting"
+            else if (root.downloadStage === "indexing") stageVerb = "Indexing"
+            else if (root.downloadStage === "resolving") stageVerb = "Resolving"
+            var qSuffix = root.downloadQueue.length > 0 ? (" [+" + root.downloadQueue.length + " queued]") : ""
+            return stageVerb + titlePart + trackPart + pctPart + qSuffix
+        }
+        if (root.syncing) {
+            return "Synchronising Bandcamp & Local Collection…"
+        }
+        return ""
+    }
+    readonly property string downloadStatusText: downloadStatusSummary
+
+    // Activity & Button Feedback Toast state
+    property string activityMessage: ""
+    property int activityCounter: 0
+
+    Timer {
+        id: activityClearTimer
+        interval: 3800
+        repeat: false
+        onTriggered: root.activityMessage = ""
+    }
+
+    function notifyAction(msg) {
+        if (!msg) return
+        root.activityMessage = msg
+        root.activityCounter = root.activityCounter + 1
+        activityClearTimer.restart()
+    }
 
     // History & Intelligent / Custom Playlists state
     property var lastPlayedTrack: null
@@ -63,14 +118,17 @@ Item {
     property var smartPlaylist: ({ title: "Sonic Radio", description: "", tracks: [], seed: null })
     property var playlists: []
 
-    // Omarchy Screensaver / ASCII Album Art state (optional — not fixed on top of every mode)
+    // Stage Mode & 3-Layer Visualiser / Omarchy Screensaver state
+    property string stageMode: "visualiser" // "off", "art", "turntable", "visualiser"
     property bool useAlbumArt: false
-    property string asciiMode: "braille"
-    property string asciiSource: "album-art"
+    property string asciiMode: "banner" // "banner" (Words), "braille" (Cover Art), "block" (Cover Art)
+    property string asciiSource: "omarchy-ascii"
     property var asciiLines: []
+    property var bannerLines: []
+    property var artLines: []
     property var ttfxFrames: []
     property string ttfxEffect: "waves"
-    property bool visualiserActive: false
+    property bool visualiserActive: stageMode === "visualiser" || stageMode === "turntable"
     property bool fullscreenVisualiserOpen: false
 
     // 60 FPS 64-band Cava spectrum
@@ -88,10 +146,12 @@ Item {
 
     onAlbumIdChanged: refreshAsciiArt()
     onArtPathChanged: refreshAsciiArt()
+    onTrackArtistChanged: refreshAsciiArt()
+    onTrackTitleChanged: refreshAsciiArt()
 
-    // Periodic status poll
+    // Fast status poll during downloads/syncs (450ms), normal poll during playback (1100ms)
     Timer {
-        interval: root.activelyPlaying ? 1200 : 2800
+        interval: (root.downloading || root.syncing) ? 450 : (root.activelyPlaying ? 1100 : 2500)
         running: true
         repeat: true
         onTriggered: root.refreshStatus()
@@ -112,23 +172,42 @@ Item {
             try {
                 var d = JSON.parse(raw)
                 if (!d.ok) return
+                var wasDownloading = root.downloading
+                var wasSyncing = root.syncing
+
                 root.username = d.username || ""
                 root.authenticated = Boolean(d.authenticated)
+                root.loggedOut = Boolean(d.loggedOut)
+                root.hasIdentity = Boolean(d.hasIdentity)
+                root.hasBrowserSession = Boolean(d.hasBrowserSession)
+                root.downloadDir = d.downloadDir || ""
+                root.preferredFormat = d.preferredFormat || "flac"
                 root.albumCount = Number(d.albumCount) || 0
                 root.purchasedCount = Number(d.purchasedCount) || 0
                 root.localCount = Number(d.localCount) || 0
                 root.trackCount = Number(d.trackCount) || 0
                 root.availableZips = d.availableZips || []
                 root.favourites = d.favourites || []
+                root.syncState = d.sync || ({ running: false })
                 root.syncing = Boolean(d.sync && d.sync.running)
                 root.downloadState = d.download || ({ running: false })
                 root.lastError = d.lastError || ""
 
-                if (d.useAlbumArt !== undefined && Boolean(d.useAlbumArt) !== root.useAlbumArt) {
-                    root.useAlbumArt = Boolean(d.useAlbumArt)
+                if (d.stageMode && ["off", "art", "turntable", "visualiser"].indexOf(d.stageMode) >= 0) {
+                    if (!root._stageChangedLocally) {
+                        root.stageMode = d.stageMode
+                    }
                 }
-                if (d.asciiMode && d.asciiMode !== root.asciiMode) {
-                    root.asciiMode = d.asciiMode
+
+                // If a download or sync just finished, reload collection and drain download queue
+                if ((wasDownloading && !root.downloading) || (wasSyncing && !root.syncing)) {
+                    root.loadCollection(root.activeScope, root.searchQuery)
+                    if (wasDownloading && !root.downloading) {
+                        if (root.downloadState && root.downloadState.stage === "done") {
+                            root.notifyAction("Download complete: " + (root.downloadState.title || "Album") + " (100%)")
+                        }
+                        root._pumpDownloadQueue()
+                    }
                 }
 
                 var prevLastId = root.lastPlayedTrack ? (root.lastPlayedTrack.id || "") : ""
@@ -162,6 +241,8 @@ Item {
             } catch (e) {}
         }
     }
+
+    property bool _stageChangedLocally: false
 
     // Collection / search loader process
     Process {
@@ -216,7 +297,7 @@ Item {
         }
     }
 
-    // ASCII Art transcoder process (`omarchy-transcode-ascii` / `omarchy-ascii` + `/usr/bin/ttfx`)
+    // ASCII Art & Omarchy Banner transcoder process (`omarchy-transcode-ascii` / `omarchy-ascii` + `/usr/bin/ttfx`)
     Process {
         id: asciiProc
         property string outBuf: ""
@@ -231,10 +312,11 @@ Item {
                 var d = JSON.parse(raw)
                 if (d.ok && d.lines) {
                     root.asciiLines = d.lines
+                    root.bannerLines = d.bannerLines || d.lines
+                    root.artLines = d.artLines || []
                     root.ttfxFrames = d.ttfxFrames || []
                     if (d.ttfxEffect) root.ttfxEffect = d.ttfxEffect
-                    root.asciiSource = d.source || "album-art"
-                    if (d.mode) root.asciiMode = d.mode
+                    root.asciiSource = d.source || "omarchy-ascii"
                 }
             } catch (e) {}
         }
@@ -288,7 +370,60 @@ Item {
         }
     }
 
-    // Action runner for play / cmd / download / sync / import-zip
+    // Dedicated background download process so transport & play actions never cancel an active download
+    Process {
+        id: downloadProc
+        property string outBuf: ""
+        stdout: SplitParser {
+            onRead: line => { downloadProc.outBuf += line }
+        }
+        onExited: {
+            var raw = downloadProc.outBuf.trim()
+            downloadProc.outBuf = ""
+            root.refreshStatus()
+            root.loadCollection(root.activeScope, root.searchQuery)
+            if (raw) {
+                try {
+                    var d = JSON.parse(raw)
+                    if (d.ok && d.album) {
+                        root.notifyAction("Downloaded " + (d.album.title || "Album") + " (" + (d.trackCount || 0) + " tracks)")
+                    } else if (d.error) {
+                        root.notifyAction("Download error: " + d.error)
+                    }
+                } catch (e) {}
+            }
+            root._pumpDownloadQueue()
+        }
+    }
+
+    // Dedicated sync / auth process
+    Process {
+        id: syncAuthProc
+        property string outBuf: ""
+        stdout: SplitParser {
+            onRead: line => { syncAuthProc.outBuf += line }
+        }
+        onExited: {
+            var raw = syncAuthProc.outBuf.trim()
+            syncAuthProc.outBuf = ""
+            root.refreshStatus()
+            root.loadCollection(root.activeScope, root.searchQuery)
+            root.loadPlaylists()
+            root.refreshSmartPlaylist(root.smartPreset, "")
+            if (raw) {
+                try {
+                    var d = JSON.parse(raw)
+                    if (d.loggedOut) {
+                        root.notifyAction("Logged out of Bandcamp (" + (d.localCount || 0) + " local albums available)")
+                    } else if (d.synced || d.loggedIn) {
+                        root.notifyAction("Synced " + (d.albumCount || 0) + " albums (" + (d.purchasedCount || 0) + " Bandcamp purchases)")
+                    }
+                } catch (e) {}
+            }
+        }
+    }
+
+    // Action runner for fast playback / transport / favourites commands
     Process {
         id: actionProc
         property string outBuf: ""
@@ -347,6 +482,21 @@ Item {
         }
     }
 
+    function setStageMode(newMode) {
+        if (["off", "art", "turntable", "visualiser"].indexOf(newMode) < 0) return
+        root._stageChangedLocally = true
+        root.stageMode = newMode
+        root.visualiserActive = (newMode === "visualiser" || newMode === "turntable")
+        Quickshell.execDetached([root.binPath, "auth", "--stage-mode", newMode])
+        var labels = {
+            "off": "Stage Closed",
+            "art": "Stage: Album Art As-Is",
+            "turntable": "Stage: Audiophile Turntable Deck",
+            "visualiser": "Stage: 3-Layer Psychedelic Visualiser"
+        }
+        root.notifyAction(labels[newMode] || ("Stage: " + newMode))
+    }
+
     function loadCollection(scope, query) {
         if (scope !== undefined) root.activeScope = scope
         if (query !== undefined) root.searchQuery = query
@@ -387,10 +537,11 @@ Item {
         if (customEffect) root.ttfxEffect = customEffect
         if (asciiProc.running) asciiProc.running = false
         asciiProc.outBuf = ""
+        var effMode = (!root.useAlbumArt || root.asciiMode === "banner") ? "banner" : root.asciiMode
         var cmd = [
             root.binPath, "ascii-art",
-            "--mode", root.asciiMode,
-            "--use-album-art", "1",
+            "--mode", effMode,
+            "--use-album-art", root.useAlbumArt ? "1" : "0",
             "--effect", root.ttfxEffect || "waves",
             "--width", "68",
             "--height", "30"
@@ -401,47 +552,82 @@ Item {
         } else if (root.artPath) {
             cmd.push("--image", root.artPath)
         }
-        if (root.trackArtist || root.trackTitle) {
-            cmd.push("--text", root.trackArtist || root.trackTitle)
-        }
+        var bannerTxt = root.trackArtist || root.trackTitle || "BANDARCHY"
+        cmd.push("--text", bannerTxt)
         asciiProc.command = cmd
         asciiProc.running = true
     }
 
     function setTtfxEffect(effectName) {
-        if (!effectName || effectName === root.ttfxEffect) return
+        if (!effectName) return
         root.ttfxEffect = effectName
         refreshAsciiArt("", effectName)
+        root.notifyAction("TTE Effect: " + effectName)
     }
 
     function toggleUseAlbumArt() {
         root.useAlbumArt = !root.useAlbumArt
+        if (root.useAlbumArt && root.asciiMode === "banner") {
+            root.asciiMode = "braille"
+        }
         Quickshell.execDetached([
             root.binPath, "auth",
-            "--use-album-art", root.useAlbumArt ? "1" : "0"
+            "--use-album-art", root.useAlbumArt ? "1" : "0",
+            "--ascii-mode", root.asciiMode
         ])
         refreshAsciiArt()
+        root.notifyAction(root.useAlbumArt ? "Layer #3 Source: Album Cover Art" : "Layer #3 Source: Artist/Track Words")
     }
 
     function toggleAsciiMode() {
-        root.asciiMode = (root.asciiMode === "braille") ? "block" : "braille"
+        // Cycle cleanly across 3 distinct visual sources:
+        //   1. Words (Banner) -> 2. Braille Cover Art -> 3. Block Cover Art -> 1. Words (Banner)
+        if (!root.useAlbumArt || root.asciiMode === "banner") {
+            root.useAlbumArt = true
+            root.asciiMode = "braille"
+            root.notifyAction("Layer #3 Source: Cover Art (Braille ⣿)")
+        } else if (root.asciiMode === "braille") {
+            root.useAlbumArt = true
+            root.asciiMode = "block"
+            root.notifyAction("Layer #3 Source: Cover Art (Block █)")
+        } else {
+            root.useAlbumArt = false
+            root.asciiMode = "banner"
+            root.notifyAction("Layer #3 Source: Artist/Track Words (Banner)")
+        }
         Quickshell.execDetached([
             root.binPath, "auth",
+            "--use-album-art", root.useAlbumArt ? "1" : "0",
             "--ascii-mode", root.asciiMode
         ])
         refreshAsciiArt()
     }
 
+    function cycleLayer3Source() {
+        toggleAsciiMode()
+    }
+
     function launchTtfxScreensaver(effectName) {
+        var effMode = (!root.useAlbumArt || root.asciiMode === "banner") ? "banner" : root.asciiMode
         var cmd = [
             root.binPath, "screensaver",
-            "--mode", root.asciiMode,
+            "--mode", effMode,
             "--use-album-art", root.useAlbumArt ? "1" : "0",
-            "--effect", effectName || "random"
+            "--effect", effectName || root.ttfxEffect || "waves"
         ]
         if (root.albumId) cmd.push("--album", root.albumId)
         else if (root.artPath) cmd.push("--image", root.artPath)
+        if (root.trackArtist || root.trackTitle) {
+            cmd.push("--text", root.trackArtist || root.trackTitle)
+        }
         Quickshell.execDetached(cmd)
+        root.notifyAction("Launched Omarchy TTE Terminal (" + (effectName || root.ttfxEffect || "waves") + ")")
+    }
+
+    function openExternal(target, customMsg) {
+        if (!target) return
+        Quickshell.execDetached(["xdg-open", String(target)])
+        root.notifyAction(customMsg || ("Opened: " + String(target)))
     }
 
     function refreshSmartPlaylist(preset, seedTrackId) {
@@ -472,6 +658,7 @@ Item {
         if (seedTrackId) cmd.push("--seed-track", seedTrackId)
         smartProc.command = cmd
         smartProc.running = true
+        root.notifyAction("Playing Smart Mix: " + root.smartPreset.toUpperCase())
     }
 
     function saveSmartPlaylistAs(title, preset, seedTrackId) {
@@ -487,6 +674,7 @@ Item {
         if (seedTrackId) cmd.push("--seed-track", seedTrackId)
         smartProc.command = cmd
         smartProc.running = true
+        root.notifyAction("Saved Smart Playlist: " + title)
     }
 
     function loadPlaylists() {
@@ -507,6 +695,7 @@ Item {
         if (tracksCsv) cmd.push("--tracks", tracksCsv)
         playlistsProc.command = cmd
         playlistsProc.running = true
+        root.notifyAction("Created Playlist: " + title)
     }
 
     function addAlbumToPlaylist(playlistId, albumId) {
@@ -519,6 +708,7 @@ Item {
             "--album", albumId
         ]
         playlistsProc.running = true
+        root.notifyAction("Added album to playlist")
     }
 
     function addTrackToPlaylist(playlistId, trackId) {
@@ -531,6 +721,7 @@ Item {
             "--tracks", trackId
         ]
         playlistsProc.running = true
+        root.notifyAction("Added track to playlist")
     }
 
     function addAlbumOrCreatePlaylist(albumId, albumTitle, artistName, preferredPlaylistId) {
@@ -575,6 +766,7 @@ Item {
             "--index", String(index)
         ]
         playlistsProc.running = true
+        root.notifyAction("Removed track from playlist")
     }
 
     function deletePlaylist(playlistId) {
@@ -586,6 +778,7 @@ Item {
             "--id", playlistId
         ]
         playlistsProc.running = true
+        root.notifyAction("Deleted playlist")
     }
 
     function runAction(cmdArgs, reloadCollectionAfter) {
@@ -601,58 +794,158 @@ Item {
         if (mode) args.push("--mode", mode)
         if (shuffle) args.push("--shuffle")
         runAction(args, false)
+        root.notifyAction("Starting playback...")
     }
 
     function playTrack(trackId, albumId) {
         var args = ["play", "--track-id", trackId]
         if (albumId) args.push("--album", albumId)
         runAction(args, false)
+        root.notifyAction("Playing selected track...")
     }
 
     function playPlaylist(playlistId, trackIndex, shuffle) {
         var args = ["play", "--playlist", playlistId, "--track-index", String(trackIndex || 0)]
         if (shuffle) args.push("--shuffle")
         runAction(args, false)
+        root.notifyAction(shuffle ? "Shuffling playlist..." : "Playing playlist...")
     }
 
     function playScope(scope, shuffle) {
         var args = ["play", "--scope", scope || "all"]
         if (shuffle) args.push("--shuffle")
         runAction(args, false)
+        root.notifyAction((shuffle ? "Shuffling " : "Playing ") + (scope || "all") + " collection...")
     }
 
-    function downloadAlbum(albumId, format) {
-        var args = ["download", "--album", albumId]
+    function _pumpDownloadQueue() {
+        if (downloadProc.running || root.downloading) return
+        if (!root.downloadQueue || root.downloadQueue.length === 0) return
+        var nextItem = root.downloadQueue[0]
+        var rest = []
+        for (var i = 1; i < root.downloadQueue.length; i++) {
+            rest.push(root.downloadQueue[i])
+        }
+        root.downloadQueue = rest
+        _startDownloadNow(nextItem.albumId, nextItem.format, nextItem.title)
+    }
+
+    function _startDownloadNow(albumId, format, title) {
+        var args = [root.binPath, "download", "--album", albumId]
         if (format) args.push("--format", format)
-        runAction(args, true)
+        root.downloadState = {
+            running: true,
+            albumId: albumId,
+            title: title || albumId,
+            stage: "starting",
+            percent: 2,
+            trackIndex: 0,
+            trackTotal: 0
+        }
+        downloadProc.outBuf = ""
+        downloadProc.command = args
+        downloadProc.running = true
+        root.notifyAction("Downloading " + (title || "album") + "...")
+    }
+
+    function downloadAlbum(albumId, format, title) {
+        if (!albumId) return
+        var albTitle = title || ""
+        if (!albTitle) {
+            for (var i = 0; i < root.albums.length; i++) {
+                if (root.albums[i].id === albumId) {
+                    albTitle = root.albums[i].title || albumId
+                    break
+                }
+            }
+        }
+        if (downloadProc.running || root.downloading) {
+            var q = root.downloadQueue ? root.downloadQueue.slice() : []
+            q.push({ albumId: albumId, format: format || "", title: albTitle })
+            root.downloadQueue = q
+            root.notifyAction("Queued download: " + (albTitle || albumId) + " (#" + q.length + " in queue)")
+            return
+        }
+        _startDownloadNow(albumId, format, albTitle)
     }
 
     function importZips() {
         runAction(["import-zip"], true)
+        root.notifyAction("Importing Bandcamp ZIP archives from ~/Downloads...")
     }
 
     function syncCollection(localOnly) {
-        var args = ["sync"]
+        if (syncAuthProc.running) syncAuthProc.running = false
+        var args = [root.binPath, "sync"]
         if (localOnly) args.push("--local-only")
-        runAction(args, true)
+        root.syncing = true
+        syncAuthProc.outBuf = ""
+        syncAuthProc.command = args
+        syncAuthProc.running = true
+        root.notifyAction(localOnly ? "Scanning local music folders..." : "Synchronising Bandcamp purchases & local library...")
+    }
+
+    // Bandcamp Account Log In / Log Out actions
+    function openBandcampLogin() {
+        Quickshell.execDetached([root.binPath, "auth", "--open-browser"])
+        root.notifyAction("Opened bandcamp.com/login in browser — click 'Detect From Browser' after signing in")
+    }
+
+    function loginFromBrowser() {
+        if (syncAuthProc.running) syncAuthProc.running = false
+        root.syncing = true
+        syncAuthProc.outBuf = ""
+        syncAuthProc.command = [root.binPath, "login", "--detect-browser"]
+        syncAuthProc.running = true
+        root.notifyAction("Detecting Bandcamp session from browser & syncing purchases...")
+    }
+
+    function logoutBandcamp() {
+        if (syncAuthProc.running) syncAuthProc.running = false
+        syncAuthProc.outBuf = ""
+        syncAuthProc.command = [root.binPath, "logout"]
+        syncAuthProc.running = true
+        root.username = ""
+        root.authenticated = false
+        root.loggedOut = true
+        root.hasIdentity = false
+        root.notifyAction("Logged out of Bandcamp account")
     }
 
     function saveAuth(username, identity, downloadDir, format) {
-        var args = ["auth"]
-        if (username !== undefined) args.push("--username", username)
-        if (identity) args.push("--identity", identity)
-        if (downloadDir) args.push("--download-dir", downloadDir)
-        if (format) args.push("--format", format)
-        runAction(args, true)
+        if (syncAuthProc.running) syncAuthProc.running = false
+        var args = [root.binPath, "login"]
+        if (username !== undefined && String(username).trim().length > 0) {
+            args.push("--username", String(username).trim())
+        } else {
+            args.push("--detect-browser")
+        }
+        if (identity && String(identity).trim().length > 0) {
+            args.push("--identity", String(identity).trim())
+        }
+        if (downloadDir || format) {
+            var authArgs = [root.binPath, "auth"]
+            if (downloadDir) authArgs.push("--download-dir", downloadDir)
+            if (format) authArgs.push("--format", format)
+            Quickshell.execDetached(authArgs)
+        }
+        root.syncing = true
+        syncAuthProc.outBuf = ""
+        syncAuthProc.command = args
+        syncAuthProc.running = true
+        root.notifyAction("Logging in & synchronising Bandcamp collection...")
     }
 
     function addBandcampUrl(url) {
         if (!url) return
         runAction(["auth", "--add-url", url], true)
+        root.notifyAction("Added Bandcamp URL to collection")
     }
 
     function toggleFavourite(albumId, title) {
+        var wasFav = isFavourite(albumId)
         runAction(["favourites", "toggle", "--id", albumId, "--title", title || albumId], false)
+        root.notifyAction((wasFav ? "Removed from Favourites: " : "Added to Favourites: ") + (title || albumId))
     }
 
     function isFavourite(albumId) {
@@ -662,16 +955,39 @@ Item {
         return false
     }
 
-    function togglePlayPause() { runAction(["cmd", "play-pause"], false) }
-    function nextTrack() { runAction(["cmd", "next"], false) }
-    function prevTrack() { runAction(["cmd", "prev"], false) }
-    function stopPlayback() { runAction(["cmd", "stop"], false) }
-    function toggleLoop() { runAction(["cmd", "loop"], false) }
-    function setVolume(vol) { runAction(["cmd", "volume", "--value", String(vol)], false) }
-    function seekTo(sec) { runAction(["cmd", "seek", "--value", String(sec)], false) }
-    function jumpQueue(idx) { runAction(["cmd", "jump", "--value", String(idx)], false) }
+    function togglePlayPause() {
+        runAction(["cmd", "play-pause"], false)
+        root.notifyAction(root.activelyPlaying ? "Paused playback" : "Resumed playback")
+    }
+    function nextTrack() {
+        runAction(["cmd", "next"], false)
+        root.notifyAction("Next track 󰒭")
+    }
+    function prevTrack() {
+        runAction(["cmd", "prev"], false)
+        root.notifyAction("Previous track 󰒮")
+    }
+    function stopPlayback() {
+        runAction(["cmd", "stop"], false)
+        root.notifyAction("Stopped playback")
+    }
+    function toggleLoop() {
+        runAction(["cmd", "loop"], false)
+        root.notifyAction(root.loop ? "Loop: OFF" : "Loop: ON")
+    }
+    function setVolume(vol) {
+        runAction(["cmd", "volume", "--value", String(vol)], false)
+    }
+    function seekTo(sec) {
+        runAction(["cmd", "seek", "--value", String(sec)], false)
+    }
+    function jumpQueue(idx) {
+        runAction(["cmd", "jump", "--value", String(idx)], false)
+        root.notifyAction("Jumped to queue track #" + (Number(idx) + 1))
+    }
 
     function launchStandalonePlayer() {
         Quickshell.execDetached(["quickshell", "-p", root.baseDir + "/App.qml"])
+        root.notifyAction("Launched standalone Bandarchy window")
     }
 }

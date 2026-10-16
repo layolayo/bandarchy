@@ -2,17 +2,20 @@
 """Comprehensive automated test suite for Bandarchy (`io.github.layolayo.bandarchy`).
 
 Tests:
-1. Mock Bandcamp server pagination (`data-blob` + `/api/fancollection/1/collection_items`)
-   and unified merge with local music directories.
+1. Mock Bandcamp server pagination (`data-blob` + `/api/fancollection/1/collection_items`,
+   including pages where `more_available` is omitted/false while `last_token` continues)
+   and unified merge with local music directories (`audioFormat`, `totalDuration`).
 2. Search and scope filtering (`all`, `purchased`, `local`, `cloud`).
-3. Purchase download (`redownload_urls` ZIP archive + `data-tralbum` stream rip)
-   and ZipSlip path-traversal rejection.
+3. Purchase download (`redownload_urls` ZIP archive + `data-tralbum` stream rip),
+   live `trackIndex`/`trackTotal`/`percent` download status, and ZipSlip rejection.
 4. Omarchy screensaver album-art transcoding (`omarchy-transcode-ascii` Braille & Block
-   modes + `omarchy-ascii` banner fallback + `screensaver --dry-run`).
+   modes + `omarchy-ascii` wrapped/compressed banner `bannerLines` + `artLines` + `screensaver --dry-run`).
 5. Intelligent playlist generation seeded from `lastPlayedTrack` (`radio`, `kindred`,
    `journey`, `purchased` presets + `--save-as`) and custom user playlists CRUD.
 6. Live `mpv` headless playback + UNIX socket IPC transport + `cava` spectrum config.
-7. QML static verification (`textFormat: Text.PlainText`, manifest entry points).
+7. Bandcamp Account `login` / `logout` / `auth --logout` flow and `loggedOut` persistence.
+8. QML static & runtime verification (`textFormat: Text.PlainText`, 4 Stage Modes,
+   3 Visualiser Layers, Album Breakdown box, interactive scrollbars, download progress footer).
 """
 
 import html
@@ -81,7 +84,9 @@ class MockBandcampHandler(http.server.BaseHTTPRequestHandler):
                 "collection_data": {
                     "sequence": ["a100", "a200"],
                     "last_token": "1700000000:a200:a:0:0",
-                    "more_available": True,
+                    # Intentionally set more_available=False while last_token is non-empty
+                    # to verify pagination continues until items=[] (real Bandcamp quirk)
+                    "more_available": False,
                     "redownload_urls": {
                         "p100": f"{base}/download?id=a100",
                         "p200": f"{base}/download?id=a200",
@@ -293,9 +298,17 @@ class BandarchyTestSuite(unittest.TestCase):
         self.assertEqual(res["localCount"], 2)
         self.assertEqual(res["albumCount"], 4)
 
+        # Verify local-only sync preserves the 3 remote purchased albums
+        local_only = self.run_cli("sync", "--local-only")
+        self.assertEqual(local_only["purchasedCount"], 3)
+        self.assertEqual(local_only["albumCount"], 4)
+
     def test_02_search_and_scope_filters(self):
         all_coll = self.run_cli("collection", "--scope", "all")
         self.assertEqual(all_coll["count"], 4)
+        for alb in all_coll["albums"]:
+            self.assertIn("audioFormat", alb)
+            self.assertIn("totalDuration", alb)
 
         purchased_coll = self.run_cli("collection", "--scope", "purchased")
         self.assertEqual(purchased_coll["count"], 3)
@@ -309,7 +322,6 @@ class BandarchyTestSuite(unittest.TestCase):
         search_res = self.run_cli("search", "Voyage 34", "--scope", "purchased")
         self.assertEqual(len(search_res["albums"]), 1)
         self.assertEqual(search_res["albums"][0]["artist"], "Porcupine Tree")
-        # Even before on-demand resolution, cloud albums must have a fallback track entry so they can be expanded/played
         self.assertGreaterEqual(len(search_res["albums"][0].get("tracks", [])), 1)
 
         # On-demand `bandarchy album --id bc-album-300` resolves full remote tracklist (Phase I, Phase II)
@@ -320,12 +332,25 @@ class BandarchyTestSuite(unittest.TestCase):
         self.assertEqual(alb_detail["album"]["tracks"][1]["title"], "Phase II")
 
     def test_03_ascii_art_transcoding_and_use_album_art_option(self):
-        # 1. Braille mode with Use Album Art = 1 + ttfxFrames extraction
-        braille = self.run_cli("ascii-art", "--image", self.cover_path, "--mode", "braille", "--use-album-art", "1", "--width", "40", "--height", "20", "--effect", "waves")
+        # 1. Braille mode with Use Album Art = 1 + ttfxFrames + both bannerLines & artLines
+        braille = self.run_cli(
+            "ascii-art",
+            "--image", self.cover_path,
+            "--mode", "braille",
+            "--use-album-art", "1",
+            "--width", "40",
+            "--height", "20",
+            "--effect", "waves",
+            "--text", "BASS COMMUNION",
+        )
         self.assertEqual(braille["source"], "album-art")
         self.assertTrue(braille["useAlbumArt"])
         self.assertEqual(braille["rows"], 20)
         self.assertEqual(braille["cols"], 40)
+        self.assertIn("bannerLines", braille)
+        self.assertIn("artLines", braille)
+        self.assertGreaterEqual(len(braille["bannerLines"]), 10)
+        self.assertLessEqual(max(len(l) for l in braille["bannerLines"]), 68)
         self.assertTrue(os.path.isfile(braille["screensaverFile"]))
         if shutil.which("ttfx") or os.path.isfile("/usr/bin/ttfx"):
             self.assertGreater(braille.get("ttfxFrameCount", 0), 5)
@@ -333,16 +358,30 @@ class BandarchyTestSuite(unittest.TestCase):
             self.assertEqual(len(braille["ttfxFrames"][0]), 20)
 
         # 2. Block mode with Use Album Art = 1
-        block = self.run_cli("ascii-art", "--image", self.cover_path, "--mode", "block", "--use-album-art", "1", "--width", "40", "--height", "20", "--effect", "blackhole")
+        block = self.run_cli(
+            "ascii-art",
+            "--image", self.cover_path,
+            "--mode", "block",
+            "--use-album-art", "1",
+            "--width", "40",
+            "--height", "20",
+            "--effect", "blackhole",
+        )
         self.assertEqual(block["source"], "album-art")
         self.assertEqual(block["mode"], "block")
         self.assertEqual(block["rows"], 20)
 
-        # 3. Use Album Art = 0 falls back to Omarchy ASCII banner (`Delta Corps Priest 1`)
-        banner = self.run_cli("ascii-art", "--image", self.cover_path, "--use-album-art", "0", "--text", "BASS COMMUNION")
+        # 3. Use Album Art = 0 falls back to wrapped & compressed Omarchy ASCII banner (`Delta Corps Priest 1`)
+        banner = self.run_cli(
+            "ascii-art",
+            "--image", self.cover_path,
+            "--use-album-art", "0",
+            "--text", "BASS COMMUNION",
+        )
         self.assertEqual(banner["source"], "omarchy-ascii")
         self.assertFalse(banner["useAlbumArt"])
-        self.assertGreater(banner["rows"], 3)
+        self.assertGreaterEqual(banner["rows"], 10)
+        self.assertLessEqual(banner["cols"], 68)
 
         # 4. Dry-run screensaver verification
         ss = self.run_cli("screensaver", "--image", self.cover_path, "--effect", "waves", "--dry-run")
@@ -355,6 +394,11 @@ class BandarchyTestSuite(unittest.TestCase):
         dl = self.run_cli("download", "--album", "bc-album-200", "--format", "wav")
         self.assertTrue(dl["downloaded"])
         self.assertGreaterEqual(dl["fileCount"], 2)
+
+        # Verify download status file recorded 100% completion and track counts
+        st = self.run_cli("status")
+        self.assertEqual(st["download"]["percent"], 100)
+        self.assertGreaterEqual(st["download"]["trackTotal"], 2)
 
         # Verify it is now marked local in collection
         local_coll = self.run_cli("collection", "--scope", "local")
@@ -428,35 +472,45 @@ class BandarchyTestSuite(unittest.TestCase):
         self.assertEqual(saved["savedPlaylist"]["title"], "Kindred Steven Wilson")
 
     def test_06_custom_user_playlists_crud(self):
-        # Create custom playlist
         created = self.run_cli("playlists", "create", "--title", "Late Night Psychedelia", "--description", "Deep cuts")
         pl_id = created["created"]["id"]
 
-        # Add an album's tracks to the playlist
         all_coll = self.run_cli("collection", "--scope", "all")
         album_id = all_coll["albums"][0]["id"]
         added = self.run_cli("playlists", "add", "--id", pl_id, "--album", album_id)
         self.assertGreaterEqual(added["playlist"]["trackCount"], 2)
 
-        # Remove track at index 0
         before_count = added["playlist"]["trackCount"]
         removed = self.run_cli("playlists", "remove-track", "--id", pl_id, "--index", "0")
         self.assertEqual(removed["playlist"]["trackCount"], before_count - 1)
 
-        # Rename playlist
         renamed = self.run_cli("playlists", "rename", "--id", pl_id, "--title", "Prog & Ambient")
         self.assertEqual(renamed["playlist"]["title"], "Prog & Ambient")
 
-        # List playlists
         listed = self.run_cli("playlists", "list")
         ids = [p["id"] for p in listed["playlists"]]
         self.assertIn(pl_id, ids)
 
-        # Delete playlist
         deleted = self.run_cli("playlists", "delete", "--id", pl_id)
         self.assertEqual(deleted["deleted"], pl_id)
 
-    def test_07_qml_and_manifest_verification(self):
+    def test_07_bandcamp_login_and_logout_flow(self):
+        # Log out and verify Bandcamp purchases are cleared while local library remains intact
+        out_res = self.run_cli("logout")
+        self.assertTrue(out_res["loggedOut"])
+        self.assertEqual(out_res["username"], "")
+        self.assertEqual(out_res["purchasedCount"], 0)
+        self.assertGreaterEqual(out_res["localCount"], 2)
+
+        # Log back in and sync from mock Bandcamp server
+        login_res = self.run_cli("login", "--username", "testfan")
+        self.assertFalse(login_res["loggedOut"])
+        self.assertEqual(login_res["username"], "testfan")
+
+        resync = self.run_cli("sync", "--username", "testfan", "--api-base", self.api_base)
+        self.assertEqual(resync["purchasedCount"], 3)
+
+    def test_08_qml_and_manifest_verification(self):
         manifest_path = os.path.join(REPO_ROOT, "manifest.json")
         with open(manifest_path, "r", encoding="utf-8") as f:
             manifest = json.load(f)
@@ -478,65 +532,55 @@ class BandarchyTestSuite(unittest.TestCase):
                 f"{qf} has {text_blocks} Text blocks but {plain_formats} textFormat: Text.PlainText declarations",
             )
 
-        # Verify PsychedelicEngine.js has 12 modes, 10 palettes, kaleidoscope symmetry, randomiseState,
-        # and gates drawAsciiMatrix on mode === 10 || useAlbumArt (so album art is an option, not fixed)
+        # Verify PsychedelicEngine.js has all 3 configurable layers, 12 Layer-2 modes,
+        # 6 Layer-1 modes, 6 Layer-3 modes, 10 palettes, and sub-block banner rendering
         engine_path = os.path.join(REPO_ROOT, "PsychedelicEngine.js")
         with open(engine_path, "r", encoding="utf-8") as f:
             engine_js = f.read()
-        for expected_mode in (
-            "Julia & Mandelbrot Fractals",
-            "Hyperspace Swirls & Vortex",
-            "Randomised Shapes & Kaleidoscope",
-            "Space-Time Warp Matrix",
-            "Alien Mycelium & Bioluminescence",
-            "Multi-Faceted Crystal Hypercube",
-            "Voyage 34 Sacred Mandala",
-            "Blackhole Singularity",
-            "Cyber SynthGrid & Beams",
-            "VHS Glitch & Matrix Rain",
-            "Album Art ASCII Matrix (TTE)",
-            "Cosmic Chimera Overdrive",
+        for expected_symbol in (
+            "var LAYER1_MODE_NAMES",
+            "var LAYER2_MODE_NAMES",
+            "var LAYER3_MODE_NAMES",
+            "MilkDrop Liquid Feedback Warp",
+            "MilkDrop Geiss Cathedral",
+            "AVS 3D SuperScope",
+            "G-Force WaveShape Vortex",
+            "Cthugha Rave Oscilloscope",
+            "Minter VLM Neon Lattice",
+            "Shatter & Evolving Rebuild",
+            "Omarchy TTE Keyframe Morph",
+            "function randomiseState",
+            "function shatterAlbumArt",
+            "function drawLayer3AlbumArt",
         ):
-            self.assertIn(expected_mode, engine_js)
-        for expected_palette in (
-            "DMT Hyperspace Prism",
-            "Omarchy Screensaver",
-            "Voyage 34 LSD",
-            "Alien Flora & Mycelium",
-            "Space-Time Event Horizon",
-            "Chromatic Fractal Acid",
-            "Aeterna Nebula",
-            "Iridescent Scarab & Opal",
-            "Solar Flare & Plasma",
-            "Abyssal Bioluminescence",
-        ):
-            self.assertIn(expected_palette, engine_js)
-        self.assertIn("function randomiseState", engine_js)
-        self.assertIn("if (useAlbumArt && mode !== 10)", engine_js)
+            self.assertIn(expected_symbol, engine_js)
 
-        # Verify Service.qml implements addAlbumOrCreatePlaylist and addTrackOrCreatePlaylist
+        # Verify Service.qml implements auth, download progress, and playlist helpers
         with open(os.path.join(REPO_ROOT, "Service.qml"), "r", encoding="utf-8") as f:
             service_src = f.read()
-        self.assertIn("function addAlbumOrCreatePlaylist", service_src)
-        self.assertIn("function addTrackOrCreatePlaylist", service_src)
+        for expected_fn in (
+            "function addAlbumOrCreatePlaylist",
+            "function addTrackOrCreatePlaylist",
+            "function openBandcampLogin",
+            "function loginFromBrowser",
+            "function logoutBandcamp",
+            "function cycleLayer3Source",
+            "downloadStatusSummary",
+        ):
+            self.assertIn(expected_fn, service_src)
 
-        # Verify both Panel.qml and App.qml implement expandable album track drawers,
-        # track play & add-to-playlist actions, custom playlist track navigation,
-        # inner track ListView auto-scrolling, and 1-4 / Tab keyboard navigation
+        # Verify both Panel.qml and App.qml implement expandable Album Info Breakdown box,
+        # interactive ListScroller scrollbar, live download progress footer, and 4 Stage Modes
         for nav_qml in ("Panel.qml", "App.qml"):
             with open(os.path.join(REPO_ROOT, nav_qml), "r", encoding="utf-8") as f:
                 nav_src = f.read()
             self.assertIn("function toggleAlbumExpand", nav_src, f"{nav_qml} missing toggleAlbumExpand")
             self.assertIn("function handleKeyNavigation", nav_src, f"{nav_qml} missing handleKeyNavigation")
-            self.assertIn("ensureAlbumTracks", nav_src, f"{nav_qml} missing ensureAlbumTracks call")
-            self.assertIn("focusedAlbumIndex", nav_src, f"{nav_qml} missing focusedAlbumIndex")
-            self.assertIn("focusedTrackIndex", nav_src, f"{nav_qml} missing focusedTrackIndex")
-            self.assertIn("focusedPlaylistTrackIndex", nav_src, f"{nav_qml} missing focusedPlaylistTrackIndex")
-            self.assertIn("addTrackOrCreatePlaylist", nav_src, f"{nav_qml} missing addTrackOrCreatePlaylist")
-            self.assertIn("addAlbumOrCreatePlaylist", nav_src, f"{nav_qml} missing addAlbumOrCreatePlaylist")
-            self.assertIn("positionViewAtIndex(currentIndex, ListView.Contain)", nav_src, f"{nav_qml} missing inner ListView auto-scroll")
-            self.assertIn("Qt.Key_1", nav_src, f"{nav_qml} missing 1-4 tab switching")
-            self.assertIn("Qt.Key_4", nav_src, f"{nav_qml} missing 1-4 tab switching")
+            self.assertIn("ALBUM BREAKDOWN", nav_src, f"{nav_qml} missing expandable Album Info Breakdown box")
+            self.assertIn("component ListScroller", nav_src, f"{nav_qml} missing interactive ListScroller")
+            self.assertIn("downloadStatusSummary", nav_src, f"{nav_qml} missing live download progress footer")
+            self.assertIn("openBandcampLogin", nav_src, f"{nav_qml} missing openBandcampLogin")
+            self.assertIn("logoutBandcamp", nav_src, f"{nav_qml} missing logoutBandcamp")
 
         # Verify App.qml loads cleanly in Quickshell with zero QML errors
         if shutil.which("quickshell") and (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):

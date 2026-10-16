@@ -14,6 +14,7 @@ Every command outputs a single bounded JSON object on stdout for QML.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import errno
 import fcntl
 import glob
@@ -26,6 +27,7 @@ import secrets
 import shutil
 import socket
 import sqlite3
+import ssl
 import stat
 import subprocess
 import sys
@@ -308,12 +310,24 @@ def is_locked(lock_path: str) -> bool:
 def load_settings() -> dict:
     defaults = {
         "username": "",
+        "loggedOut": False,
         "downloadDir": DEFAULT_DOWNLOAD_DIR,
         "localDirs": DEFAULT_LOCAL_DIRS,
         "preferredFormat": "flac",
         "autoImportZips": True,
+        "bgEnabled": True,
+        "bgMode": 0,
+        "bgTrail": 0.26,
+        "bgSpeed": 1.0,
+        "bgDensity": 1.0,
+        "vizEnabled": True,
         "useAlbumArt": False,
         "asciiMode": "braille",
+        "dismantleMode": 0,
+        "dismantleForce": 1.15,
+        "rebuildCohesion": 0.65,
+        "evolutionRate": 0.55,
+        "glyphScale": 1.0,
         "apiBase": os.environ.get("BANDARCHY_API_BASE") or os.environ.get("BANDCAMP_API_BASE") or "https://bandcamp.com",
     }
     saved = read_json(SETTINGS_FILE, {})
@@ -325,15 +339,86 @@ def load_settings() -> dict:
     return defaults
 
 
+_keyring_cache: dict[str, bytes] = {}
+
+
+def decrypt_chromium_cookie_value(enc: bytes, app_name: str = "chrome") -> str:
+    """Decrypt Linux Chrome/Chromium/Brave v10/v11 AES-128-CBC SQLite cookie values."""
+    if not enc or not isinstance(enc, (bytes, bytearray)):
+        return ""
+    raw_enc = bytes(enc)
+    if not raw_enc.startswith((b"v10", b"v11")):
+        try:
+            return raw_enc.decode("utf-8")
+        except Exception:
+            return ""
+
+    pw = b"peanuts"
+    if raw_enc.startswith(b"v11"):
+        if app_name not in _keyring_cache:
+            secret_pw = b""
+            for cand_app in (app_name, "chrome", "chromium", "brave"):
+                try:
+                    r = subprocess.run(
+                        ["secret-tool", "lookup", "application", cand_app],
+                        capture_output=True,
+                        timeout=1.5,
+                    )
+                    if r.returncode == 0 and r.stdout.strip():
+                        secret_pw = r.stdout.strip()
+                        break
+                except Exception:
+                    continue
+            _keyring_cache[app_name] = secret_pw or b"peanuts"
+        pw = _keyring_cache[app_name]
+
+    key = hashlib.pbkdf2_hmac("sha1", pw, b"saltysalt", 1, 16)
+    iv = b" " * 16
+    ct = raw_enc[3:]
+    if not ct or len(ct) % 16 != 0:
+        return ""
+    try:
+        p = subprocess.run(
+            ["openssl", "enc", "-d", "-aes-128-cbc", "-K", key.hex(), "-iv", iv.hex()],
+            input=ct,
+            capture_output=True,
+            timeout=1.5,
+        )
+        if p.returncode != 0 or not p.stdout:
+            return ""
+        pt = p.stdout
+        # Chromium >= 130 prepends a 32-byte SHA-256 domain digest before the plaintext cookie value
+        if len(pt) > 32:
+            tail = pt[32:]
+            try:
+                s = tail.decode("utf-8")
+                if s and all(32 <= ord(ch) < 127 or ch == "\t" for ch in s):
+                    return s.strip()
+            except Exception:
+                pass
+        s_full = pt.decode("utf-8", errors="ignore").strip()
+        return "".join(ch for ch in s_full if 32 <= ord(ch) < 127 or ch == "\t")
+    except Exception:
+        return ""
+
+
 def discover_from_browsers() -> dict:
-    """Scan local Chrome/Chromium/Brave SQLite history & cookies safely via temp copy."""
+    """Scan local Chrome/Chromium/Brave/Firefox/Zen SQLite history & cookies safely via temp copy."""
     username = ""
+    identity_cookie = ""
     albums_by_url: dict[str, dict] = {}
     download_urls: list[str] = []
     cookie_subdomains: set[str] = set()
 
     if os.environ.get("BANDARCHY_DISABLE_BROWSER_SCAN") == "1" or os.environ.get("BANDCAMP_DISABLE_BROWSER_SCAN") == "1":
-        return {"username": "", "hasBrowserSession": False, "albums": [], "downloads": [], "subdomains": []}
+        return {
+            "username": "",
+            "identityCookie": "",
+            "hasBrowserSession": False,
+            "albums": [],
+            "downloads": [],
+            "subdomains": [],
+        }
 
     history_globs = [
         os.path.join(HOME, ".config", "google-chrome", "*", "History"),
@@ -424,12 +509,12 @@ def discover_from_browsers() -> dict:
                     pass
 
     cookie_globs = [
-        os.path.join(HOME, ".config", "google-chrome", "*", "Cookies"),
-        os.path.join(HOME, ".config", "chromium", "*", "Cookies"),
-        os.path.join(HOME, ".config", "BraveSoftware", "Brave-Browser", "*", "Cookies"),
+        ("chrome", os.path.join(HOME, ".config", "google-chrome", "*", "Cookies")),
+        ("chromium", os.path.join(HOME, ".config", "chromium", "*", "Cookies")),
+        ("brave", os.path.join(HOME, ".config", "BraveSoftware", "Brave-Browser", "*", "Cookies")),
     ]
     has_identity_cookie = False
-    for pat in cookie_globs:
+    for app_name, pat in cookie_globs:
         for db_path in glob.glob(pat):
             if not os.path.isfile(db_path):
                 continue
@@ -439,12 +524,16 @@ def discover_from_browsers() -> dict:
                 shutil.copy2(db_path, tmp_path)
                 conn = sqlite3.connect(tmp_path)
                 rows = conn.execute(
-                    "SELECT DISTINCT host_key, name FROM cookies WHERE host_key LIKE '%bandcamp.com%'"
+                    "SELECT host_key, name, value, encrypted_value FROM cookies WHERE host_key LIKE '%bandcamp.com%'"
                 ).fetchall()
-                for host_key, name in rows:
+                for host_key, name, val, enc_val in rows:
                     hk = (host_key or "").lstrip(".").lower()
                     if name == "identity" and hk == "bandcamp.com":
                         has_identity_cookie = True
+                        if not identity_cookie:
+                            dec = (val or "").strip() or decrypt_chromium_cookie_value(enc_val, app_name)
+                            if dec:
+                                identity_cookie = dec
                     if hk.endswith(".bandcamp.com") and hk != "daily.bandcamp.com":
                         cookie_subdomains.add(hk[: -len(".bandcamp.com")])
                 conn.close()
@@ -456,9 +545,42 @@ def discover_from_browsers() -> dict:
                 except OSError:
                     pass
 
+    # Also check Firefox / Zen cookies if present
+    moz_globs = [
+        os.path.join(HOME, ".mozilla", "firefox", "*", "cookies.sqlite"),
+        os.path.join(HOME, ".zen", "*", "cookies.sqlite"),
+    ]
+    for pat in moz_globs:
+        for db_path in glob.glob(pat):
+            if not os.path.isfile(db_path):
+                continue
+            tmp_fd, tmp_path = tempfile.mkstemp(prefix="ba_moz_", suffix=".sqlite")
+            os.close(tmp_fd)
+            try:
+                shutil.copy2(db_path, tmp_path)
+                conn = sqlite3.connect(tmp_path)
+                rows = conn.execute(
+                    "SELECT host, name, value FROM moz_cookies WHERE host LIKE '%bandcamp.com%'"
+                ).fetchall()
+                for host_key, name, val in rows:
+                    hk = (host_key or "").lstrip(".").lower()
+                    if name == "identity" and hk == "bandcamp.com" and val:
+                        has_identity_cookie = True
+                        if not identity_cookie:
+                            identity_cookie = str(val).strip()
+                conn.close()
+            except Exception:
+                pass
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
     return {
         "username": username,
-        "hasBrowserSession": has_identity_cookie or bool(username),
+        "identityCookie": identity_cookie,
+        "hasBrowserSession": has_identity_cookie or bool(identity_cookie) or bool(username),
         "albums": list(albums_by_url.values()),
         "downloads": download_urls,
         "subdomains": sorted(cookie_subdomains),
@@ -470,6 +592,9 @@ def discover_from_browsers() -> dict:
 # --------------------------------------------------------------------------- #
 
 def build_cookie_header() -> str:
+    settings = load_settings()
+    if settings.get("loggedOut"):
+        return ""
     auth = read_json(AUTH_FILE, {}) or {}
     parts = []
     if auth.get("identity"):
@@ -483,12 +608,160 @@ def build_cookie_header() -> str:
     return "; ".join(p for p in parts if p)
 
 
+def _decode_chunked(body_bytes: bytes) -> bytes:
+    out = []
+    pos = 0
+    n = len(body_bytes)
+    while pos < n:
+        le = body_bytes.find(b"\r\n", pos)
+        if le < 0:
+            break
+        line = body_bytes[pos:le].split(b";", 1)[0].strip()
+        if not line:
+            pos = le + 2
+            continue
+        try:
+            sz = int(line, 16)
+        except ValueError:
+            break
+        if sz == 0:
+            break
+        pos = le + 2
+        out.append(body_bytes[pos : pos + sz])
+        pos += sz + 2
+    return b"".join(out)
+
+
+def _fastly_https_exchange(
+    url: str,
+    method: str = "GET",
+    body_bytes: bytes | None = None,
+    cookie_hdr: str = "",
+    timeout: float = 8.0,
+    max_bytes: int = MAX_HTTP_BYTES,
+    headers_only: bool = False,
+) -> tuple[int, dict[str, str], bytes]:
+    """Perform an HTTPS request to bandcamp.com / *.bandcamp.com / *.bcbits.com over
+    Fastly's edge TLS (`server_hostname='f4.bcbits.com'` when *.bandcamp.com SNI is
+    reset by middleboxes) with full CA certificate verification.
+    """
+    parsed = urllib.parse.urlparse(url)
+    host = (parsed.hostname or "").lower()
+    port = parsed.port or 443
+    path = (parsed.path or "/") + (("?" + parsed.query) if parsed.query else "")
+
+    is_bc = host == "bandcamp.com" or host.endswith(".bandcamp.com")
+    tls_sni = "f4.bcbits.com" if is_bc else host
+
+    addrs = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+    if not addrs:
+        raise BandarchyError(f"cannot resolve host: {host}")
+    target_ip = addrs[0][4][0]
+
+    ctx = ssl.create_default_context()
+    with socket.create_connection((target_ip, port), timeout=timeout) as raw_sock:
+        with ctx.wrap_socket(raw_sock, server_hostname=tls_sni) as ss:
+            req_lines = [
+                f"{method} {path} HTTP/1.1",
+                f"Host: {host}",
+                f"User-Agent: {USER_AGENT}",
+                "Accept: text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+                "Accept-Language: en-GB,en;q=0.9",
+                "Accept-Encoding: identity",
+                "Connection: close",
+            ]
+            if cookie_hdr:
+                req_lines.append(f"Cookie: {cookie_hdr}")
+            if body_bytes is not None:
+                req_lines.append("Content-Type: application/json")
+                req_lines.append(f"Content-Length: {len(body_bytes)}")
+            payload = ("\r\n".join(req_lines) + "\r\n\r\n").encode("utf-8") + (body_bytes or b"")
+            ss.sendall(payload)
+
+            chunks: list[bytes] = []
+            total = 0
+            hdr_found = False
+            while True:
+                chunk = ss.recv(min(65536, max_bytes + 16384 - total))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total += len(chunk)
+                if headers_only and not hdr_found and b"\r\n\r\n" in b"".join(chunks):
+                    break
+                if total > max_bytes + 16384:
+                    raise BandarchyError(f"response from {host} exceeded {max_bytes} bytes")
+
+    raw_resp = b"".join(chunks)
+    sep = raw_resp.find(b"\r\n\r\n")
+    if sep < 0:
+        raise BandarchyError(f"invalid HTTP response from {host}")
+    hdr_block = raw_resp[:sep].decode("iso-8859-1", errors="replace")
+    resp_body = raw_resp[sep + 4 :]
+
+    hdr_lines = hdr_block.splitlines()
+    status_code = 200
+    if hdr_lines:
+        parts = hdr_lines[0].split()
+        if len(parts) >= 2 and parts[1].isdigit():
+            status_code = int(parts[1])
+
+    resp_headers: dict[str, str] = {}
+    for line in hdr_lines[1:]:
+        if ":" in line:
+            k, v = line.split(":", 1)
+            resp_headers[k.strip().lower()] = v.strip()
+
+    if not headers_only and "chunked" in resp_headers.get("transfer-encoding", "").lower():
+        resp_body = _decode_chunked(resp_body)
+
+    if len(resp_body) > max_bytes:
+        raise BandarchyError(f"response from {host} exceeded {max_bytes} bytes")
+
+    return status_code, resp_headers, resp_body
+
+
+def resolve_stream_redirect(url: str, timeout: float = 6.0) -> str:
+    """If `url` is a Bandcamp `stream_redirect` or subdomain track URL, resolve its
+    302 Location to the direct `https://t4.bcbits.com/stream/...` audio stream URL so
+    mpv can stream directly without hitting SNI resets on `bandcamp.com`.
+    """
+    if not url or not url.startswith("https://"):
+        return url
+    parsed = urllib.parse.urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if not (host == "bandcamp.com" or host.endswith(".bandcamp.com")):
+        return url
+    if "stream_redirect" not in (parsed.path or "") and "/download/track" not in (parsed.path or ""):
+        return url
+    try:
+        cookie_hdr = build_cookie_header()
+        status, hdrs, _ = _fastly_https_exchange(
+            url,
+            method="GET",
+            cookie_hdr=cookie_hdr,
+            timeout=timeout,
+            headers_only=True,
+        )
+        if status in (301, 302, 303, 307, 308) and hdrs.get("location"):
+            loc = hdrs["location"]
+            if loc.startswith("//"):
+                loc = "https:" + loc
+            elif loc.startswith("/"):
+                loc = f"https://{host}{loc}"
+            return bounded_text(loc, MAX_URL_CHARS)
+    except Exception:
+        pass
+    return url
+
+
 def http_request(
     url: str,
     method: str = "GET",
     json_body: dict | None = None,
     timeout: float = 8.0,
     max_bytes: int = MAX_HTTP_BYTES,
+    on_chunk=None,
 ) -> bytes:
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in ("http", "https"):
@@ -497,6 +770,62 @@ def http_request(
         raise BandarchyError("plain HTTP is only permitted for localhost test servers")
 
     cookie_hdr = build_cookie_header()
+    body_bytes = None
+    if json_body is not None:
+        body_bytes = json.dumps(json_body).encode("utf-8")
+
+    host = (parsed.hostname or "").lower()
+    is_bandcamp_https = parsed.scheme == "https" and (
+        host == "bandcamp.com" or host.endswith(".bandcamp.com")
+    )
+
+    # Use Fastly SNI transport first for live Bandcamp HTTPS hosts to avoid SNI TCP resets
+    if is_bandcamp_https:
+        cur_url = url
+        cur_method = method
+        cur_body = body_bytes
+        for _ in range(6):
+            try:
+                status, hdrs, resp_body = _fastly_https_exchange(
+                    cur_url,
+                    method=cur_method,
+                    body_bytes=cur_body,
+                    cookie_hdr=cookie_hdr,
+                    timeout=timeout,
+                    max_bytes=max_bytes,
+                )
+                if status in (301, 302, 303, 307, 308) and hdrs.get("location"):
+                    loc = hdrs["location"]
+                    p_cur = urllib.parse.urlparse(cur_url)
+                    if loc.startswith("//"):
+                        loc = f"{p_cur.scheme}:{loc}"
+                    elif loc.startswith("/"):
+                        loc = f"{p_cur.scheme}://{p_cur.netloc}{loc}"
+                    cur_url = loc
+                    if status in (301, 302, 303):
+                        cur_method = "GET"
+                        cur_body = None
+                    p_next = urllib.parse.urlparse(cur_url)
+                    nhost = (p_next.hostname or "").lower()
+                    if not (nhost == "bandcamp.com" or nhost.endswith(".bandcamp.com")):
+                        url = cur_url
+                        method = cur_method
+                        body_bytes = cur_body
+                        break
+                    continue
+                if 200 <= status < 400 and resp_body is not None:
+                    if on_chunk:
+                        try:
+                            on_chunk(len(resp_body), len(resp_body))
+                        except Exception:
+                            pass
+                    return resp_body
+                break
+            except BandarchyError:
+                raise
+            except Exception:
+                break
+
     headers = {
         "User-Agent": USER_AGENT,
         "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
@@ -504,16 +833,20 @@ def http_request(
     }
     if cookie_hdr:
         headers["Cookie"] = cookie_hdr
-    body_bytes = None
-    if json_body is not None:
-        body_bytes = json.dumps(json_body).encode("utf-8")
+    if body_bytes is not None:
         headers["Content-Type"] = "application/json"
 
     try:
         req = urllib.request.Request(url, data=body_bytes, headers=headers, method=method)
         with urllib.request.urlopen(req, timeout=timeout) as resp:
+            content_len = 0
+            try:
+                content_len = int(resp.headers.get("Content-Length") or 0)
+            except Exception:
+                content_len = 0
             chunks = []
             total = 0
+            last_report = 0.0
             while True:
                 chunk = resp.read(min(65536, max_bytes + 1 - total))
                 if not chunk:
@@ -522,6 +855,14 @@ def http_request(
                 total += len(chunk)
                 if total > max_bytes:
                     raise BandarchyError(f"response from {parsed.netloc} exceeded {max_bytes} bytes")
+                if on_chunk:
+                    now_t = time.monotonic()
+                    if now_t - last_report >= 0.15 or (content_len and total >= content_len):
+                        last_report = now_t
+                        try:
+                            on_chunk(total, content_len)
+                        except Exception:
+                            pass
             return b"".join(chunks)
     except BandarchyError:
         raise
@@ -581,38 +922,39 @@ def art_url_from_id(art_id, size: int = 10, api_base: str = "https://bandcamp.co
 
 
 def fetch_fan_collection(username: str, api_base: str = "https://bandcamp.com") -> list[dict]:
-    if not username:
-        return []
     base = api_base.rstrip("/")
-    profile_url = f"{base}/{urllib.parse.quote(username.strip())}"
-    raw = http_request(profile_url, timeout=8.0)
+    profile_url = f"{base}/{urllib.parse.quote(username.strip())}" if username else base
+    raw = http_request(profile_url, timeout=10.0)
     page = raw.decode("utf-8", errors="replace")
     blob = extract_attr_json(page, "data-blob")
     if not blob:
         return []
 
-    fan_id = (blob.get("fan_data") or {}).get("fan_id")
+    fan_data = blob.get("fan_data") or {}
+    fan_id = fan_data.get("fan_id")
     coll_data = blob.get("collection_data") or {}
     redownload_urls = dict(coll_data.get("redownload_urls") or {})
     item_cache = (blob.get("item_cache") or {}).get("collection") or {}
+    tracklists = dict((blob.get("tracklists") or {}).get("collection") or {})
 
-    raw_items: list[dict] = []
+    raw_items: list[tuple[str, dict]] = []
     sequence = coll_data.get("sequence") or coll_data.get("small_collection") or list(item_cache.keys())
     seen_keys: set[str] = set()
     for key in sequence:
         item = item_cache.get(str(key))
         if isinstance(item, dict):
             seen_keys.add(str(key))
-            raw_items.append(item)
+            raw_items.append((str(key), item))
     for k, item in item_cache.items():
         if str(k) not in seen_keys and isinstance(item, dict):
-            raw_items.append(item)
+            seen_keys.add(str(k))
+            raw_items.append((str(k), item))
 
     last_token = coll_data.get("last_token")
-    more_available = bool(coll_data.get("more_available", bool(last_token)))
+    more_available = bool(coll_data.get("more_available") or last_token)
 
     pages = 0
-    while fan_id and last_token and more_available and pages < 25 and len(raw_items) < MAX_COLLECTION_ITEMS:
+    while fan_id and last_token and more_available and pages < 35 and len(raw_items) < MAX_COLLECTION_ITEMS:
         pages += 1
         try:
             api_raw = http_request(
@@ -623,7 +965,7 @@ def fetch_fan_collection(username: str, api_base: str = "https://bandcamp.com") 
                     "older_than_token": last_token,
                     "count": 100,
                 },
-                timeout=8.0,
+                timeout=10.0,
             )
             api_data = json.loads(api_raw.decode("utf-8", errors="replace"))
         except Exception:
@@ -631,23 +973,38 @@ def fetch_fan_collection(username: str, api_base: str = "https://bandcamp.com") 
         if not isinstance(api_data, dict):
             break
         redownload_urls.update(api_data.get("redownload_urls") or {})
+        tracklists.update(api_data.get("tracklists") or {})
         batch = api_data.get("items") or []
         if not batch:
             break
-        raw_items.extend(batch)
+        for b_item in batch:
+            if not isinstance(b_item, dict):
+                continue
+            raw_t = str(b_item.get("item_type") or "a")
+            prefix = "p" if raw_t == "package" else ("t" if raw_t in ("track", "t") else "a")
+            b_key = f"{prefix}{b_item.get('item_id') or b_item.get('tralbum_id') or ''}"
+            raw_items.append((b_key, b_item))
         more_available = bool(api_data.get("more_available"))
         last_token = api_data.get("last_token")
 
-    parsed_items: list[dict] = []
-    for item in raw_items[:MAX_COLLECTION_ITEMS]:
+    parsed_by_dedup: dict[str, dict] = {}
+    ordered_keys: list[str] = []
+
+    for cache_key, item in raw_items[:MAX_COLLECTION_ITEMS]:
         if not isinstance(item, dict):
             continue
-        item_id = str(item.get("item_id") or item.get("tralbum_id") or "")
-        item_type = str(item.get("item_type") or item.get("tralbum_type") or "album")
-        if item_type == "a":
-            item_type = "album"
-        elif item_type == "t":
+        raw_item_id = str(item.get("item_id") or "")
+        tralbum_id = str(item.get("tralbum_id") or raw_item_id or "")
+        item_id = raw_item_id or tralbum_id
+        raw_type = str(item.get("item_type") or item.get("tralbum_type") or "album").lower()
+        tralbum_type = str(item.get("tralbum_type") or "").lower()
+        if raw_type in ("a", "album", "package", "p"):
+            item_type = "track" if tralbum_type == "t" else "album"
+        elif raw_type in ("t", "track"):
             item_type = "track"
+        else:
+            item_type = "album"
+
         title = bounded_text(item.get("item_title") or item.get("title") or "Untitled")
         artist = bounded_text(item.get("band_name") or item.get("artist") or "Unknown Artist")
         item_url = bounded_text(item.get("item_url") or "", MAX_URL_CHARS)
@@ -656,29 +1013,77 @@ def fetch_fan_collection(username: str, api_base: str = "https://bandcamp.com") 
         sale_type = item.get("sale_item_type") or "p"
         dl_url = ""
         if sale_id:
-            dl_url = redownload_urls.get(f"{sale_type}{sale_id}") or redownload_urls.get(f"p{sale_id}") or redownload_urls.get(f"c{sale_id}") or ""
+            dl_url = (
+                redownload_urls.get(f"{sale_type}{sale_id}")
+                or redownload_urls.get(f"p{sale_id}")
+                or redownload_urls.get(f"c{sale_id}")
+                or ""
+            )
+        if not dl_url and raw_item_id:
+            dl_url = redownload_urls.get(raw_item_id) or redownload_urls.get(f"p{raw_item_id}") or ""
         if not dl_url and item_id:
             dl_url = redownload_urls.get(item_id) or ""
 
-        tracks = []
-        feat_title = bounded_text(item.get("featured_track_title") or "")
-        stream_url = bounded_text(item.get("featured_track_url") or "", MAX_URL_CHARS)
-        if feat_title or item_url:
-            tracks.append({
-                "id": f"bc-track-{item.get('featured_track') or item_id or slugify(title)}-1",
-                "title": feat_title or title,
-                "artist": artist,
-                "album": title,
-                "index": bounded_int(item.get("featured_track_number") or 1, 1),
-                "duration": bounded_float(item.get("featured_track_duration") or 0),
-                "streamUrl": stream_url,
-                "localPath": "",
-                "itemUrl": item_url,
-            })
+        # Resolve full tracklist from blob/API tracklists map
+        tl_entries = (
+            tracklists.get(cache_key)
+            or tracklists.get(f"p{raw_item_id}")
+            or tracklists.get(f"a{tralbum_id}")
+            or tracklists.get(f"a{raw_item_id}")
+            or tracklists.get(f"t{tralbum_id}")
+            or tracklists.get(f"t{raw_item_id}")
+            or []
+        )
 
-        parsed_items.append({
+        tracks: list[dict] = []
+        if isinstance(tl_entries, list) and tl_entries:
+            for idx_t, t_obj in enumerate(tl_entries, start=1):
+                if not isinstance(t_obj, dict):
+                    continue
+                file_map = t_obj.get("file") or {}
+                t_stream = ""
+                if isinstance(file_map, dict):
+                    t_stream = (
+                        file_map.get("mp3-v0")
+                        or file_map.get("mp3-128")
+                        or next(iter(file_map.values()), "")
+                    )
+                if t_stream and t_stream.startswith("//"):
+                    t_stream = "https:" + t_stream
+                t_id = str(t_obj.get("id") or t_obj.get("track_id") or f"{item_id}-{idx_t}")
+                tracks.append({
+                    "id": f"bc-track-{t_id}",
+                    "title": bounded_text(t_obj.get("title") or f"Track {idx_t}"),
+                    "artist": bounded_text(t_obj.get("artist") or artist),
+                    "album": title,
+                    "index": bounded_int(t_obj.get("track_number") or idx_t, idx_t),
+                    "duration": bounded_float(t_obj.get("duration") or 0.0),
+                    "streamUrl": bounded_text(t_stream, MAX_URL_CHARS),
+                    "localPath": "",
+                    "itemUrl": item_url,
+                })
+
+        if not tracks:
+            feat_title = bounded_text(item.get("featured_track_title") or "")
+            stream_url = bounded_text(item.get("featured_track_url") or "", MAX_URL_CHARS)
+            if feat_title or item_url:
+                tracks.append({
+                    "id": f"bc-track-{item.get('featured_track') or item_id or slugify(title)}-1",
+                    "title": feat_title or title,
+                    "artist": artist,
+                    "album": title,
+                    "index": bounded_int(item.get("featured_track_number") or 1, 1),
+                    "duration": bounded_float(item.get("featured_track_duration") or 0),
+                    "streamUrl": stream_url,
+                    "localPath": "",
+                    "itemUrl": item_url,
+                })
+
+        total_dur = round(sum(float(t.get("duration") or 0.0) for t in tracks), 1)
+        album_entry = {
             "id": f"bc-{item_type}-{item_id}" if item_id else f"bc-{slugify(artist)}-{slugify(title)}",
             "itemId": item_id,
+            "tralbumId": tralbum_id,
             "itemType": item_type,
             "title": title,
             "artist": artist,
@@ -689,12 +1094,29 @@ def fetch_fan_collection(username: str, api_base: str = "https://bandcamp.com") 
             "purchased": True,
             "isLocal": False,
             "localPath": "",
-            "numTracks": bounded_int(item.get("num_streamable_tracks") or len(tracks), len(tracks)),
+            "audioFormat": "Bandcamp Stream",
+            "totalDuration": total_dur,
+            "numTracks": max(len(tracks), bounded_int(item.get("num_streamable_tracks") or len(tracks), len(tracks))),
             "tracks": tracks,
             "fold": fold(f"{artist} {title}"),
-        })
+        }
 
-    return parsed_items
+        dedup_key = f"bc-{item_type}-{raw_item_id or tralbum_id}" if (raw_item_id or tralbum_id) else f"{fold(artist)}::{fold(title)}"
+        if dedup_key in parsed_by_dedup:
+            existing = parsed_by_dedup[dedup_key]
+            if len(tracks) > len(existing.get("tracks") or []):
+                existing["tracks"] = tracks
+                existing["numTracks"] = max(existing["numTracks"], len(tracks))
+                existing["totalDuration"] = total_dur
+            if dl_url and not existing.get("redownloadUrl"):
+                existing["redownloadUrl"] = bounded_text(dl_url, MAX_URL_CHARS)
+            if album_entry["artUrl"] and not existing.get("artUrl"):
+                existing["artUrl"] = album_entry["artUrl"]
+        else:
+            parsed_by_dedup[dedup_key] = album_entry
+            ordered_keys.append(dedup_key)
+
+    return [parsed_by_dedup[k] for k in ordered_keys]
 
 
 def fetch_album_details(item_url: str, api_base: str = "https://bandcamp.com") -> dict | None:
@@ -882,32 +1304,118 @@ def transcode_image_to_ascii(
     return []
 
 
-def render_omarchy_ascii_banner(text: str) -> list[str]:
-    """Render text in Omarchy's Delta Corps Priest 1 logo font via `omarchy-ascii`."""
-    ensure_private_dir(ASCII_DIR)
-    clean_words = re.sub(r"[^a-zA-Z ]+", " ", str(text or "BANDARCHY")).strip()
-    clean_words = re.sub(r"\s+", " ", clean_words)[:24] or "BANDARCHY"
+def _compress_ascii_block(lines: list[str], max_width: int = 68) -> list[str]:
+    """Horizontally compress an omarchy-ascii banner block so its width never exceeds
+    `max_width`, preserving the first and last letters without left/right clipping.
+    """
+    lines = [l.rstrip("\r\n") for l in lines if l.strip()]
+    if not lines:
+        return []
+    min_lead = min((len(l) - len(l.lstrip(" ")) for l in lines if l.strip()), default=0)
+    if min_lead > 0:
+        lines = [l[min_lead:].rstrip() for l in lines]
+    w = max((len(l) for l in lines), default=0)
+    if w <= max_width:
+        return lines
 
-    cache_key = hashlib.sha256(clean_words.encode("utf-8")).hexdigest()[:20]
+    grid = [list(l.ljust(w)) for l in lines]
+    h = len(grid)
+    cols = [[grid[r][c] for r in range(h)] for c in range(w)]
+
+    # Pass 1: collapse runs of >1 blank columns down to 1 blank column while wider than max_width
+    i = 1
+    while i < len(cols) and len(cols) > max_width:
+        if all(ch == " " for ch in cols[i]) and all(ch == " " for ch in cols[i - 1]):
+            cols.pop(i)
+        else:
+            i += 1
+
+    # Pass 2: thin 3-in-a-row identical columns to 2, then 2-in-a-row to 1 uniformly
+    for require_triple in (True, False):
+        while len(cols) > max_width:
+            dup_indices = [
+                idx
+                for idx in range(1, len(cols) - 1)
+                if cols[idx] == cols[idx - 1] and (not require_triple or cols[idx] == cols[idx + 1])
+            ]
+            if not dup_indices:
+                break
+            cols.pop(dup_indices[len(dup_indices) // 2])
+
+    # Pass 3: uniform column decimation if still wider than max_width
+    if len(cols) > max_width:
+        cols = [cols[int(round(idx * (len(cols) - 1) / (max_width - 1)))] for idx in range(max_width)]
+
+    return ["".join(cols[c][r] for c in range(len(cols))).rstrip() for r in range(h)]
+
+
+def _run_omarchy_ascii_raw(text_line: str) -> list[str]:
+    if not os.path.isfile(OMARCHY_ASCII_BIN):
+        return []
+    try:
+        r = subprocess.run(
+            [OMARCHY_ASCII_BIN, text_line],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return [l.rstrip("\r\n") for l in r.stdout.splitlines() if l.strip()]
+    except Exception:
+        pass
+    return []
+
+
+def render_omarchy_ascii_banner(text: str, max_width: int = 68) -> list[str]:
+    """Render text in Omarchy's Delta Corps Priest 1 logo font via `omarchy-ascii`,
+    automatically wrapping multi-word titles and compressing columns so long names
+    (e.g. 'BASS COMMUNION') fit completely within `max_width` without clipping.
+    """
+    ensure_private_dir(ASCII_DIR)
+    max_width = bounded_int(max_width, 68, 32, 140)
+    clean_words = re.sub(r"[^a-zA-Z0-9 ]+", " ", str(text or "BANDARCHY")).strip().upper()
+    clean_words = re.sub(r"\s+", " ", clean_words)[:36] or "BANDARCHY"
+
+    cache_key = hashlib.sha256(f"v2:{max_width}:{clean_words}".encode("utf-8")).hexdigest()[:20]
     cached_txt = os.path.join(ASCII_DIR, f"banner_{cache_key}.txt")
     if os.path.isfile(cached_txt) and os.path.getsize(cached_txt) > 0:
         with open(cached_txt, "r", encoding="utf-8", errors="replace") as f:
             return [line.rstrip("\n") for line in f.readlines()]
 
-    if os.path.isfile(OMARCHY_ASCII_BIN):
-        try:
-            r = subprocess.run(
-                [OMARCHY_ASCII_BIN, clean_words],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if r.returncode == 0 and r.stdout.strip():
-                lines = [l.rstrip("\n") for l in r.stdout.splitlines()]
-                atomic_write(cached_txt, ("\n".join(lines) + "\n").encode("utf-8"), 0o600, fatal=False)
-                return lines
-        except Exception:
-            pass
+    raw_single = _run_omarchy_ascii_raw(clean_words)
+    if raw_single:
+        single_w = max((len(l) for l in raw_single), default=0)
+        words = clean_words.split(" ")
+        if single_w > max_width and len(words) >= 2:
+            # Split words into 2 balanced lines so each line stays crisp and legible
+            best_split = 1
+            best_diff = 9999
+            for sp in range(1, len(words)):
+                left_len = len(" ".join(words[:sp]))
+                right_len = len(" ".join(words[sp:]))
+                diff = abs(left_len - right_len)
+                if diff < best_diff:
+                    best_diff = diff
+                    best_split = sp
+            line1_str = " ".join(words[:best_split])
+            line2_str = " ".join(words[best_split:])
+            b1 = _compress_ascii_block(_run_omarchy_ascii_raw(line1_str), max_width=max_width)
+            b2 = _compress_ascii_block(_run_omarchy_ascii_raw(line2_str), max_width=max_width)
+            if b1 and b2:
+                w1 = max((len(l) for l in b1), default=0)
+                w2 = max((len(l) for l in b2), default=0)
+                mw = max(w1, w2)
+                pad1 = " " * max(0, (mw - w1) // 2)
+                pad2 = " " * max(0, (mw - w2) // 2)
+                lines = [pad1 + l for l in b1] + [""] + [pad2 + l for l in b2]
+            else:
+                lines = _compress_ascii_block(raw_single, max_width=max_width)
+        else:
+            lines = _compress_ascii_block(raw_single, max_width=max_width)
+
+        if lines:
+            atomic_write(cached_txt, ("\n".join(lines) + "\n").encode("utf-8"), 0o600, fatal=False)
+            return lines
 
     # Fallback to Omarchy's screensaver.txt or logo.txt
     for candidate in (
@@ -918,7 +1426,8 @@ def render_omarchy_ascii_banner(text: str) -> list[str]:
         if os.path.isfile(candidate):
             try:
                 with open(candidate, "r", encoding="utf-8", errors="replace") as f:
-                    return [l.rstrip("\n") for l in f.readlines()]
+                    raw_fb = [l.rstrip("\n") for l in f.readlines()]
+                return _compress_ascii_block(raw_fb, max_width=max_width) or raw_fb
             except Exception:
                 pass
     return [clean_words]
@@ -1166,6 +1675,10 @@ def scan_local_directories(local_dirs: list[str]) -> list[dict]:
                 for f in audio_files
             )
 
+            formats = sorted({t.get("format", "") for t in tracks if t.get("format")})
+            audio_fmt = " / ".join(formats) if formats else "Local Audio"
+            total_dur = round(sum(float(t.get("duration") or 0.0) for t in tracks), 1)
+
             albums_by_dir[real_root] = {
                 "id": album_id,
                 "itemId": "",
@@ -1179,6 +1692,8 @@ def scan_local_directories(local_dirs: list[str]) -> list[dict]:
                 "purchased": bool(in_bandcamp_dir or has_bc_naming),
                 "isLocal": True,
                 "localPath": root,
+                "audioFormat": audio_fmt,
+                "totalDuration": total_dur,
                 "numTracks": len(tracks),
                 "tracks": tracks,
                 "fold": fold(f"{artist} {album_title}"),
@@ -1257,11 +1772,26 @@ def build_unified_collection(
     on_progress=None,
     fetch_remote: bool = True,
 ) -> dict:
-    browser = discover_from_browsers()
-    username = settings.get("username") or browser.get("username") or ""
-    if username and not settings.get("username"):
-        settings["username"] = username
-        write_json(SETTINGS_FILE, settings)
+    logged_out = bool(settings.get("loggedOut", False))
+    if logged_out:
+        browser = {
+            "username": "",
+            "albums": [],
+            "downloads": [],
+            "hasBrowserSession": False,
+            "identityCookie": "",
+        }
+        username = settings.get("username") or ""
+    else:
+        browser = discover_from_browsers()
+        username = settings.get("username") or browser.get("username") or ""
+        if username and not settings.get("username"):
+            settings["username"] = username
+            write_json(SETTINGS_FILE, settings)
+        auth_data = read_json(AUTH_FILE, {}) or {}
+        if browser.get("identityCookie") and not auth_data.get("identity"):
+            auth_data["identity"] = browser["identityCookie"]
+            write_json(AUTH_FILE, auth_data, mode=0o600)
 
     api_base = settings.get("apiBase") or "https://bandcamp.com"
     remote_items: list[dict] = []
@@ -1270,21 +1800,30 @@ def build_unified_collection(
     if on_progress:
         on_progress("discovering", 0, 0)
 
-    if fetch_remote and username:
+    if fetch_remote and username and not logged_out:
         try:
             remote_items = fetch_fan_collection(username, api_base=api_base)
         except Exception as exc:
             network_note = bounded_text(str(exc), 240)
+    elif not fetch_remote and not logged_out:
+        existing_store = read_json(INDEX_FILE, None) or {}
+        for prev_alb in existing_store.get("albums") or []:
+            if prev_alb.get("purchased"):
+                copied = dict(prev_alb)
+                copied["audioFormat"] = copied.get("audioFormat") or ("Local Audio" if copied.get("isLocal") else "Bandcamp Stream")
+                copied["totalDuration"] = round(sum(float(t.get("duration") or 0.0) for t in (copied.get("tracks") or [])), 1)
+                remote_items.append(copied)
 
     seen_urls = {item.get("url"): item for item in remote_items if item.get("url")}
     seen_ids = {item.get("id"): item for item in remote_items if item.get("id")}
     dl_urls = list(browser.get("downloads") or [])
+    need_browser_detail_fetch = fetch_remote and len(remote_items) < 15
     for idx, b_item in enumerate(browser.get("albums") or []):
         u = b_item.get("url") or ""
         if not u or u in seen_urls:
             continue
         det = None
-        if fetch_remote:
+        if need_browser_detail_fetch:
             try:
                 det = fetch_album_details(u, api_base=api_base)
             except Exception:
@@ -1319,7 +1858,7 @@ def build_unified_collection(
             "artist": artist,
             "url": u,
             "artUrl": art_url,
-            "artPath": cache_remote_art(art_url, album_id, artist, title) if fetch_remote else ensure_cover_svg(album_id, artist, title),
+            "artPath": "",
             "redownloadUrl": dl_urls[idx] if idx < len(dl_urls) else "",
             "purchased": True,
             "isLocal": False,
@@ -1345,6 +1884,7 @@ def build_unified_collection(
 
     matched_local_ids: set[str] = set()
     unified: list[dict] = []
+    art_to_fetch: list[dict] = []
 
     for rem in remote_items:
         k = f"{fold(rem['artist'])}::{fold(rem['title'])}"
@@ -1353,10 +1893,11 @@ def build_unified_collection(
             matched_local_ids.add(loc["id"])
             rem["isLocal"] = True
             rem["localPath"] = loc["localPath"]
+            rem["audioFormat"] = loc.get("audioFormat") or "Local Audio"
             if loc.get("artPath") and not loc["artPath"].endswith(".svg"):
                 rem["artPath"] = loc["artPath"]
             elif not rem.get("artPath"):
-                rem["artPath"] = cache_remote_art(rem.get("artUrl", ""), rem["id"], rem["artist"], rem["title"])
+                art_to_fetch.append(rem)
             rem_tracks_by_title = {fold(t["title"]): t for t in (rem.get("tracks") or [])}
             merged_tracks = []
             for lt in loc.get("tracks") or []:
@@ -1371,16 +1912,30 @@ def build_unified_collection(
             if merged_tracks:
                 rem["tracks"] = merged_tracks
                 rem["numTracks"] = len(merged_tracks)
+                rem["totalDuration"] = round(sum(float(t.get("duration") or 0.0) for t in merged_tracks), 1)
         else:
             if not rem.get("artPath"):
-                rem["artPath"] = (
-                    cache_remote_art(rem.get("artUrl", ""), rem["id"], rem["artist"], rem["title"])
-                    if fetch_remote
-                    else ensure_cover_svg(rem["id"], rem["artist"], rem["title"])
-                )
+                art_to_fetch.append(rem)
         unified.append(rem)
 
+    if art_to_fetch:
+        if fetch_remote:
+            def _fetch_one_art(item: dict) -> None:
+                item["artPath"] = cache_remote_art(
+                    item.get("artUrl", ""),
+                    item["id"],
+                    item["artist"],
+                    item["title"],
+                )
+            with concurrent.futures.ThreadPoolExecutor(max_workers=12) as pool:
+                list(pool.map(_fetch_one_art, art_to_fetch))
+        else:
+            for item in art_to_fetch:
+                item["artPath"] = ensure_cover_svg(item["id"], item["artist"], item["title"])
+
     for loc in local_albums:
+        if logged_out:
+            loc["purchased"] = False
         if loc["id"] not in matched_local_ids:
             unified.append(loc)
 
@@ -1396,10 +1951,13 @@ def build_unified_collection(
         on_progress("done", len(unified), sum(a.get("numTracks", 0) for a in unified))
 
     zips = find_bandcamp_zips_in_downloads()
+    auth_now = read_json(AUTH_FILE, {}) or {}
     result = {
         "indexedAt": int(time.time()),
         "username": username,
-        "hasBrowserSession": browser.get("hasBrowserSession", False),
+        "loggedOut": logged_out,
+        "hasIdentity": bool(auth_now.get("identity")),
+        "hasBrowserSession": bool(browser.get("hasBrowserSession", False) or auth_now.get("identity")),
         "networkNote": network_note,
         "albumCount": len(unified),
         "purchasedCount": sum(1 for a in unified if a.get("purchased")),
@@ -1723,6 +2281,51 @@ def mpv_launch(playlist_path: str, shuffle: bool = False, start_index: int = 0, 
     )
 
 
+def _resolve_direct_stream_targets(playable: list[dict], api_base: str = "https://bandcamp.com") -> list[dict]:
+    """Resolve Bandcamp stream_redirect or album/track page URLs to direct bcbits.com MP3 URLs
+    so mpv can stream without hitting Bandcamp SNI resets."""
+    to_resolve = [
+        entry for entry in playable
+        if entry.get("playSource") == "stream"
+        and str(entry.get("target") or "").startswith("https://")
+        and "bcbits.com" not in str(entry.get("target") or "")
+    ]
+    if not to_resolve:
+        return playable
+
+    page_details_cache: dict[str, dict | None] = {}
+    for entry in to_resolve:
+        tgt = str(entry.get("target") or "")
+        if "stream_redirect" not in tgt and ("/album/" in tgt or "/track/" in tgt):
+            if tgt not in page_details_cache:
+                page_details_cache[tgt] = fetch_album_details(tgt, api_base=api_base)
+            det = page_details_cache.get(tgt)
+            if det and det.get("tracks"):
+                det_tracks = det["tracks"]
+                matched = next(
+                    (dt for dt in det_tracks if fold(dt.get("title")) == fold(entry.get("title")) and dt.get("streamUrl")),
+                    None,
+                )
+                if not matched:
+                    idx_1 = max(0, int(entry.get("index") or 1) - 1)
+                    if idx_1 < len(det_tracks) and det_tracks[idx_1].get("streamUrl"):
+                        matched = det_tracks[idx_1]
+                    elif det_tracks[0].get("streamUrl"):
+                        matched = det_tracks[0]
+                if matched and matched.get("streamUrl"):
+                    entry["streamUrl"] = matched["streamUrl"]
+                    entry["target"] = matched["streamUrl"]
+
+    def _resolve_one(entry: dict) -> None:
+        tgt = str(entry.get("target") or "")
+        if "stream_redirect" in tgt and "bandcamp.com" in tgt:
+            entry["target"] = resolve_stream_redirect(tgt)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(_resolve_one, to_resolve))
+    return playable
+
+
 def resolve_playable_tracks(album: dict, mode: str = "auto", api_base: str = "https://bandcamp.com") -> list[dict]:
     tracks = list(album.get("tracks") or [])
     need_remote = (mode == "stream") or not album.get("isLocal") or all(not t.get("localPath") for t in tracks)
@@ -1759,7 +2362,7 @@ def resolve_playable_tracks(album: dict, mode: str = "auto", api_base: str = "ht
         entry["isLocal"] = bool(album.get("isLocal", t.get("isLocal", play_source == "local")))
         entry["index"] = t.get("index") or idx
         playable.append(entry)
-    return playable
+    return _resolve_direct_stream_targets(playable, api_base=api_base)
 
 
 def resolve_track_list(raw_tracks: list[dict], idx: dict, mode: str = "auto", api_base: str = "https://bandcamp.com") -> list[dict]:
@@ -1787,7 +2390,7 @@ def resolve_track_list(raw_tracks: list[dict], idx: dict, mode: str = "auto", ap
         entry["artPath"] = t.get("artPath") or alb.get("artPath") or ""
         entry["index"] = i
         playable.append(entry)
-    return playable
+    return _resolve_direct_stream_targets(playable, api_base=api_base)
 
 
 def start_queue(tracks: list[dict], source: dict, shuffle: bool = False, start_index: int = 0, loop: bool = False) -> None:
@@ -1836,6 +2439,56 @@ def publish_download_progress(state: dict) -> None:
         pass
 
 
+def _mark_album_downloaded_in_index(album_id: str, dest_dir: str) -> None:
+    """Immediately mark a downloaded album as local in INDEX_FILE and attach local file paths."""
+    idx = read_json(INDEX_FILE, None)
+    if not isinstance(idx, dict) or not isinstance(idx.get("albums"), list):
+        return
+    audio_files = sorted(
+        f for f in os.listdir(dest_dir)
+        if not f.startswith(".") and not f.startswith("._") and f.lower().endswith(AUDIO_EXTENSIONS)
+    ) if os.path.isdir(dest_dir) else []
+    if not audio_files:
+        return
+    for alb in idx["albums"]:
+        if alb.get("id") == album_id:
+            alb["isLocal"] = True
+            alb["localPath"] = dest_dir
+            cov = os.path.join(dest_dir, "cover.jpg")
+            if os.path.isfile(cov):
+                alb["artPath"] = cov
+            tracks = list(alb.get("tracks") or [])
+            if len(tracks) == len(audio_files):
+                for t, fname in zip(tracks, audio_files):
+                    t["localPath"] = os.path.join(dest_dir, fname)
+            else:
+                new_tracks = []
+                for i, fname in enumerate(audio_files, start=1):
+                    fpath = os.path.join(dest_dir, fname)
+                    t_num, t_title, t_artist = parse_track_filename(
+                        fname,
+                        alb.get("artist") or "Unknown Artist",
+                        alb.get("title") or "Untitled",
+                        i,
+                    )
+                    new_tracks.append({
+                        "id": f"local-track-{hashlib.sha1(fpath.encode('utf-8')).hexdigest()[:16]}",
+                        "title": t_title,
+                        "artist": t_artist,
+                        "album": alb.get("title") or "",
+                        "index": t_num,
+                        "duration": 240.0,
+                        "streamUrl": "",
+                        "localPath": fpath,
+                        "format": os.path.splitext(fname)[1].lstrip(".").upper(),
+                    })
+                alb["tracks"] = new_tracks
+                alb["numTracks"] = len(new_tracks)
+            break
+    idx["localCount"] = sum(1 for a in idx["albums"] if a.get("isLocal"))
+    write_json(INDEX_FILE, idx)
+
+
 def download_album_to_local(album: dict, preferred_format: str, settings: dict) -> dict:
     global _download_lock_fd
     _download_lock_fd = take_lock(DOWNLOAD_LOCK_FILE)
@@ -1849,14 +2502,18 @@ def download_album_to_local(album: dict, preferred_format: str, settings: dict) 
     dest_dir = os.path.join(dl_root, safe_folder)
     os.makedirs(dest_dir, mode=0o755, exist_ok=True)
 
+    est_tracks = max(1, int(album.get("numTracks") or len(album.get("tracks") or []) or 1))
     state = {
         "running": True,
         "albumId": album.get("id") or "",
         "title": title,
         "artist": artist,
         "format": preferred_format,
-        "stage": "starting",
-        "percent": 5,
+        "trackIndex": 0,
+        "trackTotal": est_tracks,
+        "trackTitle": "",
+        "stage": f"starting (0/{est_tracks})",
+        "percent": 2,
         "destDir": dest_dir,
         "startedAt": int(time.time()),
     }
@@ -1866,18 +2523,35 @@ def download_album_to_local(album: dict, preferred_format: str, settings: dict) 
 
     for zinfo in find_bandcamp_zips_in_downloads():
         if fold(zinfo["album"]) == fold(title):
-            state.update({"stage": "extracting-local-zip", "percent": 50})
+            state.update({
+                "trackIndex": est_tracks,
+                "trackTotal": est_tracks,
+                "stage": f"extracting local ZIP ({est_tracks}/{est_tracks})",
+                "percent": 60,
+            })
             publish_download_progress(state)
             files = safe_extract_zip(zinfo["zipPath"], dest_dir)
-            state.update({"running": False, "stage": "done", "percent": 100, "fileCount": len(files)})
+            state.update({
+                "running": False,
+                "trackIndex": len(files) or est_tracks,
+                "trackTotal": len(files) or est_tracks,
+                "stage": "done",
+                "percent": 100,
+                "fileCount": len(files),
+            })
             publish_download_progress(state)
-            build_unified_collection(settings, fetch_remote=False)
+            _mark_album_downloaded_in_index(album.get("id") or "", dest_dir)
             return {"albumId": album.get("id"), "destDir": dest_dir, "method": "local-zip", "fileCount": len(files)}
 
     redownload_url = album.get("redownloadUrl") or ""
     if redownload_url:
         try:
-            state.update({"stage": "fetching-download-links", "percent": 15})
+            state.update({
+                "trackIndex": 1,
+                "trackTotal": est_tracks,
+                "stage": f"fetching download link (1/{est_tracks})",
+                "percent": 10,
+            })
             publish_download_progress(state)
             raw = http_request(redownload_url, timeout=12.0)
             page = raw.decode("utf-8", errors="replace")
@@ -1895,16 +2569,47 @@ def download_album_to_local(album: dict, preferred_format: str, settings: dict) 
                             if archive_url:
                                 break
             if archive_url:
-                state.update({"stage": "downloading-archive", "percent": 35})
+                state.update({
+                    "trackIndex": 1,
+                    "trackTotal": est_tracks,
+                    "stage": f"downloading 1/{est_tracks}",
+                    "percent": 18,
+                })
                 publish_download_progress(state)
-                payload = http_request(archive_url, timeout=60.0, max_bytes=MAX_DOWNLOAD_BYTES)
+
+                def _on_archive_chunk(done_b: int, total_b: int) -> None:
+                    denom = total_b if total_b > 0 else max(done_b * 2, 15 * 1024 * 1024)
+                    frac = min(1.0, done_b / float(denom))
+                    pct = min(84, 18 + int(frac * 66))
+                    sim_idx = max(1, min(est_tracks, int(round(frac * est_tracks))))
+                    state.update({
+                        "trackIndex": sim_idx,
+                        "trackTotal": est_tracks,
+                        "stage": f"downloading {sim_idx}/{est_tracks}",
+                        "percent": pct,
+                        "bytesDone": done_b,
+                        "bytesTotal": total_b,
+                    })
+                    publish_download_progress(state)
+
+                payload = http_request(
+                    archive_url,
+                    timeout=90.0,
+                    max_bytes=MAX_DOWNLOAD_BYTES,
+                    on_chunk=_on_archive_chunk,
+                )
                 if payload[:4] == b"PK\x03\x04":
                     tmp_fd, tmp_zip = tempfile.mkstemp(prefix="ba_dl_", suffix=".zip")
                     os.close(tmp_fd)
                     try:
                         with open(tmp_zip, "wb") as f:
                             f.write(payload)
-                        state.update({"stage": "extracting-archive", "percent": 80})
+                        state.update({
+                            "trackIndex": est_tracks,
+                            "trackTotal": est_tracks,
+                            "stage": f"extracting {est_tracks}/{est_tracks}",
+                            "percent": 90,
+                        })
                         publish_download_progress(state)
                         files = safe_extract_zip(tmp_zip, dest_dir)
                     finally:
@@ -1917,74 +2622,132 @@ def download_album_to_local(album: dict, preferred_format: str, settings: dict) 
                     atomic_write(out_file, payload, 0o644)
                     files = [out_file]
 
-                state.update({"running": False, "stage": "done", "percent": 100, "fileCount": len(files)})
+                final_count = len([f for f in files if f.lower().endswith(AUDIO_EXTENSIONS)]) or len(files) or est_tracks
+                state.update({
+                    "running": False,
+                    "trackIndex": final_count,
+                    "trackTotal": final_count,
+                    "stage": "done",
+                    "percent": 100,
+                    "fileCount": len(files),
+                })
                 publish_download_progress(state)
-                build_unified_collection(settings, fetch_remote=False)
+                _mark_album_downloaded_in_index(album.get("id") or "", dest_dir)
                 return {"downloaded": True, "albumId": album.get("id"), "destDir": dest_dir, "method": "redownload", "fileCount": len(files)}
         except Exception as exc:
             log_failure(f"redownload failed for {title}: {exc}")
 
     item_url = album.get("url") or ""
-    if item_url:
+    tracks = list(album.get("tracks") or [])
+    det = None
+    if item_url and (len(tracks) <= 1 or any(not t.get("streamUrl") for t in tracks)):
         det = fetch_album_details(item_url, api_base=api_base)
-        tracks = (det or {}).get("tracks") or album.get("tracks") or []
-        streamable = [t for t in tracks if t.get("streamUrl")]
-        if streamable:
-            saved_files = []
-            art_url = (det or {}).get("artUrl") or album.get("artUrl") or ""
-            if art_url:
-                try:
-                    art_bytes = http_request(art_url, timeout=8.0, max_bytes=MAX_ART_BYTES)
-                    if art_bytes:
-                        atomic_write(os.path.join(dest_dir, "cover.jpg"), art_bytes, 0o644, fatal=False)
-                except Exception:
-                    pass
-            total = len(streamable)
-            for idx, t in enumerate(streamable, start=1):
-                pct = 20 + int((idx - 1) / max(1, total) * 75)
+        if det and det.get("tracks"):
+            tracks = det["tracks"]
+
+    streamable = [t for t in tracks if t.get("streamUrl")]
+    if streamable:
+        saved_files = []
+        art_url = (det or {}).get("artUrl") or album.get("artUrl") or ""
+        if art_url:
+            try:
+                art_bytes = http_request(art_url, timeout=8.0, max_bytes=MAX_ART_BYTES)
+                if art_bytes:
+                    atomic_write(os.path.join(dest_dir, "cover.jpg"), art_bytes, 0o644, fatal=False)
+            except Exception:
+                pass
+        total = len(streamable)
+        for idx, t in enumerate(streamable, start=1):
+            base_pct = 8 + int(((idx - 1) / max(1, total)) * 88)
+            span_pct = max(1, int(88 / max(1, total)))
+            t_num = bounded_int(t.get("index") or idx, idx)
+            t_title = re.sub(r"[/\\:\*\?\"<>\|]+", "-", t.get("title") or f"Track {t_num}").strip()
+            state.update({
+                "trackIndex": idx,
+                "trackTotal": total,
+                "trackTitle": t_title,
+                "stage": f"downloading {idx}/{total}",
+                "percent": base_pct,
+            })
+            publish_download_progress(state)
+            fname = f"{artist} - {title} - {t_num:02d} {t_title}.mp3"
+            out_path = os.path.join(dest_dir, fname)
+
+            direct_url = resolve_stream_redirect(t["streamUrl"])
+
+            def _on_track_chunk(done_b: int, total_b: int, _b=base_pct, _s=span_pct, _i=idx, _t=total, _tt=t_title) -> None:
+                denom = total_b if total_b > 0 else max(done_b * 2, 6 * 1024 * 1024)
+                frac = min(1.0, done_b / float(denom))
+                pct = min(98, _b + int(frac * _s))
                 state.update({
-                    "stage": f"downloading track {idx} of {total}",
+                    "trackIndex": _i,
+                    "trackTotal": _t,
+                    "trackTitle": _tt,
+                    "stage": f"downloading {_i}/{_t}",
                     "percent": pct,
+                    "bytesDone": done_b,
+                    "bytesTotal": total_b,
                 })
                 publish_download_progress(state)
-                t_num = bounded_int(t.get("index") or idx, idx)
-                t_title = re.sub(r"[/\\:\*\?\"<>\|]+", "-", t.get("title") or f"Track {t_num}").strip()
-                fname = f"{artist} - {title} - {t_num:02d} {t_title}.mp3"
-                out_path = os.path.join(dest_dir, fname)
-                audio_bytes = http_request(t["streamUrl"], timeout=30.0, max_bytes=MAX_DOWNLOAD_BYTES)
-                atomic_write(out_path, audio_bytes, 0o644)
-                saved_files.append(out_path)
 
-            state.update({"running": False, "stage": "done", "percent": 100, "fileCount": len(saved_files)})
-            publish_download_progress(state)
-            build_unified_collection(settings, fetch_remote=False)
-            return {"downloaded": True, "albumId": album.get("id"), "destDir": dest_dir, "method": "stream-rip", "fileCount": len(saved_files)}
+            audio_bytes = http_request(
+                direct_url,
+                timeout=45.0,
+                max_bytes=MAX_DOWNLOAD_BYTES,
+                on_chunk=_on_track_chunk,
+            )
+            atomic_write(out_path, audio_bytes, 0o644)
+            saved_files.append(out_path)
 
-        if shutil.which("yt-dlp"):
-            state.update({"stage": "downloading-via-yt-dlp", "percent": 30})
-            publish_download_progress(state)
-            out_tmpl = os.path.join(dest_dir, f"{artist} - {title} - %(playlist_index|01)02d %(title)s.%(ext)s")
-            cmd = [
-                "yt-dlp",
-                "--no-playlist" if album.get("itemType") == "track" else "--yes-playlist",
-                "-x",
-                "--audio-format",
-                "flac" if preferred_format == "flac" else "mp3",
-                "-o",
-                out_tmpl,
-                item_url,
+        state.update({
+            "running": False,
+            "trackIndex": total,
+            "trackTotal": total,
+            "stage": "done",
+            "percent": 100,
+            "fileCount": len(saved_files),
+        })
+        publish_download_progress(state)
+        _mark_album_downloaded_in_index(album.get("id") or "", dest_dir)
+        return {"downloaded": True, "albumId": album.get("id"), "destDir": dest_dir, "method": "stream-rip", "fileCount": len(saved_files)}
+
+    if item_url and shutil.which("yt-dlp"):
+        state.update({
+            "trackIndex": 1,
+            "trackTotal": est_tracks,
+            "stage": f"downloading 1/{est_tracks} (yt-dlp)",
+            "percent": 30,
+        })
+        publish_download_progress(state)
+        out_tmpl = os.path.join(dest_dir, f"{artist} - {title} - %(playlist_index|01)02d %(title)s.%(ext)s")
+        cmd = [
+            "yt-dlp",
+            "--no-playlist" if album.get("itemType") == "track" else "--yes-playlist",
+            "-x",
+            "--audio-format",
+            "flac" if preferred_format == "flac" else "mp3",
+            "-o",
+            out_tmpl,
+            item_url,
+        ]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+        if r.returncode == 0:
+            files = [
+                os.path.join(dest_dir, f)
+                for f in os.listdir(dest_dir)
+                if f.lower().endswith(AUDIO_EXTENSIONS)
             ]
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
-            if r.returncode == 0:
-                files = [
-                    os.path.join(dest_dir, f)
-                    for f in os.listdir(dest_dir)
-                    if f.lower().endswith(AUDIO_EXTENSIONS)
-                ]
-                state.update({"running": False, "stage": "done", "percent": 100, "fileCount": len(files)})
-                publish_download_progress(state)
-                build_unified_collection(settings, fetch_remote=False)
-                return {"downloaded": True, "albumId": album.get("id"), "destDir": dest_dir, "method": "yt-dlp", "fileCount": len(files)}
+            state.update({
+                "running": False,
+                "trackIndex": len(files) or est_tracks,
+                "trackTotal": len(files) or est_tracks,
+                "stage": "done",
+                "percent": 100,
+                "fileCount": len(files),
+            })
+            publish_download_progress(state)
+            _mark_album_downloaded_in_index(album.get("id") or "", dest_dir)
+            return {"downloaded": True, "albumId": album.get("id"), "destDir": dest_dir, "method": "yt-dlp", "fileCount": len(files)}
 
     state.update({"running": False, "stage": "error", "error": "could not download album — check network or Bandcamp session"})
     publish_download_progress(state)
@@ -2076,6 +2839,35 @@ def get_playback_state() -> dict:
     }
 
 
+def _visualiser_settings_payload(settings: dict) -> dict:
+    return {
+        "stageMode": settings.get("stageMode") or "visualiser",
+        "layer1Enabled": bool(settings.get("layer1Enabled", True)),
+        "layer1Mode": bounded_int(settings.get("layer1Mode"), 0, 0, 10),
+        "layer1Speed": bounded_float(settings.get("layer1Speed"), 1.0, 0.1, 4.0),
+        "layer1Density": bounded_float(settings.get("layer1Density"), 1.0, 0.1, 3.0),
+        "layer1Trail": bounded_float(settings.get("layer1Trail"), 0.84, 0.1, 0.98),
+        "layer1Dim": bounded_float(settings.get("layer1Dim"), 0.15, 0.0, 0.9),
+        "layer2Enabled": bool(settings.get("layer2Enabled", True)),
+        "layer2Mode": bounded_int(settings.get("layer2Mode"), 0, 0, 20),
+        "layer2Facets": bounded_int(settings.get("layer2Facets"), 8, 1, 24),
+        "layer2Complexity": bounded_float(settings.get("layer2Complexity"), 1.0, 0.2, 3.0),
+        "layer2Speed": bounded_float(settings.get("layer2Speed"), 1.0, 0.1, 4.0),
+        "layer2Reactivity": bounded_float(settings.get("layer2Reactivity"), 1.2, 0.1, 3.5),
+        "layer2Zoom": bounded_float(settings.get("layer2Zoom"), 1.0, 0.3, 3.0),
+        "layer2Chaos": bounded_float(settings.get("layer2Chaos"), 0.35, 0.0, 2.0),
+        "layer3Enabled": bool(settings.get("layer3Enabled", True)),
+        "layer3Mode": bounded_int(settings.get("layer3Mode"), 0, 0, 10),
+        "layer3Dismantle": bounded_float(settings.get("layer3Dismantle"), 1.15, 0.0, 4.0),
+        "layer3Rebuild": bounded_float(settings.get("layer3Rebuild"), 1.0, 0.05, 4.0),
+        "layer3Evolution": bounded_float(settings.get("layer3Evolution"), 0.65, 0.0, 3.0),
+        "layer3Scale": bounded_float(settings.get("layer3Scale"), 1.0, 0.5, 2.5),
+        "layer3AsciiMode": settings.get("layer3AsciiMode") or settings.get("asciiMode") or "braille",
+        "turntableRpm": bounded_float(settings.get("turntableRpm"), 33.3, 16.0, 78.0),
+        "turntableStyle": bounded_int(settings.get("turntableStyle"), 0, 0, 6),
+    }
+
+
 def cmd_status(args) -> None:
     settings = load_settings()
     idx = ensure_index()
@@ -2088,15 +2880,21 @@ def cmd_status(args) -> None:
     sync_prog["running"] = is_locked(SYNC_LOCK_FILE)
     dl_prog = dict(read_json(DOWNLOAD_PROGRESS_FILE, {}) or {})
     dl_prog["running"] = is_locked(DOWNLOAD_LOCK_FILE)
-    username = settings.get("username") or idx.get("username") or ""
+    logged_out = bool(settings.get("loggedOut", False))
+    username = "" if logged_out else (settings.get("username") or idx.get("username") or "")
+    has_identity = bool(auth.get("identity")) and not logged_out
+    has_browser = bool(idx.get("hasBrowserSession") or has_identity) and not logged_out
     emit({
         "username": username,
-        "authenticated": bool(auth.get("identity") or idx.get("hasBrowserSession") or username),
-        "hasBrowserSession": bool(idx.get("hasBrowserSession")),
+        "loggedOut": logged_out,
+        "hasIdentity": has_identity,
+        "authenticated": bool((has_identity or has_browser or username) and not logged_out),
+        "hasBrowserSession": has_browser,
         "downloadDir": settings.get("downloadDir") or DEFAULT_DOWNLOAD_DIR,
         "preferredFormat": settings.get("preferredFormat") or "flac",
-        "useAlbumArt": bool(settings.get("useAlbumArt", False)),
+        "useAlbumArt": bool(settings.get("useAlbumArt", True)),
         "asciiMode": settings.get("asciiMode") or "braille",
+        **_visualiser_settings_payload(settings),
         "albumCount": len(idx.get("albums") or []),
         "purchasedCount": idx.get("purchasedCount") or 0,
         "localCount": idx.get("localCount") or 0,
@@ -2200,6 +2998,7 @@ def cmd_sync(args) -> None:
     settings = load_settings()
     if args.username:
         settings["username"] = bounded_text(args.username, 64)
+        settings["loggedOut"] = False
         write_json(SETTINGS_FILE, settings)
     if args.api_base:
         settings["apiBase"] = bounded_text(args.api_base, 256)
@@ -2220,6 +3019,9 @@ def cmd_sync(args) -> None:
     emit({
         "synced": True,
         "username": result.get("username"),
+        "loggedOut": bool(result.get("loggedOut", False)),
+        "hasIdentity": bool(result.get("hasIdentity", False)),
+        "hasBrowserSession": bool(result.get("hasBrowserSession", False)),
         "albumCount": result.get("albumCount"),
         "purchasedCount": result.get("purchasedCount"),
         "localCount": result.get("localCount"),
@@ -2232,11 +3034,63 @@ def cmd_sync(args) -> None:
 def cmd_auth(args) -> None:
     settings = load_settings()
     auth = read_json(AUTH_FILE, {}) or {}
+
+    if getattr(args, "open_browser", False):
+        target_url = "https://bandcamp.com/login"
+        try:
+            subprocess.Popen(
+                ["xdg-open", target_url],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except Exception:
+            pass
+        emit({"openedBrowser": True, "url": target_url})
+        return
+
+    if getattr(args, "logout", False):
+        settings["username"] = ""
+        settings["loggedOut"] = True
+        write_json(SETTINGS_FILE, settings)
+        write_json(AUTH_FILE, {"identity": ""}, mode=0o600)
+        res = build_unified_collection(settings, fetch_remote=False)
+        emit({
+            "loggedOut": True,
+            "authenticated": False,
+            "username": "",
+            "hasIdentity": False,
+            "hasBrowserSession": False,
+            "albumCount": res.get("albumCount", 0),
+            "purchasedCount": res.get("purchasedCount", 0),
+            "localCount": res.get("localCount", 0),
+            **_visualiser_settings_payload(settings),
+        })
+        return
+
+    if getattr(args, "detect_browser", False):
+        settings["loggedOut"] = False
+        browser = discover_from_browsers()
+        if browser.get("username"):
+            settings["username"] = browser["username"]
+        write_json(SETTINGS_FILE, settings)
+        if browser.get("identityCookie"):
+            auth["identity"] = browser["identityCookie"]
+            write_json(AUTH_FILE, auth, mode=0o600)
+
     if args.username is not None:
-        settings["username"] = bounded_text(args.username, 64)
+        uname = bounded_text(args.username, 64)
+        settings["username"] = uname
+        if uname:
+            settings["loggedOut"] = False
         write_json(SETTINGS_FILE, settings)
     if args.identity is not None:
-        auth["identity"] = bounded_text(args.identity, 2048)
+        ident = bounded_text(args.identity, 4096)
+        auth["identity"] = ident
+        if ident:
+            settings["loggedOut"] = False
+            write_json(SETTINGS_FILE, settings)
         write_json(AUTH_FILE, auth, mode=0o600)
     if args.download_dir:
         dpath = os.path.expanduser(args.download_dir)
@@ -2250,10 +3104,32 @@ def cmd_auth(args) -> None:
         write_json(SETTINGS_FILE, settings)
     if args.use_album_art is not None:
         settings["useAlbumArt"] = bool(int(args.use_album_art))
+        settings["layer3Enabled"] = bool(int(args.use_album_art))
         write_json(SETTINGS_FILE, settings)
     if args.ascii_mode:
         settings["asciiMode"] = bounded_text(args.ascii_mode, 16)
+        settings["layer3AsciiMode"] = bounded_text(args.ascii_mode, 16)
         write_json(SETTINGS_FILE, settings)
+    if getattr(args, "stage_mode", None):
+        sm = bounded_text(args.stage_mode, 32)
+        if sm in ("off", "art", "turntable", "visualiser"):
+            settings["stageMode"] = sm
+            write_json(SETTINGS_FILE, settings)
+    if getattr(args, "set_json", None):
+        try:
+            updates = json.loads(args.set_json)
+            if isinstance(updates, dict):
+                allowed_keys = set(_visualiser_settings_payload(settings).keys()) | {"useAlbumArt", "asciiMode"}
+                for k, v in updates.items():
+                    if k in allowed_keys:
+                        settings[k] = v
+                if "layer3Enabled" in updates:
+                    settings["useAlbumArt"] = bool(updates["layer3Enabled"])
+                if "layer3AsciiMode" in updates:
+                    settings["asciiMode"] = str(updates["layer3AsciiMode"])
+                write_json(SETTINGS_FILE, settings)
+        except Exception as exc:
+            die(f"invalid --set-json payload: {exc}")
     if args.add_url:
         idx = ensure_index()
         albums = list(idx.get("albums") or [])
@@ -2272,14 +3148,72 @@ def cmd_auth(args) -> None:
             idx["purchasedCount"] = sum(1 for a in albums if a.get("purchased"))
             write_json(INDEX_FILE, idx)
 
+    logged_out = bool(settings.get("loggedOut", False))
     emit({
-        "username": settings.get("username") or "",
-        "hasIdentity": bool(auth.get("identity")),
+        "username": "" if logged_out else (settings.get("username") or ""),
+        "loggedOut": logged_out,
+        "hasIdentity": bool(auth.get("identity")) and not logged_out,
+        "authenticated": bool((auth.get("identity") or settings.get("username")) and not logged_out),
         "downloadDir": settings.get("downloadDir") or DEFAULT_DOWNLOAD_DIR,
         "preferredFormat": settings.get("preferredFormat") or "flac",
-        "useAlbumArt": bool(settings.get("useAlbumArt", False)),
+        "useAlbumArt": bool(settings.get("useAlbumArt", True)),
         "asciiMode": settings.get("asciiMode") or "braille",
+        **_visualiser_settings_payload(settings),
     })
+
+
+def cmd_login(args) -> None:
+    """Log into Bandcamp via browser auto-detection, explicit username/cookie, or browser launch, then sync."""
+    settings = load_settings()
+    auth = read_json(AUTH_FILE, {}) or {}
+    if getattr(args, "open_browser", False):
+        args.logout = False
+        args.detect_browser = False
+        cmd_auth(args)
+        return
+    settings["loggedOut"] = False
+    if getattr(args, "username", None):
+        settings["username"] = bounded_text(args.username, 64)
+    if getattr(args, "identity", None):
+        auth["identity"] = bounded_text(args.identity, 4096)
+        write_json(AUTH_FILE, auth, mode=0o600)
+    if not settings.get("username") or not auth.get("identity") or getattr(args, "detect_browser", False):
+        browser = discover_from_browsers()
+        if browser.get("username") and not getattr(args, "username", None):
+            settings["username"] = browser["username"]
+        if browser.get("identityCookie") and not getattr(args, "identity", None):
+            auth["identity"] = browser["identityCookie"]
+            write_json(AUTH_FILE, auth, mode=0o600)
+    write_json(SETTINGS_FILE, settings)
+    res = build_unified_collection(settings, fetch_remote=not getattr(args, "no_sync", False))
+    emit({
+        "loggedIn": bool(res.get("username") or auth.get("identity")),
+        "loggedOut": False,
+        "username": res.get("username") or "",
+        "hasIdentity": bool(auth.get("identity")),
+        "hasBrowserSession": bool(res.get("hasBrowserSession")),
+        "albumCount": res.get("albumCount", 0),
+        "purchasedCount": res.get("purchasedCount", 0),
+        "localCount": res.get("localCount", 0),
+        "trackCount": res.get("trackCount", 0),
+    })
+
+
+def cmd_logout(args) -> None:
+    """Log out of Bandcamp, clearing saved identity cookies and remote-only purchases from the active index."""
+    args.open_browser = False
+    args.logout = True
+    args.detect_browser = False
+    args.username = None
+    args.identity = None
+    args.download_dir = None
+    args.format = None
+    args.use_album_art = None
+    args.ascii_mode = None
+    args.stage_mode = None
+    args.set_json = None
+    args.add_url = None
+    cmd_auth(args)
 
 
 def cmd_album(args) -> None:
@@ -2320,11 +3254,11 @@ def cmd_ascii_art(args) -> None:
     idx = ensure_index()
     albums = list(idx.get("albums") or [])
 
-    use_album_art = bool(settings.get("useAlbumArt", False))
+    use_album_art = bool(settings.get("useAlbumArt", True))
     if args.use_album_art is not None:
         use_album_art = bool(int(args.use_album_art))
 
-    mode = args.mode or settings.get("asciiMode") or "braille"
+    mode = args.mode or settings.get("layer3AsciiMode") or settings.get("asciiMode") or "braille"
     width = bounded_int(args.width, 72, 20, 160)
     height = bounded_int(args.height, 32, 10, 80)
     threshold = bounded_int(args.threshold, 50, 10, 90)
@@ -2353,22 +3287,26 @@ def cmd_ascii_art(args) -> None:
         image_path = first_art.get("artPath") or ""
         banner_text = banner_text or first_art.get("artist") or first_art.get("title") or "BANDARCHY"
 
-    lines: list[str] = []
-    source_kind = "omarchy-ascii"
-    if use_album_art and image_path and os.path.isfile(image_path) and mode in ("braille", "block"):
-        lines = transcode_image_to_ascii(
+    banner_lines = render_omarchy_ascii_banner(banner_text or "BANDARCHY", max_width=min(width, 68))
+    art_lines: list[str] = []
+    if image_path and os.path.isfile(image_path):
+        img_mode = "block" if mode == "block" else "braille"
+        art_lines = transcode_image_to_ascii(
             image_path,
             width=width,
             height=height,
-            mode=mode,
+            mode=img_mode,
             threshold=threshold,
             invert=bool(args.invert),
         )
-        if lines:
-            source_kind = "album-art"
 
-    if not lines:
-        lines = render_omarchy_ascii_banner(banner_text or "BANDARCHY")
+    lines: list[str] = []
+    source_kind = "omarchy-ascii"
+    if use_album_art and mode in ("braille", "block") and art_lines:
+        lines = art_lines
+        source_kind = "album-art"
+    else:
+        lines = banner_lines
         source_kind = "omarchy-ascii"
 
     max_cols = max((len(l) for l in lines), default=0)
@@ -2387,12 +3325,15 @@ def cmd_ascii_art(args) -> None:
         "source": source_kind,
         "useAlbumArt": use_album_art,
         "mode": mode,
+        "bannerText": banner_text or "BANDARCHY",
         "imagePath": image_path if os.path.isfile(str(image_path)) else "",
         "rows": len(lines),
         "cols": max_cols,
         "lineCount": len(lines),
         "colCount": max_cols,
         "lines": lines,
+        "bannerLines": banner_lines,
+        "artLines": art_lines,
         "ttfxEffect": effect,
         "ttfxFrameCount": len(ttfx_frames),
         "ttfxFrames": ttfx_frames,
@@ -2402,7 +3343,10 @@ def cmd_ascii_art(args) -> None:
 
 
 def cmd_screensaver(args) -> None:
-    """Transcode the active album cover (or Omarchy banner) and launch `ttfx`."""
+    """Transcode the active album cover (or Omarchy banner) and launch `ttfx` in a visible fullscreen terminal."""
+    settings = load_settings()
+    if getattr(args, "use_album_art", None) is None:
+        args.use_album_art = "1" if settings.get("useAlbumArt", False) and args.mode in ("braille", "block") else "0"
     with quiet():
         cmd_ascii_art(args)
 
@@ -2412,36 +3356,39 @@ def cmd_screensaver(args) -> None:
 
     effect_flag = "--random-effect" if effect == "random" else effect
 
+    if not os.path.isfile(TTFX_BIN):
+        die("ttfx is not installed on this system")
+
+    self_bin = os.path.abspath(__file__)
+    use_art_flag = "1" if str(args.use_album_art) == "1" else "0"
+    mode_flag = args.mode if args.mode in ("braille", "block", "banner") else "banner"
+
+    # Global ttfx flags (--no-eol --no-restore-cursor) MUST precede {effect_flag},
+    # because ttfx treats specific effect names (waves, blackhole, etc.) as subcommands.
+    ttfx_cmd_str = (
+        f"{TTFX_BIN} -i '{SCREENSAVER_TXT_FILE}' "
+        f"--frame-rate 120 --canvas-width 0 --canvas-height 0 --reuse-canvas "
+        f"--anchor-canvas c --anchor-text c --no-eol --no-restore-cursor {effect_flag}"
+    )
+
     if args.dry_run:
         emit({
             "launched": False,
             "dryRun": True,
             "effect": effect,
+            "ttfxCommand": ttfx_cmd_str,
             "screensaverFile": SCREENSAVER_TXT_FILE,
             "ttfxAvailable": os.path.isfile(TTFX_BIN),
         })
         return
 
-    if not os.path.isfile(TTFX_BIN):
-        die("ttfx is not installed on this system")
-
-    self_bin = os.path.abspath(__file__)
-    use_art_flag = "1" if str(args.use_album_art) != "0" else "0"
-    mode_flag = args.mode if args.mode in ("braille", "block", "banner") else "braille"
-
-    # Match `/home/matthew/omarchy/bin/omarchy-screensaver`:
-    # 1. Wait for Hyprland/compositor to resize the pty away from 80x24 before ttfx measures canvas
-    # 2. Refresh SCREENSAVER_TXT_FILE on each cycle in case the playing track changed
-    # 3. Poll with `read -r -n1 -t 1` while `kill -0 $pid` so ttfx loops continuously until a key is pressed
     runner_sh = (
         f"printf '\\033]11;rgb:00/00/00\\007'; "
         f"deadline=$((SECONDS + 2)); "
         f"while ((SECONDS < deadline)) && [[ $(stty size 2>/dev/null) == '24 80' ]]; do sleep 0.02; done; "
         f"while true; do "
         f"'{self_bin}' ascii-art --mode {mode_flag} --use-album-art {use_art_flag} >/dev/null 2>&1 || true; "
-        f"{TTFX_BIN} -i '{SCREENSAVER_TXT_FILE}' "
-        f"--frame-rate 120 --canvas-width 0 --canvas-height 0 --reuse-canvas "
-        f"--anchor-canvas c --anchor-text c {effect_flag} --no-eol --no-restore-cursor & "
+        f"{ttfx_cmd_str} & "
         f"pid=$!; "
         f"while kill -0 $pid 2>/dev/null; do "
         f"if read -r -n1 -t 1; then kill $pid 2>/dev/null; exit 0; fi; "
@@ -2453,22 +3400,46 @@ def cmd_screensaver(args) -> None:
     if not os.path.isdir(omarchy_dir):
         omarchy_dir = os.path.join(HOME, "omarchy")
 
+    # Use class `org.bandarchy.tte` with explicit `--fullscreen` rather than `org.omarchy.screensaver`,
+    # because Hyprland's system.lua rule forces `org.omarchy.screensaver` to `workspace = "special:screensaver silent"`,
+    # which hides the window unless special:screensaver is dispatched.
+    win_class = "org.bandarchy.tte"
     term_cmd = None
-    if shutil.which("alacritty"):
+    if shutil.which("ghostty"):
+        conf = os.path.join(omarchy_dir, "default", "ghostty", "screensaver")
+        term_cmd = ["ghostty", f"--class={win_class}", "--fullscreen=true", "--font-size=18"]
+        if os.path.isfile(conf):
+            term_cmd.append(f"--config-file={conf}")
+        term_cmd.extend(["-e", "bash", "-c", runner_sh])
+    elif shutil.which("alacritty"):
         conf = os.path.join(omarchy_dir, "default", "alacritty", "screensaver.toml")
-        term_cmd = ["alacritty", "--class=org.omarchy.screensaver"]
+        term_cmd = ["alacritty", f"--class={win_class}", "-o", 'window.startup_mode="Fullscreen"']
         if os.path.isfile(conf):
             term_cmd.extend(["--config-file", conf])
         term_cmd.extend(["-e", "bash", "-c", runner_sh])
-    elif shutil.which("ghostty"):
-        term_cmd = ["ghostty", "--class=org.omarchy.screensaver", "--font-size=18", "-e", "bash", "-c", runner_sh]
     elif shutil.which("foot"):
-        term_cmd = ["foot", "--app-id=org.omarchy.screensaver", "-e", "bash", "-c", runner_sh]
+        conf = os.path.join(omarchy_dir, "default", "foot", "screensaver.ini")
+        term_cmd = ["foot", f"--app-id={win_class}", "--fullscreen"]
+        if os.path.isfile(conf):
+            term_cmd.append(f"--config={conf}")
+        term_cmd.extend(["-e", "bash", "-c", runner_sh])
     elif shutil.which("kitty"):
-        term_cmd = ["kitty", "--class=org.omarchy.screensaver", "-e", "bash", "-c", runner_sh]
+        term_cmd = [
+            "kitty",
+            f"--class={win_class}",
+            "--start-as=fullscreen",
+            "--override",
+            "font_size=18",
+            "--override",
+            "window_padding_width=0",
+            "-e",
+            "bash",
+            "-c",
+            runner_sh,
+        ]
 
     if not term_cmd:
-        die("no supported terminal (alacritty, ghostty, foot, kitty) found for ttfx screensaver")
+        die("no supported terminal (ghostty, alacritty, foot, kitty) found for ttfx screensaver")
 
     subprocess.Popen(
         term_cmd,
@@ -2480,6 +3451,7 @@ def cmd_screensaver(args) -> None:
     emit({
         "launched": True,
         "effect": effect,
+        "ttfxCommand": ttfx_cmd_str,
         "screensaverFile": SCREENSAVER_TXT_FILE,
     })
 
@@ -2897,15 +3869,31 @@ def main() -> None:
     p.add_argument("--local-only", action="store_true", help="only scan local folders and browser history")
     p.set_defaults(func=cmd_sync)
 
-    p = sub.add_parser("auth", help="configure Bandcamp username, session cookie, or visualiser options")
+    p = sub.add_parser("auth", help="configure Bandcamp username, session cookie, login/logout, or visualiser options")
     p.add_argument("--username")
     p.add_argument("--identity", help="Bandcamp identity cookie value")
+    p.add_argument("--logout", action="store_true", help="log out of Bandcamp and clear saved identity")
+    p.add_argument("--detect-browser", action="store_true", help="auto-detect Bandcamp username and identity cookie from browser")
+    p.add_argument("--open-browser", action="store_true", help="open Bandcamp login page in default browser")
     p.add_argument("--download-dir")
     p.add_argument("--format", choices=["flac", "mp3-320", "mp3-v0", "wav", "ogg"])
     p.add_argument("--use-album-art", choices=["0", "1"], help="whether visualiser translates album cover art")
-    p.add_argument("--ascii-mode", choices=["braille", "block"], help="omarchy-transcode-ascii mode")
+    p.add_argument("--ascii-mode", choices=["braille", "block", "banner"], help="omarchy-transcode-ascii or banner mode")
+    p.add_argument("--stage-mode", choices=["off", "art", "turntable", "visualiser"], help="active visualiser stage mode")
+    p.add_argument("--set-json", help="JSON object of visualiser/turntable settings to update")
     p.add_argument("--add-url", help="add a Bandcamp album or track URL to the purchased collection")
     p.set_defaults(func=cmd_auth)
+
+    p = sub.add_parser("login", help="log into Bandcamp (from browser or explicit credentials) and sync")
+    p.add_argument("--username", help="Bandcamp fan username")
+    p.add_argument("--identity", help="Bandcamp identity cookie")
+    p.add_argument("--detect-browser", action="store_true", help="detect credentials from browser")
+    p.add_argument("--open-browser", action="store_true", help="open Bandcamp login page in browser")
+    p.add_argument("--no-sync", action="store_true", help="skip remote sync after logging in")
+    p.set_defaults(func=cmd_login)
+
+    p = sub.add_parser("logout", help="log out of Bandcamp and clear stored session")
+    p.set_defaults(func=cmd_logout)
 
     p = sub.add_parser("ascii-art", help="transcode album cover art into Omarchy screensaver ASCII/Unicode")
     p.add_argument("--album", help="album id or URL")
