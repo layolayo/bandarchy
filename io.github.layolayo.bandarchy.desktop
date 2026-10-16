@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Bandarchy
+GenericName=Bandcamp & Local Music Player
+Comment=Bandcamp purchased collection & local lossless player with Omarchy TTE album-art visualiser
+Exec=/home/matthew/.local/bin/bandarchy-player
+Icon=/home/matthew/Projects/bandarchy/icon.svg
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+Keywords=bandcamp;music;player;omarchy;visualiser;flac;mpv;
+StartupWMClass=quickshell

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="#15322c"/>
+      <stop offset="100%" stop-color="#07090e"/>
+    </radialGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6ee7b7"/>
+      <stop offset="55%" stop-color="#a78bfa"/>
+      <stop offset="100%" stop-color="#f472b6"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="44" fill="url(#bg)" stroke="url(#accent)" stroke-width="6"/>
+  <circle cx="128" cy="128" r="88" fill="none" stroke="url(#accent)" stroke-width="2.5" opacity="0.45"/>
+  <circle cx="128" cy="128" r="64" fill="none" stroke="url(#accent)" stroke-width="1.8" stroke-dasharray="8 6" opacity="0.55"/>
+  <!-- Bandcamp parallelogram + Omarchy TTE glyph matrix -->
+  <polygon points="88,88 192,88 168,168 64,168" fill="url(#accent)"/>
+  <circle cx="128" cy="128" r="12" fill="#07090e"/>
+</svg>

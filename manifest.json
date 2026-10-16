@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.layolayo.bandarchy",
+  "name": "Bandarchy",
+  "version": "0.1.0",
+  "author": "layolayo",
+  "license": "MIT",
+  "description": "Bandcamp purchased collection & local lossless music player for Omarchy: search across purchases and local files, stream live or download purchases for local mpv playback, generate intelligent playlists from the last track played, manage custom playlists, and launch a full-screen psychedelic visualiser powered by the Omarchy screensaver TTE character engine with Braille/Block album cover art transcoding.",
+  "kinds": [
+    "service",
+    "bar-widget",
+    "panel"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml",
+    "panel": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Bandarchy",
+    "description": "Bandcamp & local audio player with Omarchy TTE album-art visualiser and intelligent playlists.",
+    "category": "Media",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "showTrack": true,
+      "maxTrackChars": 28
+    },
+    "schema": [
+      {
+        "key": "showTrack",
+        "type": "boolean",
+        "label": "Show the active track in the bar",
+        "defaultValue": true,
+        "description": "Display artist and track title next to the Bandarchy emblem."
+      },
+      {
+        "key": "maxTrackChars",
+        "type": "integer",
+        "label": "Maximum track label characters",
+        "defaultValue": 28,
+        "description": "Maximum character length shown in the bar pill."
+      }
+    ]
+  },
+  "repository": "https://github.com/layolayo/bandarchy"
+}

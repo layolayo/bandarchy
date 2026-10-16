@@ -1,0 +1,2800 @@
+#!/usr/bin/env python3
+"""bandarchy — Bandcamp & local collection player, Omarchy ASCII/TTE visualiser helper, and intelligent playlist engine.
+
+Connects to Bandcamp fan collections and album/track pages over HTTPS, indexes
+local downloads and music folders, transcodes album art into Omarchy screensaver
+ASCII/Unicode (Braille/Block via omarchy-transcode-ascii and Delta Corps Priest 1
+via omarchy-ascii), builds intelligent playlists from the last track played,
+manages custom user playlists, and plays local lossless files or live streams
+through mpv over a private UNIX IPC socket.
+
+Every command outputs a single bounded JSON object on stdout for QML.
+"""
+
+from __future__ import annotations
+
+import argparse
+import errno
+import fcntl
+import glob
+import hashlib
+import html
+import json
+import os
+import re
+import secrets
+import shutil
+import socket
+import sqlite3
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+import unicodedata
+import urllib.error
+import urllib.parse
+import urllib.request
+import zipfile
+
+HOME = os.path.expanduser("~")
+CONFIG_DIR = os.environ.get("BANDARCHY_CONFIG_DIR") or os.path.join(HOME, ".config", "bandarchy")
+DATA_DIR = os.environ.get("BANDARCHY_DATA_DIR") or os.path.join(HOME, ".local", "share", "bandarchy")
+CACHE_DIR = os.environ.get("BANDARCHY_CACHE_DIR") or os.path.join(
+    os.environ.get("XDG_CACHE_HOME") or os.path.join(HOME, ".cache"),
+    "bandarchy",
+)
+ART_DIR = os.path.join(CACHE_DIR, "art")
+ASCII_DIR = os.path.join(CACHE_DIR, "ascii")
+
+SETTINGS_FILE = os.path.join(CONFIG_DIR, "settings.json")
+AUTH_FILE = os.path.join(CONFIG_DIR, "auth.json")
+FAVOURITES_FILE = os.path.join(CONFIG_DIR, "favourites.json")
+PLAYLISTS_FILE = os.path.join(CONFIG_DIR, "playlists.json")
+
+INDEX_FILE = os.path.join(DATA_DIR, "collection.json")
+HISTORY_FILE = os.path.join(DATA_DIR, "history.json")
+QUEUE_FILE = os.path.join(DATA_DIR, "queue.json")
+PLAYLIST_M3U_FILE = os.path.join(DATA_DIR, "queue.m3u")
+SYNC_PROGRESS_FILE = os.path.join(DATA_DIR, "sync-progress.json")
+DOWNLOAD_PROGRESS_FILE = os.path.join(DATA_DIR, "download-progress.json")
+SYNC_LOCK_FILE = os.path.join(DATA_DIR, "sync.lock")
+DOWNLOAD_LOCK_FILE = os.path.join(DATA_DIR, "download.lock")
+LOG_FILE = os.path.join(CACHE_DIR, "bandarchy.log")
+SCREENSAVER_TXT_FILE = os.path.join(CACHE_DIR, "screensaver-art.txt")
+
+RUNTIME_DIR = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+IPC_SOCKET = os.environ.get("BANDARCHY_MPV_SOCKET") or os.path.join(
+    RUNTIME_DIR, "bandarchy.sock"
+)
+
+DEFAULT_DOWNLOAD_DIR = os.path.join(HOME, "Music", "Bandcamp")
+DEFAULT_LOCAL_DIRS = [
+    os.path.join(HOME, "Music", "Bandcamp"),
+    os.path.join(HOME, "Music"),
+]
+
+OMARCHY_BIN_DIR = os.path.join(HOME, "omarchy", "bin")
+TRANSCODE_ASCII_BIN = (
+    shutil.which("omarchy-transcode-ascii")
+    or os.path.join(OMARCHY_BIN_DIR, "omarchy-transcode-ascii")
+)
+OMARCHY_ASCII_BIN = (
+    shutil.which("omarchy-ascii")
+    or os.path.join(OMARCHY_BIN_DIR, "omarchy-ascii")
+)
+TTFX_BIN = shutil.which("ttfx") or "/usr/bin/ttfx"
+
+# Safety ceilings on untrusted network/disk data
+MAX_HTTP_BYTES = 32 * 1024 * 1024
+MAX_ART_BYTES = 16 * 1024 * 1024
+MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB archive ceiling
+MAX_COLLECTION_ITEMS = 50_000
+MAX_FIELD_CHARS = 512
+MAX_URL_CHARS = 2048
+MAX_IPC_BYTES = 1024 * 1024
+LOG_LINES = 200
+
+AUDIO_EXTENSIONS = (".flac", ".wav", ".ogg", ".opus", ".mp3", ".m4a", ".aac", ".alac", ".aiff")
+IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+
+USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+
+SECRET_PATTERN = re.compile(r"(identity|sig|token|session)=[^&\s\"';]+", re.IGNORECASE)
+
+TTFX_EFFECTS = [
+    "waves", "rings", "beams", "blackhole", "synthgrid", "vhstape",
+    "colorshift", "matrix", "fireworks", "swarm", "burn", "spotlights",
+    "thunderstorm", "crumble", "laseretch", "rain", "orbittingvolley",
+]
+
+# Related artist clusters for intelligent playlist recommendations
+KINDRED_CLUSTERS = [
+    {"steven wilson", "porcupine tree", "bass communion", "iem", "no man", "blackfield", "storm corrosion", "yes"},
+    {"the black dog", "aphex twin", "autechre", "boards of canada", "plaid", "jaberdarwin", "snapped ankles"},
+    {"king gizzard the lizard wizard", "bootleggizzard", "osees", "ty segall", "hawkwind"},
+    {"violeta vicci", "david carr", "max richter", "olafur arnalds", "nils frahm"},
+]
+
+_quiet = False
+_sync_lock_fd = None
+_download_lock_fd = None
+
+
+class BandarchyError(Exception):
+    """Expected operational error reported cleanly as JSON."""
+
+
+class quiet:
+    """Suppress stdout exit inside background helper calls."""
+
+    def __enter__(self):
+        global _quiet
+        self.was = _quiet
+        _quiet = True
+        return self
+
+    def __exit__(self, *exc):
+        global _quiet
+        _quiet = self.was
+        return False
+
+
+def redact(text: str) -> str:
+    return SECRET_PATTERN.sub(r"\1=<redacted>", str(text or ""))
+
+
+def bounded_text(val, limit: int = MAX_FIELD_CHARS) -> str:
+    if val is None:
+        return ""
+    s = str(val).strip()
+    s = "".join(ch for ch in s if ch == "\n" or ch == "\t" or ord(ch) >= 32)
+    return s[:limit]
+
+
+def bounded_int(val, default: int = 0, minimum: int = 0, maximum: int = 2_000_000_000) -> int:
+    try:
+        n = int(float(val))
+        return max(minimum, min(maximum, n))
+    except (ValueError, TypeError):
+        return default
+
+
+def bounded_float(val, default: float = 0.0, minimum: float = 0.0, maximum: float = 1e9) -> float:
+    try:
+        n = float(val)
+        if n != n:
+            return default
+        return max(minimum, min(maximum, n))
+    except (ValueError, TypeError):
+        return default
+
+
+def fold(text: str) -> str:
+    norm = unicodedata.normalize("NFKD", str(text or ""))
+    clean = "".join(c for c in norm if not unicodedata.combining(c)).casefold()
+    return re.sub(r"[^a-z0-9]+", " ", clean).strip()
+
+
+def slugify(text: str) -> str:
+    s = fold(text).replace(" ", "-")
+    return re.sub(r"-+", "-", s).strip("-") or "unknown"
+
+
+def ensure_private_dir(path: str) -> str:
+    os.makedirs(path, mode=0o700, exist_ok=True)
+    try:
+        st = os.lstat(path)
+        if stat.S_ISLNK(st.st_mode):
+            raise BandarchyError(f"refusing symlinked state directory: {path}")
+    except OSError:
+        pass
+    return path
+
+
+def atomic_write(path: str, data: bytes, mode: int = 0o600, fatal: bool = True) -> None:
+    parent = os.path.dirname(os.path.abspath(path))
+    try:
+        ensure_private_dir(parent)
+        tmp_name = f".{os.path.basename(path)}.{secrets.token_hex(6)}.tmp"
+        tmp_path = os.path.join(parent, tmp_name)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(tmp_path, flags, mode)
+        try:
+            os.write(fd, data)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(tmp_path, path)
+    except Exception as exc:
+        if fatal:
+            die(f"failed to write {os.path.basename(path)}: {exc}")
+
+
+def read_json(path: str, default=None):
+    try:
+        st = os.lstat(path)
+        if stat.S_ISLNK(st.st_mode) or st.st_size > MAX_HTTP_BYTES:
+            return default
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+
+def write_json(path: str, payload, mode: int = 0o600) -> None:
+    raw = (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    atomic_write(path, raw, mode=mode)
+
+
+def log_failure(message: str) -> None:
+    try:
+        ensure_private_dir(CACHE_DIR)
+        line = redact(message).replace("\n", " ")[:1000]
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        existing = []
+        if os.path.exists(LOG_FILE) and not os.path.islink(LOG_FILE):
+            with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
+                existing = [l.rstrip("\n") for l in f.readlines()[-LOG_LINES:]]
+        existing.append(f"{stamp} {line}")
+        existing = existing[-LOG_LINES:]
+        atomic_write(LOG_FILE, ("\n".join(existing) + "\n").encode("utf-8"), 0o600, fatal=False)
+    except Exception:
+        pass
+
+
+def die(message: str, code: int = 1):
+    if _quiet:
+        raise BandarchyError(message)
+    log_failure(message)
+    json.dump({"ok": False, "error": bounded_text(redact(message), 512)}, sys.stdout, ensure_ascii=False)
+    sys.stdout.write("\n")
+    sys.exit(code)
+
+
+def emit(payload: dict) -> None:
+    if _quiet:
+        return
+    payload.setdefault("ok", True)
+    json.dump(payload, sys.stdout, ensure_ascii=False)
+    sys.stdout.write("\n")
+
+
+def take_lock(lock_path: str) -> int | None:
+    ensure_private_dir(os.path.dirname(lock_path))
+    flags = os.O_RDWR | os.O_CREAT
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(lock_path, flags, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        os.ftruncate(fd, 0)
+        os.write(fd, f"{os.getpid()}\n".encode("ascii"))
+        return fd
+    except OSError:
+        os.close(fd)
+        return None
+
+
+def is_locked(lock_path: str) -> bool:
+    if not os.path.exists(lock_path):
+        return False
+    flags = os.O_RDWR
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(lock_path, flags)
+    except OSError:
+        return False
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return False
+    except OSError:
+        return True
+    finally:
+        os.close(fd)
+
+
+# --------------------------------------------------------------------------- #
+# Settings & Browser Discovery
+# --------------------------------------------------------------------------- #
+
+def load_settings() -> dict:
+    defaults = {
+        "username": "",
+        "downloadDir": DEFAULT_DOWNLOAD_DIR,
+        "localDirs": DEFAULT_LOCAL_DIRS,
+        "preferredFormat": "flac",
+        "autoImportZips": True,
+        "useAlbumArt": True,
+        "asciiMode": "braille",
+        "apiBase": os.environ.get("BANDARCHY_API_BASE") or os.environ.get("BANDCAMP_API_BASE") or "https://bandcamp.com",
+    }
+    saved = read_json(SETTINGS_FILE, {})
+    if isinstance(saved, dict):
+        defaults.update({k: v for k, v in saved.items() if v is not None})
+    env_base = os.environ.get("BANDARCHY_API_BASE") or os.environ.get("BANDCAMP_API_BASE")
+    if env_base:
+        defaults["apiBase"] = env_base
+    return defaults
+
+
+def discover_from_browsers() -> dict:
+    """Scan local Chrome/Chromium/Brave SQLite history & cookies safely via temp copy."""
+    username = ""
+    albums_by_url: dict[str, dict] = {}
+    download_urls: list[str] = []
+    cookie_subdomains: set[str] = set()
+
+    if os.environ.get("BANDARCHY_DISABLE_BROWSER_SCAN") == "1" or os.environ.get("BANDCAMP_DISABLE_BROWSER_SCAN") == "1":
+        return {"username": "", "hasBrowserSession": False, "albums": [], "downloads": [], "subdomains": []}
+
+    history_globs = [
+        os.path.join(HOME, ".config", "google-chrome", "*", "History"),
+        os.path.join(HOME, ".config", "chromium", "*", "History"),
+        os.path.join(HOME, ".config", "BraveSoftware", "Brave-Browser", "*", "History"),
+    ]
+
+    reserved_paths = {
+        "discover", "login", "login_confirmed", "cart", "download", "article",
+        "tag", "search", "settings", "fans", "artists", "labels", "about",
+        "help", "terms_of_use", "privacy", "copyright", "api", "EmbeddedPlayer",
+    }
+
+    for pat in history_globs:
+        for db_path in glob.glob(pat):
+            if not os.path.isfile(db_path):
+                continue
+            tmp_fd, tmp_path = tempfile.mkstemp(prefix="ba_hist_", suffix=".sqlite")
+            os.close(tmp_fd)
+            try:
+                shutil.copy2(db_path, tmp_path)
+                conn = sqlite3.connect(tmp_path)
+                cur = conn.cursor()
+                rows = cur.execute(
+                    "SELECT url, title FROM urls WHERE url LIKE '%bandcamp.com%' "
+                    "ORDER BY last_visit_time DESC LIMIT 500"
+                ).fetchall()
+                for raw_url, raw_title in rows:
+                    try:
+                        parsed = urllib.parse.urlparse(raw_url)
+                    except Exception:
+                        continue
+                    host = (parsed.netloc or "").lower()
+                    path = parsed.path or ""
+
+                    if host in ("bandcamp.com", "www.bandcamp.com"):
+                        parts = [p for p in path.split("/") if p]
+                        if len(parts) >= 1 and parts[0] not in reserved_paths:
+                            cand = parts[0].strip()
+                            if re.match(r"^[a-zA-Z0-9_-]{2,40}$", cand):
+                                if len(parts) >= 2 and parts[1] in ("purchases", "wishlist", "following"):
+                                    if not username:
+                                        username = cand
+                                elif not username and " | Bandcamp" in (raw_title or ""):
+                                    username = cand
+                        if path == "/download" and parsed.query:
+                            if raw_url not in download_urls:
+                                download_urls.append(bounded_text(raw_url, MAX_URL_CHARS))
+
+                    elif host.endswith(".bandcamp.com") and host != "daily.bandcamp.com":
+                        sub = host[: -len(".bandcamp.com")]
+                        m = re.match(r"^/(album|track)/([a-zA-Z0-9_-]+)", path)
+                        if m:
+                            item_type = m.group(1)
+                            slug = m.group(2)
+                            clean_url = f"https://{host}/{item_type}/{slug}"
+                            title_str = bounded_text(raw_title or "")
+                            t_parts = [p.strip() for p in title_str.split("|") if p.strip()]
+                            item_title = ""
+                            artist_name = ""
+                            if len(t_parts) >= 2:
+                                item_title = t_parts[0]
+                                artist_name = t_parts[1]
+                            elif len(t_parts) == 1:
+                                item_title = t_parts[0]
+                            if not item_title or item_title.lower() in ("music", "merch", "bandcamp"):
+                                item_title = slug.replace("-", " ").title()
+                            if not artist_name or artist_name.lower() == "bandcamp":
+                                artist_name = sub.replace("-", " ").title()
+
+                            existing = albums_by_url.get(clean_url)
+                            if not existing or (existing["title"] == slug.replace("-", " ").title() and item_title):
+                                albums_by_url[clean_url] = {
+                                    "url": clean_url,
+                                    "title": item_title,
+                                    "artist": artist_name,
+                                    "subdomain": sub,
+                                    "slug": slug,
+                                    "itemType": item_type,
+                                }
+                conn.close()
+            except Exception:
+                pass
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
+    cookie_globs = [
+        os.path.join(HOME, ".config", "google-chrome", "*", "Cookies"),
+        os.path.join(HOME, ".config", "chromium", "*", "Cookies"),
+        os.path.join(HOME, ".config", "BraveSoftware", "Brave-Browser", "*", "Cookies"),
+    ]
+    has_identity_cookie = False
+    for pat in cookie_globs:
+        for db_path in glob.glob(pat):
+            if not os.path.isfile(db_path):
+                continue
+            tmp_fd, tmp_path = tempfile.mkstemp(prefix="ba_cook_", suffix=".sqlite")
+            os.close(tmp_fd)
+            try:
+                shutil.copy2(db_path, tmp_path)
+                conn = sqlite3.connect(tmp_path)
+                rows = conn.execute(
+                    "SELECT DISTINCT host_key, name FROM cookies WHERE host_key LIKE '%bandcamp.com%'"
+                ).fetchall()
+                for host_key, name in rows:
+                    hk = (host_key or "").lstrip(".").lower()
+                    if name == "identity" and hk == "bandcamp.com":
+                        has_identity_cookie = True
+                    if hk.endswith(".bandcamp.com") and hk != "daily.bandcamp.com":
+                        cookie_subdomains.add(hk[: -len(".bandcamp.com")])
+                conn.close()
+            except Exception:
+                pass
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
+    return {
+        "username": username,
+        "hasBrowserSession": has_identity_cookie or bool(username),
+        "albums": list(albums_by_url.values()),
+        "downloads": download_urls,
+        "subdomains": sorted(cookie_subdomains),
+    }
+
+
+# --------------------------------------------------------------------------- #
+# HTTP & Bandcamp Scraping / API Client
+# --------------------------------------------------------------------------- #
+
+def build_cookie_header() -> str:
+    auth = read_json(AUTH_FILE, {}) or {}
+    parts = []
+    if auth.get("identity"):
+        val = str(auth["identity"]).strip()
+        if val.startswith("identity="):
+            parts.append(val)
+        else:
+            parts.append(f"identity={val}")
+    if auth.get("cookies"):
+        parts.append(str(auth["cookies"]).strip())
+    return "; ".join(p for p in parts if p)
+
+
+def http_request(
+    url: str,
+    method: str = "GET",
+    json_body: dict | None = None,
+    timeout: float = 8.0,
+    max_bytes: int = MAX_HTTP_BYTES,
+) -> bytes:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise BandarchyError(f"unsupported URL scheme: {parsed.scheme}")
+    if parsed.scheme == "http" and parsed.hostname not in ("127.0.0.1", "localhost", "::1"):
+        raise BandarchyError("plain HTTP is only permitted for localhost test servers")
+
+    cookie_hdr = build_cookie_header()
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-GB,en;q=0.9",
+    }
+    if cookie_hdr:
+        headers["Cookie"] = cookie_hdr
+    body_bytes = None
+    if json_body is not None:
+        body_bytes = json.dumps(json_body).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+
+    try:
+        req = urllib.request.Request(url, data=body_bytes, headers=headers, method=method)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            chunks = []
+            total = 0
+            while True:
+                chunk = resp.read(min(65536, max_bytes + 1 - total))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total += len(chunk)
+                if total > max_bytes:
+                    raise BandarchyError(f"response from {parsed.netloc} exceeded {max_bytes} bytes")
+            return b"".join(chunks)
+    except BandarchyError:
+        raise
+    except Exception as urllib_exc:
+        cmd = [
+            "curl",
+            "-sSL",
+            "--max-time",
+            str(max(2, int(timeout))),
+            "--max-filesize",
+            str(max_bytes),
+            "-A",
+            USER_AGENT,
+        ]
+        if cookie_hdr:
+            cmd.extend(["-H", f"Cookie: {cookie_hdr}"])
+        if json_body is not None:
+            cmd.extend(["-X", method, "-H", "Content-Type: application/json", "-d", json.dumps(json_body)])
+        cmd.append(url)
+        try:
+            r = subprocess.run(cmd, capture_output=True, timeout=timeout + 2)
+            if r.returncode == 0 and r.stdout:
+                if len(r.stdout) > max_bytes:
+                    raise BandarchyError("response exceeded size ceiling")
+                return r.stdout
+        except Exception:
+            pass
+        raise BandarchyError(f"cannot reach {parsed.netloc}: {urllib_exc}")
+
+
+def extract_attr_json(page_html: str, attr_name: str) -> dict | None:
+    for quote in ('"', "'"):
+        pattern = rf'{re.escape(attr_name)}\s*=\s*{quote}([^{quote}]+){quote}'
+        m = re.search(pattern, page_html)
+        if m:
+            raw = html.unescape(m.group(1))
+            try:
+                data = json.loads(raw)
+                if isinstance(data, dict):
+                    return data
+            except Exception:
+                continue
+    return None
+
+
+def art_url_from_id(art_id, size: int = 10, api_base: str = "https://bandcamp.com") -> str:
+    if not art_id:
+        return ""
+    s = str(art_id).strip()
+    if s.startswith(("http://", "https://")):
+        return bounded_text(s, MAX_URL_CHARS)
+    if not s.isdigit():
+        return ""
+    if api_base.startswith("http://127.0.0.1") or api_base.startswith("http://localhost"):
+        return f"{api_base.rstrip('/')}/img/a{s.zfill(10)}_{size}.jpg"
+    return f"https://f4.bcbits.com/img/a{s.zfill(10)}_{size}.jpg"
+
+
+def fetch_fan_collection(username: str, api_base: str = "https://bandcamp.com") -> list[dict]:
+    if not username:
+        return []
+    base = api_base.rstrip("/")
+    profile_url = f"{base}/{urllib.parse.quote(username.strip())}"
+    raw = http_request(profile_url, timeout=8.0)
+    page = raw.decode("utf-8", errors="replace")
+    blob = extract_attr_json(page, "data-blob")
+    if not blob:
+        return []
+
+    fan_id = (blob.get("fan_data") or {}).get("fan_id")
+    coll_data = blob.get("collection_data") or {}
+    redownload_urls = dict(coll_data.get("redownload_urls") or {})
+    item_cache = (blob.get("item_cache") or {}).get("collection") or {}
+
+    raw_items: list[dict] = []
+    sequence = coll_data.get("sequence") or coll_data.get("small_collection") or list(item_cache.keys())
+    seen_keys: set[str] = set()
+    for key in sequence:
+        item = item_cache.get(str(key))
+        if isinstance(item, dict):
+            seen_keys.add(str(key))
+            raw_items.append(item)
+    for k, item in item_cache.items():
+        if str(k) not in seen_keys and isinstance(item, dict):
+            raw_items.append(item)
+
+    last_token = coll_data.get("last_token")
+    more_available = bool(coll_data.get("more_available", bool(last_token)))
+
+    pages = 0
+    while fan_id and last_token and more_available and pages < 25 and len(raw_items) < MAX_COLLECTION_ITEMS:
+        pages += 1
+        try:
+            api_raw = http_request(
+                f"{base}/api/fancollection/1/collection_items",
+                method="POST",
+                json_body={
+                    "fan_id": fan_id,
+                    "older_than_token": last_token,
+                    "count": 100,
+                },
+                timeout=8.0,
+            )
+            api_data = json.loads(api_raw.decode("utf-8", errors="replace"))
+        except Exception:
+            break
+        if not isinstance(api_data, dict):
+            break
+        redownload_urls.update(api_data.get("redownload_urls") or {})
+        batch = api_data.get("items") or []
+        if not batch:
+            break
+        raw_items.extend(batch)
+        more_available = bool(api_data.get("more_available"))
+        last_token = api_data.get("last_token")
+
+    parsed_items: list[dict] = []
+    for item in raw_items[:MAX_COLLECTION_ITEMS]:
+        if not isinstance(item, dict):
+            continue
+        item_id = str(item.get("item_id") or item.get("tralbum_id") or "")
+        item_type = str(item.get("item_type") or item.get("tralbum_type") or "album")
+        if item_type == "a":
+            item_type = "album"
+        elif item_type == "t":
+            item_type = "track"
+        title = bounded_text(item.get("item_title") or item.get("title") or "Untitled")
+        artist = bounded_text(item.get("band_name") or item.get("artist") or "Unknown Artist")
+        item_url = bounded_text(item.get("item_url") or "", MAX_URL_CHARS)
+        art_id = item.get("item_art_id") or item.get("art_id") or ""
+        sale_id = item.get("sale_item_id")
+        sale_type = item.get("sale_item_type") or "p"
+        dl_url = ""
+        if sale_id:
+            dl_url = redownload_urls.get(f"{sale_type}{sale_id}") or redownload_urls.get(f"p{sale_id}") or redownload_urls.get(f"c{sale_id}") or ""
+        if not dl_url and item_id:
+            dl_url = redownload_urls.get(item_id) or ""
+
+        tracks = []
+        feat_title = bounded_text(item.get("featured_track_title") or "")
+        stream_url = bounded_text(item.get("featured_track_url") or "", MAX_URL_CHARS)
+        if feat_title:
+            tracks.append({
+                "id": f"bc-track-{item.get('featured_track') or item_id}-1",
+                "title": feat_title,
+                "artist": artist,
+                "album": title,
+                "index": bounded_int(item.get("featured_track_number") or 1, 1),
+                "duration": bounded_float(item.get("featured_track_duration") or 0),
+                "streamUrl": stream_url,
+                "localPath": "",
+                "itemUrl": item_url,
+            })
+
+        parsed_items.append({
+            "id": f"bc-{item_type}-{item_id}" if item_id else f"bc-{slugify(artist)}-{slugify(title)}",
+            "itemId": item_id,
+            "itemType": item_type,
+            "title": title,
+            "artist": artist,
+            "url": item_url,
+            "artUrl": art_url_from_id(art_id, api_base=api_base),
+            "artPath": "",
+            "redownloadUrl": bounded_text(dl_url, MAX_URL_CHARS),
+            "purchased": True,
+            "isLocal": False,
+            "localPath": "",
+            "numTracks": bounded_int(item.get("num_streamable_tracks") or len(tracks), len(tracks)),
+            "tracks": tracks,
+            "fold": fold(f"{artist} {title}"),
+        })
+
+    return parsed_items
+
+
+def fetch_album_details(item_url: str, api_base: str = "https://bandcamp.com") -> dict | None:
+    if not item_url:
+        return None
+    try:
+        raw = http_request(item_url, timeout=8.0)
+        page = raw.decode("utf-8", errors="replace")
+    except Exception:
+        return None
+
+    tralbum = extract_attr_json(page, "data-tralbum")
+    if not tralbum:
+        return None
+
+    current = tralbum.get("current") or {}
+    title = bounded_text(current.get("title") or tralbum.get("album_title") or "Untitled")
+    artist = bounded_text(tralbum.get("artist") or current.get("artist") or "Unknown Artist")
+    art_id = tralbum.get("art_id") or current.get("art_id") or ""
+    item_id = str(current.get("id") or tralbum.get("id") or "")
+    item_type = str(tralbum.get("item_type") or "album")
+
+    tracks = []
+    for idx, t in enumerate(tralbum.get("trackinfo") or [], start=1):
+        if not isinstance(t, dict):
+            continue
+        file_map = t.get("file") or {}
+        stream = ""
+        if isinstance(file_map, dict):
+            stream = file_map.get("mp3-128") or file_map.get("mp3-v0") or next(iter(file_map.values()), "")
+        if stream and stream.startswith("//"):
+            stream = "https:" + stream
+        t_title = bounded_text(t.get("title") or f"Track {idx}")
+        t_link = t.get("title_link") or ""
+        if t_link and t_link.startswith("/"):
+            parsed_u = urllib.parse.urlparse(item_url)
+            t_link = f"{parsed_u.scheme}://{parsed_u.netloc}{t_link}"
+        tracks.append({
+            "id": f"bc-track-{t.get('track_id') or t.get('id') or idx}",
+            "title": t_title,
+            "artist": bounded_text(t.get("artist") or artist),
+            "album": title,
+            "index": bounded_int(t.get("track_num") or idx, idx),
+            "duration": bounded_float(t.get("duration") or 0.0),
+            "streamUrl": bounded_text(stream, MAX_URL_CHARS),
+            "localPath": "",
+            "itemUrl": bounded_text(t_link or item_url, MAX_URL_CHARS),
+        })
+
+    return {
+        "id": f"bc-{item_type}-{item_id}" if item_id else f"bc-{slugify(artist)}-{slugify(title)}",
+        "itemId": item_id,
+        "itemType": item_type,
+        "title": title,
+        "artist": artist,
+        "url": bounded_text(item_url, MAX_URL_CHARS),
+        "artUrl": art_url_from_id(art_id, api_base=api_base),
+        "tracks": tracks,
+        "numTracks": len(tracks),
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Artwork Generation, Caching & Omarchy ASCII Transcoding
+# --------------------------------------------------------------------------- #
+
+PsychedelicPalettes = [
+    ("#ff007f", "#7928ca", "#00f0ff"),
+    ("#00f5d4", "#7b2cbf", "#ff9e00"),
+    ("#ffbe0b", "#fb5607", "#ff006e"),
+    ("#8338ec", "#3a86ff", "#06d6a0"),
+    ("#f72585", "#7209b7", "#4cc9f0"),
+]
+
+
+def ensure_cover_svg(album_id: str, artist: str, title: str) -> str:
+    """Create a high-contrast geometric SVG sleeve that both looks great in QML
+    and transcodes cleanly into Braille/Block art via omarchy-transcode-ascii.
+    """
+    ensure_private_dir(ART_DIR)
+    digest = hashlib.sha256(f"{album_id}:{artist}:{title}".encode("utf-8")).hexdigest()
+    target = os.path.join(ART_DIR, f"v2_{digest[:22]}.svg")
+    if os.path.exists(target) and os.path.getsize(target) > 0:
+        return target
+
+    pal = PsychedelicPalettes[int(digest[:2], 16) % len(PsychedelicPalettes)]
+    petals = 6 + (int(digest[2:4], 16) % 4) * 2
+    rings = 3 + (int(digest[4:6], 16) % 3)
+
+    shapes = []
+    # High-contrast sacred geometry rays and concentric rings on transparent/dark canvas
+    for p in range(petals):
+        ang = (p / petals) * 360.0
+        shapes.append(
+            f'<ellipse cx="250" cy="250" rx="185" ry="52" fill="none" '
+            f'stroke="{pal[p % 3]}" stroke-width="14" transform="rotate({ang:.1f} 250 250)"/>'
+        )
+    for r in range(rings):
+        rad = 65 + r * 58
+        shapes.append(
+            f'<circle cx="250" cy="250" r="{rad}" fill="none" stroke="#ffffff" '
+            f'stroke-width="12" stroke-dasharray="{24 + r * 10} {16 + r * 8}"/>'
+        )
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="500" height="500">
+  <circle cx="250" cy="250" r="236" fill="none" stroke="{pal[0]}" stroke-width="16"/>
+  {''.join(shapes)}
+  <circle cx="250" cy="250" r="38" fill="{pal[2]}"/>
+</svg>
+"""
+    atomic_write(target, svg.encode("utf-8"), 0o600, fatal=False)
+    return target
+
+
+def cache_remote_art(art_url: str, album_id: str, artist: str, title: str) -> str:
+    ensure_private_dir(ART_DIR)
+    if art_url:
+        digest = hashlib.sha256(art_url.encode("utf-8")).hexdigest()[:24]
+        ext = ".png" if ".png" in art_url.lower() else ".jpg"
+        target = os.path.join(ART_DIR, f"art_{digest}{ext}")
+        if os.path.exists(target) and os.path.getsize(target) > 0:
+            return target
+        try:
+            data = http_request(art_url, timeout=5.0, max_bytes=MAX_ART_BYTES)
+            if data and len(data) > 64:
+                atomic_write(target, data, 0o600, fatal=False)
+                return target
+        except Exception:
+            pass
+    return ensure_cover_svg(album_id, artist, title)
+
+
+def transcode_image_to_ascii(
+    image_path: str,
+    width: int = 72,
+    height: int = 32,
+    mode: str = "braille",
+    threshold: int = 50,
+    invert: bool = False,
+) -> list[str]:
+    """Use Omarchy's `omarchy-transcode-ascii` module to convert album cover art
+    into screensaver-style Braille or Block Unicode text art.
+    """
+    ensure_private_dir(ASCII_DIR)
+    width = bounded_int(width, 72, 20, 160)
+    height = bounded_int(height, 32, 10, 80)
+    mode = "block" if mode == "block" else "braille"
+    threshold = bounded_int(threshold, 50, 10, 90)
+
+    if not image_path or not os.path.isfile(image_path):
+        return []
+
+    stat_sig = f"{image_path}:{os.path.getmtime(image_path):.0f}:{width}:{height}:{mode}:{threshold}:{invert}"
+    cache_key = hashlib.sha256(stat_sig.encode("utf-8")).hexdigest()[:24]
+    cached_txt = os.path.join(ASCII_DIR, f"art_{cache_key}.txt")
+
+    if os.path.isfile(cached_txt) and os.path.getsize(cached_txt) > 0:
+        with open(cached_txt, "r", encoding="utf-8", errors="replace") as f:
+            return [line.rstrip("\n") for line in f.readlines()]
+
+    if os.path.isfile(TRANSCODE_ASCII_BIN):
+        cmd = [
+            TRANSCODE_ASCII_BIN,
+            image_path,
+            cached_txt,
+            "--width",
+            str(width),
+            "--height",
+            str(height),
+            "--mode",
+            mode,
+            "--threshold",
+            str(threshold),
+        ]
+        if invert:
+            cmd.append("--invert")
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            if r.returncode == 0 and os.path.isfile(cached_txt):
+                with open(cached_txt, "r", encoding="utf-8", errors="replace") as f:
+                    lines = [line.rstrip("\n") for line in f.readlines()]
+                if lines:
+                    return lines
+        except Exception:
+            pass
+    return []
+
+
+def render_omarchy_ascii_banner(text: str) -> list[str]:
+    """Render text in Omarchy's Delta Corps Priest 1 logo font via `omarchy-ascii`."""
+    ensure_private_dir(ASCII_DIR)
+    clean_words = re.sub(r"[^a-zA-Z ]+", " ", str(text or "BANDARCHY")).strip()
+    clean_words = re.sub(r"\s+", " ", clean_words)[:24] or "BANDARCHY"
+
+    cache_key = hashlib.sha256(clean_words.encode("utf-8")).hexdigest()[:20]
+    cached_txt = os.path.join(ASCII_DIR, f"banner_{cache_key}.txt")
+    if os.path.isfile(cached_txt) and os.path.getsize(cached_txt) > 0:
+        with open(cached_txt, "r", encoding="utf-8", errors="replace") as f:
+            return [line.rstrip("\n") for line in f.readlines()]
+
+    if os.path.isfile(OMARCHY_ASCII_BIN):
+        try:
+            r = subprocess.run(
+                [OMARCHY_ASCII_BIN, clean_words],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                lines = [l.rstrip("\n") for l in r.stdout.splitlines()]
+                atomic_write(cached_txt, ("\n".join(lines) + "\n").encode("utf-8"), 0o600, fatal=False)
+                return lines
+        except Exception:
+            pass
+
+    # Fallback to Omarchy's screensaver.txt or logo.txt
+    for candidate in (
+        os.path.join(HOME, ".config", "omarchy", "branding", "screensaver.txt"),
+        os.path.join(HOME, "omarchy", "logo.txt"),
+        "/usr/share/omarchy/logo.txt",
+    ):
+        if os.path.isfile(candidate):
+            try:
+                with open(candidate, "r", encoding="utf-8", errors="replace") as f:
+                    return [l.rstrip("\n") for l in f.readlines()]
+            except Exception:
+                pass
+    return [clean_words]
+
+
+# --------------------------------------------------------------------------- #
+# Local Music & Bandcamp ZIP Scanner
+# --------------------------------------------------------------------------- #
+
+def parse_track_filename(filename: str, fallback_artist: str, fallback_album: str, default_idx: int) -> tuple[int, str, str]:
+    stem = os.path.splitext(filename)[0].strip()
+    m_bc = re.match(r"^(.+?)\s+-\s+(.+?)\s+-\s+(\d{1,3})[\s._-]+(.+)$", stem)
+    if m_bc:
+        return int(m_bc.group(3)), bounded_text(m_bc.group(4)), bounded_text(m_bc.group(1))
+
+    m_num = re.match(r"^(\d{1,3})(?:\s*[-._]\s*|\s+)(.+)$", stem)
+    if m_num:
+        return int(m_num.group(1)), bounded_text(m_num.group(2)), fallback_artist
+
+    return default_idx, bounded_text(stem), fallback_artist
+
+
+def infer_artist_album(folder_path: str, root_dir: str) -> tuple[str, str]:
+    rel = os.path.relpath(folder_path, root_dir)
+    parts = [p for p in rel.split(os.sep) if p and p != "."]
+    leaf = os.path.basename(folder_path)
+
+    sub_stopwords = re.compile(
+        r"^(cd\s*\d+|disk\s*\d+|disc\s*\d+|flac|mp3|wav|ogg|extended|youtubedl|deluxe)$",
+        re.IGNORECASE,
+    )
+
+    suffix_parts: list[str] = []
+    idx = len(parts) - 1
+    while idx > 0 and sub_stopwords.match(parts[idx].strip()):
+        suffix_parts.insert(0, parts[idx].strip())
+        idx -= 1
+
+    album_part = parts[idx] if idx >= 0 else leaf
+    suffix_str = f" ({' · '.join(suffix_parts)})" if suffix_parts else ""
+
+    if " - " in album_part:
+        left, right = album_part.split(" - ", 1)
+        left_s, right_s = left.strip(), right.strip()
+        if re.match(r"^(19|20)\d{2}$", left_s):
+            parent_artist = "Unknown Artist"
+            if idx >= 1:
+                parent_part = parts[idx - 1]
+                parent_artist = parent_part.split(" - ", 1)[0].strip() if " - " in parent_part else parent_part.strip()
+            return bounded_text(parent_artist), bounded_text(f"{right_s} ({left_s}){suffix_str}")
+        if left_s and right_s:
+            if left_s.isupper() and len(left_s) > 4:
+                left_s = left_s.title()
+            return bounded_text(left_s), bounded_text(f"{right_s}{suffix_str}")
+
+    if "_" in album_part and idx == 0:
+        left, right = album_part.split("_", 1)
+        right_clean = re.sub(r"\.(wav|flac|mp3|ogg)$", "", right.strip(), flags=re.IGNORECASE)
+        if left.strip() and right_clean and left.strip().lower() != "iem":
+            return bounded_text(left.strip()), bounded_text(f"{right_clean}{suffix_str}")
+
+    if idx >= 1:
+        artist = parts[0]
+        if " - " in artist:
+            artist = artist.split(" - ", 1)[0].strip()
+        artist = re.sub(r"_flac$", "", artist, flags=re.IGNORECASE).replace("_", " ").strip()
+        if artist.isupper() and len(artist) > 4:
+            artist = artist.title()
+        return bounded_text(artist), bounded_text(f"{album_part}{suffix_str}")
+
+    if len(parts) == 1:
+        artist = re.sub(r"_flac$", "", parts[0], flags=re.IGNORECASE).replace("_", " ").strip()
+        return bounded_text(artist), bounded_text(f"{artist} — Singles{suffix_str}")
+
+    return "Local Artist", bounded_text(f"{leaf}{suffix_str}")
+
+
+def scan_local_directories(local_dirs: list[str]) -> list[dict]:
+    albums_by_dir: dict[str, dict] = {}
+    seen_real_dirs: set[str] = set()
+
+    for base_dir in local_dirs:
+        base_dir = os.path.expanduser(base_dir)
+        if not os.path.isdir(base_dir):
+            continue
+        for root, dirs, files in os.walk(base_dir):
+            dirs[:] = sorted(
+                d for d in dirs
+                if d != "__MACOSX" and not d.startswith(".")
+            )
+            real_root = os.path.realpath(root)
+            if real_root in seen_real_dirs:
+                continue
+
+            audio_files = sorted(
+                f for f in files
+                if not f.startswith(".")
+                and not f.startswith("._")
+                and f.lower().endswith(AUDIO_EXTENSIONS)
+            )
+            if not audio_files:
+                continue
+            seen_real_dirs.add(real_root)
+
+            image_files = sorted(
+                f for f in files
+                if not f.startswith(".")
+                and not f.startswith("._")
+                and f.lower().endswith(IMAGE_EXTENSIONS)
+            )
+            cover_path = ""
+            if image_files:
+                preferred = [
+                    f for f in image_files
+                    if os.path.splitext(f)[0].lower() in ("cover", "front", "folder", "album")
+                ]
+                chosen = preferred[0] if preferred else image_files[0]
+                cover_path = os.path.join(root, chosen)
+
+            artist, album_title = infer_artist_album(root, base_dir)
+            tracks = []
+            for idx, fname in enumerate(audio_files, start=1):
+                fpath = os.path.join(root, fname)
+                t_num, t_title, t_artist = parse_track_filename(fname, artist, album_title, idx)
+                if artist in ("Local Artist", "Unknown Artist") and t_artist not in ("Local Artist", "Unknown Artist"):
+                    artist = t_artist
+                # Estimate duration lightly from file size if not probed so intelligent playlists know epic vs short tracks
+                est_dur = 0.0
+                try:
+                    fsize = os.path.getsize(fpath)
+                    ext_l = os.path.splitext(fname)[1].lower()
+                    if ext_l in (".flac", ".wav", ".aiff"):
+                        est_dur = round(fsize / (176400 * 0.65), 1)
+                    else:
+                        est_dur = round(fsize / 28000, 1)
+                except OSError:
+                    pass
+                tracks.append({
+                    "id": f"local-track-{hashlib.sha1(fpath.encode('utf-8')).hexdigest()[:16]}",
+                    "title": t_title,
+                    "artist": t_artist,
+                    "album": album_title,
+                    "index": t_num,
+                    "duration": est_dur,
+                    "streamUrl": "",
+                    "localPath": fpath,
+                    "format": os.path.splitext(fname)[1].lstrip(".").upper(),
+                })
+
+            tracks.sort(key=lambda t: (t["index"], t["title"]))
+            album_id = f"local-{hashlib.sha1(real_root.encode('utf-8')).hexdigest()[:16]}"
+            if not cover_path:
+                cover_path = ensure_cover_svg(album_id, artist, album_title)
+
+            in_bandcamp_dir = "bandcamp" in real_root.lower()
+            has_bc_naming = any(
+                re.match(r"^.+?\s+-\s+.+?\s+-\s+\d{1,3}\s+", os.path.splitext(f)[0])
+                for f in audio_files
+            )
+
+            albums_by_dir[real_root] = {
+                "id": album_id,
+                "itemId": "",
+                "itemType": "album",
+                "title": album_title,
+                "artist": artist,
+                "url": "",
+                "artUrl": "",
+                "artPath": cover_path,
+                "redownloadUrl": "",
+                "purchased": bool(in_bandcamp_dir or has_bc_naming),
+                "isLocal": True,
+                "localPath": root,
+                "numTracks": len(tracks),
+                "tracks": tracks,
+                "fold": fold(f"{artist} {album_title}"),
+            }
+
+    return list(albums_by_dir.values())
+
+
+def safe_extract_zip(zip_path: str, dest_dir: str) -> list[str]:
+    extracted: list[str] = []
+    os.makedirs(dest_dir, mode=0o755, exist_ok=True)
+    real_dest = os.path.realpath(dest_dir)
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        total_uncompressed = sum(info.file_size for info in zf.infolist())
+        if total_uncompressed > MAX_DOWNLOAD_BYTES:
+            raise BandarchyError("archive exceeds maximum uncompressed size ceiling")
+        for info in zf.infolist():
+            name = info.filename
+            if not name or name.endswith("/") or "__MACOSX" in name:
+                continue
+            norm_parts = name.replace("\\", "/").split("/")
+            if ".." in norm_parts or name.startswith(("/", "\\")):
+                raise BandarchyError(f"refusing unsafe path in archive: {name}")
+            base_name = os.path.basename(name)
+            if base_name.startswith(".") or base_name.startswith("._"):
+                continue
+            target_path = os.path.realpath(os.path.join(real_dest, base_name))
+            if not target_path.startswith(real_dest + os.sep):
+                raise BandarchyError(f"refusing unsafe path in archive: {name}")
+            mode = (info.external_attr >> 16) & 0o170000
+            if mode == stat.S_IFLNK:
+                continue
+            with zf.open(info, "r") as src, open(target_path, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+            extracted.append(target_path)
+    return extracted
+
+
+def find_bandcamp_zips_in_downloads() -> list[dict]:
+    dl_dir = os.path.join(HOME, "Downloads")
+    if not os.path.isdir(dl_dir):
+        return []
+    found = []
+    for fname in sorted(os.listdir(dl_dir)):
+        if not fname.lower().endswith(".zip") or fname.startswith("."):
+            continue
+        stem = os.path.splitext(fname)[0]
+        if " - " not in stem:
+            continue
+        fpath = os.path.join(dl_dir, fname)
+        if not os.path.isfile(fpath) or os.path.islink(fpath):
+            continue
+        try:
+            with zipfile.ZipFile(fpath, "r") as zf:
+                names = [n for n in zf.namelist() if not n.startswith("__MACOSX")]
+                has_audio = any(n.lower().endswith(AUDIO_EXTENSIONS) for n in names)
+                if has_audio:
+                    artist, album = stem.split(" - ", 1)
+                    found.append({
+                        "zipPath": fpath,
+                        "artist": bounded_text(artist.strip()),
+                        "album": bounded_text(album.strip()),
+                        "trackCount": sum(1 for n in names if n.lower().endswith(AUDIO_EXTENSIONS)),
+                    })
+        except Exception:
+            continue
+    return found
+
+
+# --------------------------------------------------------------------------- #
+# Unified Collection Builder
+# --------------------------------------------------------------------------- #
+
+def build_unified_collection(
+    settings: dict,
+    on_progress=None,
+    fetch_remote: bool = True,
+) -> dict:
+    browser = discover_from_browsers()
+    username = settings.get("username") or browser.get("username") or ""
+    if username and not settings.get("username"):
+        settings["username"] = username
+        write_json(SETTINGS_FILE, settings)
+
+    api_base = settings.get("apiBase") or "https://bandcamp.com"
+    remote_items: list[dict] = []
+    network_note = ""
+
+    if on_progress:
+        on_progress("discovering", 0, 0)
+
+    if fetch_remote and username:
+        try:
+            remote_items = fetch_fan_collection(username, api_base=api_base)
+        except Exception as exc:
+            network_note = bounded_text(str(exc), 240)
+
+    seen_urls = {item.get("url"): item for item in remote_items if item.get("url")}
+    seen_ids = {item.get("id"): item for item in remote_items if item.get("id")}
+    dl_urls = list(browser.get("downloads") or [])
+    for idx, b_item in enumerate(browser.get("albums") or []):
+        u = b_item.get("url") or ""
+        if not u or u in seen_urls:
+            continue
+        det = None
+        if fetch_remote:
+            try:
+                det = fetch_album_details(u, api_base=api_base)
+            except Exception:
+                det = None
+        title = (det or {}).get("title") or b_item.get("title") or "Untitled"
+        artist = (det or {}).get("artist") or b_item.get("artist") or "Unknown Artist"
+        album_id = (det or {}).get("id") or f"bc-browser-{slugify(artist)}-{slugify(title)}"
+        if album_id in seen_ids:
+            if b_item.get("itemType") == "album" and seen_ids[album_id].get("itemType") == "track":
+                seen_ids[album_id]["url"] = u
+                seen_ids[album_id]["itemType"] = "album"
+            continue
+        art_url = (det or {}).get("artUrl") or ""
+        tracks = (det or {}).get("tracks") or [
+            {
+                "id": f"{album_id}-t1",
+                "title": title,
+                "artist": artist,
+                "album": title,
+                "index": 1,
+                "duration": 240.0,
+                "streamUrl": "",
+                "localPath": "",
+                "itemUrl": u,
+            }
+        ]
+        remote_items.append({
+            "id": album_id,
+            "itemId": (det or {}).get("itemId") or "",
+            "itemType": b_item.get("itemType") or "album",
+            "title": title,
+            "artist": artist,
+            "url": u,
+            "artUrl": art_url,
+            "artPath": cache_remote_art(art_url, album_id, artist, title) if fetch_remote else ensure_cover_svg(album_id, artist, title),
+            "redownloadUrl": dl_urls[idx] if idx < len(dl_urls) else "",
+            "purchased": True,
+            "isLocal": False,
+            "localPath": "",
+            "numTracks": len(tracks),
+            "tracks": tracks,
+            "fold": fold(f"{artist} {title}"),
+        })
+        seen_urls[u] = remote_items[-1]
+        seen_ids[album_id] = remote_items[-1]
+
+    if on_progress:
+        on_progress("scanning-local", len(remote_items), 0)
+    local_dirs = settings.get("localDirs") or DEFAULT_LOCAL_DIRS
+    local_albums = scan_local_directories(local_dirs)
+
+    local_by_key: dict[str, dict] = {}
+    local_by_title: dict[str, dict] = {}
+    for loc in local_albums:
+        k = f"{fold(loc['artist'])}::{fold(loc['title'])}"
+        local_by_key[k] = loc
+        local_by_title[fold(loc["title"])] = loc
+
+    matched_local_ids: set[str] = set()
+    unified: list[dict] = []
+
+    for rem in remote_items:
+        k = f"{fold(rem['artist'])}::{fold(rem['title'])}"
+        loc = local_by_key.get(k) or local_by_title.get(fold(rem["title"]))
+        if loc:
+            matched_local_ids.add(loc["id"])
+            rem["isLocal"] = True
+            rem["localPath"] = loc["localPath"]
+            if loc.get("artPath") and not loc["artPath"].endswith(".svg"):
+                rem["artPath"] = loc["artPath"]
+            elif not rem.get("artPath"):
+                rem["artPath"] = cache_remote_art(rem.get("artUrl", ""), rem["id"], rem["artist"], rem["title"])
+            rem_tracks_by_title = {fold(t["title"]): t for t in (rem.get("tracks") or [])}
+            merged_tracks = []
+            for lt in loc.get("tracks") or []:
+                rt = rem_tracks_by_title.get(fold(lt["title"]))
+                merged = dict(lt)
+                if rt and rt.get("streamUrl"):
+                    merged["streamUrl"] = rt["streamUrl"]
+                if rt and rt.get("duration") and not merged.get("duration"):
+                    merged["duration"] = rt["duration"]
+                merged["itemUrl"] = rem.get("url") or ""
+                merged_tracks.append(merged)
+            if merged_tracks:
+                rem["tracks"] = merged_tracks
+                rem["numTracks"] = len(merged_tracks)
+        else:
+            if not rem.get("artPath"):
+                rem["artPath"] = (
+                    cache_remote_art(rem.get("artUrl", ""), rem["id"], rem["artist"], rem["title"])
+                    if fetch_remote
+                    else ensure_cover_svg(rem["id"], rem["artist"], rem["title"])
+                )
+        unified.append(rem)
+
+    for loc in local_albums:
+        if loc["id"] not in matched_local_ids:
+            unified.append(loc)
+
+    unified.sort(
+        key=lambda a: (
+            0 if (a.get("purchased") and a.get("isLocal")) else (1 if a.get("purchased") else 2),
+            fold(a.get("artist") or ""),
+            fold(a.get("title") or ""),
+        )
+    )
+
+    if on_progress:
+        on_progress("done", len(unified), sum(a.get("numTracks", 0) for a in unified))
+
+    zips = find_bandcamp_zips_in_downloads()
+    result = {
+        "indexedAt": int(time.time()),
+        "username": username,
+        "hasBrowserSession": browser.get("hasBrowserSession", False),
+        "networkNote": network_note,
+        "albumCount": len(unified),
+        "purchasedCount": sum(1 for a in unified if a.get("purchased")),
+        "localCount": sum(1 for a in unified if a.get("isLocal")),
+        "trackCount": sum(len(a.get("tracks") or []) for a in unified),
+        "availableZips": zips,
+        "albums": unified[:MAX_COLLECTION_ITEMS],
+    }
+    write_json(INDEX_FILE, result)
+    return result
+
+
+def ensure_index() -> dict:
+    idx = read_json(INDEX_FILE, None)
+    if isinstance(idx, dict) and isinstance(idx.get("albums"), list) and len(idx["albums"]) > 0:
+        return idx
+    return build_unified_collection(load_settings(), fetch_remote=False)
+
+
+# --------------------------------------------------------------------------- #
+# Playback History & Intelligent / User Playlists Engine
+# --------------------------------------------------------------------------- #
+
+def record_history(track: dict) -> None:
+    """Record a played track in HISTORY_FILE so intelligent playlists can seed from it."""
+    if not track or not track.get("title"):
+        return
+    hist = read_json(HISTORY_FILE, {"lastPlayedTrack": None, "recentTracks": []}) or {}
+    recent = list(hist.get("recentTracks") or [])
+    entry = {
+        "id": bounded_text(track.get("id") or ""),
+        "title": bounded_text(track.get("title") or ""),
+        "artist": bounded_text(track.get("artist") or ""),
+        "album": bounded_text(track.get("album") or ""),
+        "albumId": bounded_text(track.get("albumId") or ""),
+        "artPath": bounded_text(track.get("artPath") or "", MAX_URL_CHARS),
+        "duration": bounded_float(track.get("duration") or 0.0),
+        "playSource": bounded_text(track.get("playSource") or "local", 32),
+        "purchased": bool(track.get("purchased", False)),
+        "isLocal": bool(track.get("isLocal", True)),
+        "playedAt": int(time.time()),
+    }
+    if recent and recent[0].get("id") == entry["id"] and entry["id"]:
+        recent[0] = entry
+    else:
+        recent = [r for r in recent if r.get("id") != entry["id"]]
+        recent.insert(0, entry)
+    recent = recent[:200]
+    write_json(HISTORY_FILE, {"lastPlayedTrack": entry, "recentTracks": recent})
+
+
+def all_indexed_tracks(idx: dict) -> list[dict]:
+    out = []
+    for a in idx.get("albums") or []:
+        for t in a.get("tracks") or []:
+            entry = dict(t)
+            entry["albumId"] = a.get("id") or ""
+            entry["album"] = a.get("title") or t.get("album") or ""
+            entry["artist"] = t.get("artist") or a.get("artist") or ""
+            entry["artPath"] = a.get("artPath") or ""
+            entry["albumUrl"] = a.get("url") or ""
+            entry["purchased"] = bool(a.get("purchased", False))
+            entry["isLocal"] = bool(a.get("isLocal", False))
+            out.append(entry)
+    return out
+
+
+def are_kindred_artists(artist_a: str, artist_b: str) -> bool:
+    fa, fb = fold(artist_a), fold(artist_b)
+    if not fa or not fb:
+        return False
+    if fa == fb or fa in fb or fb in fa:
+        return True
+    for cluster in KINDRED_CLUSTERS:
+        if any(c in fa for c in cluster) and any(c in fb for c in cluster):
+            return True
+    tokens_a = {w for w in fa.split() if len(w) > 3 and w not in ("the", "band", "music")}
+    tokens_b = {w for w in fb.split() if len(w) > 3 and w not in ("the", "band", "music")}
+    return bool(tokens_a & tokens_b)
+
+
+def build_intelligent_playlist(
+    idx: dict,
+    seed_track_id: str = "",
+    seed_album_id: str = "",
+    preset: str = "radio",
+    limit: int = 25,
+) -> dict:
+    """Build an intelligent playlist based on the last track played (or explicit seed)."""
+    tracks = all_indexed_tracks(idx)
+    if not tracks:
+        return {"seed": None, "preset": preset, "title": "Intelligent Mix", "tracks": []}
+
+    hist = read_json(HISTORY_FILE, {}) or {}
+    recent_ids = [r.get("id") for r in (hist.get("recentTracks") or [])[:12] if r.get("id")]
+
+    seed = None
+    if seed_track_id:
+        seed = next((t for t in tracks if t.get("id") == seed_track_id), None)
+    if not seed and seed_album_id:
+        seed = next((t for t in tracks if t.get("albumId") == seed_album_id), None)
+    if not seed and hist.get("lastPlayedTrack"):
+        last_id = hist["lastPlayedTrack"].get("id")
+        last_title = fold(hist["lastPlayedTrack"].get("title") or "")
+        seed = next(
+            (t for t in tracks if (last_id and t.get("id") == last_id) or (last_title and fold(t.get("title")) == last_title)),
+            None,
+        )
+    if not seed:
+        # Default to first purchased+local or purchased track
+        seed = next((t for t in tracks if t.get("purchased") and t.get("isLocal")), tracks[0])
+
+    seed_artist = seed.get("artist") or ""
+    seed_album_id = seed.get("albumId") or ""
+    seed_dur = float(seed.get("duration") or 240.0)
+    seed_words = {
+        w for w in fold(f"{seed.get('title', '')} {seed.get('album', '')}").split()
+        if len(w) >= 3 and not w.isdigit()
+    }
+
+    scored: list[tuple[float, dict]] = []
+    for i, cand in enumerate(tracks):
+        if cand.get("id") == seed.get("id"):
+            continue
+        if preset == "purchased" and not cand.get("purchased"):
+            continue
+
+        score = 10.0
+        same_artist = fold(cand.get("artist")) == fold(seed_artist)
+        kindred = are_kindred_artists(cand.get("artist", ""), seed_artist)
+        same_album = cand.get("albumId") == seed_album_id
+        cand_dur = float(cand.get("duration") or 240.0)
+
+        # 1. Artist & kindred affinity
+        if same_artist:
+            score += 42.0 if preset != "purchased" else 28.0
+        elif kindred:
+            score += 34.0
+
+        if same_album:
+            score += 14.0 if preset == "kindred" else 6.0
+
+        # 2. Duration / sonic form similarity
+        dur_diff = abs(cand_dur - seed_dur)
+        score += max(0.0, 18.0 - (dur_diff / 40.0))
+
+        # 3. Preset-specific shaping
+        if preset == "journey":
+            # Favour extended / atmospheric / psychedelic suites
+            if cand_dur >= 360:
+                score += 30.0
+            if any(k in fold(cand.get("title", "")) for k in ("phase", "part", "voyage", "sky", "drugged", "communion", "sleep", "live", "improvisation")):
+                score += 22.0
+        elif preset == "kindred":
+            if not (same_artist or kindred):
+                score -= 25.0
+        elif preset == "purchased":
+            if cand.get("purchased"):
+                score += 35.0
+            if cand.get("isLocal"):
+                score += 10.0
+
+        # 4. Lexical / thematic resonance
+        cand_words = {w for w in fold(f"{cand.get('title', '')} {cand.get('album', '')}").split() if len(w) >= 3}
+        overlap = len(seed_words & cand_words)
+        score += min(18.0, overlap * 6.0)
+
+        # 5. Collection quality & freshness
+        if cand.get("purchased"):
+            score += 12.0
+        if cand.get("isLocal"):
+            score += 8.0
+        if cand.get("id") in recent_ids:
+            score -= 16.0
+
+        # Deterministic tie-breaker with slight variety per seed
+        tie = ((hash(f"{seed.get('id')}:{cand.get('id')}:{preset}") & 0xFFFF) / 65535.0) * 7.5
+        scored.append((score + tie, cand))
+
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+
+    # Sequence tracks with album de-clumping (max 2 consecutive from same album)
+    selected = [seed]
+    pool = [pair[1] for pair in scored]
+    while pool and len(selected) < limit:
+        picked_idx = 0
+        if len(selected) >= 2 and selected[-1].get("albumId") == selected[-2].get("albumId"):
+            last_alb = selected[-1].get("albumId")
+            alt = next(( idx_p for idx_p, item in enumerate(pool) if item.get("albumId") != last_alb ), None)
+            if alt is not None:
+                picked_idx = alt
+        selected.append(pool.pop(picked_idx))
+
+    preset_titles = {
+        "radio": f"Sonic Radio · After {seed.get('title')}",
+        "kindred": f"Kindred Spirits · {seed_artist}",
+        "journey": f"Psychedelic Journey · {seed.get('title')}",
+        "purchased": f"Purchased Mix · {seed_artist}",
+    }
+    preset_descs = {
+        "radio": f"Intelligent flow seeded from '{seed.get('title')}' by {seed_artist}, blending kindred artists, sonic duration, and deep cuts.",
+        "kindred": f"Focused constellation around {seed_artist} and related musical projects in your library.",
+        "journey": f"Extended psychedelic and atmospheric suites resonant with '{seed.get('title')}'.",
+        "purchased": f"Curated sequence across your Bandcamp purchases anchored by '{seed.get('title')}'.",
+    }
+
+    return {
+        "seed": seed,
+        "preset": preset,
+        "title": preset_titles.get(preset) or f"Intelligent Mix · {seed.get('title')}",
+        "description": preset_descs.get(preset) or f"Seeded from {seed.get('title')} by {seed_artist}",
+        "trackCount": len(selected),
+        "tracks": selected,
+    }
+
+
+def load_playlists() -> list[dict]:
+    store = read_json(PLAYLISTS_FILE, {"playlists": []}) or {}
+    pls = store.get("playlists")
+    return list(pls) if isinstance(pls, list) else []
+
+
+def save_playlists(playlists: list[dict]) -> None:
+    write_json(PLAYLISTS_FILE, {"updatedAt": int(time.time()), "playlists": playlists[:500]})
+
+
+# --------------------------------------------------------------------------- #
+# mpv IPC & Playback
+# --------------------------------------------------------------------------- #
+
+def mpv_request(command: list, timeout: float = 1.5):
+    if not os.path.exists(IPC_SOCKET):
+        return None
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout)
+            sock.connect(IPC_SOCKET)
+            sock.sendall((json.dumps({"command": command}) + "\n").encode("utf-8"))
+            buffer = b""
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                chunk = sock.recv(min(65536, MAX_IPC_BYTES + 1 - len(buffer)))
+                if not chunk:
+                    break
+                buffer += chunk
+                if len(buffer) > MAX_IPC_BYTES:
+                    return None
+                for line in buffer.split(b"\n"):
+                    if not line.strip():
+                        continue
+                    try:
+                        msg = json.loads(line)
+                    except ValueError:
+                        continue
+                    if "error" in msg:
+                        return msg
+                if buffer.endswith(b"\n"):
+                    break
+    except (OSError, socket.timeout):
+        return None
+    return None
+
+
+def mpv_get(prop: str):
+    reply = mpv_request(["get_property", prop])
+    if reply and reply.get("error") == "success":
+        return reply.get("data")
+    return None
+
+
+def mpv_running() -> bool:
+    return mpv_get("idle-active") is not None or mpv_get("pid") is not None
+
+
+def mpv_stop() -> None:
+    mpv_request(["quit"])
+    for _ in range(20):
+        if not os.path.exists(IPC_SOCKET):
+            return
+        time.sleep(0.05)
+    try:
+        os.unlink(IPC_SOCKET)
+    except OSError:
+        pass
+
+
+def mpv_launch(playlist_path: str, shuffle: bool = False, start_index: int = 0, loop: bool = False) -> None:
+    mpv_stop()
+    ensure_private_dir(os.path.dirname(IPC_SOCKET))
+    args = [
+        "mpv",
+        "--no-video",
+        "--audio-display=no",
+        "--gapless-audio=yes",
+        "--no-terminal",
+        "--idle=no",
+        "--force-window=no",
+        "--ytdl=yes",
+        f"--input-ipc-server={IPC_SOCKET}",
+        f"--playlist={playlist_path}",
+        "--cache=yes",
+        "--demuxer-max-bytes=64MiB",
+        "--replaygain=track",
+    ]
+    if shuffle:
+        args.append("--shuffle")
+    if start_index > 0:
+        args.append(f"--playlist-start={start_index}")
+    if loop:
+        args.append("--loop-playlist=inf")
+    extra = (os.environ.get("BANDARCHY_MPV_ARGS") or os.environ.get("BANDCAMP_MPV_ARGS") or "").strip()
+    if extra:
+        import shlex
+        args.extend(shlex.split(extra))
+    subprocess.Popen(
+        args,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
+def resolve_playable_tracks(album: dict, mode: str = "auto", api_base: str = "https://bandcamp.com") -> list[dict]:
+    tracks = list(album.get("tracks") or [])
+    need_remote = (mode == "stream") or not album.get("isLocal") or all(not t.get("localPath") for t in tracks)
+    if need_remote and album.get("url"):
+        if len(tracks) <= 1 or any(not t.get("streamUrl") for t in tracks):
+            det = fetch_album_details(album["url"], api_base=api_base)
+            if det and det.get("tracks"):
+                tracks = det["tracks"]
+
+    playable: list[dict] = []
+    for idx, t in enumerate(tracks, start=1):
+        target = ""
+        play_source = "local"
+        if mode == "stream":
+            target = t.get("streamUrl") or t.get("itemUrl") or album.get("url") or t.get("localPath") or ""
+            play_source = "stream" if not (target and os.path.exists(str(target))) else "local"
+        else:
+            if t.get("localPath") and os.path.exists(str(t["localPath"])):
+                target = t["localPath"]
+                play_source = "local"
+            else:
+                target = t.get("streamUrl") or t.get("itemUrl") or album.get("url") or ""
+                play_source = "stream"
+        if not target:
+            continue
+        entry = dict(t)
+        entry["target"] = target
+        entry["playSource"] = play_source
+        entry["albumId"] = album.get("id") or t.get("albumId") or ""
+        entry["album"] = album.get("title") or t.get("album") or ""
+        entry["artist"] = t.get("artist") or album.get("artist") or ""
+        entry["artPath"] = album.get("artPath") or t.get("artPath") or ""
+        entry["purchased"] = bool(album.get("purchased", t.get("purchased", False)))
+        entry["isLocal"] = bool(album.get("isLocal", t.get("isLocal", play_source == "local")))
+        entry["index"] = t.get("index") or idx
+        playable.append(entry)
+    return playable
+
+
+def resolve_track_list(raw_tracks: list[dict], idx: dict, mode: str = "auto", api_base: str = "https://bandcamp.com") -> list[dict]:
+    albums_by_id = {a.get("id"): a for a in (idx.get("albums") or []) if a.get("id")}
+    playable: list[dict] = []
+    for i, t in enumerate(raw_tracks, start=1):
+        alb = albums_by_id.get(t.get("albumId") or "") or {}
+        target = ""
+        play_source = "local"
+        lpath = t.get("localPath") or ""
+        if mode != "stream" and lpath and os.path.exists(str(lpath)):
+            target = lpath
+            play_source = "local"
+        else:
+            target = t.get("streamUrl") or t.get("itemUrl") or alb.get("url") or lpath or ""
+            play_source = "local" if (target and os.path.exists(str(target))) else "stream"
+        if not target:
+            continue
+        entry = dict(t)
+        entry["target"] = target
+        entry["playSource"] = play_source
+        entry["albumId"] = t.get("albumId") or alb.get("id") or ""
+        entry["album"] = t.get("album") or alb.get("title") or ""
+        entry["artist"] = t.get("artist") or alb.get("artist") or ""
+        entry["artPath"] = t.get("artPath") or alb.get("artPath") or ""
+        entry["index"] = i
+        playable.append(entry)
+    return playable
+
+
+def start_queue(tracks: list[dict], source: dict, shuffle: bool = False, start_index: int = 0, loop: bool = False) -> None:
+    if not tracks:
+        die("no playable tracks found for that selection")
+    lines = ["#EXTM3U"]
+    for t in tracks:
+        secs = int(t.get("duration") or 0)
+        label = f"{t.get('artist', '')} - {t.get('title', '')}".strip(" -")
+        lines.append(f"#EXTINF:{secs},{label}")
+        lines.append(str(t["target"]))
+    atomic_write(PLAYLIST_M3U_FILE, ("\n".join(lines) + "\n").encode("utf-8"), 0o600)
+    write_json(
+        QUEUE_FILE,
+        {
+            "startedAt": int(time.time()),
+            "source": source,
+            "shuffle": shuffle,
+            "tracks": tracks,
+        },
+    )
+    first = tracks[min(max(0, start_index), len(tracks) - 1)]
+    record_history(first)
+    mpv_launch(PLAYLIST_M3U_FILE, shuffle=shuffle, start_index=start_index, loop=loop)
+    emit({
+        "playing": True,
+        "trackCount": len(tracks),
+        "source": source,
+        "shuffle": shuffle,
+        "track": first,
+        "artPath": first.get("artPath") or "",
+    })
+
+
+# --------------------------------------------------------------------------- #
+# Downloading Purchased Albums / Tracks for Local Play
+# --------------------------------------------------------------------------- #
+
+def publish_download_progress(state: dict) -> None:
+    state["updatedAt"] = int(time.time())
+    try:
+        write_json(DOWNLOAD_PROGRESS_FILE, state, mode=0o600)
+    except Exception:
+        pass
+
+
+def download_album_to_local(album: dict, preferred_format: str, settings: dict) -> dict:
+    global _download_lock_fd
+    _download_lock_fd = take_lock(DOWNLOAD_LOCK_FILE)
+    if _download_lock_fd is None:
+        die("another download is already in progress", code=5)
+
+    artist = bounded_text(album.get("artist") or "Unknown Artist", 120)
+    title = bounded_text(album.get("title") or "Untitled Album", 120)
+    safe_folder = re.sub(r"[/\\:\*\?\"<>\|]+", "-", f"{artist} - {title}").strip(" .")
+    dl_root = os.path.expanduser(settings.get("downloadDir") or DEFAULT_DOWNLOAD_DIR)
+    dest_dir = os.path.join(dl_root, safe_folder)
+    os.makedirs(dest_dir, mode=0o755, exist_ok=True)
+
+    state = {
+        "running": True,
+        "albumId": album.get("id") or "",
+        "title": title,
+        "artist": artist,
+        "format": preferred_format,
+        "stage": "starting",
+        "percent": 5,
+        "destDir": dest_dir,
+        "startedAt": int(time.time()),
+    }
+    publish_download_progress(state)
+
+    api_base = settings.get("apiBase") or "https://bandcamp.com"
+
+    for zinfo in find_bandcamp_zips_in_downloads():
+        if fold(zinfo["album"]) == fold(title):
+            state.update({"stage": "extracting-local-zip", "percent": 50})
+            publish_download_progress(state)
+            files = safe_extract_zip(zinfo["zipPath"], dest_dir)
+            state.update({"running": False, "stage": "done", "percent": 100, "fileCount": len(files)})
+            publish_download_progress(state)
+            build_unified_collection(settings, fetch_remote=False)
+            return {"albumId": album.get("id"), "destDir": dest_dir, "method": "local-zip", "fileCount": len(files)}
+
+    redownload_url = album.get("redownloadUrl") or ""
+    if redownload_url:
+        try:
+            state.update({"stage": "fetching-download-links", "percent": 15})
+            publish_download_progress(state)
+            raw = http_request(redownload_url, timeout=12.0)
+            page = raw.decode("utf-8", errors="replace")
+            blob = extract_attr_json(page, "data-blob") or {}
+            d_items = blob.get("digital_items") or blob.get("download_items") or []
+            archive_url = ""
+            if d_items and isinstance(d_items[0], dict):
+                dl_map = d_items[0].get("downloads") or {}
+                if preferred_format in dl_map and isinstance(dl_map[preferred_format], dict):
+                    archive_url = dl_map[preferred_format].get("url") or ""
+                if not archive_url:
+                    for fmt_key in ("flac", "mp3-320", "mp3-v0", "wav", "vorbis", "aac-hi"):
+                        if fmt_key in dl_map and isinstance(dl_map[fmt_key], dict):
+                            archive_url = dl_map[fmt_key].get("url") or ""
+                            if archive_url:
+                                break
+            if archive_url:
+                state.update({"stage": "downloading-archive", "percent": 35})
+                publish_download_progress(state)
+                payload = http_request(archive_url, timeout=60.0, max_bytes=MAX_DOWNLOAD_BYTES)
+                if payload[:4] == b"PK\x03\x04":
+                    tmp_fd, tmp_zip = tempfile.mkstemp(prefix="ba_dl_", suffix=".zip")
+                    os.close(tmp_fd)
+                    try:
+                        with open(tmp_zip, "wb") as f:
+                            f.write(payload)
+                        state.update({"stage": "extracting-archive", "percent": 80})
+                        publish_download_progress(state)
+                        files = safe_extract_zip(tmp_zip, dest_dir)
+                    finally:
+                        try:
+                            os.unlink(tmp_zip)
+                        except OSError:
+                            pass
+                else:
+                    out_file = os.path.join(dest_dir, f"{artist} - {title} - 01 {title}.mp3")
+                    atomic_write(out_file, payload, 0o644)
+                    files = [out_file]
+
+                state.update({"running": False, "stage": "done", "percent": 100, "fileCount": len(files)})
+                publish_download_progress(state)
+                build_unified_collection(settings, fetch_remote=False)
+                return {"downloaded": True, "albumId": album.get("id"), "destDir": dest_dir, "method": "redownload", "fileCount": len(files)}
+        except Exception as exc:
+            log_failure(f"redownload failed for {title}: {exc}")
+
+    item_url = album.get("url") or ""
+    if item_url:
+        det = fetch_album_details(item_url, api_base=api_base)
+        tracks = (det or {}).get("tracks") or album.get("tracks") or []
+        streamable = [t for t in tracks if t.get("streamUrl")]
+        if streamable:
+            saved_files = []
+            art_url = (det or {}).get("artUrl") or album.get("artUrl") or ""
+            if art_url:
+                try:
+                    art_bytes = http_request(art_url, timeout=8.0, max_bytes=MAX_ART_BYTES)
+                    if art_bytes:
+                        atomic_write(os.path.join(dest_dir, "cover.jpg"), art_bytes, 0o644, fatal=False)
+                except Exception:
+                    pass
+            total = len(streamable)
+            for idx, t in enumerate(streamable, start=1):
+                pct = 20 + int((idx - 1) / max(1, total) * 75)
+                state.update({
+                    "stage": f"downloading track {idx} of {total}",
+                    "percent": pct,
+                })
+                publish_download_progress(state)
+                t_num = bounded_int(t.get("index") or idx, idx)
+                t_title = re.sub(r"[/\\:\*\?\"<>\|]+", "-", t.get("title") or f"Track {t_num}").strip()
+                fname = f"{artist} - {title} - {t_num:02d} {t_title}.mp3"
+                out_path = os.path.join(dest_dir, fname)
+                audio_bytes = http_request(t["streamUrl"], timeout=30.0, max_bytes=MAX_DOWNLOAD_BYTES)
+                atomic_write(out_path, audio_bytes, 0o644)
+                saved_files.append(out_path)
+
+            state.update({"running": False, "stage": "done", "percent": 100, "fileCount": len(saved_files)})
+            publish_download_progress(state)
+            build_unified_collection(settings, fetch_remote=False)
+            return {"downloaded": True, "albumId": album.get("id"), "destDir": dest_dir, "method": "stream-rip", "fileCount": len(saved_files)}
+
+        if shutil.which("yt-dlp"):
+            state.update({"stage": "downloading-via-yt-dlp", "percent": 30})
+            publish_download_progress(state)
+            out_tmpl = os.path.join(dest_dir, f"{artist} - {title} - %(playlist_index|01)02d %(title)s.%(ext)s")
+            cmd = [
+                "yt-dlp",
+                "--no-playlist" if album.get("itemType") == "track" else "--yes-playlist",
+                "-x",
+                "--audio-format",
+                "flac" if preferred_format == "flac" else "mp3",
+                "-o",
+                out_tmpl,
+                item_url,
+            ]
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            if r.returncode == 0:
+                files = [
+                    os.path.join(dest_dir, f)
+                    for f in os.listdir(dest_dir)
+                    if f.lower().endswith(AUDIO_EXTENSIONS)
+                ]
+                state.update({"running": False, "stage": "done", "percent": 100, "fileCount": len(files)})
+                publish_download_progress(state)
+                build_unified_collection(settings, fetch_remote=False)
+                return {"downloaded": True, "albumId": album.get("id"), "destDir": dest_dir, "method": "yt-dlp", "fileCount": len(files)}
+
+    state.update({"running": False, "stage": "error", "error": "could not download album — check network or Bandcamp session"})
+    publish_download_progress(state)
+    die("could not download album — check your network connection or Bandcamp session in Settings")
+
+
+# --------------------------------------------------------------------------- #
+# CLI Command Handlers
+# --------------------------------------------------------------------------- #
+
+def cmd_status(args) -> None:
+    settings = load_settings()
+    idx = ensure_index()
+    favs = read_json(FAVOURITES_FILE, {"items": []}) or {"items": []}
+    pls = load_playlists()
+    hist = read_json(HISTORY_FILE, {}) or {}
+    dl_prog = read_json(DOWNLOAD_PROGRESS_FILE, {}) or {}
+    emit({
+        "username": settings.get("username") or idx.get("username") or "",
+        "hasBrowserSession": bool(idx.get("hasBrowserSession")),
+        "downloadDir": settings.get("downloadDir") or DEFAULT_DOWNLOAD_DIR,
+        "preferredFormat": settings.get("preferredFormat") or "flac",
+        "useAlbumArt": bool(settings.get("useAlbumArt", True)),
+        "asciiMode": settings.get("asciiMode") or "braille",
+        "albumCount": len(idx.get("albums") or []),
+        "purchasedCount": idx.get("purchasedCount") or 0,
+        "localCount": idx.get("localCount") or 0,
+        "trackCount": idx.get("trackCount") or 0,
+        "playlistCount": len(pls),
+        "lastPlayedTrack": hist.get("lastPlayedTrack"),
+        "indexedAt": idx.get("indexedAt") or 0,
+        "favouritesCount": len(favs.get("items") or []),
+        "availableZips": idx.get("availableZips") or [],
+        "playing": mpv_running(),
+        "downloading": is_locked(DOWNLOAD_LOCK_FILE),
+        "downloadProgress": dl_prog,
+    })
+
+
+def cmd_collection(args) -> None:
+    idx = ensure_index()
+    albums = list(idx.get("albums") or [])
+    scope = (args.scope or "all").lower()
+    if scope == "purchased":
+        albums = [a for a in albums if a.get("purchased")]
+    elif scope == "local":
+        albums = [a for a in albums if a.get("isLocal")]
+    elif scope == "cloud":
+        albums = [a for a in albums if a.get("purchased") and not a.get("isLocal")]
+
+    if args.query:
+        q = fold(args.query)
+        if q:
+            filtered = []
+            for a in albums:
+                hay = a.get("fold") or fold(f"{a.get('artist', '')} {a.get('title', '')}")
+                track_match = any(q in fold(t.get("title") or "") for t in (a.get("tracks") or []))
+                if q in hay or track_match:
+                    filtered.append(a)
+            albums = filtered
+
+    emit({
+        "scope": scope,
+        "query": args.query or "",
+        "count": len(albums),
+        "albums": albums,
+        "availableZips": idx.get("availableZips") or [],
+    })
+
+
+def cmd_search(args) -> None:
+    idx = ensure_index()
+    albums = list(idx.get("albums") or [])
+    scope = (args.scope or "all").lower()
+    if scope == "purchased":
+        albums = [a for a in albums if a.get("purchased")]
+    elif scope == "local":
+        albums = [a for a in albums if a.get("isLocal")]
+    elif scope == "cloud":
+        albums = [a for a in albums if a.get("purchased") and not a.get("isLocal")]
+
+    q = fold(args.query or "")
+    matched_albums = []
+    matched_tracks = []
+    for a in albums:
+        a_hay = a.get("fold") or fold(f"{a.get('artist', '')} {a.get('title', '')}")
+        album_hit = (not q) or (q in a_hay)
+        t_hits = []
+        for t in a.get("tracks") or []:
+            t_hay = fold(f"{t.get('title', '')} {t.get('artist', '')} {a.get('title', '')}")
+            if (not q) or (q in t_hay):
+                t_copy = dict(t)
+                t_copy["albumId"] = a.get("id")
+                t_copy["album"] = a.get("title")
+                t_copy["artist"] = t.get("artist") or a.get("artist")
+                t_copy["artPath"] = a.get("artPath") or ""
+                t_copy["isLocal"] = a.get("isLocal", False)
+                t_copy["purchased"] = a.get("purchased", False)
+                t_hits.append(t_copy)
+        if album_hit or t_hits:
+            matched_albums.append(a)
+        matched_tracks.extend(t_hits)
+
+    emit({
+        "query": args.query or "",
+        "scope": scope,
+        "albums": matched_albums[: args.limit],
+        "tracks": matched_tracks[: args.limit * 2],
+    })
+
+
+def cmd_sync(args) -> None:
+    global _sync_lock_fd
+    _sync_lock_fd = take_lock(SYNC_LOCK_FILE)
+    if _sync_lock_fd is None:
+        die("a collection sync is already running", code=5)
+
+    settings = load_settings()
+    if args.username:
+        settings["username"] = bounded_text(args.username, 64)
+        write_json(SETTINGS_FILE, settings)
+    if args.api_base:
+        settings["apiBase"] = bounded_text(args.api_base, 256)
+
+    def report(stage: str, albums_n: int, tracks_n: int) -> None:
+        write_json(
+            SYNC_PROGRESS_FILE,
+            {
+                "running": stage != "done",
+                "stage": stage,
+                "albums": albums_n,
+                "tracks": tracks_n,
+                "updatedAt": int(time.time()),
+            },
+        )
+
+    result = build_unified_collection(settings, on_progress=report, fetch_remote=not args.local_only)
+    emit({
+        "synced": True,
+        "username": result.get("username"),
+        "albumCount": result.get("albumCount"),
+        "purchasedCount": result.get("purchasedCount"),
+        "localCount": result.get("localCount"),
+        "trackCount": result.get("trackCount"),
+        "networkNote": result.get("networkNote") or "",
+        "availableZips": result.get("availableZips") or [],
+    })
+
+
+def cmd_auth(args) -> None:
+    settings = load_settings()
+    auth = read_json(AUTH_FILE, {}) or {}
+    if args.username is not None:
+        settings["username"] = bounded_text(args.username, 64)
+        write_json(SETTINGS_FILE, settings)
+    if args.identity is not None:
+        auth["identity"] = bounded_text(args.identity, 2048)
+        write_json(AUTH_FILE, auth, mode=0o600)
+    if args.download_dir:
+        dpath = os.path.expanduser(args.download_dir)
+        os.makedirs(dpath, mode=0o755, exist_ok=True)
+        settings["downloadDir"] = dpath
+        if dpath not in settings.get("localDirs", []):
+            settings.setdefault("localDirs", list(DEFAULT_LOCAL_DIRS)).insert(0, dpath)
+        write_json(SETTINGS_FILE, settings)
+    if args.format:
+        settings["preferredFormat"] = bounded_text(args.format, 32)
+        write_json(SETTINGS_FILE, settings)
+    if args.use_album_art is not None:
+        settings["useAlbumArt"] = bool(int(args.use_album_art))
+        write_json(SETTINGS_FILE, settings)
+    if args.ascii_mode:
+        settings["asciiMode"] = bounded_text(args.ascii_mode, 16)
+        write_json(SETTINGS_FILE, settings)
+    if args.add_url:
+        idx = ensure_index()
+        albums = list(idx.get("albums") or [])
+        u = bounded_text(args.add_url, MAX_URL_CHARS)
+        det = fetch_album_details(u, api_base=settings.get("apiBase") or "https://bandcamp.com")
+        if det:
+            det["purchased"] = True
+            det["isLocal"] = False
+            det["localPath"] = ""
+            det["artPath"] = cache_remote_art(det.get("artUrl", ""), det["id"], det["artist"], det["title"])
+            det["fold"] = fold(f"{det['artist']} {det['title']}")
+            albums = [a for a in albums if a.get("url") != u and a.get("id") != det["id"]]
+            albums.insert(0, det)
+            idx["albums"] = albums
+            idx["albumCount"] = len(albums)
+            idx["purchasedCount"] = sum(1 for a in albums if a.get("purchased"))
+            write_json(INDEX_FILE, idx)
+
+    emit({
+        "username": settings.get("username") or "",
+        "hasIdentity": bool(auth.get("identity")),
+        "downloadDir": settings.get("downloadDir") or DEFAULT_DOWNLOAD_DIR,
+        "preferredFormat": settings.get("preferredFormat") or "flac",
+        "useAlbumArt": bool(settings.get("useAlbumArt", True)),
+        "asciiMode": settings.get("asciiMode") or "braille",
+    })
+
+
+def cmd_ascii_art(args) -> None:
+    """Convert album cover art (via omarchy-transcode-ascii) or text (via omarchy-ascii)
+    into a character matrix for the Omarchy screensaver-style visualiser.
+    """
+    settings = load_settings()
+    idx = ensure_index()
+    albums = list(idx.get("albums") or [])
+
+    use_album_art = settings.get("useAlbumArt", True)
+    if args.use_album_art is not None:
+        use_album_art = bool(int(args.use_album_art))
+
+    mode = args.mode or settings.get("asciiMode") or "braille"
+    width = bounded_int(args.width, 72, 20, 160)
+    height = bounded_int(args.height, 32, 10, 80)
+    threshold = bounded_int(args.threshold, 50, 10, 90)
+
+    image_path = args.image or ""
+    banner_text = args.text or ""
+    target_album = None
+
+    if args.album:
+        target_album = next((a for a in albums if a.get("id") == args.album or a.get("url") == args.album), None)
+        if target_album:
+            image_path = image_path or target_album.get("artPath") or ""
+            banner_text = banner_text or target_album.get("artist") or target_album.get("title") or ""
+
+    if not image_path and not banner_text:
+        hist = read_json(HISTORY_FILE, {}) or {}
+        last = hist.get("lastPlayedTrack") or {}
+        image_path = last.get("artPath") or ""
+        banner_text = last.get("artist") or last.get("title") or ""
+
+    if not image_path and use_album_art and albums:
+        first_art = next((a for a in albums if a.get("artPath") and os.path.isfile(str(a.get("artPath")))), albums[0])
+        image_path = first_art.get("artPath") or ""
+        banner_text = banner_text or first_art.get("artist") or first_art.get("title") or "BANDARCHY"
+
+    lines: list[str] = []
+    source_kind = "omarchy-ascii"
+    if use_album_art and image_path and os.path.isfile(image_path) and mode in ("braille", "block"):
+        lines = transcode_image_to_ascii(
+            image_path,
+            width=width,
+            height=height,
+            mode=mode,
+            threshold=threshold,
+            invert=bool(args.invert),
+        )
+        if lines:
+            source_kind = "album-art"
+
+    if not lines:
+        lines = render_omarchy_ascii_banner(banner_text or "BANDARCHY")
+        source_kind = "omarchy-ascii"
+
+    max_cols = max((len(l) for l in lines), default=0)
+    # Also write to SCREENSAVER_TXT_FILE so `ttfx -i` can consume it directly
+    atomic_write(SCREENSAVER_TXT_FILE, ("\n".join(lines) + "\n").encode("utf-8"), 0o600, fatal=False)
+
+    emit({
+        "source": source_kind,
+        "useAlbumArt": use_album_art,
+        "mode": mode,
+        "imagePath": image_path if os.path.isfile(str(image_path)) else "",
+        "rows": len(lines),
+        "cols": max_cols,
+        "lineCount": len(lines),
+        "colCount": max_cols,
+        "lines": lines,
+        "text": "\n".join(lines),
+        "screensaverFile": SCREENSAVER_TXT_FILE,
+    })
+
+
+def cmd_screensaver(args) -> None:
+    """Transcode the active album cover (or Omarchy banner) and launch `ttfx`."""
+    # First generate the screensaver text file
+    with quiet():
+        cmd_ascii_art(args)
+
+    effect = (args.effect or "random").lower()
+    if effect not in TTFX_EFFECTS:
+        effect = "random"
+
+    effect_flag = "--random-effect" if effect == "random" else effect
+
+    if args.dry_run:
+        # Run a quick verification frame offscreen/dry-run
+        emit({
+            "launched": False,
+            "dryRun": True,
+            "effect": effect,
+            "screensaverFile": SCREENSAVER_TXT_FILE,
+            "ttfxAvailable": os.path.isfile(TTFX_BIN),
+        })
+        return
+
+    if not os.path.isfile(TTFX_BIN):
+        die("ttfx is not installed on this system")
+
+    # Launch inside the user's configured terminal with Omarchy's screensaver styling
+    runner_sh = (
+        f"printf '\\033]11;rgb:00/00/00\\007'; "
+        f"while true; do "
+        f"{TTFX_BIN} -i '{SCREENSAVER_TXT_FILE}' "
+        f"--frame-rate 120 --canvas-width 0 --canvas-height 0 --reuse-canvas "
+        f"--anchor-canvas c --anchor-text c {effect_flag} --no-eol --no-restore-cursor & "
+        f"pid=$!; "
+        f"if read -r -n1; then kill $pid 2>/dev/null; exit 0; fi; "
+        f"wait $pid 2>/dev/null || break; "
+        f"done"
+    )
+
+    omarchy_dir = os.environ.get("OMARCHY_PATH") or "/usr/share/omarchy"
+    if not os.path.isdir(omarchy_dir):
+        omarchy_dir = os.path.join(HOME, "omarchy")
+
+    term_cmd = None
+    if shutil.which("alacritty"):
+        conf = os.path.join(omarchy_dir, "default", "alacritty", "screensaver.toml")
+        term_cmd = ["alacritty", "--class=org.omarchy.screensaver"]
+        if os.path.isfile(conf):
+            term_cmd.extend(["--config-file", conf])
+        term_cmd.extend(["-e", "bash", "-c", runner_sh])
+    elif shutil.which("ghostty"):
+        term_cmd = ["ghostty", "--class=org.omarchy.screensaver", "--font-size=18", "-e", "bash", "-c", runner_sh]
+    elif shutil.which("foot"):
+        term_cmd = ["foot", "--app-id=org.omarchy.screensaver", "-e", "bash", "-c", runner_sh]
+    elif shutil.which("kitty"):
+        term_cmd = ["kitty", "--class=org.omarchy.screensaver", "-e", "bash", "-c", runner_sh]
+
+    if not term_cmd:
+        die("no supported terminal (alacritty, ghostty, foot, kitty) found for ttfx screensaver")
+
+    subprocess.Popen(
+        term_cmd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    emit({
+        "launched": True,
+        "effect": effect,
+        "screensaverFile": SCREENSAVER_TXT_FILE,
+    })
+
+
+def cmd_smart_playlist(args) -> None:
+    """Generate (and optionally play or save) an intelligent playlist based on last track played."""
+    settings = load_settings()
+    idx = ensure_index()
+    smart = build_intelligent_playlist(
+        idx,
+        seed_track_id=args.seed_track or "",
+        seed_album_id=args.seed_album or "",
+        preset=args.preset or "radio",
+        limit=bounded_int(args.limit, 25, 3, 100),
+    )
+
+    saved_playlist = None
+    if args.save_as:
+        pls = load_playlists()
+        new_id = f"pl-{int(time.time())}-{secrets.token_hex(3)}"
+        saved_playlist = {
+            "id": new_id,
+            "title": bounded_text(args.save_as, 120),
+            "description": smart.get("description") or "",
+            "isSmart": True,
+            "preset": smart.get("preset") or "radio",
+            "seedTrack": smart.get("seed"),
+            "createdAt": int(time.time()),
+            "updatedAt": int(time.time()),
+            "trackCount": len(smart.get("tracks") or []),
+            "tracks": smart.get("tracks") or [],
+        }
+        pls.insert(0, saved_playlist)
+        save_playlists(pls)
+
+    if args.play:
+        playable = resolve_track_list(
+            smart.get("tracks") or [],
+            idx,
+            mode="auto",
+            api_base=settings.get("apiBase") or "https://bandcamp.com",
+        )
+        start_queue(
+            playable,
+            {
+                "type": "smart-playlist",
+                "preset": smart.get("preset"),
+                "title": smart.get("title"),
+                "seedTrackId": (smart.get("seed") or {}).get("id") or "",
+            },
+            shuffle=False,
+            start_index=0,
+            loop=bool(args.loop),
+        )
+        return
+
+    emit({
+        **smart,
+        "smartPlaylist": smart,
+        "savedPlaylist": saved_playlist,
+    })
+
+
+def cmd_playlists(args) -> None:
+    """Manage user-created custom playlists."""
+    idx = ensure_index()
+    pls = load_playlists()
+    action = args.action
+
+    if action == "list":
+        hist = read_json(HISTORY_FILE, {}) or {}
+        emit({
+            "playlists": pls,
+            "lastPlayedTrack": hist.get("lastPlayedTrack"),
+            "recentTracks": (hist.get("recentTracks") or [])[:20],
+        })
+        return
+
+    if action == "create":
+        title = bounded_text(args.title or "New Playlist", 120)
+        if not title:
+            die("playlist create requires --title")
+        initial_tracks: list[dict] = []
+        if args.from_smart:
+            smart = build_intelligent_playlist(
+                idx,
+                seed_track_id=args.seed_track or "",
+                preset=args.from_smart,
+                limit=25,
+            )
+            initial_tracks = list(smart.get("tracks") or [])
+        elif args.album:
+            alb = next((a for a in (idx.get("albums") or []) if a.get("id") == args.album), None)
+            if alb:
+                for t in alb.get("tracks") or []:
+                    tc = dict(t)
+                    tc["albumId"] = alb.get("id")
+                    tc["album"] = alb.get("title")
+                    tc["artist"] = t.get("artist") or alb.get("artist")
+                    tc["artPath"] = alb.get("artPath") or ""
+                    initial_tracks.append(tc)
+        elif args.tracks:
+            wanted = [tid.strip() for tid in args.tracks.split(",") if tid.strip()]
+            by_id = {t["id"]: t for t in all_indexed_tracks(idx)}
+            for tid in wanted:
+                if tid in by_id:
+                    initial_tracks.append(by_id[tid])
+
+        new_pl = {
+            "id": f"pl-{int(time.time())}-{secrets.token_hex(3)}",
+            "title": title,
+            "description": bounded_text(args.description or "", 240),
+            "isSmart": bool(args.from_smart),
+            "createdAt": int(time.time()),
+            "updatedAt": int(time.time()),
+            "trackCount": len(initial_tracks),
+            "tracks": initial_tracks,
+        }
+        pls.insert(0, new_pl)
+        save_playlists(pls)
+        emit({"created": new_pl, "playlists": pls})
+        return
+
+    if action == "add":
+        if not args.id:
+            die("playlists add requires --id <playlist_id>")
+        target = next((p for p in pls if p.get("id") == args.id), None)
+        if not target:
+            die(f"playlist not found: {args.id}")
+        to_add: list[dict] = []
+        if args.album:
+            alb = next((a for a in (idx.get("albums") or []) if a.get("id") == args.album), None)
+            if alb:
+                for t in alb.get("tracks") or []:
+                    tc = dict(t)
+                    tc["albumId"] = alb.get("id")
+                    tc["album"] = alb.get("title")
+                    tc["artist"] = t.get("artist") or alb.get("artist")
+                    tc["artPath"] = alb.get("artPath") or ""
+                    to_add.append(tc)
+        if args.tracks:
+            wanted = [tid.strip() for tid in args.tracks.split(",") if tid.strip()]
+            by_id = {t["id"]: t for t in all_indexed_tracks(idx)}
+            for tid in wanted:
+                if tid in by_id:
+                    to_add.append(by_id[tid])
+        existing_tracks = list(target.get("tracks") or [])
+        existing_tracks.extend(to_add)
+        target["tracks"] = existing_tracks[:1000]
+        target["trackCount"] = len(target["tracks"])
+        target["updatedAt"] = int(time.time())
+        save_playlists(pls)
+        emit({"added": len(to_add), "playlist": target, "playlists": pls})
+        return
+
+    if action == "remove-track":
+        if not args.id:
+            die("playlists remove-track requires --id <playlist_id>")
+        target = next((p for p in pls if p.get("id") == args.id), None)
+        if not target:
+            die(f"playlist not found: {args.id}")
+        existing_tracks = list(target.get("tracks") or [])
+        if args.index is not None and 0 <= args.index < len(existing_tracks):
+            existing_tracks.pop(args.index)
+        elif args.track_id:
+            existing_tracks = [t for t in existing_tracks if t.get("id") != args.track_id]
+        target["tracks"] = existing_tracks
+        target["trackCount"] = len(existing_tracks)
+        target["updatedAt"] = int(time.time())
+        save_playlists(pls)
+        emit({"playlist": target, "playlists": pls})
+        return
+
+    if action == "rename":
+        if not args.id or not args.title:
+            die("playlists rename requires --id and --title")
+        target = next((p for p in pls if p.get("id") == args.id), None)
+        if not target:
+            die(f"playlist not found: {args.id}")
+        target["title"] = bounded_text(args.title, 120)
+        target["updatedAt"] = int(time.time())
+        save_playlists(pls)
+        emit({"playlist": target, "playlists": pls})
+        return
+
+    if action == "delete":
+        if not args.id:
+            die("playlists delete requires --id")
+        pls = [p for p in pls if p.get("id") != args.id]
+        save_playlists(pls)
+        emit({"deleted": args.id, "playlists": pls})
+        return
+
+
+def cmd_play(args) -> None:
+    settings = load_settings()
+    idx = ensure_index()
+    albums = list(idx.get("albums") or [])
+    mode = (args.mode or "auto").lower()
+    api_base = settings.get("apiBase") or "https://bandcamp.com"
+
+    if args.playlist:
+        pls = load_playlists()
+        pl = next((p for p in pls if p.get("id") == args.playlist), None)
+        if not pl:
+            die(f"playlist not found: {args.playlist}")
+        tracks = resolve_track_list(pl.get("tracks") or [], idx, mode=mode, api_base=api_base)
+        start_idx = max(0, int(args.track_index or 0))
+        if args.track_id:
+            for i, t in enumerate(tracks):
+                if t.get("id") == args.track_id:
+                    start_idx = i
+                    break
+        start_queue(
+            tracks,
+            {"type": "playlist", "playlistId": pl.get("id"), "title": pl.get("title"), "mode": mode},
+            shuffle=bool(args.shuffle),
+            start_index=start_idx,
+            loop=bool(args.loop),
+        )
+        return
+
+    if args.album:
+        target_album = next((a for a in albums if a.get("id") == args.album or a.get("url") == args.album), None)
+        if not target_album:
+            die(f"album not found in collection: {args.album}")
+        tracks = resolve_playable_tracks(target_album, mode=mode, api_base=api_base)
+        start_idx = max(0, int(args.track_index or 0))
+        if args.track_id:
+            for i, t in enumerate(tracks):
+                if t.get("id") == args.track_id:
+                    start_idx = i
+                    break
+        start_queue(
+            tracks,
+            {"type": "album", "albumId": target_album.get("id"), "title": target_album.get("title"), "mode": mode},
+            shuffle=bool(args.shuffle),
+            start_index=start_idx,
+            loop=bool(args.loop),
+        )
+        return
+
+    if args.scope:
+        scope = args.scope.lower()
+        pool_albums = albums
+        if scope == "purchased":
+            pool_albums = [a for a in albums if a.get("purchased")]
+        elif scope == "local":
+            pool_albums = [a for a in albums if a.get("isLocal")]
+        tracks = []
+        for a in pool_albums:
+            tracks.extend(resolve_playable_tracks(a, mode=mode, api_base=api_base))
+        start_queue(
+            tracks,
+            {"type": "collection", "scope": scope, "mode": mode},
+            shuffle=bool(args.shuffle),
+            start_index=0,
+            loop=bool(args.loop),
+        )
+        return
+
+    die("play requires --album <id>, --playlist <id>, or --scope all|purchased|local")
+
+
+def cmd_download(args) -> None:
+    settings = load_settings()
+    idx = ensure_index()
+    albums = list(idx.get("albums") or [])
+    target = next((a for a in albums if a.get("id") == args.album or a.get("url") == args.album), None)
+    if not target:
+        die(f"album not found: {args.album}")
+    fmt = args.format or settings.get("preferredFormat") or "flac"
+    res = download_album_to_local(target, preferred_format=fmt, settings=settings)
+    emit(res)
+
+
+def cmd_import_zip(args) -> None:
+    settings = load_settings()
+    dl_root = os.path.expanduser(settings.get("downloadDir") or DEFAULT_DOWNLOAD_DIR)
+    zips = find_bandcamp_zips_in_downloads()
+    if args.zip_path:
+        zpath = os.path.expanduser(args.zip_path)
+        if not os.path.isfile(zpath):
+            die(f"ZIP file not found: {zpath}")
+        stem = os.path.splitext(os.path.basename(zpath))[0]
+        dest = os.path.join(dl_root, re.sub(r"[/\\:\*\?\"<>\|]+", "-", stem).strip())
+        files = safe_extract_zip(zpath, dest)
+        res = build_unified_collection(settings, fetch_remote=False)
+        emit({"imported": 1, "fileCount": len(files), "destDir": dest, "albumCount": res.get("albumCount")})
+        return
+
+    imported = 0
+    total_files = 0
+    for z in zips:
+        folder = re.sub(r"[/\\:\*\?\"<>\|]+", "-", f"{z['artist']} - {z['album']}").strip()
+        dest = os.path.join(dl_root, folder)
+        files = safe_extract_zip(z["zipPath"], dest)
+        imported += 1
+        total_files += len(files)
+    res = build_unified_collection(settings, fetch_remote=False)
+    emit({"imported": imported, "fileCount": total_files, "albumCount": res.get("albumCount")})
+
+
+def cmd_favourites(args) -> None:
+    store = read_json(FAVOURITES_FILE, {"items": []}) or {"items": []}
+    items = list(store.get("items") or [])
+    if args.action == "list":
+        emit({"items": items})
+        return
+    if not args.id:
+        die("favourites add/remove/toggle requires --id")
+    exists = any(i.get("id") == args.id for i in items)
+    if args.action == "add" or (args.action == "toggle" and not exists):
+        if not exists:
+            items.append({"id": args.id, "title": bounded_text(args.title or args.id), "addedAt": int(time.time())})
+            write_json(FAVOURITES_FILE, {"items": items})
+        emit({"items": items, "favourited": True})
+        return
+    if args.action == "remove" or (args.action == "toggle" and exists):
+        items = [i for i in items if i.get("id") != args.id]
+        write_json(FAVOURITES_FILE, {"items": items})
+        emit({"items": items, "favourited": False})
+        return
+
+
+def cmd_cmd(args) -> None:
+    action = args.action
+    if action == "play-pause":
+        mpv_request(["cycle", "pause"])
+    elif action == "play":
+        mpv_request(["set_property", "pause", False])
+    elif action == "pause":
+        mpv_request(["set_property", "pause", True])
+    elif action == "next":
+        mpv_request(["playlist-next", "force"])
+    elif action == "prev":
+        pos = mpv_get("playlist-pos") or 0
+        elapsed = mpv_get("time-pos") or 0
+        if pos <= 0 or elapsed > 4:
+            mpv_request(["seek", 0, "absolute"])
+        else:
+            mpv_request(["playlist-prev"])
+    elif action == "stop":
+        mpv_stop()
+    elif action == "volume":
+        if args.value is None:
+            die("volume requires --value 0-130")
+        mpv_request(["set_property", "volume", float(args.value)])
+    elif action == "seek":
+        if args.value is None:
+            die("seek requires --value SECONDS")
+        mpv_request(["seek", float(args.value), "absolute"])
+    elif action == "loop":
+        mpv_request(["set_property", "loop-playlist", "inf" if (args.value or 0) > 0 else "no"])
+    elif action == "jump":
+        if args.value is None:
+            die("jump requires --value PLAYLIST_INDEX")
+        mpv_request(["set_property", "playlist-pos", int(args.value)])
+    else:
+        die(f"unknown transport command: {action}")
+    emit({"action": action})
+
+
+def cmd_now(args) -> None:
+    if not mpv_running():
+        hist = read_json(HISTORY_FILE, {}) or {}
+        emit({"playing": False, "lastPlayedTrack": hist.get("lastPlayedTrack")})
+        return
+    pos = mpv_get("playlist-pos")
+    path = mpv_get("path") or ""
+    queue = read_json(QUEUE_FILE, {}) or {}
+    tracks = queue.get("tracks") or []
+    entry = {}
+    if path:
+        for t in tracks:
+            if t.get("target") == path or (t.get("localPath") and t["localPath"] == path):
+                entry = t
+                break
+    if not entry and isinstance(pos, int) and 0 <= pos < len(tracks):
+        entry = tracks[pos]
+
+    meta = mpv_get("metadata") or {}
+    meta = {str(k).lower(): v for k, v in meta.items()} if isinstance(meta, dict) else {}
+
+    title = bounded_text(entry.get("title") or meta.get("title") or mpv_get("media-title") or "")
+    artist = bounded_text(entry.get("artist") or meta.get("artist") or "")
+    album = bounded_text(entry.get("album") or meta.get("album") or "")
+    art_path = entry.get("artPath") or ""
+    if not art_path or not os.path.exists(art_path):
+        art_path = ensure_cover_svg(entry.get("albumId") or "now", artist or "Bandarchy", album or title or "Music")
+
+    if entry and entry.get("id"):
+        record_history(entry)
+
+    emit({
+        "playing": True,
+        "paused": bool(mpv_get("pause")),
+        "title": title,
+        "artist": artist,
+        "album": album,
+        "albumId": entry.get("albumId") or "",
+        "trackId": entry.get("id") or "",
+        "playSource": entry.get("playSource") or ("local" if os.path.exists(path) else "stream"),
+        "artPath": art_path,
+        "position": bounded_float(mpv_get("time-pos") or 0.0),
+        "duration": bounded_float(mpv_get("duration") or entry.get("duration") or 0.0),
+        "volume": bounded_float(mpv_get("volume") or 100.0, 100.0, 0.0, 130.0),
+        "playlistPos": bounded_int(pos, 0),
+        "playlistCount": bounded_int(mpv_get("playlist-count") or len(tracks), len(tracks)),
+        "shuffle": bool(queue.get("shuffle")),
+        "loop": mpv_get("loop-playlist") in ("inf", "force", True),
+        "queue": [
+            {
+                "id": t.get("id") or "",
+                "title": t.get("title") or "",
+                "artist": t.get("artist") or "",
+                "album": t.get("album") or "",
+                "albumId": t.get("albumId") or "",
+                "duration": t.get("duration") or 0,
+                "playSource": t.get("playSource") or "local",
+            }
+            for t in tracks[:200]
+        ],
+    })
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(prog="bandarchy", description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("status").set_defaults(func=cmd_status)
+
+    p = sub.add_parser("collection", help="list collection items filtered by scope and query")
+    p.add_argument("--scope", choices=["all", "purchased", "local", "cloud"], default="all")
+    p.add_argument("--query", default="")
+    p.set_defaults(func=cmd_collection)
+
+    p = sub.add_parser("search", help="search across albums and tracks")
+    p.add_argument("query", nargs="?", default="")
+    p.add_argument("--scope", choices=["all", "purchased", "local", "cloud"], default="all")
+    p.add_argument("--limit", type=int, default=100)
+    p.set_defaults(func=cmd_search)
+
+    p = sub.add_parser("sync", help="synchronise Bandcamp purchases and local music folders")
+    p.add_argument("--username", help="Bandcamp fan username")
+    p.add_argument("--api-base", help="Bandcamp base URL override (for testing)")
+    p.add_argument("--local-only", action="store_true", help="only scan local folders and browser history")
+    p.set_defaults(func=cmd_sync)
+
+    p = sub.add_parser("auth", help="configure Bandcamp username, session cookie, or visualiser options")
+    p.add_argument("--username")
+    p.add_argument("--identity", help="Bandcamp identity cookie value")
+    p.add_argument("--download-dir")
+    p.add_argument("--format", choices=["flac", "mp3-320", "mp3-v0", "wav", "ogg"])
+    p.add_argument("--use-album-art", choices=["0", "1"], help="whether visualiser translates album cover art")
+    p.add_argument("--ascii-mode", choices=["braille", "block"], help="omarchy-transcode-ascii mode")
+    p.add_argument("--add-url", help="add a Bandcamp album or track URL to the purchased collection")
+    p.set_defaults(func=cmd_auth)
+
+    p = sub.add_parser("ascii-art", help="transcode album cover art into Omarchy screensaver ASCII/Unicode")
+    p.add_argument("--album", help="album id or URL")
+    p.add_argument("--image", help="explicit image path")
+    p.add_argument("--text", help="fallback banner text for omarchy-ascii")
+    p.add_argument("--mode", choices=["braille", "block", "banner"], default=None)
+    p.add_argument("--width", type=int, default=72)
+    p.add_argument("--height", type=int, default=32)
+    p.add_argument("--threshold", type=int, default=50)
+    p.add_argument("--invert", action="store_true")
+    p.add_argument("--use-album-art", choices=["0", "1"], default=None)
+    p.set_defaults(func=cmd_ascii_art)
+
+    p = sub.add_parser("screensaver", help="launch Omarchy ttfx screensaver with transcoded album art")
+    p.add_argument("--album", help="album id")
+    p.add_argument("--image", help="image path")
+    p.add_argument("--text", help="fallback text")
+    p.add_argument("--mode", choices=["braille", "block", "banner"], default="braille")
+    p.add_argument("--width", type=int, default=72)
+    p.add_argument("--height", type=int, default=32)
+    p.add_argument("--threshold", type=int, default=50)
+    p.add_argument("--invert", action="store_true")
+    p.add_argument("--use-album-art", choices=["0", "1"], default="1")
+    p.add_argument("--effect", default="random", help="ttfx effect name or random")
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(func=cmd_screensaver)
+
+    p = sub.add_parser("smart-playlist", help="build intelligent playlist from last track played")
+    p.add_argument("--seed-track", help="seed track id (defaults to last played track)")
+    p.add_argument("--seed-album", help="seed album id")
+    p.add_argument("--preset", choices=["radio", "kindred", "journey", "purchased"], default="radio")
+    p.add_argument("--limit", type=int, default=25)
+    p.add_argument("--play", action="store_true", help="start playing immediately")
+    p.add_argument("--loop", action="store_true")
+    p.add_argument("--save-as", help="save generated intelligent playlist as a user playlist")
+    p.set_defaults(func=cmd_smart_playlist)
+
+    p = sub.add_parser("playlists", help="create and manage custom user playlists")
+    p.add_argument("action", choices=["list", "create", "add", "remove-track", "rename", "delete"])
+    p.add_argument("--id", help="playlist id")
+    p.add_argument("--title", help="playlist title")
+    p.add_argument("--description", help="playlist description")
+    p.add_argument("--tracks", help="comma-separated track ids")
+    p.add_argument("--album", help="album id to add all tracks from")
+    p.add_argument("--track-id", help="track id to remove")
+    p.add_argument("--index", type=int, help="0-based track index to remove")
+    p.add_argument("--from-smart", choices=["radio", "kindred", "journey", "purchased"])
+    p.add_argument("--seed-track", help="seed track id for --from-smart")
+    p.set_defaults(func=cmd_playlists)
+
+    p = sub.add_parser("play", help="play an album, playlist, or collection scope through mpv")
+    p.add_argument("--album", help="album id or URL")
+    p.add_argument("--playlist", help="user playlist id")
+    p.add_argument("--track-id", help="track id to start from")
+    p.add_argument("--track-index", type=int, default=0, help="0-based track index to start from")
+    p.add_argument("--scope", choices=["all", "purchased", "local"], help="play entire scope")
+    p.add_argument("--mode", choices=["auto", "local", "stream"], default="auto")
+    p.add_argument("--shuffle", action="store_true")
+    p.add_argument("--loop", action="store_true")
+    p.set_defaults(func=cmd_play)
+
+    p = sub.add_parser("download", help="download a purchased Bandcamp album for local playback")
+    p.add_argument("--album", required=True, help="album id or URL")
+    p.add_argument("--format", choices=["flac", "mp3-320", "mp3-v0", "wav", "ogg"])
+    p.set_defaults(func=cmd_download)
+
+    p = sub.add_parser("import-zip", help="extract and import Bandcamp ZIP archives from ~/Downloads")
+    p.add_argument("--zip-path", help="specific ZIP archive path")
+    p.set_defaults(func=cmd_import_zip)
+
+    p = sub.add_parser("favourites", help="manage favourite albums")
+    p.add_argument("action", choices=["list", "add", "remove", "toggle"])
+    p.add_argument("--id")
+    p.add_argument("--title")
+    p.set_defaults(func=cmd_favourites)
+
+    p = sub.add_parser("cmd", help="control running mpv player")
+    p.add_argument(
+        "action",
+        choices=["play-pause", "play", "pause", "next", "prev", "stop", "volume", "seek", "loop", "jump"],
+    )
+    p.add_argument("--value", type=float)
+    p.set_defaults(func=cmd_cmd)
+
+    sub.add_parser("now", help="current playback state").set_defaults(func=cmd_now)
+
+    args = parser.parse_args()
+    try:
+        args.func(args)
+    except BandarchyError as exc:
+        die(str(exc))
+    except Exception as exc:
+        die(f"unexpected error: {exc}")
+
+
+if __name__ == "__main__":
+    main()
