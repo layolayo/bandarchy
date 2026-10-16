@@ -835,100 +835,208 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
     ctx.fillRect(0, 0, w, h)
 
     if (l1Mode === 0) {
-        // Mode 0: MilkDrop / Geiss Expanding Logarithmic Warp Tunnel Rings with Moving Endpoint Tracers
+        // Mode 0: MilkDrop / Geiss 3D Expanding Logarithmic Warp Tunnel Web & Volumetric Curtains
         ctx.save()
         ctx.globalCompositeOperation = "lighter"
-        var ringCount = Math.max(5, Math.min(10, Math.round(7 * density)))
-        for (var rb = 0; rb < 3; rb++) {
-            ctx.strokeStyle = colourWithAlpha(palette[(rb * 2) % palette.length], (0.22 + state.bass * 0.34) * (1.0 - dim))
-            ctx.lineWidth = 1.4 + state.bass * 1.6
+        var ringCount = Math.max(5, Math.min(9, Math.round(7 * density)))
+        var segs = 24
+        var ringsPts = []
+        for (var rIdx = 0; rIdx < ringCount; rIdx++) {
+            var rProg = ((rIdx + (state.t * 0.32 * speed) % 1.0) / ringCount)
+            var baseR = Math.pow(rProg, 1.45) * minDim * 0.72
+            var ringCX = cx + endPt.dx * 0.65 * (1.0 - rProg)
+            var ringCY = cy + endPt.dy * 0.65 * (1.0 - rProg)
+            var rot = state.phase * (rIdx % 2 === 0 ? 0.35 : -0.35)
+            var pts = []
+            for (var s = 0; s <= segs; s++) {
+                var ang = (s / segs) * Math.PI * 2 + rot
+                var bVal = state.smoothBands[(s * 2 + rIdx * 7) & 63]
+                var rr = baseR * (1.0 + Math.sin(ang * 4.0 + state.t * 1.8) * 0.08 + bVal * 0.18)
+                pts.push({
+                    x: ringCX + Math.cos(ang) * rr,
+                    y: ringCY + Math.sin(ang) * rr,
+                    prog: rProg
+                })
+            }
+            ringsPts.push(pts)
+        }
+
+        // Translucent 3D warp-tunnel curtains between adjacent expanding rings
+        for (var cIdx = 0; cIdx < ringCount - 1; cIdx++) {
+            var r0 = ringsPts[cIdx]
+            var r1 = ringsPts[cIdx + 1]
+            var pAlpha = (0.05 + r1[0].prog * 0.09 + state.bass * 0.06) * (1.0 - dim)
+            ctx.fillStyle = colourWithAlpha(palette[(cIdx * 2) % palette.length], pAlpha)
             ctx.beginPath()
-            for (var rIdx = rb; rIdx < ringCount; rIdx += 3) {
-                var rProg = ((rIdx / ringCount) + (state.t * 0.28 * speed) % (1.0 / ringCount)) % 1.0
-                var baseR = Math.pow(rProg, 1.42) * minDim * 0.68
-                // Rings originate at the moving vanishing endpoint and expand towards the user!
-                var ringCX = cx + endPt.dx * 0.65 * (1.0 - rProg)
-                var ringCY = cy + endPt.dy * 0.65 * (1.0 - rProg)
-                var rot = state.phase * (rIdx % 2 === 0 ? 0.35 : -0.35)
-                var segs = 28
-                for (var s = 0; s <= segs; s++) {
-                    var ang = (s / segs) * Math.PI * 2 + rot
-                    var bVal = state.smoothBands[(s * 2 + rIdx * 7) & 63]
-                    var rr = baseR * (1.0 + Math.sin(ang * 4.0 + state.t * 1.8) * 0.08 + bVal * 0.16)
-                    var wx = ringCX + Math.cos(ang) * rr
-                    var wy = ringCY + Math.sin(ang) * rr
-                    if (s === 0) ctx.moveTo(wx, wy)
-                    else ctx.lineTo(wx, wy)
+            for (var s0 = 0; s0 < segs; s0 += 2) {
+                ctx.moveTo(r0[s0].x, r0[s0].y)
+                ctx.lineTo(r0[s0 + 1].x, r0[s0 + 1].y)
+                ctx.lineTo(r1[s0 + 1].x, r1[s0 + 1].y)
+                ctx.lineTo(r1[s0].x, r1[s0].y)
+                ctx.closePath()
+            }
+            ctx.fill()
+        }
+
+        // Radial warp struts + glowing logarithmic tunnel rings
+        for (var rb = 0; rb < 3; rb++) {
+            ctx.strokeStyle = colourWithAlpha(palette[(rb * 2 + 1) % palette.length], (0.28 + state.bass * 0.38) * (1.0 - dim))
+            ctx.lineWidth = 1.6 + rb * 0.5 + state.bass * 1.8
+            ctx.beginPath()
+            for (var rIdx2 = rb; rIdx2 < ringCount; rIdx2 += 3) {
+                var rPts = ringsPts[rIdx2]
+                for (var s2 = 0; s2 <= segs; s2++) {
+                    if (s2 === 0) ctx.moveTo(rPts[s2].x, rPts[s2].y)
+                    else ctx.lineTo(rPts[s2].x, rPts[s2].y)
+                }
+                if (rIdx2 > 0) {
+                    var prevPts = ringsPts[rIdx2 - 1]
+                    for (var sr = 0; sr < segs; sr += 3) {
+                        ctx.moveTo(prevPts[sr].x, prevPts[sr].y)
+                        ctx.lineTo(rPts[sr].x, rPts[sr].y)
+                    }
                 }
             }
             ctx.stroke()
         }
         ctx.restore()
     } else if (l1Mode === 1) {
-        // Mode 1: G-Force Polar FlowField Vector Streams from Moving Vanishing Endpoint
+        // Mode 1: G-Force 3D Polar FlowField Spiral Ribbons & Plasma Wakes from Moving Endpoint
         ctx.save()
         ctx.globalCompositeOperation = "lighter"
-        ctx.lineWidth = 1.4 + state.bass * 1.2
         var focalX = cx + endPt.dx * 0.55
         var focalY = cy + endPt.dy * 0.55
+        var fCount = Math.max(8, Math.min(24, Math.floor(15 * density)))
+        var segSteps = 5
         for (var fb = 0; fb < 3; fb++) {
-            ctx.strokeStyle = colourWithAlpha(palette[(fb * 3) % palette.length], (0.24 + state.mid * 0.32) * (1.0 - dim))
+            var ribCol = palette[(fb * 3) % palette.length]
+            ctx.fillStyle = colourWithAlpha(ribCol, (0.11 + state.mid * 0.16) * (1.0 - dim))
+            ctx.strokeStyle = colourWithAlpha(palette[(fb * 3 + 1) % palette.length], (0.34 + state.mid * 0.36) * (1.0 - dim))
+            ctx.lineWidth = 1.7 + state.bass * 1.5
             ctx.beginPath()
-            var fCount = Math.max(8, Math.min(28, Math.floor(18 * density)))
-            for (var fi = 0; fi < fCount; fi++) {
-                var fa = (fi / fCount) * Math.PI * 2 + fb * 0.7 + state.t * 0.4 * speed
-                var depthP = (fi * 0.19 + state.t * 0.25 * speed) % 0.65
-                var fr1 = minDim * (0.06 + depthP)
-                var fr2 = fr1 + minDim * (0.07 + state.smoothBands[(fi * 3) & 63] * 0.15)
-                var curl = 0.14 + state.mid * 0.18
-                var ox = lerp(focalX, cx, depthP)
-                var oy = lerp(focalY, cy, depthP)
-                ctx.moveTo(ox + Math.cos(fa) * fr1, oy + Math.sin(fa) * fr1)
-                ctx.lineTo(ox + Math.cos(fa + curl) * fr2, oy + Math.sin(fa + curl) * fr2)
+            for (var fi = fb; fi < fCount; fi += 3) {
+                var baseA = (fi / fCount) * Math.PI * 2 + fb * 0.65 + state.t * 0.38 * speed
+                var depthBase = (fi * 0.17 + state.t * 0.28 * speed) % 0.62
+                var bVal1 = state.smoothBands[(fi * 3) & 63]
+                var curl = (0.22 + state.mid * 0.28) * (fi % 2 === 0 ? 1.0 : -1.0)
+                var leftX = [], leftY = [], rightX = [], rightY = []
+                for (var stp = 0; stp <= segSteps; stp++) {
+                    var u = stp / segSteps
+                    var dp = depthBase + u * (0.18 + bVal1 * 0.22)
+                    var r = minDim * (0.04 + Math.pow(dp, 1.35) * 0.72)
+                    var a = baseA + u * curl * 2.2
+                    var ox = lerp(focalX, cx, dp)
+                    var oy = lerp(focalY, cy, dp)
+                    var px = ox + Math.cos(a) * r
+                    var py = oy + Math.sin(a) * r
+                    var halfW = (2.5 + u * 8.5 * (0.6 + bVal1)) * (1.0 - u * 0.35)
+                    var nx = -Math.sin(a) * halfW
+                    var ny = Math.cos(a) * halfW
+                    leftX.push(px + nx)
+                    leftY.push(py + ny)
+                    rightX.push(px - nx)
+                    rightY.push(py - ny)
+                }
+                ctx.moveTo(leftX[0], leftY[0])
+                for (var k = 1; k <= segSteps; k++) ctx.lineTo(leftX[k], leftY[k])
+                for (var k2 = segSteps; k2 >= 0; k2--) ctx.lineTo(rightX[k2], rightY[k2])
+                ctx.closePath()
             }
+            ctx.fill()
             ctx.stroke()
         }
         ctx.restore()
     } else if (l1Mode === 2) {
-        // Mode 2: Cthugha Rave Flame / Plasma Buffer seeded from 64-band spectrum
+        // Mode 2: Cthugha 3D Volumetric Rave Flame Curtains & Rising Plasma Tongues
         ctx.save()
         ctx.globalCompositeOperation = "lighter"
+        var hist = state.waveHistory || []
+        var flameSheets = 3
+        for (var sh = flameSheets - 1; sh >= 0; sh--) {
+            var shFrac = sh / flameSheets
+            var snap = (hist.length > sh * 2 && hist[sh * 2] && hist[sh * 2].bands) ? hist[sh * 2].bands : state.smoothBands
+            var baseY = h * (0.98 - shFrac * 0.12)
+            ctx.fillStyle = colourWithAlpha(palette[(sh * 2 + 1) % palette.length], (0.14 + (1.0 - shFrac) * 0.14 + state.bass * 0.12) * (1.0 - dim))
+            ctx.strokeStyle = colourWithAlpha(palette[(sh * 2) % palette.length], (0.42 + (1.0 - shFrac) * 0.35) * (1.0 - dim))
+            ctx.lineWidth = 1.8 + (1.0 - shFrac) * 1.4
+            ctx.beginPath()
+            ctx.moveTo(0, h)
+            for (var sb = 0; sb < 32; sb++) {
+                var u = sb / 31.0
+                var bv = snap[sb] !== undefined ? snap[sb] : (state.smoothBands[sb * 2] || 0.08)
+                var lick = Math.sin(sb * 0.7 + state.t * 5.2 - sh * 1.3) * 0.18 + 0.82
+                var fx = u * w + endPt.dx * 0.18 * shFrac
+                var fy = baseY - (bv * h * (0.28 + state.bass * 0.18) * density * lick)
+                ctx.lineTo(fx, fy)
+            }
+            ctx.lineTo(w, h)
+            ctx.closePath()
+            ctx.fill()
+            ctx.stroke()
+        }
+
+        // Rising organic plasma flame tongues (curved diamond/teardrop plumes)
         var flames = state.flames || []
         for (var cBucket = 0; cBucket < 4; cBucket++) {
-            ctx.fillStyle = colourWithAlpha(palette[(cBucket * 2) % palette.length], (0.14 + state.bass * 0.24) * (1.0 - dim))
+            ctx.fillStyle = colourWithAlpha(palette[(cBucket * 2) % palette.length], (0.16 + state.bass * 0.24) * (1.0 - dim))
+            ctx.strokeStyle = colourWithAlpha(palette[(cBucket * 2 + 1) % palette.length], (0.28 + state.mid * 0.25) * (1.0 - dim))
+            ctx.lineWidth = 1.2
             ctx.beginPath()
             for (var f = cBucket; f < flames.length; f += 4) {
                 var fm = flames[f]
-                var fx = fm.x * w + endPt.dx * 0.25 * (1.0 - fm.y)
-                var fy = fm.y * h
-                var fw = (w / 22.0) * (0.7 + fm.energy * 1.8) * density
-                var fh = h * (0.06 + fm.energy * 0.22) * density
-                ctx.rect(fx - fw * 0.5, fy - fh * 0.5, fw, fh)
+                var fx2 = fm.x * w + endPt.dx * 0.28 * (1.0 - fm.y)
+                var fy2 = fm.y * h
+                var fw = (w / 24.0) * (0.65 + fm.energy * 1.65) * density
+                var fh = h * (0.07 + fm.energy * 0.22) * density
+                var sway = Math.sin(state.t * 4.5 + f) * fw * 0.45
+                ctx.moveTo(fx2 + sway, fy2 - fh * 0.65)
+                ctx.lineTo(fx2 + fw * 0.5, fy2)
+                ctx.lineTo(fx2 - sway * 0.4, fy2 + fh * 0.45)
+                ctx.lineTo(fx2 - fw * 0.5, fy2)
+                ctx.closePath()
             }
             ctx.fill()
+            ctx.stroke()
         }
-        // Bottom spectrum flame seed bar
-        ctx.strokeStyle = colourWithAlpha(palette[1], 0.45 * (1.0 - dim))
-        ctx.lineWidth = 2.2
-        ctx.beginPath()
-        for (var sb = 0; sb < 64; sb++) {
-            var sx = (sb / 63.0) * w
-            var sy = h - (state.smoothBands[sb] * h * 0.32 * density)
-            if (sb === 0) ctx.moveTo(sx, sy)
-            else ctx.lineTo(sx, sy)
-        }
-        ctx.stroke()
         ctx.restore()
     } else if (l1Mode === 3) {
-        // Mode 3: Relativistic 3D Starfield Warp streaming from Moving Vanishing Endpoint
+        // Mode 3: Relativistic 3D Starfield Warp & Volumetric Nebula Clouds
         ctx.save()
         ctx.globalCompositeOperation = "lighter"
         var starOriginX = cx + endPt.dx * 0.60
         var starOriginY = cy + endPt.dy * 0.60
+
+        // Volumetric 3D nebula cloud rings around warp origin
+        for (var nb = 2; nb >= 0; nb--) {
+            var nebProg = ((nb + (state.t * 0.25 * speed) % 1.0) / 3.0)
+            var nebR = minDim * (0.10 + nebProg * 0.42) * (1.0 + state.bass * 0.22)
+            var nebX = lerp(starOriginX, cx, nebProg * 0.5)
+            var nebY = lerp(starOriginY, cy, nebProg * 0.5)
+            ctx.fillStyle = colourWithAlpha(palette[(nb * 3 + 1) % palette.length], (0.07 + (1.0 - nebProg) * 0.08) * (1.0 - dim))
+            ctx.strokeStyle = colourWithAlpha(palette[(nb * 3) % palette.length], (0.22 + state.mid * 0.24) * (1.0 - dim))
+            ctx.lineWidth = 1.5 + state.bass * 1.4
+            ctx.beginPath()
+            var nebSegs = 20
+            for (var ns = 0; ns <= nebSegs; ns++) {
+                var na = (ns / nebSegs) * Math.PI * 2 + state.phase * (nb % 2 === 0 ? 0.3 : -0.3)
+                var nr = nebR * (1.0 + state.smoothBands[(ns * 3 + nb * 7) & 63] * 0.28)
+                var npx = nebX + Math.cos(na) * nr
+                var npy = nebY + Math.sin(na) * nr
+                if (ns === 0) ctx.moveTo(npx, npy)
+                else ctx.lineTo(npx, npy)
+            }
+            ctx.closePath()
+            ctx.fill()
+            ctx.stroke()
+        }
+
+        // Relativistic hyperspace star streaks + glowing star heads
         var starLimit = Math.min(state.stars.length, Math.floor(90 * density))
         for (var sbk = 0; sbk < 3; sbk++) {
-            ctx.strokeStyle = colourWithAlpha(palette[(sbk * 3) % palette.length], (0.45 + state.high * 0.4) * (1.0 - dim))
-            ctx.lineWidth = 1.4 + sbk * 0.5 + state.bass * 1.2
+            var stCol = palette[(sbk * 3) % palette.length]
+            ctx.strokeStyle = colourWithAlpha(stCol, (0.52 + state.high * 0.42) * (1.0 - dim))
+            ctx.fillStyle = colourWithAlpha(palette[(sbk * 3 + 1) % palette.length], (0.75 + state.bass * 0.25) * (1.0 - dim))
+            ctx.lineWidth = 1.6 + sbk * 0.6 + state.bass * 1.4
             ctx.beginPath()
             for (var sIdx = sbk; sIdx < starLimit; sIdx += 3) {
                 var st = state.stars[sIdx]
@@ -940,6 +1048,18 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.lineTo(sx1, sy1)
             }
             ctx.stroke()
+
+            // Glowing star head pinpoints on near stars
+            ctx.beginPath()
+            for (var sIdx2 = sbk; sIdx2 < starLimit; sIdx2 += 3) {
+                var st2 = state.stars[sIdx2]
+                if (st2.z > 0.55) continue
+                var hx = starOriginX + (st2.x / st2.z) * minDim * 0.55
+                var hy = starOriginY + (st2.y / st2.z) * minDim * 0.55
+                var hr = clamp((1.0 - st2.z) * 3.2, 1.2, 3.4)
+                ctx.rect(hx - hr, hy - hr, hr * 2.0, hr * 2.0)
+            }
+            ctx.fill()
         }
         ctx.restore()
     } else if (l1Mode === 4) {
@@ -1123,6 +1243,36 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             }
         }
         ctx.restore()
+    } else if (l1Mode === 5) {
+        // Mode 5: Deep-Space Event Horizon Void & Gravitational Lensing Corona
+        ctx.save()
+        ctx.globalCompositeOperation = "lighter"
+        var bhX = cx + endPt.dx * 0.42
+        var bhY = cy + endPt.dy * 0.42
+        var ehR = minDim * (0.14 + state.bass * 0.05)
+
+        // Subtle volumetric accretion corona shroud + photon ring around the dark singularity
+        for (var cr = 2; cr >= 0; cr--) {
+            var cScale = 1.0 + cr * 0.42
+            ctx.fillStyle = colourWithAlpha(palette[(cr * 3) % palette.length], (0.06 - cr * 0.015) * (1.0 - dim))
+            ctx.strokeStyle = colourWithAlpha(palette[(cr * 3 + 1) % palette.length], (0.28 - cr * 0.06 + state.bass * 0.22) * (1.0 - dim))
+            ctx.lineWidth = (cr === 0 ? 2.2 : 1.3) + state.beatPulse * 1.2
+            ctx.beginPath()
+            var cSteps = 28
+            for (var cs = 0; cs <= cSteps; cs++) {
+                var ca = (cs / cSteps) * Math.PI * 2 + state.phase * (cr % 2 === 0 ? 0.4 : -0.4)
+                var cbv = state.smoothBands[(cs * 2 + cr * 9) & 63]
+                var radC = ehR * cScale * (1.0 + cbv * 0.22)
+                var cpx = bhX + Math.cos(ca) * radC
+                var cpy = bhY + Math.sin(ca) * radC * 0.72
+                if (cs === 0) ctx.moveTo(cpx, cpy)
+                else ctx.lineTo(cpx, cpy)
+            }
+            ctx.closePath()
+            ctx.fill()
+            ctx.stroke()
+        }
+        ctx.restore()
     }
 
     // Beat-triggered shockwave polygons (batched)
@@ -1176,57 +1326,130 @@ function rotatePaletteForEcho(palette, echoIdx) {
 // LAYER #2 — 12 Psychedelic & Classic Nightclub Visualiser Modes (Batched)
 // ---------------------------------------------------------------------------
 
-// Mode 0: MilkDrop Geiss Cathedral (Dual Harmonic Custom Waves + 6-Fold Kaleidoscope)
+// Mode 0: MilkDrop / Geiss 3D Cathedral Warp Mesh & Stained-Glass Rose Window Vaults
 function drawMode0MilkDrop(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
     var minDim = Math.min(w, h) * (cfg.layer2Zoom || 1.0)
-    var facets = 6
+    var facets = clamp(Math.round(Number(cfg.layer2Facets) || 6), 4, 12)
+    var isEcho = Boolean(state.isTracerEcho)
     var lod = state.echoLod || 1.0
     var comp = clamp(cfg.layer2Complexity || 1.0, 0.4, 2.0) * lod
-    var pts = Math.max(10, Math.floor(24 * clamp(comp, 0.4, 1.5)))
+    var numVaults = isEcho ? 3 : Math.max(4, Math.min(7, Math.round(5 * comp)))
+    var ptsPerFacet = isEcho ? 6 : Math.max(8, Math.floor(12 * clamp(comp, 0.5, 1.4)))
+    var hist = state.waveHistory || []
 
     ctx.save()
     ctx.translate(cx, cy)
     ctx.globalCompositeOperation = "lighter"
 
-    for (var ring = 0; ring < 3; ring++) {
-        ctx.strokeStyle = colourWithAlpha(palette[(ring * 2) % palette.length], 0.58 + state.bass * 0.35)
-        ctx.lineWidth = (ring === 0 ? 2.2 : 1.5) + state.beatPulse * 1.4
-        ctx.beginPath()
+    var prevVaultRing = null
+    // 1. 3D Vaulted Cathedral Dome receding into perspective (back-to-front: v = numVaults - 1 .. 0)
+    for (var v = numVaults - 1; v >= 0; v--) {
+        var zProg = ((v + (state.t * 0.52) % 1.0) / numVaults) // 0 = deep apex, 1 = foreground arch
+        var persp = 0.16 + Math.pow(zProg, 1.38) * 0.92
+        var snap = (hist.length > v * 2 && hist[v * 2] && hist[v * 2].bands) ? hist[v * 2].bands : state.smoothBands
+        var curRing = []
 
         for (var f = 0; f < facets; f++) {
-            var baseAng = (f * Math.PI * 2) / facets + state.phase * (ring % 2 === 0 ? 0.45 : -0.35)
+            var baseAng = (f * Math.PI * 2) / facets + state.phase * (v % 2 === 0 ? 0.42 : -0.36)
             var flip = (f % 2 === 0) ? 1.0 : -1.0
-            for (var i = 0; i <= pts; i++) {
-                var u = i / pts
-                var bIdx = (i * 2 + ring * 11) & 63
-                var bv = state.smoothBands[bIdx]
-                var r = minDim * (0.08 + u * 0.38 + bv * 0.18 + state.bass * 0.06)
-                var theta = baseAng + flip * (u * (Math.PI * 2 / facets) + Math.sin(u * 6.0 + state.t * 2.2 + ring) * (0.22 + state.mid * 0.38))
-                var px = Math.cos(theta) * r
-                var py = Math.sin(theta) * r
-                if (i === 0) ctx.moveTo(px, py)
-                else ctx.lineTo(px, py)
+            for (var i = 0; i < ptsPerFacet; i++) {
+                var u = i / ptsPerFacet
+                var bIdx = (i * 2 + v * 5) & 31
+                var bv = snap[bIdx] !== undefined ? snap[bIdx] : (state.smoothBands[bIdx] || 0.1)
+                // Gothic pointed arch profile + audio harmonic modulation
+                var arch = Math.sin(u * Math.PI) * (0.28 + bv * 0.36 + state.bass * 0.16)
+                var r = minDim * persp * (0.22 + arch)
+                var theta = baseAng + flip * ((u - 0.5) * (Math.PI * 2 / facets) + Math.sin(u * 4.0 + state.t * 2.1 + v) * (0.14 + state.mid * 0.22))
+                curRing.push({
+                    x: Math.cos(theta) * r,
+                    y: Math.sin(theta) * r
+                })
             }
         }
+
+        var vaultCol = palette[(v * 2 + state.beatCount) % palette.length]
+        var ribCol = palette[(v * 2 + 1 + state.beatCount) % palette.length]
+        var totalPts = curRing.length
+
+        // Filled translucent stained-glass cathedral vault bays between consecutive 3D depth rings
+        if (prevVaultRing && (!isEcho || (state.echoIndex || 0) < 2)) {
+            ctx.fillStyle = colourWithAlpha(vaultCol, (0.08 + zProg * 0.14 + state.bass * 0.08) * (isEcho ? 0.5 : 1.0))
+            ctx.beginPath()
+            for (var q = 0; q < totalPts; q += 2) {
+                var qNext = (q + 1) % totalPts
+                ctx.moveTo(prevVaultRing[q].x, prevVaultRing[q].y)
+                ctx.lineTo(prevVaultRing[qNext].x, prevVaultRing[qNext].y)
+                ctx.lineTo(curRing[qNext].x, curRing[qNext].y)
+                ctx.lineTo(curRing[q].x, curRing[q].y)
+                ctx.closePath()
+            }
+            ctx.fill()
+
+            // Radial gothic groin-vault ribs linking depth slices
+            ctx.strokeStyle = colourWithAlpha(vaultCol, 0.28 + zProg * 0.42)
+            ctx.lineWidth = 1.1 + zProg * 1.4
+            ctx.beginPath()
+            for (var qr = 0; qr < totalPts; qr += Math.max(2, Math.floor(ptsPerFacet / 2))) {
+                ctx.moveTo(prevVaultRing[qr].x, prevVaultRing[qr].y)
+                ctx.lineTo(curRing[qr].x, curRing[qr].y)
+            }
+            ctx.stroke()
+        }
+
+        // Thick glowing rose-window arch ring outline
+        ctx.strokeStyle = colourWithAlpha(ribCol, 0.45 + zProg * 0.52)
+        ctx.lineWidth = (1.5 + zProg * 2.6 + state.beatPulse * 1.4) * (isEcho ? 0.75 : 1.0)
+        ctx.beginPath()
+        for (var p = 0; p <= totalPts; p++) {
+            var pt = curRing[p % totalPts]
+            if (p === 0) ctx.moveTo(pt.x, pt.y)
+            else ctx.lineTo(pt.x, pt.y)
+        }
+        ctx.stroke()
+
+        prevVaultRing = curRing
+    }
+
+    // 2. Central Geiss Dual-Harmonic Custom Waveform Ribbon
+    if (!isEcho || (state.echoIndex || 0) < 2) {
+        var wavePts = isEcho ? 20 : 36
+        var coreR = minDim * (0.14 + state.bass * 0.10)
+        ctx.fillStyle = colourWithAlpha(palette[2 % palette.length], 0.18 + state.bass * 0.16)
+        ctx.strokeStyle = colourWithAlpha(palette[0 % palette.length], 0.90)
+        ctx.lineWidth = 2.2 + state.beatPulse * 1.6
+        ctx.beginPath()
+        for (var wIdx = 0; wIdx <= wavePts; wIdx++) {
+            var wa = (wIdx / wavePts) * Math.PI * 2 + state.phase * 0.8
+            var wb = state.smoothBands[(wIdx * 2) & 63]
+            var wr = coreR * (0.75 + wb * 0.65 + Math.sin(wa * facets - state.t * 3.5) * 0.22)
+            var wx = Math.cos(wa) * wr
+            var wy = Math.sin(wa) * wr
+            if (wIdx === 0) ctx.moveTo(wx, wy)
+            else ctx.lineTo(wx, wy)
+        }
+        ctx.closePath()
+        ctx.fill()
         ctx.stroke()
     }
+
     ctx.restore()
 }
 
-// Mode 1: Winamp AVS 3D SuperScope (3D Parametric Lissajous / Torus Ribbon with onBeat Snapping)
+// Mode 1: Winamp AVS 3D SuperScope (3D Volumetric Extruded Torus-Knot Ribbon Tube & Harmonic Flares)
 function drawMode1AvsSuperScope(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
     var scale = Math.min(w, h) * 0.44 * (cfg.layer2Zoom || 1.0)
+    var isEcho = Boolean(state.isTracerEcho)
     var lod = state.echoLod || 1.0
     var comp = clamp(cfg.layer2Complexity || 1.0, 0.4, 2.0) * lod
-    var N = Math.max(32, Math.floor(88 * clamp(comp, 0.4, 1.5)))
+    var N = isEcho ? 36 : Math.max(44, Math.floor(76 * clamp(comp, 0.5, 1.4)))
     var harm = state.avsHarmonics || { m: 3, n: 5, k: 2, twist: 1.4, style: 0 }
 
-    var rotX = state.t * 0.65 + state.bass * 0.8
-    var rotY = state.t * 0.85 - state.mid * 0.7
+    var rotX = state.t * 0.68 + state.bass * 0.85
+    var rotY = state.t * 0.88 - state.mid * 0.75
     var cosX = Math.cos(rotX), sinX = Math.sin(rotX)
     var cosY = Math.cos(rotY), sinY = Math.sin(rotY)
 
@@ -1234,20 +1457,19 @@ function drawMode1AvsSuperScope(ctx, w, h, state, palette, cfg) {
     ctx.translate(cx, cy)
     ctx.globalCompositeOperation = "lighter"
 
-    for (var strand = 0; strand < 3; strand++) {
-        ctx.strokeStyle = colourWithAlpha(palette[(strand * 3) % palette.length], 0.68 + state.bass * 0.28)
-        ctx.lineWidth = 1.9 + (strand === 0 ? state.bass * 2.0 : 0.4)
-        ctx.beginPath()
-
+    var strandCount = isEcho ? 2 : 3
+    for (var strand = 0; strand < strandCount; strand++) {
         var sPhase = strand * (Math.PI * 2 / 3.0)
+        var spine = []
+
         for (var i = 0; i <= N; i++) {
             var u = (i / N) * Math.PI * 2
-            var bIdx = i & 63
+            var bIdx = (i + strand * 11) & 63
             var v = state.smoothBands[bIdx]
-            var R = 0.58 + (0.24 + v * 0.38) * Math.cos(harm.n * u + state.t * 1.8 + sPhase)
+            var R = 0.56 + (0.24 + v * 0.38) * Math.cos(harm.n * u + state.t * 1.9 + sPhase)
             var x3 = R * Math.cos(harm.m * u + sPhase)
             var y3 = R * Math.sin(harm.m * u + sPhase)
-            var z3 = (0.35 + v * 0.45 + state.bass * 0.25) * Math.sin(harm.k * u + state.t * harm.twist)
+            var z3 = (0.38 + v * 0.48 + state.bass * 0.26) * Math.sin(harm.k * u + state.t * harm.twist)
 
             // 3D rotation
             var x1 = x3 * cosY - z3 * sinY
@@ -1255,52 +1477,154 @@ function drawMode1AvsSuperScope(ctx, w, h, state, palette, cfg) {
             var y2 = y3 * cosX - z1 * sinX
             var z2 = y3 * sinX + z1 * cosX
 
-            var persp = 1.65 / (2.25 - clamp(z2, -1.2, 1.2))
-            var sx = x1 * scale * persp
-            var sy = y2 * scale * persp
-            if (i === 0) ctx.moveTo(sx, sy)
-            else ctx.lineTo(sx, sy)
+            var persp = 1.68 / (2.25 - clamp(z2, -1.25, 1.25))
+            var tubeW = (3.5 + v * 11.5 + state.bass * 6.5) * persp * (isEcho ? 0.65 : 1.0)
+            spine.push({
+                x: x1 * scale * persp,
+                y: y2 * scale * persp,
+                w: tubeW,
+                persp: persp,
+                band: v
+            })
+        }
+
+        // Compute 2D normal-extruded left/right tube rails
+        var leftRail = []
+        var rightRail = []
+        for (var k = 0; k <= N; k++) {
+            var pPrev = spine[k > 0 ? k - 1 : N - 1]
+            var pNext = spine[k < N ? k + 1 : 1]
+            var dx = pNext.x - pPrev.x
+            var dy = pNext.y - pPrev.y
+            var len = Math.sqrt(dx * dx + dy * dy) || 1.0
+            var nx = -dy / len
+            var ny = dx / len
+            var hw = spine[k].w
+            leftRail.push({ x: spine[k].x + nx * hw, y: spine[k].y + ny * hw })
+            rightRail.push({ x: spine[k].x - nx * hw, y: spine[k].y - ny * hw })
+        }
+
+        var fillCol = palette[(strand * 3 + state.beatCount) % palette.length]
+        var railCol = palette[(strand * 3 + 1 + state.beatCount) % palette.length]
+
+        // 1. Filled translucent 3D extruded torus-knot ribbon body
+        if (!isEcho || (state.echoIndex || 0) < 3) {
+            ctx.fillStyle = colourWithAlpha(fillCol, (0.14 + state.bass * 0.16) * (isEcho ? 0.55 : 1.0))
+            ctx.beginPath()
+            for (var f0 = 0; f0 <= N; f0++) {
+                if (f0 === 0) ctx.moveTo(leftRail[f0].x, leftRail[f0].y)
+                else ctx.lineTo(leftRail[f0].x, leftRail[f0].y)
+            }
+            for (var f1 = N; f1 >= 0; f1--) {
+                ctx.lineTo(rightRail[f1].x, rightRail[f1].y)
+            }
+            ctx.closePath()
+            ctx.fill()
+        }
+
+        // 2. Thick high-luminance neon edge rails + cross-section tube ribs
+        ctx.strokeStyle = colourWithAlpha(railCol, 0.74 + state.bass * 0.26)
+        ctx.lineWidth = (strand === 0 ? 2.6 : 1.8) + state.beatPulse * 1.6
+        ctx.beginPath()
+        for (var r0 = 0; r0 <= N; r0++) {
+            if (r0 === 0) ctx.moveTo(leftRail[r0].x, leftRail[r0].y)
+            else ctx.lineTo(leftRail[r0].x, leftRail[r0].y)
+        }
+        for (var r1 = 0; r1 <= N; r1++) {
+            if (r1 === 0) ctx.moveTo(rightRail[r1].x, rightRail[r1].y)
+            else ctx.lineTo(rightRail[r1].x, rightRail[r1].y)
+        }
+        // Cross-sectional torus tube rings every 4 steps
+        for (var cr = 0; cr < N; cr += 4) {
+            ctx.moveTo(leftRail[cr].x, leftRail[cr].y)
+            ctx.lineTo(rightRail[cr].x, rightRail[cr].y)
         }
         ctx.stroke()
     }
     ctx.restore()
 }
 
-// Mode 2: SoundSpectrum G-Force WaveShape & Logarithmic Vortex
+// Mode 2: SoundSpectrum G-Force 3D Logarithmic Vortex Funnel & Plasma Ribbons
 function drawMode2GForceWaveShape(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
-    var maxR = Math.min(w, h) * 0.45 * (cfg.layer2Zoom || 1.0)
-    var petals = 6
+    var maxR = Math.min(w, h) * 0.46 * (cfg.layer2Zoom || 1.0)
+    var petals = clamp(Math.round(Number(cfg.layer2Facets) || 6), 4, 12)
+    var isEcho = Boolean(state.isTracerEcho)
     var lod = state.echoLod || 1.0
     var comp = clamp(cfg.layer2Complexity || 1.0, 0.4, 2.0) * lod
-    var steps = Math.max(28, Math.floor(76 * clamp(comp, 0.4, 1.5)))
+    var numRings = isEcho ? 3 : Math.max(5, Math.min(8, Math.round(6 * comp)))
+    var steps = isEcho ? 28 : Math.max(36, Math.floor(56 * clamp(comp, 0.5, 1.3)))
+    var hist = state.waveHistory || []
 
     ctx.save()
     ctx.translate(cx, cy)
     ctx.globalCompositeOperation = "lighter"
 
-    for (var layer = 0; layer < 4; layer++) {
-        ctx.strokeStyle = colourWithAlpha(palette[(layer * 2 + 1) % palette.length], 0.55 + state.energy * 0.35)
-        ctx.lineWidth = 1.7 + (3 - layer) * 0.4 + state.bass * 1.4
-        ctx.beginPath()
-
+    var prevFunnelPts = null
+    // Render 3D logarithmic vortex funnel from deep core (layer = numRings - 1) out to foreground rim (layer = 0)
+    for (var layer = numRings - 1; layer >= 0; layer--) {
+        var depthFrac = layer / Math.max(1, numRings - 1) // 0 = front rim, 1 = deep vortex core
+        var persp = Math.pow(1.0 - depthFrac * 0.80, 1.25)
+        var snap = (hist.length > layer * 2 && hist[layer * 2] && hist[layer * 2].bands) ? hist[layer * 2].bands : state.smoothBands
         var dir = (layer % 2 === 0) ? 1.0 : -1.0
+        var spiralTwist = (1.0 - persp) * (1.2 + state.high * 1.4) * dir + state.phase * 0.55
+
+        var curPts = []
         for (var i = 0; i <= steps; i++) {
             var a = (i / steps) * Math.PI * 2
-            var bIdx = (i + layer * 13) & 63
-            var bv = state.smoothBands[bIdx]
-            var wave = Math.sin(a * petals + state.t * 2.4 * dir) * (0.22 + state.mid * 0.28)
-                     + Math.cos(a * (petals * 2 - 1) - state.t * 1.7) * (0.14 + bv * 0.34)
-            var r = maxR * (0.24 + layer * 0.14 + wave + state.bass * 0.14)
-            var spiralA = a + r / maxR * (0.65 + state.high * 0.85) * dir + state.phase * 0.5
-            var px = Math.cos(spiralA) * r
-            var py = Math.sin(spiralA) * r
-            if (i === 0) ctx.moveTo(px, py)
-            else ctx.lineTo(px, py)
+            var bIdx = (i + layer * 7) & 31
+            var bv = snap[bIdx] !== undefined ? snap[bIdx] : (state.smoothBands[bIdx] || 0.1)
+            var wave = Math.sin(a * petals + state.t * 2.6 * dir - layer * 0.4) * (0.18 + state.mid * 0.26)
+                     + Math.cos(a * (petals * 2 - 1) - state.t * 1.9) * (0.12 + bv * 0.34)
+            var r = maxR * persp * (0.76 + wave + state.bass * 0.18)
+            var spiralA = a + spiralTwist
+            curPts.push({
+                x: Math.cos(spiralA) * r,
+                y: Math.sin(spiralA) * r
+            })
+        }
+
+        var curtainCol = palette[(layer * 2 + state.beatCount) % palette.length]
+        var crestCol = palette[(layer * 2 + 1 + state.beatCount) % palette.length]
+
+        // 1. Filled translucent 3D plasma funnel curtain linking adjacent depth rings
+        if (prevFunnelPts && (!isEcho || (state.echoIndex || 0) < 3)) {
+            ctx.fillStyle = colourWithAlpha(curtainCol, (0.08 + (1.0 - depthFrac) * 0.14 + state.bass * 0.08) * (isEcho ? 0.5 : 1.0))
+            ctx.beginPath()
+            for (var k = 0; k <= steps; k++) {
+                if (k === 0) ctx.moveTo(curPts[k].x, curPts[k].y)
+                else ctx.lineTo(curPts[k].x, curPts[k].y)
+            }
+            for (var kBack = steps; kBack >= 0; kBack--) {
+                ctx.lineTo(prevFunnelPts[kBack].x, prevFunnelPts[kBack].y)
+            }
+            ctx.closePath()
+            ctx.fill()
+
+            // Spiralling 3D vortex ribs rushing out of the funnel core
+            ctx.strokeStyle = colourWithAlpha(curtainCol, 0.26 + (1.0 - depthFrac) * 0.42)
+            ctx.lineWidth = 1.0 + (1.0 - depthFrac) * 1.4
+            ctx.beginPath()
+            for (var vr = 0; vr < steps; vr += 3) {
+                ctx.moveTo(prevFunnelPts[vr].x, prevFunnelPts[vr].y)
+                ctx.lineTo(curPts[vr].x, curPts[vr].y)
+            }
+            ctx.stroke()
+        }
+
+        // 2. Thick glowing harmonic WaveShape crest
+        ctx.strokeStyle = colourWithAlpha(crestCol, 0.48 + (1.0 - depthFrac) * 0.50)
+        ctx.lineWidth = (1.5 + (1.0 - depthFrac) * 2.5 + state.bass * 1.5) * (isEcho ? 0.75 : 1.0)
+        ctx.beginPath()
+        for (var p = 0; p <= steps; p++) {
+            if (p === 0) ctx.moveTo(curPts[p].x, curPts[p].y)
+            else ctx.lineTo(curPts[p].x, curPts[p].y)
         }
         ctx.closePath()
         ctx.stroke()
+
+        prevFunnelPts = curPts
     }
     ctx.restore()
 }
@@ -1325,8 +1649,8 @@ function drawMode3CthughaRave(ctx, w, h, state, palette, cfg) {
         var depthFrac = s / Math.max(1, numSlices - 1) // 0 = front, 1 = deep core
         var persp = 1.0 - depthFrac * 0.72
         var baseR = maxR * persp * (0.88 + state.bass * 0.24)
-        var hIdx = histLen > 0 ? ((state.waveHistoryHead - 1 - s * 2 + histLen * 4) % histLen) : 0
-        var waveSlice = (histLen > 0 && hist[hIdx]) ? hist[hIdx] : state.smoothBands
+        var snapEntry = (histLen > 0 && hist[(s * 2) % histLen]) ? hist[(s * 2) % histLen] : null
+        var waveSlice = (snapEntry && snapEntry.bands) ? snapEntry.bands : state.smoothBands
         var rot = state.phase * (s % 2 === 0 ? 0.65 : -0.55) + s * 0.28
         var colFill = palette[(s * 2 + state.beatCount) % palette.length]
         var colStroke = palette[(s * 2 + 3 + state.beatCount) % palette.length]
@@ -1339,7 +1663,7 @@ function drawMode3CthughaRave(ctx, w, h, state, palette, cfg) {
         for (var i = 0; i <= ringSteps; i++) {
             var u = i / ringSteps
             var a = u * Math.PI * 2 + rot
-            var bIdx = (i * 2 + s * 5) & 63
+            var bIdx = (i + s * 3) & 31
             var wVal = waveSlice[bIdx] !== undefined ? waveSlice[bIdx] : state.smoothBands[bIdx]
             var flame = Math.sin(u * Math.PI * 12 + state.t * 5.5 - s * 0.9) * (0.12 + state.mid * 0.22)
             var excursion = (wVal - 0.14 + flame) * maxR * persp * (0.42 + state.energy * 0.35)
@@ -1646,169 +1970,388 @@ function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
     ctx.restore()
 }
 
-// Mode 6: DMT Chrysanthemum & Sacred Lotus Hyperspace Dome
+// Mode 6: 3D Sacred Lotus Hyperspace Dome & Jewelled Mandala Vault
 function drawMode6DmtChrysanthemum(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
-    var maxR = Math.min(w, h) * 0.45 * (cfg.layer2Zoom || 1.0)
-    var symmetry = 8
+    var maxR = Math.min(w, h) * 0.46 * (cfg.layer2Zoom || 1.0)
+    var symmetry = clamp(Math.round(Number(cfg.layer2Facets) || 8), 6, 16)
+    var isEcho = Boolean(state.isTracerEcho)
     var lod = state.echoLod || 1.0
-    var rings = Math.max(3, Math.min(7, Math.round(5 * (cfg.layer2Complexity || 1.0) * lod)))
-    var steps = state.isTracerEcho ? 28 : 44
+    var rings = isEcho ? 3 : Math.max(4, Math.min(7, Math.round(5 * (cfg.layer2Complexity || 1.0) * lod)))
+    var steps = isEcho ? 24 : 40
+
+    // 3D hemispherical dome camera breathing (pitch & roll)
+    var camTilt = Math.sin(state.t * 0.48) * 0.34
+    var cosTilt = Math.cos(camTilt), sinTilt = Math.sin(camTilt)
 
     ctx.save()
     ctx.translate(cx, cy)
     ctx.globalCompositeOperation = "lighter"
 
+    var prevDomeRing = null
+    // 1. 3D Hemispherical Lotus Dome Tiers (outer rim r = rings inward to apex r = 1)
     for (var r = rings; r >= 1; r--) {
         var frac = r / rings
-        var baseR = maxR * frac * (0.85 + state.bass * 0.25)
-        var rot = state.phase * ((r % 2 === 0) ? 1.0 : -1.0) * (1.2 - frac * 0.5)
-        ctx.strokeStyle = colourWithAlpha(palette[(r * 2) % palette.length], 0.48 + (1.0 - frac) * 0.42)
-        ctx.lineWidth = 1.5 + (1.0 - frac) * 1.5 + state.beatPulse * 1.2
-        ctx.beginPath()
+        // Hemispherical z-elevation rises toward the central dome apex
+        var domeZ = Math.cos(frac * Math.PI * 0.46) * (0.45 + state.bass * 0.28)
+        var rot = state.phase * ((r % 2 === 0) ? 1.0 : -1.0) * (1.25 - frac * 0.45)
+        var curRing = []
 
         for (var i = 0; i <= steps; i++) {
             var a = (i / steps) * Math.PI * 2
             var bVal = state.smoothBands[(i + r * 7) & 63]
-            var petal = Math.sin(a * symmetry + rot) * maxR * (0.06 + bVal * 0.14 + state.mid * 0.06)
-            var rad = Math.max(6, baseR + petal)
-            var px = Math.cos(a) * rad
-            var py = Math.sin(a) * rad
-            if (i === 0) ctx.moveTo(px, py)
-            else ctx.lineTo(px, py)
+            var petal = Math.sin(a * symmetry + rot) * (0.14 + bVal * 0.24 + state.mid * 0.10)
+                      + Math.cos(a * symmetry * 2.0 - rot * 1.5) * 0.06
+            var rad3 = frac * (0.82 + state.bass * 0.22 + petal)
+            var x3 = Math.cos(a) * rad3
+            var y3 = Math.sin(a) * rad3
+            var z3 = domeZ + petal * 0.35
+
+            // 3D pitch rotation & perspective projection
+            var yRot = y3 * cosTilt - z3 * sinTilt
+            var zRot = y3 * sinTilt + z3 * cosTilt
+            var persp = 1.55 / (2.10 - clamp(zRot, -1.1, 1.1))
+            curRing.push({
+                x: x3 * maxR * persp,
+                y: yRot * maxR * persp
+            })
+        }
+
+        var jewelCol = palette[(r * 2 + state.beatCount) % palette.length]
+        var goldCol = palette[(r * 2 + 1 + state.beatCount) % palette.length]
+
+        // Filled translucent jewelled lotus petals & dome cells between tiers
+        if (prevDomeRing && (!isEcho || (state.echoIndex || 0) < 3)) {
+            ctx.fillStyle = colourWithAlpha(jewelCol, (0.09 + (1.0 - frac) * 0.14 + state.bass * 0.08) * (isEcho ? 0.5 : 1.0))
+            ctx.beginPath()
+            for (var k = 0; k <= steps; k++) {
+                if (k === 0) ctx.moveTo(curRing[k].x, curRing[k].y)
+                else ctx.lineTo(curRing[k].x, curRing[k].y)
+            }
+            for (var kBack = steps; kBack >= 0; kBack--) {
+                ctx.lineTo(prevDomeRing[kBack].x, prevDomeRing[kBack].y)
+            }
+            ctx.closePath()
+            ctx.fill()
+
+            // Radial jewelled lattice filaments connecting dome tiers
+            ctx.strokeStyle = colourWithAlpha(jewelCol, 0.28 + (1.0 - frac) * 0.38)
+            ctx.lineWidth = 1.0 + (1.0 - frac) * 1.2
+            ctx.beginPath()
+            for (var rf = 0; rf < steps; rf += 2) {
+                ctx.moveTo(prevDomeRing[rf].x, prevDomeRing[rf].y)
+                ctx.lineTo(curRing[rf].x, curRing[rf].y)
+            }
+            ctx.stroke()
+        }
+
+        // Thick glowing sacred lotus tier crest
+        ctx.strokeStyle = colourWithAlpha(goldCol, 0.54 + (1.0 - frac) * 0.44)
+        ctx.lineWidth = (1.6 + (1.0 - frac) * 2.2 + state.beatPulse * 1.4) * (isEcho ? 0.75 : 1.0)
+        ctx.beginPath()
+        for (var p = 0; p <= steps; p++) {
+            if (p === 0) ctx.moveTo(curRing[p].x, curRing[p].y)
+            else ctx.lineTo(curRing[p].x, curRing[p].y)
         }
         ctx.closePath()
         ctx.stroke()
+
+        prevDomeRing = curRing
     }
+
+    // 2. Counter-Rotating 3D Inner Merkaba / Sri Yantra Star Polyhedron at the Dome Apex
+    if (!isEcho || (state.echoIndex || 0) < 2) {
+        var starR = maxR * (0.24 + state.bass * 0.12 + state.beatPulse * 0.08)
+        for (var tri = 0; tri < 2; tri++) {
+            var triRot = state.phase * (tri === 0 ? 1.35 : -1.35) + tri * (Math.PI / symmetry)
+            ctx.fillStyle = colourWithAlpha(palette[(tri * 4 + 2) % palette.length], 0.16 + state.bass * 0.14)
+            ctx.strokeStyle = colourWithAlpha(palette[(tri * 4) % palette.length], 0.88)
+            ctx.lineWidth = 2.2 + state.beatPulse * 1.4
+            ctx.beginPath()
+            for (var sv = 0; sv <= symmetry; sv++) {
+                var sa = (sv / symmetry) * Math.PI * 2 + triRot
+                var sr = (sv % 2 === 0) ? starR : (starR * 0.42)
+                var sx = Math.cos(sa) * sr
+                var sy = Math.sin(sa) * sr * cosTilt
+                if (sv === 0) ctx.moveTo(sx, sy)
+                else ctx.lineTo(sx, sy)
+            }
+            ctx.closePath()
+            ctx.fill()
+            ctx.stroke()
+        }
+    }
+
     ctx.restore()
 }
 
-// Mode 7: Spacetime Gravity Well & Relativistic Quasar Jets
+// Mode 7: 3D Relativistic Black Hole Gravity Funnel, Volumetric Accretion Disc & Twin Quasar Jets
 function drawMode7SpacetimeQuasar(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
     var minDim = Math.min(w, h) * (cfg.layer2Zoom || 1.0)
+    var isEcho = Boolean(state.isTracerEcho)
     var lod = state.echoLod || 1.0
-    var gridN = Math.max(5, Math.min(13, Math.round(9 * (cfg.layer2Complexity || 1.0) * lod)))
+    var comp = clamp(cfg.layer2Complexity || 1.0, 0.4, 2.0) * lod
 
-    var w1x = cx + Math.cos(state.t * 0.9) * minDim * 0.22
-    var w1y = cy + Math.sin(state.t * 1.2) * minDim * 0.16
-    var w2x = cx + Math.cos(-state.t * 0.8 + 2.2) * minDim * 0.24
-    var w2y = cy + Math.sin(-state.t * 1.0 + 2.2) * minDim * 0.18
-    var m0 = minDim * (0.14 + state.bass * 0.34 + state.beatPulse * 0.18)
-    var m1 = minDim * (0.09 + state.mid * 0.22)
+    // 3D camera tilt and orbital precession for the relativistic gravity funnel & quasar axis
+    var tiltX = 0.92 + Math.sin(state.t * 0.42) * 0.18
+    var precession = Math.sin(state.t * 0.31) * 0.28
+    var cosT = Math.cos(tiltX), sinT = Math.sin(tiltX)
 
-    function warpPt(px, py) {
-        var dx0 = px - cx, dy0 = py - cy
-        var d0 = Math.sqrt(dx0 * dx0 + dy0 * dy0) + 28.0
-        var f0 = (m0 * 32.0) / (d0 + 35.0)
-        var ang0 = Math.atan2(dy0, dx0) + (state.bass * 0.65) * (60.0 / (d0 + 40.0))
-
-        var dx1 = px - w1x, dy1 = py - w1y
-        var d1 = Math.sqrt(dx1 * dx1 + dy1 * dy1) + 24.0
-        var f1 = (m1 * 22.0) / (d1 + 30.0)
-
-        var dx2 = px - w2x, dy2 = py - w2y
-        var d2 = Math.sqrt(dx2 * dx2 + dy2 * dy2) + 24.0
-        var f2 = (m1 * 22.0) / (d2 + 30.0)
-
+    function proj3D(x3, y3, z3) {
+        var yr = y3 * cosT - z3 * sinT
+        var zr = y3 * sinT + z3 * cosT
+        var persp = 1.75 / (2.35 - clamp(zr, -1.35, 1.35))
         return {
-            x: px - Math.cos(ang0) * f0 - (dx1 / d1) * f1 - (dx2 / d2) * f2,
-            y: py - Math.sin(ang0) * f0 - (dy1 / d1) * f1 - (dy2 / d2) * f2
+            x: x3 * minDim * 0.46 * persp,
+            y: yr * minDim * 0.46 * persp,
+            p: persp
         }
     }
 
     ctx.save()
+    ctx.translate(cx, cy)
+    ctx.rotate(precession)
     ctx.globalCompositeOperation = "lighter"
 
-    // Horizontal warped grid lines batched in one path
-    ctx.strokeStyle = colourWithAlpha(palette[0], 0.42 + state.bass * 0.35)
-    ctx.lineWidth = 1.4
+    // 1. 3D Flamm's Paraboloid Spacetime Gravity Funnel (concentric depth rings + geodesic meridians)
+    var rRings = isEcho ? 4 : Math.max(5, Math.min(9, Math.round(7 * comp)))
+    var meridians = isEcho ? 14 : 24
+    var gravWell = 0.28 + state.bass * 0.34 + state.beatPulse * 0.18
+    var funnelGrid = []
+
+    for (var rIdx = 0; rIdx < rRings; rIdx++) {
+        var rFrac = (rIdx + 1) / rRings // 0.14 (throat) .. 1.0 (outer spacetime fabric)
+        var r3 = 0.12 + Math.pow(rFrac, 1.25) * 0.92
+        // Relativistic Flamm's paraboloid depression z = -G / r
+        var zWell = -gravWell / (rFrac + 0.26) + 0.22
+        var frameDrag = state.phase * (1.25 / (rFrac + 0.35))
+        var ringPts = []
+        for (var m = 0; m <= meridians; m++) {
+            var ang = (m / meridians) * Math.PI * 2 + frameDrag
+            var bVal = state.smoothBands[(m * 2 + rIdx * 5) & 63]
+            var ripple = Math.sin(ang * 4.0 - state.t * 3.2) * bVal * 0.08
+            var radM = r3 + ripple
+            ringPts.push(proj3D(Math.cos(ang) * radM, Math.sin(ang) * radM, zWell))
+        }
+        funnelGrid.push(ringPts)
+    }
+
+    // Fill translucent warped spacetime funnel cells between concentric gravity rings
+    if (!isEcho || (state.echoIndex || 0) < 2) {
+        for (var fr = 0; fr < rRings - 1; fr++) {
+            var g0 = funnelGrid[fr]
+            var g1 = funnelGrid[fr + 1]
+            ctx.fillStyle = colourWithAlpha(palette[(fr * 2) % palette.length], (0.06 + (1.0 - fr / rRings) * 0.10) * (isEcho ? 0.5 : 1.0))
+            ctx.beginPath()
+            for (var ms = 0; ms < meridians; ms += 2) {
+                ctx.moveTo(g0[ms].x, g0[ms].y)
+                ctx.lineTo(g0[ms + 1].x, g0[ms + 1].y)
+                ctx.lineTo(g1[ms + 1].x, g1[ms + 1].y)
+                ctx.lineTo(g1[ms].x, g1[ms].y)
+                ctx.closePath()
+            }
+            ctx.fill()
+        }
+    }
+
+    // Batched geodesic rings + frame-dragged radial meridians
+    ctx.strokeStyle = colourWithAlpha(palette[0 % palette.length], 0.42 + state.bass * 0.35)
+    ctx.lineWidth = 1.3 + state.bass * 1.1
     ctx.beginPath()
-    for (var r = 0; r <= gridN; r++) {
-        var gy = (r / gridN) * h
-        for (var c = 0; c <= gridN; c++) {
-            var gx = (c / gridN) * w
-            var wp = warpPt(gx, gy)
-            if (c === 0) ctx.moveTo(wp.x, wp.y)
-            else ctx.lineTo(wp.x, wp.y)
+    for (var gr = 0; gr < rRings; gr++) {
+        var ring = funnelGrid[gr]
+        for (var gm = 0; gm <= meridians; gm++) {
+            if (gm === 0) ctx.moveTo(ring[gm].x, ring[gm].y)
+            else ctx.lineTo(ring[gm].x, ring[gm].y)
+        }
+    }
+    for (var gm2 = 0; gm2 < meridians; gm2 += 2) {
+        ctx.moveTo(funnelGrid[0][gm2].x, funnelGrid[0][gm2].y)
+        for (var gr2 = 1; gr2 < rRings; gr2++) {
+            ctx.lineTo(funnelGrid[gr2][gm2].x, funnelGrid[gr2][gm2].y)
         }
     }
     ctx.stroke()
 
-    // Vertical warped grid lines batched in one path
-    ctx.strokeStyle = colourWithAlpha(palette[2 % palette.length], 0.38 + state.mid * 0.35)
-    ctx.beginPath()
-    for (var col = 0; col <= gridN; col++) {
-        var vx = (col / gridN) * w
-        for (var row = 0; row <= gridN; row++) {
-            var vy = (row / gridN) * h
-            var wp2 = warpPt(vx, vy)
-            if (row === 0) ctx.moveTo(wp2.x, wp2.y)
-            else ctx.lineTo(wp2.x, wp2.y)
+    // 2. Volumetric Relativistic Accretion Disc & Gravitational-Lensing Photon Halo
+    var discSteps = isEcho ? 24 : 36
+    for (var dBand = 2; dBand >= 0; dBand--) {
+        var rIn = 0.16 + dBand * 0.11
+        var rOut = rIn + 0.12 + state.bass * 0.08
+        var discCol = palette[(dBand * 2 + 1 + state.beatCount) % palette.length]
+        ctx.fillStyle = colourWithAlpha(discCol, (0.18 + (2 - dBand) * 0.08 + state.bass * 0.14) * (isEcho ? 0.55 : 1.0))
+        ctx.strokeStyle = colourWithAlpha(palette[(dBand * 2 + state.beatCount) % palette.length], 0.78 + state.beatPulse * 0.22)
+        ctx.lineWidth = (dBand === 0 ? 2.6 : 1.6) + state.bass * 1.6
+        ctx.beginPath()
+        for (var ds = 0; ds <= discSteps; ds++) {
+            var da = (ds / discSteps) * Math.PI * 2 + state.phase * (2.2 - dBand * 0.4)
+            var dbv = state.smoothBands[(ds * 2 + dBand * 9) & 63]
+            var ro = rOut + dbv * 0.16
+            var pOut = proj3D(Math.cos(da) * ro, Math.sin(da) * ro, 0.0)
+            if (ds === 0) ctx.moveTo(pOut.x, pOut.y)
+            else ctx.lineTo(pOut.x, pOut.y)
         }
+        for (var dsBack = discSteps; dsBack >= 0; dsBack--) {
+            var da2 = (dsBack / discSteps) * Math.PI * 2 + state.phase * (2.2 - dBand * 0.4)
+            var pIn = proj3D(Math.cos(da2) * rIn, Math.sin(da2) * rIn, 0.0)
+            ctx.lineTo(pIn.x, pIn.y)
+        }
+        ctx.closePath()
+        ctx.fill()
+        ctx.stroke()
     }
-    ctx.stroke()
 
-    // Quasar relativistic accretion rings
-    ctx.strokeStyle = colourWithAlpha(palette[1 % palette.length], 0.72 + state.beatPulse * 0.25)
-    ctx.lineWidth = 2.2 + state.bass * 2.0
-    ctx.beginPath()
-    for (var a = 0; a <= 36; a++) {
-        var ang = (a / 36.0) * Math.PI * 2 + state.phase
-        var ar = minDim * (0.09 + state.smoothBands[a & 63] * 0.18 + state.bass * 0.08)
-        var qx = cx + Math.cos(ang) * ar
-        var qy = cy + Math.sin(ang) * ar * 0.55
-        if (a === 0) ctx.moveTo(qx, qy)
-        else ctx.lineTo(qx, qy)
+    // 3. Twin Relativistic Helical Quasar Plasma Jets blasting from North & South Poles
+    var jetLen = 0.65 + state.bass * 0.52 + state.beatPulse * 0.35
+    var jetSteps = isEcho ? 10 : 18
+    for (var pole = -1; pole <= 1; pole += 2) {
+        var jetCol = palette[(pole < 0 ? 3 : 5) % palette.length]
+        var coreCol = palette[1 % palette.length]
+        var leftJet = [], rightJet = []
+        for (var js = 0; js <= jetSteps; js++) {
+            var ju = js / jetSteps
+            var jz = pole * (0.08 + ju * jetLen)
+            var coneR = (0.03 + Math.pow(ju, 1.35) * (0.16 + state.bass * 0.12)) * (1.0 + state.smoothBands[(js * 3) & 63] * 0.45)
+            var helixA = state.t * 6.5 * pole + ju * 8.0
+            leftJet.push(proj3D(Math.cos(helixA) * coneR, Math.sin(helixA) * coneR, jz))
+            rightJet.push(proj3D(Math.cos(helixA + Math.PI) * coneR, Math.sin(helixA + Math.PI) * coneR, jz))
+        }
+
+        // Volumetric plasma jet cone fill
+        ctx.fillStyle = colourWithAlpha(jetCol, (0.20 + state.bass * 0.22) * (isEcho ? 0.5 : 1.0))
+        ctx.strokeStyle = colourWithAlpha(coreCol, 0.85 + state.beatPulse * 0.15)
+        ctx.lineWidth = 2.0 + state.bass * 2.2
+        ctx.beginPath()
+        for (var j0 = 0; j0 <= jetSteps; j0++) {
+            if (j0 === 0) ctx.moveTo(leftJet[j0].x, leftJet[j0].y)
+            else ctx.lineTo(leftJet[j0].x, leftJet[j0].y)
+        }
+        for (var j1 = jetSteps; j1 >= 0; j1--) {
+            ctx.lineTo(rightJet[j1].x, rightJet[j1].y)
+        }
+        ctx.closePath()
+        ctx.fill()
+        ctx.stroke()
     }
-    ctx.closePath()
-    ctx.stroke()
+
     ctx.restore()
 }
 
-// Mode 8: Alien Bioluminescent Mycelium & Jellyfish Tendrils (Batched)
+// Mode 8: 3D Bioluminescent Deep-Sea Jellyfish & Volumetric Mycelial Canopy
 function drawMode8AlienMycelium(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
     var minDim = Math.min(w, h) * (cfg.layer2Zoom || 1.0)
-    var tendrils = 12
+    var isEcho = Boolean(state.isTracerEcho)
     var lod = state.echoLod || 1.0
-    var segs = Math.max(6, Math.min(18, Math.round(12 * (cfg.layer2Complexity || 1.0) * lod)))
+    var comp = clamp(cfg.layer2Complexity || 1.0, 0.4, 2.0) * lod
+    var tendrils = isEcho ? 8 : 12
+    var segs = isEcho ? 8 : Math.max(10, Math.min(16, Math.round(12 * comp)))
+    var hist = state.waveHistory || []
+
+    // 3D pulsing jellyfish propulsion cycle driven by bass & phase
+    var pulseContract = Math.sin(state.t * 3.2 + state.bass * 2.0)
+    var swayAngle = Math.sin(state.t * 0.55) * 0.18
+    var bellCenterY = -minDim * (0.10 + pulseContract * 0.04)
 
     ctx.save()
     ctx.translate(cx, cy)
+    ctx.rotate(swayAngle)
     ctx.globalCompositeOperation = "lighter"
 
+    // 1. 3D Translucent Bioluminescent Jellyfish Bell / Mycelial Canopy Dome (3 layered umbrella bells)
+    var bellLayers = isEcho ? 2 : 4
+    var bellSteps = isEcho ? 20 : 32
+    for (var bl = bellLayers - 1; bl >= 0; bl--) {
+        var bFrac = (bl + 1) / bellLayers
+        var bellW = minDim * (0.14 + bFrac * 0.22) * (1.0 - pulseContract * 0.14 + state.bass * 0.18)
+        var bellH = minDim * (0.09 + bFrac * 0.14) * (1.0 + pulseContract * 0.18 + state.bass * 0.14)
+        var canopyCol = palette[(bl * 2 + state.beatCount) % palette.length]
+        var rimCol = palette[(bl * 2 + 1 + state.beatCount) % palette.length]
+
+        ctx.fillStyle = colourWithAlpha(canopyCol, (0.10 + (1.0 - bFrac) * 0.12 + state.bass * 0.08) * (isEcho ? 0.5 : 1.0))
+        ctx.strokeStyle = colourWithAlpha(rimCol, 0.55 + (1.0 - bFrac) * 0.40)
+        ctx.lineWidth = (1.5 + (1.0 - bFrac) * 2.0 + state.beatPulse * 1.2) * (isEcho ? 0.75 : 1.0)
+
+        ctx.beginPath()
+        // Upper 3D umbrella dome arch
+        for (var bs = 0; bs <= bellSteps; bs++) {
+            var u = bs / bellSteps
+            var a = Math.PI + u * Math.PI // upper semicircle
+            var bVal0 = state.smoothBands[(bs * 2 + bl * 7) & 63]
+            var scallop = Math.sin(u * Math.PI * 8 + state.t * 3.0) * minDim * 0.018 * (1.0 + bVal0)
+            var bx = Math.cos(a) * (bellW + scallop)
+            var by = bellCenterY + Math.sin(a) * bellH
+            if (bs === 0) ctx.moveTo(bx, by)
+            else ctx.lineTo(bx, by)
+        }
+        // Scalloped lower sub-umbrella margin closing the 3D bell
+        for (var bs2 = bellSteps; bs2 >= 0; bs2--) {
+            var u2 = bs2 / bellSteps
+            var sc = Math.sin(u2 * Math.PI * 10 + state.t * 4.2 + bl) * minDim * (0.018 + state.mid * 0.025)
+            var mx = Math.cos(u2 * Math.PI) * bellW
+            var my = bellCenterY + Math.sin(u2 * Math.PI) * (bellH * 0.28) + sc
+            ctx.lineTo(mx, my)
+        }
+        ctx.closePath()
+        ctx.fill()
+        ctx.stroke()
+    }
+
+    // 2. Extruded 3D Bioluminescent Ribbon Tentacles & Synaptic Spore Pods
+    var baseSpanW = minDim * 0.28 * (1.0 - pulseContract * 0.12)
     for (var bucket = 0; bucket < 3; bucket++) {
-        ctx.strokeStyle = colourWithAlpha(palette[(bucket * 3) % palette.length], 0.55 + state.mid * 0.35)
-        ctx.fillStyle = colourWithAlpha(palette[(bucket * 3 + 1) % palette.length], 0.70)
-        ctx.lineWidth = 1.9 + state.bass * 1.6
+        var tendrilFill = palette[(bucket * 3 + 1) % palette.length]
+        var tendrilStroke = palette[(bucket * 3) % palette.length]
+        ctx.fillStyle = colourWithAlpha(tendrilFill, (0.15 + state.mid * 0.16) * (isEcho ? 0.55 : 1.0))
+        ctx.strokeStyle = colourWithAlpha(tendrilStroke, 0.65 + state.bass * 0.32)
+        ctx.lineWidth = 1.8 + state.bass * 1.5
         ctx.beginPath()
 
         var nodeSpores = []
         for (var td = bucket; td < tendrils; td += 3) {
-            var baseAng = (td / tendrils) * Math.PI * 2 + state.phase * 0.3
-            var px = 0.0, py = 0.0
-            ctx.moveTo(0, 0)
-            var stepLen = (minDim * (0.34 + state.bass * 0.16)) / segs
+            var tNorm = (td / Math.max(1, tendrils - 1)) * 2.0 - 1.0 // -1 .. +1 across bell rim
+            var px = tNorm * baseSpanW
+            var py = bellCenterY + Math.sin((td / tendrils) * Math.PI) * minDim * 0.04
+            var stepLen = (minDim * (0.36 + state.bass * 0.16)) / segs
+            var leftX = [px - 3.2], leftY = [py]
+            var rightX = [px + 3.2], rightY = [py]
+
             for (var s = 1; s <= segs; s++) {
                 var frac = s / segs
-                var bVal = state.smoothBands[(td * 3 + s) & 63]
-                var wave = Math.sin(state.t * 2.8 - s * 0.42 + td) * (0.45 + state.mid * 0.65 + bVal * 0.55)
-                var curAng = baseAng + wave * frac
+                var snap = (hist.length > s && hist[s] && hist[s].bands) ? hist[s].bands : state.smoothBands
+                var bVal = snap[(td * 2 + s) & 31] !== undefined ? snap[(td * 2 + s) & 31] : (state.smoothBands[(td * 3 + s) & 63] || 0.1)
+                var wave = Math.sin(state.t * 3.1 - s * 0.48 + td * 0.7) * (0.38 + state.mid * 0.55 + bVal * 0.45)
+                var curAng = Math.PI * 0.5 + tNorm * 0.28 * (1.0 - frac * 0.5) + wave * frac
                 px += Math.cos(curAng) * stepLen
                 py += Math.sin(curAng) * stepLen
-                ctx.lineTo(px, py)
-                if (!state.isTracerEcho && (s % 5 === 0 || s === segs)) {
-                    nodeSpores.push(px, py, 2.2 + bVal * 4.2)
+                var ribW = (4.2 * (1.0 - frac * 0.72) + bVal * 4.5) * (isEcho ? 0.65 : 1.0)
+                var nx = -Math.sin(curAng) * ribW
+                var ny = Math.cos(curAng) * ribW
+                leftX.push(px + nx)
+                leftY.push(py + ny)
+                rightX.push(px - nx)
+                rightY.push(py - ny)
+
+                if (!isEcho && (s % 4 === 0 || s === segs)) {
+                    nodeSpores.push(px, py, 2.0 + bVal * 4.2)
                 }
             }
+
+            ctx.moveTo(leftX[0], leftY[0])
+            for (var k0 = 1; k0 <= segs; k0++) ctx.lineTo(leftX[k0], leftY[k0])
+            for (var k1 = segs; k1 >= 0; k1--) ctx.lineTo(rightX[k1], rightY[k1])
+            ctx.closePath()
         }
+        ctx.fill()
         ctx.stroke()
 
+        // Glowing synaptic bioluminescent pods along tentacles
         if (nodeSpores.length > 0) {
+            ctx.fillStyle = colourWithAlpha(palette[(bucket * 3 + 2) % palette.length], 0.85)
             ctx.beginPath()
             for (var sp = 0; sp < nodeSpores.length; sp += 3) {
                 var sx = nodeSpores[sp], sy = nodeSpores[sp + 1], sr = nodeSpores[sp + 2]
@@ -1817,40 +2360,108 @@ function drawMode8AlienMycelium(ctx, w, h, state, palette, cfg) {
             ctx.fill()
         }
     }
+
     ctx.restore()
 }
 
-// Mode 9: Cyber-Shamanic Matrix Vortex Tunnel (Batched vector rings)
+// Mode 9: 3D Cyber-Shamanic Octagonal Warp Corridor & Audio Data Monoliths
 function drawMode9CyberMatrix(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
-    var maxR = Math.min(w, h) * 0.48 * (cfg.layer2Zoom || 1.0)
+    var maxR = Math.min(w, h) * 0.52 * (cfg.layer2Zoom || 1.0)
+    var isEcho = Boolean(state.isTracerEcho)
     var lod = state.echoLod || 1.0
-    var rings = Math.max(4, Math.min(11, Math.round(8 * (cfg.layer2Complexity || 1.0) * lod)))
-    var sectors = 12
+    var zSlices = isEcho ? 4 : Math.max(6, Math.min(10, Math.round(8 * (cfg.layer2Complexity || 1.0) * lod)))
+    var sectors = 8
+    var flySpeed = 1.65 + state.bass * 1.45
+    var scrollZ = state.t * flySpeed
 
     ctx.save()
     ctx.translate(cx, cy)
     ctx.globalCompositeOperation = "lighter"
 
-    for (var bucket = 0; bucket < 3; bucket++) {
-        ctx.strokeStyle = colourWithAlpha(palette[(bucket * 2) % palette.length], 0.55 + state.high * 0.35)
-        ctx.lineWidth = 1.6 + state.bass * 1.4
-        ctx.beginPath()
-        for (var r = bucket; r < rings; r += 3) {
-            var z = ((r / rings) + (state.t * 0.38) % (1.0 / rings)) % 1.0
-            var rad = Math.pow(z, 1.4) * maxR * (1.0 + state.bass * 0.18)
-            var rot = state.phase * (r % 2 === 0 ? 0.6 : -0.6)
-            for (var s = 0; s < sectors; s++) {
-                var bVal = state.smoothBands[(r * 5 + s * 2) & 63]
-                if (bVal < 0.08 && (s % 2 !== 0)) continue
-                var a0 = (s / sectors) * Math.PI * 2 + rot
-                var a1 = a0 + (Math.PI / sectors) * (0.5 + bVal * 0.9)
-                ctx.moveTo(Math.cos(a0) * rad, Math.sin(a0) * rad)
-                ctx.lineTo(Math.cos(a1) * (rad + bVal * 16.0), Math.sin(a1) * (rad + bVal * 16.0))
-            }
+    var prevCorridorRing = null
+    // Render 3D octagonal corridor back-to-front (deep horizon z = zSlices down to near camera z = 1)
+    for (var z = zSlices; z >= 1; z--) {
+        var zDist = z - (scrollZ % 1.0)
+        var persp = 1.0 / (0.28 + zDist * 0.34)
+        var depthNorm = clamp(1.0 - (zDist / (zSlices + 0.5)), 0.06, 1.0)
+        var worldZ = Math.floor(scrollZ) + z
+        var rad = maxR * persp * (0.85 + state.bass * 0.18)
+        var rot = state.phase * 0.25 + Math.sin(worldZ * 0.25 + state.t * 0.6) * 0.16
+
+        // Subtle corridor curve towards vanishing point
+        var bendX = Math.sin(worldZ * 0.35 + state.t * 0.9) * maxR * 0.14 * (1.0 - depthNorm)
+        var bendY = Math.cos(worldZ * 0.28 + state.t * 0.7) * maxR * 0.10 * (1.0 - depthNorm)
+
+        var curRing = []
+        for (var s = 0; s <= sectors; s++) {
+            var a = (s / sectors) * Math.PI * 2 + rot + Math.PI / sectors
+            var bVal = state.smoothBands[((s % sectors) * 6 + (worldZ & 7) * 3) & 63]
+            var inset = 1.0 - bVal * 0.26
+            curRing.push({
+                x: bendX + Math.cos(a) * rad,
+                y: bendY + Math.sin(a) * rad,
+                inX: bendX + Math.cos(a) * rad * inset,
+                inY: bendY + Math.sin(a) * rad * inset,
+                band: bVal
+            })
         }
-        ctx.stroke()
+
+        var wallCol = palette[((worldZ * 2) % palette.length + palette.length) % palette.length]
+        var laserCol = palette[((worldZ * 2 + 1) % palette.length + palette.length) % palette.length]
+
+        // 1. Filled glowing circuit-panel wall quads + longitudinal 3D corridor laser rails
+        if (prevCorridorRing && (!isEcho || (state.echoIndex || 0) < 3)) {
+            ctx.fillStyle = colourWithAlpha(wallCol, (0.07 + depthNorm * 0.14) * (isEcho ? 0.5 : 1.0))
+            ctx.beginPath()
+            for (var sw = 0; sw < sectors; sw++) {
+                if (((worldZ + sw) & 1) !== 0 && curRing[sw].band < 0.18) continue
+                ctx.moveTo(prevCorridorRing[sw].x, prevCorridorRing[sw].y)
+                ctx.lineTo(prevCorridorRing[sw + 1].x, prevCorridorRing[sw + 1].y)
+                ctx.lineTo(curRing[sw + 1].x, curRing[sw + 1].y)
+                ctx.lineTo(curRing[sw].x, curRing[sw].y)
+                ctx.closePath()
+            }
+            ctx.fill()
+
+            // Longitudinal 3D laser guide rails
+            ctx.strokeStyle = colourWithAlpha(wallCol, 0.32 + depthNorm * 0.48)
+            ctx.lineWidth = 1.2 + depthNorm * 1.6
+            ctx.beginPath()
+            for (var sr = 0; sr < sectors; sr++) {
+                ctx.moveTo(prevCorridorRing[sr].x, prevCorridorRing[sr].y)
+                ctx.lineTo(curRing[sr].x, curRing[sr].y)
+            }
+            ctx.stroke()
+        }
+
+        // 2. 3D Extruded Data Monoliths rising inward from the octagonal walls on FFT peaks
+        if (!isEcho || z <= 3) {
+            ctx.fillStyle = colourWithAlpha(laserCol, (0.16 + depthNorm * 0.22 + state.bass * 0.12) * (isEcho ? 0.55 : 1.0))
+            ctx.strokeStyle = colourWithAlpha(laserCol, 0.52 + depthNorm * 0.46)
+            ctx.lineWidth = (1.5 + depthNorm * 2.2 + state.beatPulse * 1.2) * (isEcho ? 0.75 : 1.0)
+            ctx.beginPath()
+            for (var sm = 0; sm < sectors; sm++) {
+                var p0 = curRing[sm]
+                var p1 = curRing[sm + 1]
+                // Outer octagonal frame edge
+                ctx.moveTo(p0.x, p0.y)
+                ctx.lineTo(p1.x, p1.y)
+                // Extruded inward data monolith quad
+                if (p0.band > 0.12) {
+                    ctx.moveTo(p0.x, p0.y)
+                    ctx.lineTo(p1.x, p1.y)
+                    ctx.lineTo(p1.inX, p1.inY)
+                    ctx.lineTo(p0.inX, p0.inY)
+                    ctx.closePath()
+                }
+            }
+            ctx.fill()
+            ctx.stroke()
+        }
+
+        prevCorridorRing = curRing
     }
     ctx.restore()
 }
@@ -1987,43 +2598,110 @@ function drawMode10SacredPolytope(ctx, w, h, state, palette, cfg) {
     ctx.restore()
 }
 
-// Mode 11: Quantum Strange Attractor (Clifford / De Jong Audio-Morphed Chaos Ribbons)
+// Mode 11: 3D Lorenz / Clifford Chaos Ribbon Manifold & Phase-Space Vortex
 function drawMode11StrangeAttractor(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
-    var scale = Math.min(w, h) * 0.24 * (cfg.layer2Zoom || 1.0) * (1.0 + state.bass * 0.22)
+    var scale = Math.min(w, h) * 0.34 * (cfg.layer2Zoom || 1.0) * (1.0 + state.bass * 0.22)
+    var isEcho = Boolean(state.isTracerEcho)
     var lod = state.echoLod || 1.0
     var comp = clamp(cfg.layer2Complexity || 1.0, 0.4, 2.0) * lod
-    var steps = Math.max(36, Math.floor(110 * clamp(comp, 0.4, 1.5)))
+    var steps = isEcho ? 34 : Math.max(44, Math.floor(72 * clamp(comp, 0.5, 1.35)))
 
-    var a = -1.4 + Math.sin(state.t * 0.35) * (0.45 + state.bass * 0.35)
-    var b = 1.6 + Math.cos(state.t * 0.28) * (0.45 + state.mid * 0.35)
-    var c = 1.0 + Math.sin(state.t * 0.42) * (0.55 + state.high * 0.35)
-    var d = 0.7 + Math.cos(state.t * 0.31) * (0.55 + state.energy * 0.35)
+    // 3D camera rotation around the chaotic strange attractor lobes
+    var rotX = state.t * 0.54 + state.bass * 0.65
+    var rotY = state.t * 0.72 - state.mid * 0.55
+    var cosX = Math.cos(rotX), sinX = Math.sin(rotX)
+    var cosY = Math.cos(rotY), sinY = Math.sin(rotY)
 
     ctx.save()
     ctx.translate(cx, cy)
-    ctx.rotate(state.phase * 0.25)
+    ctx.rotate(state.phase * 0.22)
     ctx.globalCompositeOperation = "lighter"
 
-    for (var ribbon = 0; ribbon < 3; ribbon++) {
-        ctx.strokeStyle = colourWithAlpha(palette[(ribbon * 3) % palette.length], 0.58 + state.energy * 0.35)
-        ctx.lineWidth = 1.6 + state.bass * 1.6
+    var ribbonCount = isEcho ? 2 : 3
+    for (var ribbon = 0; ribbon < ribbonCount; ribbon++) {
+        var rPhase = ribbon * (Math.PI * 2 / 3.0)
+        var leftPts = []
+        var rightPts = []
+        var corePts = []
+
+        // Continuous 3D double-scroll Lorenz/Clifford chaotic manifold parameterised along u
+        for (var i = 0; i <= steps; i++) {
+            var u = (i / steps) * Math.PI * 4.0
+            var bVal = state.smoothBands[(i + ribbon * 17) & 63]
+            // Smooth transition between two counter-scrolling 3D strange attractor wings
+            var wing = Math.sin(u * 0.5 + state.t * 0.85 + rPhase)
+            var lobeR = 0.38 + (0.28 + bVal * 0.36) * Math.cos(u * 1.5 - state.t * 1.4 + rPhase)
+            var x3 = wing * 0.52 + lobeR * Math.cos(u * 2.0 + rPhase)
+            var y3 = lobeR * Math.sin(u * 2.0 + rPhase) + Math.sin(u * 3.0 + state.t * 1.6) * (0.18 + state.mid * 0.22)
+            var z3 = Math.cos(u + state.t * 1.1 + rPhase) * (0.45 + bVal * 0.42 + state.bass * 0.25)
+
+            // 3D rotation & perspective projection
+            var x1 = x3 * cosY - z3 * sinY
+            var z1 = x3 * sinY + z3 * cosY
+            var y2 = y3 * cosX - z1 * sinX
+            var z2 = y3 * sinX + z1 * cosX
+            var persp = 1.68 / (2.25 - clamp(z2, -1.25, 1.25))
+
+            var sx = x1 * scale * persp
+            var sy = y2 * scale * persp
+            var halfW = (3.2 + bVal * 10.5 + state.bass * 5.5) * persp * (isEcho ? 0.65 : 1.0)
+            corePts.push({ x: sx, y: sy, w: halfW, band: bVal, p: persp })
+        }
+
+        for (var k = 0; k <= steps; k++) {
+            var pPrev = corePts[k > 0 ? k - 1 : 0]
+            var pNext = corePts[k < steps ? k + 1 : steps]
+            var dx = pNext.x - pPrev.x
+            var dy = pNext.y - pPrev.y
+            var len = Math.sqrt(dx * dx + dy * dy) || 1.0
+            var nx = -dy / len
+            var ny = dx / len
+            var hw = corePts[k].w
+            leftPts.push({ x: corePts[k].x + nx * hw, y: corePts[k].y + ny * hw })
+            rightPts.push({ x: corePts[k].x - nx * hw, y: corePts[k].y - ny * hw })
+        }
+
+        var ribFillCol = palette[(ribbon * 3 + state.beatCount) % palette.length]
+        var ribStrokeCol = palette[(ribbon * 3 + 1 + state.beatCount) % palette.length]
+
+        // 1. Filled translucent 3D phase-space manifold ribbon
+        if (!isEcho || (state.echoIndex || 0) < 3) {
+            ctx.fillStyle = colourWithAlpha(ribFillCol, (0.14 + state.energy * 0.16) * (isEcho ? 0.55 : 1.0))
+            ctx.beginPath()
+            for (var f0 = 0; f0 <= steps; f0++) {
+                if (f0 === 0) ctx.moveTo(leftPts[f0].x, leftPts[f0].y)
+                else ctx.lineTo(leftPts[f0].x, leftPts[f0].y)
+            }
+            for (var f1 = steps; f1 >= 0; f1--) {
+                ctx.lineTo(rightPts[f1].x, rightPts[f1].y)
+            }
+            ctx.closePath()
+            ctx.fill()
+        }
+
+        // 2. Thick glowing trajectory rails
+        ctx.strokeStyle = colourWithAlpha(ribStrokeCol, 0.72 + state.energy * 0.28)
+        ctx.lineWidth = (2.0 + state.bass * 1.8) * (isEcho ? 0.75 : 1.0)
         ctx.beginPath()
-        var x = (ribbon - 1) * 0.35
-        var y = (ribbon - 1) * 0.25
-        for (var i = 0; i < steps; i++) {
-            var bVal = state.smoothBands[(i + ribbon * 19) & 63]
-            var nx = Math.sin((a + bVal * 0.22) * y) + c * Math.cos((a + bVal * 0.22) * x)
-            var ny = Math.sin((b - bVal * 0.22) * x) + d * Math.cos((b - bVal * 0.22) * y)
-            x = nx
-            y = ny
-            var sx = x * scale
-            var sy = y * scale
-            if (i === 0) ctx.moveTo(sx, sy)
-            else ctx.lineTo(sx, sy)
+        for (var s0 = 0; s0 <= steps; s0++) {
+            if (s0 === 0) ctx.moveTo(corePts[s0].x, corePts[s0].y)
+            else ctx.lineTo(corePts[s0].x, corePts[s0].y)
         }
         ctx.stroke()
+
+        // 3. Orbiting 3D phase-space energy packets pulsing along the attractor lobes
+        if (!isEcho) {
+            ctx.fillStyle = colourWithAlpha(palette[(ribbon * 3 + 2) % palette.length], 0.90)
+            ctx.beginPath()
+            for (var np = 0; np <= steps; np += 6) {
+                var cp = corePts[np]
+                var nr = (2.2 + cp.band * 3.8) * cp.p
+                ctx.rect(cp.x - nr, cp.y - nr, nr * 2.0, nr * 2.0)
+            }
+            ctx.fill()
+        }
     }
     ctx.restore()
 }
@@ -2084,7 +2762,7 @@ function drawLayer2Visualiser(ctx, w, h, state, palette, cfg) {
         state.echoCount = tracerCount
         state.echoAge = u
         state.isTracerEcho = (e > 0)
-        state.echoLod = (e === 0) ? 1.0 : (tracerCount > 8 ? 0.48 : 0.65)
+        state.echoLod = (e === 0) ? 1.0 : (e >= 3 ? 0.38 : (tracerCount > 8 ? 0.48 : 0.65))
 
         var echoPalette = rotatePaletteForEcho(palette, e)
 
@@ -2205,7 +2883,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
         var tx = endPt.dx * u * 0.42 * (tracerDir >= 0 ? -1.0 : 1.0)
         var ty = endPt.dy * u * 0.42 * (tracerDir >= 0 ? -1.0 : 1.0)
         var passAlpha = isEcho ? (Math.pow(1.0 - u * 0.82, 1.4) * 0.34) : (0.84 + state.bass * 0.16)
-        var cellStride = isEcho ? (numBuckets * 2) : numBuckets
+        var cellStride = isEcho ? (e >= 2 ? numBuckets * 3 : numBuckets * 2) : numBuckets
 
         ctx.save()
         ctx.globalCompositeOperation = "lighter"
