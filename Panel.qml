@@ -288,14 +288,20 @@ Item {
         if (root.activeTab === 2) {
             if (event.key === Qt.Key_M) { panelVisualiser.cycleMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
             else if (event.key === Qt.Key_C) { panelVisualiser.cyclePalette((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
-            else if (event.key === Qt.Key_K) { panelVisualiser.cycleSymmetry(); event.accepted = true }
+            else if (event.key === Qt.Key_K) { panelVisualiser.cycleTracers((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
             else if (event.key === Qt.Key_R) { panelVisualiser.randomiseVisuals(); event.accepted = true }
             else if (event.key === Qt.Key_X) { panelVisualiser.autoCycle = !panelVisualiser.autoCycle; event.accepted = true }
             else if (event.key === Qt.Key_A) { if (root.service) root.service.toggleUseAlbumArt(); event.accepted = true }
             else if (event.key === Qt.Key_B) { if (root.service) root.service.toggleAsciiMode(); event.accepted = true }
             else if (event.key === Qt.Key_T) { panelVisualiser.toggleInCanvasTte(); event.accepted = true }
-            else if (event.key === Qt.Key_H) { panelVisualiser.showHud = !panelVisualiser.showHud; event.accepted = true }
+            else if (event.key === Qt.Key_H) { panelVisualiser.toggleHudVisibility(); event.accepted = true }
+            else if (event.key === Qt.Key_Z) {
+                panelVisualiser.showHud = false
+                if (root.service) root.service.fullscreenVisualiserOpen = !root.service.fullscreenVisualiserOpen
+                event.accepted = true
+            }
             else if (event.key === Qt.Key_F || event.key === Qt.Key_V) {
+                if (event.modifiers & Qt.ShiftModifier) panelVisualiser.showHud = false
                 if (root.service) root.service.fullscreenVisualiserOpen = !root.service.fullscreenVisualiserOpen
                 event.accepted = true
             }
@@ -1990,7 +1996,7 @@ Item {
                     Visualiser {
                         id: panelVisualiser
                         anchors.fill: parent
-                        visible: root.activeTab === 2
+                        visible: root.activeTab === 2 && !(root.service && root.service.fullscreenVisualiserOpen)
                         isFullscreen: false
                         bands: root.service ? root.service.spectrumBands : []
                         playing: root.service ? root.service.activelyPlaying : false
@@ -2333,7 +2339,7 @@ Item {
                             Layout.preferredWidth: 54
                             Layout.preferredHeight: 54
                             artPath: root.service ? root.service.artPath : ""
-                            spinning: root.service ? root.service.activelyPlaying : false
+                            spinning: Boolean(root.service && root.service.activelyPlaying && root.activeTab !== 2 && !root.service.fullscreenVisualiserOpen)
                             accentColour: root.colAccent
                         }
 
@@ -2411,13 +2417,13 @@ Item {
                             }
                         }
 
-                        // Live 24-Bar Mini Spectrum Strip
+                        // Live 24-Bar Mini Spectrum Strip (paused when Stage & Visualiser tab or fullscreen overlay is active)
                         Spectrum {
                             Layout.preferredWidth: 96
                             Layout.preferredHeight: 38
                             barCount: 24
                             bands: root.service ? root.service.spectrumBands : []
-                            active: root.service ? root.service.activelyPlaying : false
+                            active: Boolean(root.service && root.service.activelyPlaying && root.activeTab !== 2 && !root.service.fullscreenVisualiserOpen)
                             accentColour: root.colAccent
                             peakColour: root.colUrgent
                         }

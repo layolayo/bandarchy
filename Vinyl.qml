@@ -77,11 +77,6 @@ Item {
         armPaint.requestPaint()
         bearingCanvas.requestPaint()
     }
-    onBassLevelChanged: {
-        if (!isCompact && root.visible && root.spinning) {
-            neon.requestPaint()
-        }
-    }
 
     // Plinth backdrop when rendered as full Turntable Stage
     Rectangle {
@@ -137,7 +132,6 @@ Item {
             ? Math.min(1.0, (0.18 + 0.65 * Math.max(0, Math.min(100, root.volume)) / 100.0 + root.bassLevel * 0.35))
             : 0.08
         scale: 1.0 + root.bassLevel * 0.05
-        Behavior on opacity { NumberAnimation { duration: 220 } }
 
         onPaint: {
             if (!(width > 0)) return
@@ -163,7 +157,7 @@ Item {
                 var f = i / Math.max(1, rings - 1)
                 var rr = r * (1.004 + (root.isCompact ? 0.16 : 0.42) * Math.pow(f, 1.35))
                 var lw = (root.isCompact ? 1.5 : 2.5) + (root.isCompact ? 3 : 10) * f
-                var al = (0.42 + root.bassLevel * 0.18) * Math.pow(1 - f, 2.8)
+                var al = 0.50 * Math.pow(1 - f, 2.8)
                 var g = ctx.createConicalGradient(c, c, 0)
                 for (var q = 0; q <= 24; q++) {
                     var ang = (q / 24) * Math.PI * 2

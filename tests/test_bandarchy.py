@@ -685,6 +685,16 @@ class BandarchyTestSuite(unittest.TestCase):
         self.assertNotIn("TTE: waves", viz_src)
         self.assertIn('text: "󰍹 TTE"', viz_src)
 
+        # Verify 3 independent L1 sub-systems, interactive tracerPopover, trackArcMode, and HUD-free Zen Fullscreen keys
+        self.assertIn("property bool layer1FieldEnabled: true", viz_src)
+        self.assertIn("property bool layer1EqEnabled: true", viz_src)
+        self.assertIn("property bool layer1ShapesEnabled: true", viz_src)
+        self.assertIn("property bool showTracerPopover: false", viz_src)
+        self.assertIn("property int trackArcMode: 1", viz_src)
+        self.assertIn("function toggleZenFullscreen()", viz_src)
+        self.assertIn("id: hudAutoHideTimer", viz_src)
+        self.assertNotIn('"lighter"', engine_src)
+
         # Ensure onVisualModeChanged does NOT set layer3Enabled = true
         vmode_idx = viz_src.index("onVisualModeChanged:")
         vmode_block = viz_src[vmode_idx : vmode_idx + 120]
@@ -692,7 +702,7 @@ class BandarchyTestSuite(unittest.TestCase):
 
         # 2. Execute PsychedelicEngine.js via Node.js to verify:
         #    - All 12 Layer #2 modes with 9x 3D Graded History Tracers render in < 2.5 ms/frame at 640x360
-        #    - All 6 Layer #1 SynthGrid Equaliser styles (0..5) render non-zero geometry
+        #    - All 3 Layer #1 independent sub-systems (Field 0..5, Equaliser 0..5 over any Field or solo, Beat Shapes 0..5)
         #    - Strict Layer Isolation: when layer3Enabled=false, drawLayer3AlbumArt draws 0 rects
         #    - Genuine 2x4 Braille pinpoint dots vs laser-stipple Song Words
         if shutil.which("node"):
@@ -747,11 +757,12 @@ if (ctxL3Direct.rectCount !== 0 || ctxL3Direct.fillCount !== 0) {
     throw new Error('drawLayer3AlbumArt drew when layer3Enabled=false!');
 }
 
-// B. Verify all 6 Layer #1 background modes (0..5) and all 6 SynthGrid Equaliser styles (0..5) emit volumetric fills + strokes
+// B. Verify all 6 Layer #1 background modes (0..5), all 6 Equaliser styles (solo & combined), and all 6 Beat Shape styles (0..5)
 for (let l1m = 0; l1m < 6; l1m++) {
     const ctxL1 = makeMockCtx();
     const cfgL1 = normaliseConfig({
-        layer1Enabled: true, layer1Mode: l1m,
+        layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: l1m,
+        layer1EqEnabled: false, layer1ShapesEnabled: false,
         layer2Enabled: false, layer3Enabled: false
     }, 0, []);
     stepState(state, bands, true, cfgL1, 0.016);
@@ -763,7 +774,7 @@ for (let l1m = 0; l1m < 6; l1m++) {
 for (let eqStyle = 0; eqStyle < 6; eqStyle++) {
     const ctxEq = makeMockCtx();
     const cfgEq = normaliseConfig({
-        layer1Enabled: true, layer1Mode: 4,
+        layer1Enabled: true, layer1FieldEnabled: false, layer1EqEnabled: true, layer1ShapesEnabled: false,
         layer1EqStyle: eqStyle, layer1EqLayout: eqStyle % 3, layer1EqGain: 1.4, layer1EqDamping: eqStyle % 3,
         layer2Enabled: false, layer3Enabled: false
     }, 0, []);
@@ -771,6 +782,19 @@ for (let eqStyle = 0; eqStyle < 6; eqStyle++) {
     renderFrame(ctxEq, 640, 360, state, 0, theme, [], 'album-art', [], cfgEq, null);
     if (ctxEq.fillCount + ctxEq.strokeCount < 2) {
         throw new Error('Layer #1 Equaliser style ' + eqStyle + ' produced no geometry');
+    }
+}
+for (let shStyle = 0; shStyle < 6; shStyle++) {
+    const ctxSh = makeMockCtx();
+    const cfgSh = normaliseConfig({
+        layer1Enabled: true, layer1FieldEnabled: false, layer1EqEnabled: false, layer1ShapesEnabled: true,
+        layer1ShapeStyle: shStyle, layer1ShapeSpeed: 1.2, layer1ShapeSpin: 1.3, layer1ShapeScale: 1.1,
+        layer2Enabled: false, layer3Enabled: false
+    }, 0, []);
+    stepState(state, bands, true, cfgSh, 0.016);
+    renderFrame(ctxSh, 640, 360, state, 0, theme, [], 'album-art', [], cfgSh, null);
+    if (ctxSh.fillCount + ctxSh.strokeCount < 2) {
+        throw new Error('Layer #1 Beat Shapes style ' + shStyle + ' produced no geometry');
     }
 }
 
@@ -793,6 +817,7 @@ for (let m = 0; m < 12; m++) {
     const ctx = makeMockCtx();
     const cfg = normaliseConfig({
         layer1Enabled: true, layer1Mode: m % 6,
+        layer1FieldEnabled: true, layer1EqEnabled: true, layer1ShapesEnabled: true,
         layer2Enabled: true, layer2Mode: m,
         tracerCount: 9, tracerSpeed: 1.25, tracerDrift: 1.1, tracerDirection: (m % 2 === 0 ? 1 : -1),
         layer3Enabled: true, layer3Mode: m % 6, layer3Tracers: 4,

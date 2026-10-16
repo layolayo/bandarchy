@@ -134,7 +134,7 @@ Item {
     property var artLines: []
     property var ttfxFrames: []
     property string ttfxEffect: "random"
-    property bool visualiserActive: stageMode === "visualiser" || stageMode === "turntable"
+    property bool visualiserActive: false
     property bool fullscreenVisualiserOpen: false
 
     // 60 FPS 64-band Cava spectrum

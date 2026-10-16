@@ -14,7 +14,6 @@ Every command outputs a single bounded JSON object on stdout for QML.
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
 import errno
 import fcntl
 import glob
@@ -26,18 +25,21 @@ import re
 import secrets
 import shutil
 import socket
-import sqlite3
-import ssl
 import stat
 import subprocess
 import sys
 import tempfile
 import time
 import unicodedata
-import urllib.error
-import urllib.parse
-import urllib.request
-import zipfile
+
+if len(sys.argv) < 2 or sys.argv[1] not in ("status", "now", "cmd"):
+    import concurrent.futures
+    import sqlite3
+    import ssl
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+    import zipfile
 
 HOME = os.path.expanduser("~")
 CONFIG_DIR = os.environ.get("BANDARCHY_CONFIG_DIR") or os.path.join(HOME, ".config", "bandarchy")
@@ -64,6 +66,7 @@ SYNC_LOCK_FILE = os.path.join(DATA_DIR, "sync.lock")
 DOWNLOAD_LOCK_FILE = os.path.join(DATA_DIR, "download.lock")
 LOG_FILE = os.path.join(CACHE_DIR, "bandarchy.log")
 SCREENSAVER_TXT_FILE = os.path.join(CACHE_DIR, "screensaver-art.txt")
+STATUS_COUNTS_FILE = os.path.join(CACHE_DIR, "status_counts.json")
 
 RUNTIME_DIR = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
 IPC_SOCKET = os.environ.get("BANDARCHY_MPV_SOCKET") or os.path.join(
@@ -1971,11 +1974,71 @@ def build_unified_collection(
     return result
 
 
+def _extract_status_summary(idx: dict, mtime_ns: int = 0, size: int = 0) -> dict:
+    albums = idx.get("albums") or []
+    return {
+        "indexMtimeNs": mtime_ns,
+        "indexSize": size,
+        "username": idx.get("username") or "",
+        "hasBrowserSession": bool(idx.get("hasBrowserSession", False)),
+        "networkNote": idx.get("networkNote") or "",
+        "albumCount": len(albums),
+        "purchasedCount": idx.get("purchasedCount") or 0,
+        "localCount": idx.get("localCount") or 0,
+        "trackCount": idx.get("trackCount") or 0,
+        "indexedAt": idx.get("indexedAt") or 0,
+        "availableZips": idx.get("availableZips") or [],
+    }
+
+
 def ensure_index() -> dict:
     idx = read_json(INDEX_FILE, None)
     if isinstance(idx, dict) and isinstance(idx.get("albums"), list) and len(idx["albums"]) > 0:
         return idx
+    global concurrent, sqlite3, ssl, urllib, zipfile
+    import concurrent.futures as _cf  # noqa: F401
+    import sqlite3
+    import ssl
+    import urllib.error  # noqa: F401
+    import urllib.parse  # noqa: F401
+    import urllib.request as _ur  # noqa: F401
+    import zipfile
+    import concurrent
+    import urllib
     return build_unified_collection(load_settings(), fetch_remote=False)
+
+
+def ensure_status_summary() -> dict:
+    """Fast-path status metadata reader that caches summary counts keyed by INDEX_FILE mtime/size."""
+    try:
+        if os.path.exists(INDEX_FILE) and not os.path.islink(INDEX_FILE):
+            st = os.stat(INDEX_FILE)
+            cached = read_json(STATUS_COUNTS_FILE, None)
+            if (
+                isinstance(cached, dict)
+                and cached.get("indexMtimeNs") == st.st_mtime_ns
+                and cached.get("indexSize") == st.st_size
+                and cached.get("albumCount", 0) > 0
+            ):
+                return cached
+            idx = ensure_index()
+            st = os.stat(INDEX_FILE)
+            summary = _extract_status_summary(idx, st.st_mtime_ns, st.st_size)
+            write_json(STATUS_COUNTS_FILE, summary)
+            return summary
+    except Exception:
+        pass
+    idx = ensure_index()
+    summary = _extract_status_summary(idx)
+    try:
+        if os.path.exists(INDEX_FILE):
+            st = os.stat(INDEX_FILE)
+            summary["indexMtimeNs"] = st.st_mtime_ns
+            summary["indexSize"] = st.st_size
+        write_json(STATUS_COUNTS_FILE, summary)
+    except Exception:
+        pass
+    return summary
 
 
 # --------------------------------------------------------------------------- #
@@ -1988,8 +2051,19 @@ def record_history(track: dict) -> None:
         return
     hist = read_json(HISTORY_FILE, {"lastPlayedTrack": None, "recentTracks": []}) or {}
     recent = list(hist.get("recentTracks") or [])
+    now_ts = int(time.time())
+    track_id = bounded_text(track.get("id") or "")
+    last_played = hist.get("lastPlayedTrack") or {}
+    if (
+        track_id
+        and last_played.get("id") == track_id
+        and recent
+        and recent[0].get("id") == track_id
+        and (now_ts - int(last_played.get("playedAt") or 0)) < 30
+    ):
+        return
     entry = {
-        "id": bounded_text(track.get("id") or ""),
+        "id": track_id,
         "title": bounded_text(track.get("title") or ""),
         "artist": bounded_text(track.get("artist") or ""),
         "album": bounded_text(track.get("album") or ""),
@@ -1999,7 +2073,7 @@ def record_history(track: dict) -> None:
         "playSource": bounded_text(track.get("playSource") or "local", 32),
         "purchased": bool(track.get("purchased", False)),
         "isLocal": bool(track.get("isLocal", True)),
-        "playedAt": int(time.time()),
+        "playedAt": now_ts,
     }
     if recent and recent[0].get("id") == entry["id"] and entry["id"]:
         recent[0] = entry
@@ -2871,7 +2945,7 @@ def _visualiser_settings_payload(settings: dict) -> dict:
 
 def cmd_status(args) -> None:
     settings = load_settings()
-    idx = ensure_index()
+    idx = ensure_status_summary()
     auth = read_json(AUTH_FILE, {}) or {}
     favs = read_json(FAVOURITES_FILE, {"items": []}) or {"items": []}
     pls = load_playlists()
@@ -2896,7 +2970,7 @@ def cmd_status(args) -> None:
         "useAlbumArt": bool(settings.get("useAlbumArt", True)),
         "asciiMode": settings.get("asciiMode") or "braille",
         **_visualiser_settings_payload(settings),
-        "albumCount": len(idx.get("albums") or []),
+        "albumCount": idx.get("albumCount") or 0,
         "purchasedCount": idx.get("purchasedCount") or 0,
         "localCount": idx.get("localCount") or 0,
         "trackCount": idx.get("trackCount") or 0,

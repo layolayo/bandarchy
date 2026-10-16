@@ -51,27 +51,46 @@ FocusScope {
     readonly property var layer1EqStyles: Engine.LAYER1_EQ_STYLES
     readonly property var layer1EqLayouts: Engine.LAYER1_EQ_LAYOUTS
     readonly property var layer1EqDampingNames: Engine.LAYER1_EQ_DAMPING
+    readonly property var layer1ShapeStyles: Engine.LAYER1_SHAPE_STYLES
     readonly property var layer3Modes: Engine.LAYER3_MODES
     readonly property var paletteNames: Engine.PALETTE_NAMES
+    readonly property var trackArcModes: Engine.TRACK_ARC_MODES
 
-    // Global Music-Driven Modulation & Universal 3D Graded History Tracer state
+    // Global Music-Driven Modulation, Song Arc & Universal 3D Graded History Tracer state
     property bool musicDrive: true
-    property int tracerCount: 9
+    property int trackArcMode: 1 // 0 = Off, 1 = Song Climax Arc (75% Peak), 2 = Dismantle, 3 = Rebuild, 4 = Quarter Chapters
+    property int tracerCount: 4
     property real tracerSpeed: 1.15
     property real tracerDrift: 1.00
     property int tracerDirection: 1 // 1 = Towards User, -1 = To Endpoint, 0 = Breathe
+    property bool showTracerPopover: false
 
-    // Layer #1 — Background, Feedback & SynthGrid Equaliser state
+    // Configurable internal render buffer width (384 = Fast, 480 = Balanced 486/686 Demoscene, 640 = Crisp)
+    property int renderResW: 480
+    property real frameAccumDt: 0.0
+    property int telemetryTick: 0
+
+    // Layer #1 — 3 Independent Sub-Systems:
+    //   (1) L1 Field (`layer1FieldEnabled` + `layer1Mode` 0..5)
+    //   (2) L1 Equaliser (`layer1EqEnabled` + `layer1EqStyle` 0..5 + `layer1EqLayout` 0..2 + `layer1EqDamping` 0..2 + `layer1EqGain`)
+    //   (3) L1 Beat Shapes (`layer1ShapesEnabled` + `layer1ShapeStyle` 0..5 + spin/speed/scale)
     property bool layer1Enabled: true
+    property bool layer1FieldEnabled: true
     property int layer1Mode: 0
-    property real layer1Persistence: 0.86
+    property real layer1Persistence: 0.84
     property real layer1Speed: 1.0
     property real layer1Density: 1.0
-    property real layer1Dim: 0.14
+    property real layer1Dim: 0.16
+    property bool layer1EqEnabled: true
     property int layer1EqStyle: 0
     property int layer1EqLayout: 0
     property real layer1EqGain: 1.25
     property int layer1EqDamping: 0
+    property bool layer1ShapesEnabled: true
+    property int layer1ShapeStyle: 0
+    property real layer1ShapeSpin: 1.0
+    property real layer1ShapeSpeed: 1.0
+    property real layer1ShapeScale: 1.0
 
     // Layer #2 — Psychedelic & Nightclub Visualiser Engine state
     property bool layer2Enabled: true
@@ -93,7 +112,7 @@ FocusScope {
     property real layer3Rebuild: 1.0
     property real layer3Evolution: 0.90
     property real layer3Scale: 1.0
-    property int layer3Tracers: 4
+    property int layer3Tracers: 3
 
     // Collective L1 + L2 + L3 Scene Presets & Smooth Transition state
     property int currentPresetIndex: 0
@@ -108,45 +127,49 @@ FocusScope {
             selected: true,
             palette: 0,
             musicDrive: true,
-            tracerCount: 10, tracerSpeed: 1.20, tracerDrift: 1.05, tracerDirection: 1,
-            l1Enabled: true, l1Mode: 4, l1Persistence: 0.84, l1Speed: 1.10, l1Density: 1.15, l1Dim: 0.12,
-            l1EqStyle: 0, l1EqLayout: 0, l1EqGain: 1.35, l1EqDamping: 0,
+            tracerCount: 6, tracerSpeed: 1.20, tracerDrift: 1.05, tracerDirection: 1,
+            l1Enabled: true, l1FieldEnabled: true, l1Mode: 4, l1Persistence: 0.84, l1Speed: 1.10, l1Density: 1.15, l1Dim: 0.14,
+            l1EqEnabled: true, l1EqStyle: 0, l1EqLayout: 0, l1EqGain: 1.35, l1EqDamping: 0,
+            l1ShapesEnabled: true, l1ShapeStyle: 1, l1ShapeSpin: 1.10, l1ShapeSpeed: 1.05, l1ShapeScale: 1.00,
             l2Enabled: true, l2Mode: 10, sensitivity: 1.45, l2Complexity: 1.15, l2Speed: 1.10, l2Zoom: 1.05,
             l3Enabled: false, l3Mode: 0, asciiMode: "braille", useAlbumArt: true,
-            l3Dismantle: 1.10, l3Rebuild: 1.00, l3Evolution: 0.85, l3Scale: 1.00, l3Tracers: 4
+            l3Dismantle: 1.10, l3Rebuild: 1.00, l3Evolution: 0.85, l3Scale: 1.00, l3Tracers: 3
         },
         {
             name: "Cthugha Plasma Flame Tunnel",
             selected: true,
             palette: 4,
             musicDrive: true,
-            tracerCount: 9, tracerSpeed: 1.30, tracerDrift: 1.15, tracerDirection: 1,
-            l1Enabled: true, l1Mode: 0, l1Persistence: 0.88, l1Speed: 1.25, l1Density: 1.10, l1Dim: 0.14,
-            l1EqStyle: 4, l1EqLayout: 1, l1EqGain: 1.30, l1EqDamping: 0,
+            tracerCount: 5, tracerSpeed: 1.30, tracerDrift: 1.15, tracerDirection: 1,
+            l1Enabled: true, l1FieldEnabled: true, l1Mode: 0, l1Persistence: 0.86, l1Speed: 1.25, l1Density: 1.10, l1Dim: 0.16,
+            l1EqEnabled: true, l1EqStyle: 4, l1EqLayout: 1, l1EqGain: 1.30, l1EqDamping: 0,
+            l1ShapesEnabled: true, l1ShapeStyle: 0, l1ShapeSpin: 0.90, l1ShapeSpeed: 1.15, l1ShapeScale: 1.05,
             l2Enabled: true, l2Mode: 3, sensitivity: 1.55, l2Complexity: 1.20, l2Speed: 1.20, l2Zoom: 1.05,
             l3Enabled: false, l3Mode: 0, asciiMode: "braille", useAlbumArt: true,
-            l3Dismantle: 1.15, l3Rebuild: 1.00, l3Evolution: 0.90, l3Scale: 1.00, l3Tracers: 4
+            l3Dismantle: 1.15, l3Rebuild: 1.00, l3Evolution: 0.90, l3Scale: 1.00, l3Tracers: 3
         },
         {
-            name: "Minter Tempest 2000 Web Surge",
+            name: "Minter VLM Curved Morphing Tube",
             selected: true,
             palette: 2,
             musicDrive: true,
-            tracerCount: 11, tracerSpeed: 1.40, tracerDrift: 1.20, tracerDirection: 1,
-            l1Enabled: true, l1Mode: 4, l1Persistence: 0.85, l1Speed: 1.30, l1Density: 1.25, l1Dim: 0.12,
-            l1EqStyle: 3, l1EqLayout: 2, l1EqGain: 1.40, l1EqDamping: 0,
+            tracerCount: 6, tracerSpeed: 1.40, tracerDrift: 1.20, tracerDirection: 1,
+            l1Enabled: true, l1FieldEnabled: true, l1Mode: 4, l1Persistence: 0.84, l1Speed: 1.30, l1Density: 1.25, l1Dim: 0.14,
+            l1EqEnabled: true, l1EqStyle: 3, l1EqLayout: 2, l1EqGain: 1.40, l1EqDamping: 0,
+            l1ShapesEnabled: true, l1ShapeStyle: 3, l1ShapeSpin: 1.45, l1ShapeSpeed: 1.25, l1ShapeScale: 1.10,
             l2Enabled: true, l2Mode: 4, sensitivity: 1.60, l2Complexity: 1.25, l2Speed: 1.35, l2Zoom: 1.10,
             l3Enabled: false, l3Mode: 0, asciiMode: "braille", useAlbumArt: true,
-            l3Dismantle: 1.20, l3Rebuild: 0.95, l3Evolution: 1.00, l3Scale: 1.00, l3Tracers: 4
+            l3Dismantle: 1.20, l3Rebuild: 0.95, l3Evolution: 1.00, l3Scale: 1.00, l3Tracers: 3
         },
         {
-            name: "3D Julia Fractal Canyon Flight",
+            name: "Infinite Julia Fractal Zoom",
             selected: true,
             palette: 3,
             musicDrive: true,
-            tracerCount: 7, tracerSpeed: 1.15, tracerDrift: 0.95, tracerDirection: -1,
-            l1Enabled: true, l1Mode: 1, l1Persistence: 0.86, l1Speed: 1.05, l1Density: 1.15, l1Dim: 0.15,
-            l1EqStyle: 2, l1EqLayout: 1, l1EqGain: 1.25, l1EqDamping: 1,
+            tracerCount: 4, tracerSpeed: 1.15, tracerDrift: 0.95, tracerDirection: -1,
+            l1Enabled: true, l1FieldEnabled: true, l1Mode: 1, l1Persistence: 0.84, l1Speed: 1.05, l1Density: 1.15, l1Dim: 0.16,
+            l1EqEnabled: false, l1EqStyle: 2, l1EqLayout: 1, l1EqGain: 1.25, l1EqDamping: 1,
+            l1ShapesEnabled: true, l1ShapeStyle: 4, l1ShapeSpin: -1.10, l1ShapeSpeed: 0.95, l1ShapeScale: 1.00,
             l2Enabled: true, l2Mode: 5, sensitivity: 1.45, l2Complexity: 1.25, l2Speed: 1.15, l2Zoom: 1.05,
             l3Enabled: false, l3Mode: 2, asciiMode: "braille", useAlbumArt: true,
             l3Dismantle: 1.10, l3Rebuild: 1.05, l3Evolution: 0.90, l3Scale: 1.00, l3Tracers: 3
@@ -156,46 +179,50 @@ FocusScope {
             selected: true,
             palette: 1,
             musicDrive: true,
-            tracerCount: 8, tracerSpeed: 1.10, tracerDrift: 1.00, tracerDirection: 1,
-            l1Enabled: true, l1Mode: 0, l1Persistence: 0.86, l1Speed: 1.00, l1Density: 1.00, l1Dim: 0.14,
-            l1EqStyle: 0, l1EqLayout: 0, l1EqGain: 1.20, l1EqDamping: 0,
+            tracerCount: 4, tracerSpeed: 1.10, tracerDrift: 1.00, tracerDirection: 1,
+            l1Enabled: true, l1FieldEnabled: true, l1Mode: 0, l1Persistence: 0.84, l1Speed: 1.00, l1Density: 1.00, l1Dim: 0.16,
+            l1EqEnabled: true, l1EqStyle: 0, l1EqLayout: 0, l1EqGain: 1.20, l1EqDamping: 0,
+            l1ShapesEnabled: true, l1ShapeStyle: 0, l1ShapeSpin: 1.00, l1ShapeSpeed: 1.00, l1ShapeScale: 1.00,
             l2Enabled: true, l2Mode: 0, sensitivity: 1.35, l2Complexity: 1.05, l2Speed: 1.05, l2Zoom: 1.00,
             l3Enabled: true, l3Mode: 0, asciiMode: "braille", useAlbumArt: true,
-            l3Dismantle: 1.25, l3Rebuild: 1.05, l3Evolution: 0.95, l3Scale: 1.05, l3Tracers: 4
+            l3Dismantle: 1.25, l3Rebuild: 1.05, l3Evolution: 0.95, l3Scale: 1.05, l3Tracers: 3
         },
         {
             name: "Neon Song Words TTE Lotus Dome",
             selected: true,
             palette: 5,
             musicDrive: true,
-            tracerCount: 9, tracerSpeed: 1.20, tracerDrift: 1.10, tracerDirection: 0,
-            l1Enabled: true, l1Mode: 3, l1Persistence: 0.86, l1Speed: 1.15, l1Density: 1.10, l1Dim: 0.14,
-            l1EqStyle: 5, l1EqLayout: 1, l1EqGain: 1.30, l1EqDamping: 1,
+            tracerCount: 5, tracerSpeed: 1.20, tracerDrift: 1.10, tracerDirection: 0,
+            l1Enabled: true, l1FieldEnabled: true, l1Mode: 3, l1Persistence: 0.84, l1Speed: 1.15, l1Density: 1.10, l1Dim: 0.16,
+            l1EqEnabled: true, l1EqStyle: 5, l1EqLayout: 1, l1EqGain: 1.30, l1EqDamping: 1,
+            l1ShapesEnabled: true, l1ShapeStyle: 5, l1ShapeSpin: 0.85, l1ShapeSpeed: 1.00, l1ShapeScale: 1.10,
             l2Enabled: true, l2Mode: 6, sensitivity: 1.40, l2Complexity: 1.15, l2Speed: 1.10, l2Zoom: 1.00,
             l3Enabled: true, l3Mode: 5, asciiMode: "banner", useAlbumArt: false,
-            l3Dismantle: 1.15, l3Rebuild: 1.10, l3Evolution: 1.10, l3Scale: 1.00, l3Tracers: 5
+            l3Dismantle: 1.15, l3Rebuild: 1.10, l3Evolution: 1.10, l3Scale: 1.00, l3Tracers: 4
         },
         {
             name: "Pure SynthGrid LED Equaliser (L1 Only)",
             selected: false,
             palette: 6,
             musicDrive: true,
-            tracerCount: 8, tracerSpeed: 1.10, tracerDrift: 0.90, tracerDirection: 1,
-            l1Enabled: true, l1Mode: 4, l1Persistence: 0.82, l1Speed: 1.20, l1Density: 1.35, l1Dim: 0.08,
-            l1EqStyle: 1, l1EqLayout: 0, l1EqGain: 1.55, l1EqDamping: 2,
+            tracerCount: 4, tracerSpeed: 1.10, tracerDrift: 0.90, tracerDirection: 1,
+            l1Enabled: true, l1FieldEnabled: true, l1Mode: 4, l1Persistence: 0.82, l1Speed: 1.20, l1Density: 1.35, l1Dim: 0.12,
+            l1EqEnabled: true, l1EqStyle: 1, l1EqLayout: 0, l1EqGain: 1.55, l1EqDamping: 2,
+            l1ShapesEnabled: true, l1ShapeStyle: 2, l1ShapeSpin: 1.20, l1ShapeSpeed: 1.15, l1ShapeScale: 1.05,
             l2Enabled: false, l2Mode: 0, sensitivity: 1.35, l2Complexity: 1.00, l2Speed: 1.00, l2Zoom: 1.00,
             l3Enabled: false, l3Mode: 0, asciiMode: "braille", useAlbumArt: true,
             l3Dismantle: 1.00, l3Rebuild: 1.00, l3Evolution: 0.85, l3Scale: 1.00, l3Tracers: 3
         },
         {
-            name: "Pure 4D Tesseract Deep Tracers (L2 Only)",
+            name: "Classic Matrix Digital Rain Waterfall",
             selected: false,
-            palette: 7,
+            palette: 2,
             musicDrive: true,
-            tracerCount: 14, tracerSpeed: 1.35, tracerDrift: 1.25, tracerDirection: 1,
-            l1Enabled: false, l1Mode: 0, l1Persistence: 0.85, l1Speed: 1.00, l1Density: 1.00, l1Dim: 0.14,
-            l1EqStyle: 0, l1EqLayout: 0, l1EqGain: 1.25, l1EqDamping: 0,
-            l2Enabled: true, l2Mode: 10, sensitivity: 1.50, l2Complexity: 1.20, l2Speed: 1.15, l2Zoom: 1.10,
+            tracerCount: 4, tracerSpeed: 1.20, tracerDrift: 1.00, tracerDirection: 1,
+            l1Enabled: true, l1FieldEnabled: false, l1Mode: 0, l1Persistence: 0.82, l1Speed: 1.00, l1Density: 1.00, l1Dim: 0.22,
+            l1EqEnabled: true, l1EqStyle: 1, l1EqLayout: 0, l1EqGain: 1.25, l1EqDamping: 0,
+            l1ShapesEnabled: false, l1ShapeStyle: 0, l1ShapeSpin: 1.00, l1ShapeSpeed: 1.00, l1ShapeScale: 1.00,
+            l2Enabled: true, l2Mode: 9, sensitivity: 1.45, l2Complexity: 1.20, l2Speed: 1.15, l2Zoom: 1.00,
             l3Enabled: false, l3Mode: 0, asciiMode: "braille", useAlbumArt: true,
             l3Dismantle: 1.00, l3Rebuild: 1.00, l3Evolution: 0.85, l3Scale: 1.00, l3Tracers: 3
         }
@@ -304,6 +331,7 @@ FocusScope {
             position: root.position,
             duration: root.duration,
             trackProgress: trackProg,
+            trackArcMode: root.trackArcMode,
             palette: root.paletteIndex,
             musicDrive: root.musicDrive,
             tracerCount: root.tracerCount,
@@ -318,16 +346,23 @@ FocusScope {
             bannerLines: root.bannerLines,
             artLines: root.artLines,
             layer1Enabled: root.layer1Enabled,
+            layer1FieldEnabled: root.layer1FieldEnabled,
             layer1Mode: root.layer1Mode,
             layer1Persistence: root.layer1Persistence,
             layer1Trail: root.layer1Persistence,
             layer1Speed: root.layer1Speed,
             layer1Density: root.layer1Density,
             layer1Dim: root.layer1Dim,
+            layer1EqEnabled: root.layer1EqEnabled,
             layer1EqStyle: root.layer1EqStyle,
             layer1EqLayout: root.layer1EqLayout,
             layer1EqGain: root.layer1EqGain,
             layer1EqDamping: root.layer1EqDamping,
+            layer1ShapesEnabled: root.layer1ShapesEnabled,
+            layer1ShapeStyle: root.layer1ShapeStyle,
+            layer1ShapeSpin: root.layer1ShapeSpin,
+            layer1ShapeSpeed: root.layer1ShapeSpeed,
+            layer1ShapeScale: root.layer1ShapeScale,
             layer2Enabled: root.layer2Enabled,
             layer2Mode: root.visualMode,
             mode: root.visualMode,
@@ -367,14 +402,18 @@ FocusScope {
         // Discrete layer states & modes switch cleanly while respecting exact preset layer flags
         root.paletteIndex = Number(p.palette || 0) % Engine.PALETTE_NAMES.length
         root.musicDrive = p.musicDrive !== undefined ? Boolean(p.musicDrive) : true
-        root.tracerCount = p.tracerCount !== undefined ? Number(p.tracerCount) : 9
+        root.tracerCount = p.tracerCount !== undefined ? Number(p.tracerCount) : 4
         root.tracerDirection = p.tracerDirection !== undefined ? Number(p.tracerDirection) : 1
 
         root.layer1Enabled = Boolean(p.l1Enabled)
+        root.layer1FieldEnabled = p.l1FieldEnabled !== undefined ? Boolean(p.l1FieldEnabled) : true
         root.layer1Mode = Number(p.l1Mode || 0) % Engine.LAYER1_MODES.length
+        root.layer1EqEnabled = p.l1EqEnabled !== undefined ? Boolean(p.l1EqEnabled) : true
         root.layer1EqStyle = Number(p.l1EqStyle || 0) % Engine.LAYER1_EQ_STYLES.length
         root.layer1EqLayout = Number(p.l1EqLayout || 0) % Engine.LAYER1_EQ_LAYOUTS.length
         root.layer1EqDamping = Number(p.l1EqDamping || 0) % Engine.LAYER1_EQ_DAMPING.length
+        root.layer1ShapesEnabled = p.l1ShapesEnabled !== undefined ? Boolean(p.l1ShapesEnabled) : true
+        root.layer1ShapeStyle = Number(p.l1ShapeStyle || 0) % Engine.LAYER1_SHAPE_STYLES.length
 
         root.layer2Enabled = Boolean(p.l2Enabled)
         root.visualMode = Number(p.l2Mode || 0) % Engine.MODE_NAMES.length
@@ -393,11 +432,14 @@ FocusScope {
             root.presetMorphProgress = 1.0
             root.tracerSpeed = Number(p.tracerSpeed !== undefined ? p.tracerSpeed : 1.15)
             root.tracerDrift = Number(p.tracerDrift !== undefined ? p.tracerDrift : 1.0)
-            root.layer1Persistence = Number(p.l1Persistence !== undefined ? p.l1Persistence : 0.86)
+            root.layer1Persistence = Number(p.l1Persistence !== undefined ? p.l1Persistence : 0.84)
             root.layer1Speed = Number(p.l1Speed !== undefined ? p.l1Speed : 1.0)
             root.layer1Density = Number(p.l1Density !== undefined ? p.l1Density : 1.0)
-            root.layer1Dim = Number(p.l1Dim !== undefined ? p.l1Dim : 0.14)
+            root.layer1Dim = Number(p.l1Dim !== undefined ? p.l1Dim : 0.16)
             root.layer1EqGain = Number(p.l1EqGain !== undefined ? p.l1EqGain : 1.25)
+            root.layer1ShapeSpin = Number(p.l1ShapeSpin !== undefined ? p.l1ShapeSpin : 1.0)
+            root.layer1ShapeSpeed = Number(p.l1ShapeSpeed !== undefined ? p.l1ShapeSpeed : 1.0)
+            root.layer1ShapeScale = Number(p.l1ShapeScale !== undefined ? p.l1ShapeScale : 1.0)
             root.sensitivity = Number(p.sensitivity !== undefined ? p.sensitivity : 1.35)
             root.layer2Complexity = Number(p.l2Complexity !== undefined ? p.l2Complexity : 1.0)
             root.layer2Speed = Number(p.l2Speed !== undefined ? p.l2Speed : 1.0)
@@ -455,15 +497,22 @@ FocusScope {
             tracerDrift: root.tracerDrift,
             tracerDirection: root.tracerDirection,
             l1Enabled: root.layer1Enabled,
+            l1FieldEnabled: root.layer1FieldEnabled,
             l1Mode: root.layer1Mode,
             l1Persistence: root.layer1Persistence,
             l1Speed: root.layer1Speed,
             l1Density: root.layer1Density,
             l1Dim: root.layer1Dim,
+            l1EqEnabled: root.layer1EqEnabled,
             l1EqStyle: root.layer1EqStyle,
             l1EqLayout: root.layer1EqLayout,
             l1EqGain: root.layer1EqGain,
             l1EqDamping: root.layer1EqDamping,
+            l1ShapesEnabled: root.layer1ShapesEnabled,
+            l1ShapeStyle: root.layer1ShapeStyle,
+            l1ShapeSpin: root.layer1ShapeSpin,
+            l1ShapeSpeed: root.layer1ShapeSpeed,
+            l1ShapeScale: root.layer1ShapeScale,
             l2Enabled: root.layer2Enabled,
             l2Mode: root.visualMode,
             sensitivity: root.sensitivity,
@@ -498,7 +547,7 @@ FocusScope {
         var count = Engine.LAYER1_MODES.length
         layer1Mode = (layer1Mode + delta + count) % count
         vizCanvas.requestPaint()
-        root.requestActionFeedback("Layer #1 Background: " + Engine.LAYER1_MODES[layer1Mode])
+        root.requestActionFeedback("Layer #1 Field: " + Engine.LAYER1_MODES[layer1Mode])
     }
 
     function cycleLayer3Mode(delta) {
@@ -521,19 +570,61 @@ FocusScope {
         root.requestActionFeedback("Geometry Resonance: " + root.symmetryFolds + "x")
     }
 
-    function cycleTracers() {
-        var steps = [1, 4, 7, 9, 12, 16]
-        var nextVal = 9
-        for (var i = 0; i < steps.length; i++) {
-            if (steps[i] > root.tracerCount) {
-                nextVal = steps[i]
-                break
+    function cycleTracers(delta) {
+        var step = (delta !== undefined && delta < 0) ? -1 : 1
+        var steps = [1, 2, 4, 6, 8, 12, 16]
+        var nextVal = 4
+        if (step > 0) {
+            for (var i = 0; i < steps.length; i++) {
+                if (steps[i] > root.tracerCount) {
+                    nextVal = steps[i]
+                    break
+                }
+                if (i === steps.length - 1) nextVal = steps[0]
             }
-            if (i === steps.length - 1) nextVal = steps[0]
+        } else {
+            for (var j = steps.length - 1; j >= 0; j--) {
+                if (steps[j] < root.tracerCount) {
+                    nextVal = steps[j]
+                    break
+                }
+                if (j === 0) nextVal = steps[steps.length - 1]
+            }
         }
         root.tracerCount = nextVal
         vizCanvas.requestPaint()
-        root.requestActionFeedback("3D History Tracers: " + root.tracerCount + "x")
+        root.requestActionFeedback("L2 Tracers: " + root.tracerCount + "x")
+    }
+
+    function cycleTrackArcMode() {
+        root.trackArcMode = (root.trackArcMode + 1) % Engine.TRACK_ARC_MODES.length
+        vizCanvas.requestPaint()
+        root.requestActionFeedback("Song Progress Arc: " + Engine.TRACK_ARC_MODES[root.trackArcMode])
+    }
+
+    function toggleHudVisibility() {
+        root.showHud = !root.showHud
+        if (!root.showHud) {
+            root.showLayerDrawer = false
+            root.showTracerPopover = false
+        }
+        root.requestActionFeedback(root.showHud ? "HUD Menus Visible (H)" : "HUD Hidden — Clean Visualiser (Press H to restore)")
+    }
+
+    function toggleZenFullscreen() {
+        if (root.isFullscreen && !root.showHud) {
+            root.showHud = true
+            root.requestToggleFullscreen()
+            root.requestActionFeedback("Exited Zen Cinema Fullscreen")
+        } else {
+            root.showLayerDrawer = false
+            root.showTracerPopover = false
+            root.showHud = false
+            if (!root.isFullscreen) {
+                root.requestToggleFullscreen()
+            }
+            root.requestActionFeedback("Zen Cinema Fullscreen (Press H or Esc for HUD)")
+        }
     }
 
     function randomiseVisuals() {
@@ -798,7 +889,10 @@ FocusScope {
             cyclePalette((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
             event.accepted = true
         }
-        else if (event.key === Qt.Key_K) { cycleTracers(); event.accepted = true }
+        else if (event.key === Qt.Key_K) {
+            cycleTracers((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+            event.accepted = true
+        }
         else if (event.key === Qt.Key_R) { randomiseVisuals(); event.accepted = true }
         else if (event.key === Qt.Key_S) { triggerShatterImpulse(); event.accepted = true }
         else if (event.key === Qt.Key_X) {
@@ -826,9 +920,17 @@ FocusScope {
         }
         else if (event.key === Qt.Key_L) {
             showLayerDrawer = !showLayerDrawer
+            if (showLayerDrawer) showHud = true
             event.accepted = true
         }
-        else if (event.key === Qt.Key_H) { showHud = !showHud; event.accepted = true }
+        else if (event.key === Qt.Key_H) {
+            root.toggleHudVisibility()
+            event.accepted = true
+        }
+        else if (event.key === Qt.Key_Z) {
+            root.toggleZenFullscreen()
+            event.accepted = true
+        }
         else if (event.key === Qt.Key_Plus || event.key === Qt.Key_Equal) {
             sensitivity = Math.min(3.0, Math.round((sensitivity + 0.15) * 100) / 100)
             root.requestActionFeedback("Audio Reactivity: " + sensitivity.toFixed(2) + "x")
@@ -843,14 +945,36 @@ FocusScope {
         else if (event.key === Qt.Key_N || event.key === Qt.Key_Right) { root.requestNext(); event.accepted = true }
         else if (event.key === Qt.Key_P || event.key === Qt.Key_Left) { root.requestPrev(); event.accepted = true }
         else if (event.key === Qt.Key_F || event.key === Qt.Key_V) {
-            root.requestToggleFullscreen()
+            if (event.modifiers & Qt.ShiftModifier) {
+                root.toggleZenFullscreen()
+            } else {
+                root.requestToggleFullscreen()
+            }
             event.accepted = true
         }
         else if (event.key === Qt.Key_Escape) {
-            if (root.showLayerDrawer) root.showLayerDrawer = false
-            else if (root.isFullscreen) root.requestToggleFullscreen()
+            if (root.showTracerPopover) root.showTracerPopover = false
+            else if (root.showLayerDrawer) root.showLayerDrawer = false
+            else if (root.isFullscreen) {
+                root.showHud = true
+                root.requestToggleFullscreen()
+            }
+            else if (!root.showHud) root.showHud = true
             else root.requestCloseVisualiser()
             event.accepted = true
+        }
+    }
+
+    // Auto-hide HUD after 4 seconds of mouse inactivity while in Fullscreen (when drawers are closed)
+    Timer {
+        id: hudAutoHideTimer
+        interval: 4000
+        running: root.visible && root.isFullscreen && root.showHud && !root.showLayerDrawer && !root.showTracerPopover
+        repeat: false
+        onTriggered: {
+            if (root.isFullscreen && !root.showLayerDrawer && !root.showTracerPopover) {
+                root.showHud = false
+            }
         }
     }
 
@@ -859,22 +983,28 @@ FocusScope {
         color: root.backgroundColour
     }
 
-    // VSync-locked 60 FPS animation loop + smooth parameter interpolation when morphing between presets
+    // Frame-paced ~48 FPS animation loop (prevents 120Hz/165Hz/240Hz monitors from running 4x redundant software canvas paints)
     FrameAnimation {
         id: frameAnim
         running: root.visible && root.stageMode !== "off"
         onTriggered: {
-            var dt = Math.min(0.05, Math.max(0.005, frameTime))
+            root.frameAccumDt += Math.min(0.05, Math.max(0.002, frameTime))
+            if (root.frameAccumDt < 0.0195) {
+                return
+            }
+            var dt = Math.min(0.05, root.frameAccumDt)
+            root.frameAccumDt = 0.0
+
             if (root.targetPresetSnapshot && root.presetMorphProgress < 1.0) {
                 var tp = root.targetPresetSnapshot
                 var alpha = Math.min(1.0, dt * 3.5)
                 root.presetMorphProgress = Math.min(1.0, root.presetMorphProgress + dt * 0.8)
                 root.tracerSpeed += (Number(tp.tracerSpeed || 1.15) - root.tracerSpeed) * alpha
                 root.tracerDrift += (Number(tp.tracerDrift || 1.0) - root.tracerDrift) * alpha
-                root.layer1Persistence += (Number(tp.l1Persistence || 0.86) - root.layer1Persistence) * alpha
+                root.layer1Persistence += (Number(tp.l1Persistence || 0.84) - root.layer1Persistence) * alpha
                 root.layer1Speed += (Number(tp.l1Speed || 1.0) - root.layer1Speed) * alpha
                 root.layer1Density += (Number(tp.l1Density || 1.0) - root.layer1Density) * alpha
-                root.layer1Dim += (Number(tp.l1Dim || 0.14) - root.layer1Dim) * alpha
+                root.layer1Dim += (Number(tp.l1Dim || 0.16) - root.layer1Dim) * alpha
                 root.layer1EqGain += (Number(tp.l1EqGain || 1.25) - root.layer1EqGain) * alpha
                 root.sensitivity += (Number(tp.sensitivity || 1.35) - root.sensitivity) * alpha
                 root.layer2Complexity += (Number(tp.l2Complexity || 1.0) - root.layer2Complexity) * alpha
@@ -886,16 +1016,26 @@ FocusScope {
                 root.layer3Scale += (Number(tp.l3Scale || 1.0) - root.layer3Scale) * alpha
             }
 
-            Engine.stepState(root.engineState, root.bands, root.playing, root.currentConfig(), dt)
-            root.liveBass = root.engineState.bassSmooth || 0.0
-            root.liveMid = root.engineState.midSmooth || 0.0
-            root.liveHigh = root.engineState.highSmooth || 0.0
-            root.liveBeat = root.engineState.beatPulse || 0.0
+            var cfg = root.currentConfig()
+            root._cachedFrameConfig = cfg
+            Engine.stepState(root.engineState, root.bands, root.playing, cfg, dt)
+
+            // Throttle QML telemetry property updates to ~12 Hz (every 4th frame) to avoid QML binding storms
+            root.telemetryTick = (root.telemetryTick + 1) & 3
+            if (root.telemetryTick === 0 && (root.showHud || root.stageMode !== "visualiser")) {
+                root.liveBass = root.engineState.bassSmooth || 0.0
+                root.liveMid = root.engineState.midSmooth || 0.0
+                root.liveHigh = root.engineState.highSmooth || 0.0
+                root.liveBeat = root.engineState.beatPulse || 0.0
+            }
+
             if (root.stageMode === "visualiser") {
                 vizCanvas.requestPaint()
             }
         }
     }
+
+    property var _cachedFrameConfig: null
 
     // Auto-Morph Evolution Timer: strictly respects each layer's enabled state (NEVER turns on a disabled layer!)
     Timer {
@@ -911,9 +1051,14 @@ FocusScope {
                 root.cycleMode(1)
             }
             if (root.layer1Enabled) {
-                root.layer1Mode = (root.layer1Mode + 1) % Engine.LAYER1_MODES.length
-                if (root.layer1Mode === 4) {
+                if (root.layer1FieldEnabled) {
+                    root.layer1Mode = (root.layer1Mode + 1) % Engine.LAYER1_MODES.length
+                }
+                if (root.layer1EqEnabled) {
                     root.layer1EqStyle = (root.layer1EqStyle + 1) % Engine.LAYER1_EQ_STYLES.length
+                }
+                if (root.layer1ShapesEnabled) {
+                    root.layer1ShapeStyle = (root.layer1ShapeStyle + 1) % Engine.LAYER1_SHAPE_STYLES.length
                 }
             }
             if (root.layer3Enabled && root.layer3AutoRandomise) {
@@ -955,7 +1100,7 @@ FocusScope {
             id: artFrame
             anchors.centerIn: parent
             anchors.verticalCenterOffset: root.showHud ? 10 : 0
-            width: Math.max(160, Math.min(parent.width - 48, parent.height - (root.showHud ? 156 : 48)))
+            width: Math.max(160, Math.min(parent.width - 48, parent.height - (root.showHud ? 168 : 48)))
             height: width
             radius: 10
             color: "#0b0f17"
@@ -1012,8 +1157,8 @@ FocusScope {
             id: stageTurntable
             anchors.centerIn: parent
             anchors.verticalCenterOffset: root.showHud ? 10 : 0
-            width: Math.max(220, Math.min(parent.width - 28, (parent.height - (root.showHud ? 148 : 28)) * 1.16))
-            height: Math.max(190, Math.min(parent.height - (root.showHud ? 148 : 28), width / 1.16))
+            width: Math.max(220, Math.min(parent.width - 28, (parent.height - (root.showHud ? 160 : 28)) * 1.16))
+            height: Math.max(190, Math.min(parent.height - (root.showHud ? 160 : 28), width / 1.16))
             deckMode: true
             artPath: root.artPath
             spinning: root.playing
@@ -1042,12 +1187,13 @@ FocusScope {
 
     // =========================================================================
     // STAGE MODE 3: 3-LAYER PSYCHEDELIC & NIGHTCLUB VISUALISER ("visualiser")
-    // 486/686 Demoscene Hardware-Scaled 640x360 Viewport for Sub-Millisecond 60 FPS
+    // 486/686 Demoscene Hardware-Scaled Viewport for Ultra-Low-CPU Smooth Rendering
     // =========================================================================
     Canvas {
         id: vizCanvas
         readonly property int maxInternalW: 640
-        readonly property real renderScale: root.width > maxInternalW ? (maxInternalW / Math.max(1, root.width)) : 1.0
+        readonly property int effectiveTargetW: Math.min(maxInternalW, Math.max(320, root.renderResW))
+        readonly property real renderScale: root.width > effectiveTargetW ? (effectiveTargetW / Math.max(1, root.width)) : 1.0
         width: Math.max(64, Math.round(root.width * renderScale))
         height: Math.max(48, Math.round(root.height * renderScale))
         transformOrigin: Item.TopLeft
@@ -1057,7 +1203,7 @@ FocusScope {
         }
         visible: root.stageMode === "visualiser"
         renderTarget: Canvas.Image
-        renderStrategy: Canvas.Cooperative
+        renderStrategy: Canvas.Threaded
 
         onPaint: {
             var ctx = getContext("2d")
@@ -1071,7 +1217,7 @@ FocusScope {
                 root.asciiLines,
                 root.asciiSource,
                 root.ttfxFrames,
-                root.currentConfig(),
+                root._cachedFrameConfig || root.currentConfig(),
                 vizCanvas
             )
         }
@@ -1079,11 +1225,30 @@ FocusScope {
 
     // Click to focus for keyboard shortcuts; double-click toggles fullscreen
     MouseArea {
+        id: stageBgMouse
         anchors.fill: parent
         z: -1
+        hoverEnabled: root.isFullscreen
+        property real lastX: -1
+        property real lastY: -1
         acceptedButtons: Qt.LeftButton
-        onClicked: root.forceActiveFocus()
+        onClicked: {
+            root.forceActiveFocus()
+            if (root.showTracerPopover) root.showTracerPopover = false
+        }
         onDoubleClicked: root.requestToggleFullscreen()
+        onPositionChanged: mouse => {
+            if (root.isFullscreen) {
+                var dx = Math.abs(mouse.x - lastX)
+                var dy = Math.abs(mouse.y - lastY)
+                if (lastX >= 0 && (dx > 8 || dy > 8)) {
+                    if (!root.showHud) root.showHud = true
+                    hudAutoHideTimer.restart()
+                }
+                lastX = mouse.x
+                lastY = mouse.y
+            }
+        }
     }
 
     // =========================================================================
@@ -1107,7 +1272,7 @@ FocusScope {
             anchors.margins: 6
             spacing: 4
 
-            // Row 1: Stage Mode Selector + Layer Toggles + Presets + Tracers + TTE + Fullscreen
+            // Row 1: Stage Mode Selector + Layer Toggles + Presets + L2 Tracers Slider Popover + TTE + Fullscreen
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 4
@@ -1199,6 +1364,7 @@ FocusScope {
                     horizontalPad: 8
                     onClicked: {
                         root.showLayerDrawer = !root.showLayerDrawer
+                        if (root.showLayerDrawer) root.showTracerPopover = false
                         root.requestActionFeedback(root.showLayerDrawer ? "Opened Layers & Presets Editor" : "Closed Layers & Presets Editor")
                     }
                 }
@@ -1212,13 +1378,38 @@ FocusScope {
                     onClicked: root.cycleSelectedPreset(1)
                 }
 
-                // 3D Graded History Tracers Quick Selector
-                VizPillButton {
+                // Interactive L2/L3 3D Graded History Tracers Button -> Opens Slider Popover (plus mouse wheel adjust!)
+                Item {
                     visible: root.stageMode === "visualiser"
-                    text: "TRACERS: " + root.tracerCount + "x"
-                    active: root.tracerCount > 1
-                    horizontalPad: 7
-                    onClicked: root.cycleTracers()
+                    Layout.preferredHeight: 24
+                    Layout.preferredWidth: tracerBtnPill.implicitWidth
+
+                    VizPillButton {
+                        id: tracerBtnPill
+                        anchors.fill: parent
+                        text: "L2 Tracers: " + root.tracerCount + "x " + (root.showTracerPopover ? "▲" : "▾")
+                        active: root.showTracerPopover || root.tracerCount > 1
+                        urgent: root.showTracerPopover
+                        horizontalPad: 7
+                        onClicked: {
+                            root.showTracerPopover = !root.showTracerPopover
+                            if (root.showTracerPopover) root.showLayerDrawer = false
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        acceptedButtons: Qt.RightButton
+                        onClicked: {
+                            root.cycleTracers(-1)
+                        }
+                        onWheel: wheel => {
+                            var step = wheel.angleDelta.y > 0 ? 1 : -1
+                            root.tracerCount = Math.max(1, Math.min(16, root.tracerCount + step))
+                            vizCanvas.requestPaint()
+                            root.requestActionFeedback("L2 Tracers: " + root.tracerCount + "x")
+                        }
+                    }
                 }
 
                 // Palette selector
@@ -1269,7 +1460,14 @@ FocusScope {
                     onClicked: root.launchExternalTteTerminal()
                 }
 
-                // Fullscreen toggle
+                // Hide HUD toggle (H)
+                VizPillButton {
+                    text: "󰈈 Hide HUD (H)"
+                    horizontalPad: 7
+                    onClicked: root.toggleHudVisibility()
+                }
+
+                // Fullscreen toggle (F / V, or Z / Shift+F for HUD-free Zen Fullscreen)
                 VizPillButton {
                     text: root.isFullscreen ? "󰊓 Exit" : "󰊓 Full"
                     active: root.isFullscreen
@@ -1323,6 +1521,146 @@ FocusScope {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // INTERACTIVE L2 / L3 3D TRACER SLIDER POPOVER (Instant 1x..16x Control)
+    // =========================================================================
+    Rectangle {
+        id: tracerPopover
+        anchors.top: topHud.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.margins: 8
+        height: tracerPopoverCol.implicitHeight + 18
+        radius: 8
+        color: Qt.rgba(0.03, 0.04, 0.07, 0.96)
+        border.width: 1
+        border.color: root.accentColour
+        visible: root.showHud && root.showTracerPopover && root.stageMode === "visualiser"
+        z: 25
+
+        ColumnLayout {
+            id: tracerPopoverCol
+            anchors.fill: parent
+            anchors.margins: 9
+            spacing: 7
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 6
+
+                Text {
+                    text: "󰒓 3D Graded History Tracers (L2 Visualiser & L3 Art/Words)"
+                    textFormat: Text.PlainText
+                    font.family: "JetBrainsMono Nerd Font"
+                    font.pixelSize: 10
+                    font.bold: true
+                    color: root.accentColour
+                }
+
+                Item { Layout.fillWidth: true }
+
+                VizPillButton {
+                    text: "−"
+                    horizontalPad: 8
+                    pillHeight: 22
+                    onClicked: {
+                        root.tracerCount = Math.max(1, root.tracerCount - 1)
+                        vizCanvas.requestPaint()
+                    }
+                }
+
+                Repeater {
+                    model: [1, 2, 4, 6, 8, 12, 16]
+                    delegate: VizPillButton {
+                        required property int modelData
+                        text: modelData === 1 ? "1x (Off)" : (modelData + "x")
+                        active: root.tracerCount === modelData
+                        horizontalPad: 7
+                        pillHeight: 22
+                        onClicked: {
+                            root.tracerCount = modelData
+                            vizCanvas.requestPaint()
+                            root.requestActionFeedback("L2 Visualiser Tracers: " + modelData + "x")
+                        }
+                    }
+                }
+
+                VizPillButton {
+                    text: "+"
+                    horizontalPad: 8
+                    pillHeight: 22
+                    onClicked: {
+                        root.tracerCount = Math.min(16, root.tracerCount + 1)
+                        vizCanvas.requestPaint()
+                    }
+                }
+
+                VizPillButton {
+                    text: "3D Flow: " + (root.tracerDirection > 0 ? "Towards User" : (root.tracerDirection < 0 ? "To Endpoint" : "Breathe"))
+                    active: true
+                    horizontalPad: 7
+                    pillHeight: 22
+                    onClicked: {
+                        root.tracerDirection = (root.tracerDirection === 1) ? -1 : ((root.tracerDirection === -1) ? 0 : 1)
+                        vizCanvas.requestPaint()
+                    }
+                }
+
+                VizPillButton {
+                    text: "✕"
+                    horizontalPad: 7
+                    pillHeight: 22
+                    onClicked: root.showTracerPopover = false
+                }
+            }
+
+            GridLayout {
+                Layout.fillWidth: true
+                columns: 2
+                columnSpacing: 16
+                rowSpacing: 6
+
+                LayerSlider {
+                    label: "L2 Tracers (1–16x)"
+                    value: root.tracerCount
+                    minValue: 1
+                    maxValue: 16
+                    integerSteps: true
+                    unitSuffix: "x"
+                    onValueEdited: v => { root.tracerCount = Math.round(v); vizCanvas.requestPaint() }
+                }
+
+                LayerSlider {
+                    label: "L3 Tracers (1–8x)"
+                    value: root.layer3Tracers
+                    minValue: 1
+                    maxValue: 8
+                    integerSteps: true
+                    unitSuffix: "x"
+                    onValueEdited: v => { root.layer3Tracers = Math.round(v); vizCanvas.requestPaint() }
+                }
+
+                LayerSlider {
+                    label: "Tracer Z-Speed"
+                    value: root.tracerSpeed
+                    minValue: 0.20
+                    maxValue: 2.80
+                    unitSuffix: "x"
+                    onValueEdited: v => { root.tracerSpeed = v; vizCanvas.requestPaint() }
+                }
+
+                LayerSlider {
+                    label: "Endpoint Drift"
+                    value: root.tracerDrift
+                    minValue: 0.00
+                    maxValue: 2.40
+                    unitSuffix: "x"
+                    onValueEdited: v => { root.tracerDrift = v; vizCanvas.requestPaint() }
                 }
             }
         }
@@ -1555,20 +1893,21 @@ FocusScope {
                     }
 
                     // =========================================================
-                    // TAB 1: LAYER #1 CONFIGURATION (BACKGROUND & EQUALISER)
+                    // TAB 1: LAYER #1 CONFIGURATION — 3 INDEPENDENT SUB-SYSTEMS
+                    //   (1) L1 Field  (2) L1 Equaliser  (3) L1 Beat Shapes
                     // =========================================================
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 8
                         visible: root.activeConfigLayer === 1
 
-                        // Direct 6-Mode Pill Selector for Layer #1 (Never alters Layer #2 or Layer #3!)
+                        // Master Layer #1 Toggle + Quick Sub-System Summary Row
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 6
 
                             VizPillButton {
-                                text: root.layer1Enabled ? "󰄬 Layer #1: ON" : "󰅖 Layer #1: OFF"
+                                text: root.layer1Enabled ? "󰄬 Layer #1 Master: ON" : "󰅖 Layer #1 Master: OFF"
                                 active: root.layer1Enabled
                                 onClicked: {
                                     root.layer1Enabled = !root.layer1Enabled
@@ -1576,30 +1915,134 @@ FocusScope {
                                 }
                             }
 
-                            Repeater {
-                                model: Engine.LAYER1_MODES.length
-                                delegate: VizPillButton {
-                                    required property int index
-                                    text: (index + 1) + " " + Engine.LAYER1_MODES[index]
-                                    active: root.layer1Mode === index
-                                    horizontalPad: 8
-                                    onClicked: {
-                                        root.layer1Mode = index
-                                        vizCanvas.requestPaint()
-                                        root.requestActionFeedback("Layer #1 Mode: " + Engine.LAYER1_MODES[index])
+                            VizPillButton {
+                                text: root.layer1FieldEnabled ? "󰄬 (1) L1 Field: ON" : "󰅖 (1) L1 Field: OFF"
+                                active: root.layer1Enabled && root.layer1FieldEnabled
+                                onClicked: {
+                                    root.layer1FieldEnabled = !root.layer1FieldEnabled
+                                    vizCanvas.requestPaint()
+                                    root.requestActionFeedback("L1 Field Sub-System: " + (root.layer1FieldEnabled ? "ON" : "OFF"))
+                                }
+                            }
+
+                            VizPillButton {
+                                text: root.layer1EqEnabled ? "󰄬 (2) L1 Equaliser: ON" : "󰅖 (2) L1 Equaliser: OFF"
+                                active: root.layer1Enabled && root.layer1EqEnabled
+                                onClicked: {
+                                    root.layer1EqEnabled = !root.layer1EqEnabled
+                                    vizCanvas.requestPaint()
+                                    root.requestActionFeedback("L1 Equaliser Sub-System: " + (root.layer1EqEnabled ? "ON" : "OFF"))
+                                }
+                            }
+
+                            VizPillButton {
+                                text: root.layer1ShapesEnabled ? "󰄬 (3) L1 Beat Shapes: ON" : "󰅖 (3) L1 Beat Shapes: OFF"
+                                active: root.layer1Enabled && root.layer1ShapesEnabled
+                                onClicked: {
+                                    root.layer1ShapesEnabled = !root.layer1ShapesEnabled
+                                    vizCanvas.requestPaint()
+                                    root.requestActionFeedback("L1 Beat Shapes Sub-System: " + (root.layer1ShapesEnabled ? "ON" : "OFF"))
+                                }
+                            }
+                        }
+
+                        // SUB-SYSTEM 1: L1 Ambient / Perspective Field (6 Modes + Sliders)
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: fieldSubCol.implicitHeight + 14
+                            radius: 6
+                            color: Qt.rgba(1, 1, 1, 0.04)
+                            border.width: 1
+                            border.color: root.layer1FieldEnabled ? Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.35) : Qt.rgba(1, 1, 1, 0.12)
+
+                            ColumnLayout {
+                                id: fieldSubCol
+                                anchors.fill: parent
+                                anchors.margins: 7
+                                spacing: 6
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+
+                                    VizPillButton {
+                                        text: root.layer1FieldEnabled ? "Field: ON" : "Field: OFF"
+                                        active: root.layer1FieldEnabled
+                                        horizontalPad: 7
+                                        onClicked: {
+                                            root.layer1FieldEnabled = !root.layer1FieldEnabled
+                                            vizCanvas.requestPaint()
+                                        }
+                                    }
+
+                                    Repeater {
+                                        model: Engine.LAYER1_MODES.length
+                                        delegate: VizPillButton {
+                                            required property int index
+                                            text: (index + 1) + " " + Engine.LAYER1_MODES[index]
+                                            active: root.layer1FieldEnabled && root.layer1Mode === index
+                                            horizontalPad: 7
+                                            onClicked: {
+                                                root.layer1FieldEnabled = true
+                                                root.layer1Mode = index
+                                                vizCanvas.requestPaint()
+                                                root.requestActionFeedback("L1 Field Mode: " + Engine.LAYER1_MODES[index])
+                                            }
+                                        }
+                                    }
+                                }
+
+                                GridLayout {
+                                    Layout.fillWidth: true
+                                    columns: 2
+                                    columnSpacing: 16
+                                    rowSpacing: 5
+
+                                    LayerSlider {
+                                        label: "Trail Persistence"
+                                        value: root.layer1Persistence
+                                        minValue: 0.20
+                                        maxValue: 0.96
+                                        onValueEdited: v => { root.layer1Persistence = v; vizCanvas.requestPaint() }
+                                    }
+
+                                    LayerSlider {
+                                        label: "Feedback Speed"
+                                        value: root.layer1Speed
+                                        minValue: 0.20
+                                        maxValue: 2.50
+                                        unitSuffix: "x"
+                                        onValueEdited: v => { root.layer1Speed = v; vizCanvas.requestPaint() }
+                                    }
+
+                                    LayerSlider {
+                                        label: "Field Density"
+                                        value: root.layer1Density
+                                        minValue: 0.25
+                                        maxValue: 2.00
+                                        unitSuffix: "x"
+                                        onValueEdited: v => { root.layer1Density = v; vizCanvas.requestPaint() }
+                                    }
+
+                                    LayerSlider {
+                                        label: "Backdrop Dim"
+                                        value: root.layer1Dim
+                                        minValue: 0.04
+                                        maxValue: 0.65
+                                        onValueEdited: v => { root.layer1Dim = v; vizCanvas.requestPaint() }
                                     }
                                 }
                             }
                         }
 
-                        // SynthGrid Equaliser Backdrop Style, Layout & Damping Controls (shown when Mode 4 Equaliser is active)
+                        // SUB-SYSTEM 2: Independent L1 SynthGrid Equaliser (Can run over ANY L1 Field or solo!)
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: eqControlsCol.implicitHeight + 14
                             radius: 6
-                            color: Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.08)
+                            color: Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.07)
                             border.width: 1
-                            border.color: Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.30)
+                            border.color: root.layer1EqEnabled ? Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.35) : Qt.rgba(1, 1, 1, 0.14)
 
                             ColumnLayout {
                                 id: eqControlsCol
@@ -1611,13 +2054,15 @@ FocusScope {
                                     Layout.fillWidth: true
                                     spacing: 5
 
-                                    Text {
-                                        text: "Equaliser Style:"
-                                        textFormat: Text.PlainText
-                                        font.family: "JetBrainsMono Nerd Font"
-                                        font.pixelSize: 10
-                                        font.bold: true
-                                        color: root.accentColour
+                                    VizPillButton {
+                                        text: root.layer1EqEnabled ? "󰄬 L1 Equaliser: ON" : "󰅖 L1 Equaliser: OFF"
+                                        active: root.layer1EqEnabled
+                                        horizontalPad: 8
+                                        onClicked: {
+                                            root.layer1EqEnabled = !root.layer1EqEnabled
+                                            vizCanvas.requestPaint()
+                                            root.requestActionFeedback("L1 Equaliser: " + (root.layer1EqEnabled ? "ON" : "OFF"))
+                                        }
                                     }
 
                                     Repeater {
@@ -1625,10 +2070,10 @@ FocusScope {
                                         delegate: VizPillButton {
                                             required property int index
                                             text: Engine.LAYER1_EQ_STYLES[index]
-                                            active: root.layer1Mode === 4 && root.layer1EqStyle === index
+                                            active: root.layer1EqEnabled && root.layer1EqStyle === index
                                             horizontalPad: 7
                                             onClicked: {
-                                                root.layer1Mode = 4
+                                                root.layer1EqEnabled = true
                                                 root.layer1EqStyle = index
                                                 vizCanvas.requestPaint()
                                                 root.requestActionFeedback("L1 Equaliser Style: " + Engine.LAYER1_EQ_STYLES[index])
@@ -1684,64 +2129,107 @@ FocusScope {
                                             }
                                         }
                                     }
+
+                                    LayerSlider {
+                                        Layout.fillWidth: true
+                                        label: "Equaliser Gain"
+                                        value: root.layer1EqGain
+                                        minValue: 0.40
+                                        maxValue: 2.50
+                                        unitSuffix: "x"
+                                        onValueEdited: v => { root.layer1EqGain = v; vizCanvas.requestPaint() }
+                                    }
                                 }
                             }
                         }
 
-                        // 2-Column Parameter Sliders for Layer #1
-                        GridLayout {
+                        // SUB-SYSTEM 3: Independent L1 Beat Shapes (Audio-Reactive Shapes Flying Towards User)
+                        Rectangle {
                             Layout.fillWidth: true
-                            columns: 2
-                            columnSpacing: 16
-                            rowSpacing: 6
+                            Layout.preferredHeight: shapesControlsCol.implicitHeight + 14
+                            radius: 6
+                            color: Qt.rgba(root.urgentColour.r, root.urgentColour.g, root.urgentColour.b, 0.06)
+                            border.width: 1
+                            border.color: root.layer1ShapesEnabled ? Qt.rgba(root.urgentColour.r, root.urgentColour.g, root.urgentColour.b, 0.35) : Qt.rgba(1, 1, 1, 0.14)
 
-                            LayerSlider {
-                                label: "Trail Persistence"
-                                value: root.layer1Persistence
-                                minValue: 0.20
-                                maxValue: 0.97
-                                onValueEdited: v => { root.layer1Persistence = v; vizCanvas.requestPaint() }
-                            }
+                            ColumnLayout {
+                                id: shapesControlsCol
+                                anchors.fill: parent
+                                anchors.margins: 7
+                                spacing: 6
 
-                            LayerSlider {
-                                label: "Equaliser Gain"
-                                value: root.layer1EqGain
-                                minValue: 0.40
-                                maxValue: 2.50
-                                unitSuffix: "x"
-                                onValueEdited: v => { root.layer1EqGain = v; vizCanvas.requestPaint() }
-                            }
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 5
 
-                            LayerSlider {
-                                label: "Feedback Speed"
-                                value: root.layer1Speed
-                                minValue: 0.20
-                                maxValue: 2.50
-                                unitSuffix: "x"
-                                onValueEdited: v => { root.layer1Speed = v; vizCanvas.requestPaint() }
-                            }
+                                    VizPillButton {
+                                        text: root.layer1ShapesEnabled ? "󰄬 L1 Beat Shapes: ON" : "󰅖 L1 Beat Shapes: OFF"
+                                        active: root.layer1ShapesEnabled
+                                        urgent: root.layer1ShapesEnabled
+                                        horizontalPad: 8
+                                        onClicked: {
+                                            root.layer1ShapesEnabled = !root.layer1ShapesEnabled
+                                            vizCanvas.requestPaint()
+                                            root.requestActionFeedback("L1 Beat Shapes: " + (root.layer1ShapesEnabled ? "ON" : "OFF"))
+                                        }
+                                    }
 
-                            LayerSlider {
-                                label: "Field Density"
-                                value: root.layer1Density
-                                minValue: 0.25
-                                maxValue: 2.00
-                                unitSuffix: "x"
-                                onValueEdited: v => { root.layer1Density = v; vizCanvas.requestPaint() }
-                            }
+                                    Repeater {
+                                        model: Engine.LAYER1_SHAPE_STYLES.length
+                                        delegate: VizPillButton {
+                                            required property int index
+                                            text: Engine.LAYER1_SHAPE_STYLES[index]
+                                            active: root.layer1ShapesEnabled && root.layer1ShapeStyle === index
+                                            horizontalPad: 7
+                                            onClicked: {
+                                                root.layer1ShapesEnabled = true
+                                                root.layer1ShapeStyle = index
+                                                vizCanvas.requestPaint()
+                                                root.requestActionFeedback("L1 Beat Shape Style: " + Engine.LAYER1_SHAPE_STYLES[index])
+                                            }
+                                        }
+                                    }
+                                }
 
-                            LayerSlider {
-                                label: "Backdrop Dim"
-                                value: root.layer1Dim
-                                minValue: 0.02
-                                maxValue: 0.65
-                                onValueEdited: v => { root.layer1Dim = v; vizCanvas.requestPaint() }
+                                GridLayout {
+                                    Layout.fillWidth: true
+                                    columns: 3
+                                    columnSpacing: 12
+                                    rowSpacing: 5
+
+                                    LayerSlider {
+                                        label: "Shape Spin"
+                                        value: root.layer1ShapeSpin
+                                        minValue: -2.50
+                                        maxValue: 2.50
+                                        unitSuffix: "x"
+                                        onValueEdited: v => { root.layer1ShapeSpin = v; vizCanvas.requestPaint() }
+                                    }
+
+                                    LayerSlider {
+                                        label: "Flight Speed"
+                                        value: root.layer1ShapeSpeed
+                                        minValue: 0.20
+                                        maxValue: 3.00
+                                        unitSuffix: "x"
+                                        onValueEdited: v => { root.layer1ShapeSpeed = v; vizCanvas.requestPaint() }
+                                    }
+
+                                    LayerSlider {
+                                        label: "Shape Scale"
+                                        value: root.layer1ShapeScale
+                                        minValue: 0.30
+                                        maxValue: 2.50
+                                        unitSuffix: "x"
+                                        onValueEdited: v => { root.layer1ShapeScale = v; vizCanvas.requestPaint() }
+                                    }
+                                }
                             }
                         }
                     }
 
                     // =========================================================
-                    // TAB 2: LAYER #2 CONFIGURATION (VISUALISER & 3D TRACERS)
+                    // TAB 2: LAYER #2 CONFIGURATION (12 VISUALISER MODES, SONG ARC & 3D TRACERS)
                     // =========================================================
                     ColumnLayout {
                         Layout.fillWidth: true
@@ -1762,12 +2250,6 @@ FocusScope {
                             }
 
                             VizPillButton {
-                                text: "󰍹 " + (Engine.MODE_NAMES[root.visualMode] || "MilkDrop")
-                                active: true
-                                onClicked: root.cycleMode(1)
-                            }
-
-                            VizPillButton {
                                 text: "3D Flow: " + (root.tracerDirection > 0 ? "Towards User" : (root.tracerDirection < 0 ? "To Endpoint" : "Breathe In/Out"))
                                 active: true
                                 onClicked: {
@@ -1780,6 +2262,58 @@ FocusScope {
                                 text: "󰏘 Palette: " + (Engine.PALETTE_NAMES[root.paletteIndex] || "Prism")
                                 onClicked: root.cyclePalette(1)
                             }
+
+                            VizPillButton {
+                                text: "󰑐 Song Arc: " + (Engine.TRACK_ARC_MODES[root.trackArcMode] || "Climax")
+                                active: root.trackArcMode > 0
+                                onClicked: root.cycleTrackArcMode()
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            // Demoscene Internal Render Resolution Selector (CPU Efficiency Control)
+                            Repeater {
+                                model: [
+                                    { w: 384, label: "384p Fast" },
+                                    { w: 480, label: "480p Demoscene" },
+                                    { w: 640, label: "640p Crisp" }
+                                ]
+                                delegate: VizPillButton {
+                                    required property var modelData
+                                    text: modelData.label
+                                    active: root.renderResW === modelData.w
+                                    horizontalPad: 6
+                                    onClicked: {
+                                        root.renderResW = modelData.w
+                                        vizCanvas.requestPaint()
+                                        root.requestActionFeedback("Internal Render Scale: " + modelData.label)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Complete 12-Mode Selector Grid for Layer #2
+                        GridLayout {
+                            Layout.fillWidth: true
+                            columns: 4
+                            columnSpacing: 6
+                            rowSpacing: 5
+
+                            Repeater {
+                                model: Engine.MODE_NAMES.length
+                                delegate: VizPillButton {
+                                    required property int index
+                                    Layout.fillWidth: true
+                                    text: (index + 1) + ". " + Engine.MODE_NAMES[index]
+                                    active: root.layer2Enabled && root.visualMode === index
+                                    horizontalPad: 6
+                                    onClicked: {
+                                        root.visualMode = index
+                                        vizCanvas.requestPaint()
+                                        root.requestActionFeedback("Layer #2 Mode: " + Engine.MODE_NAMES[index])
+                                    }
+                                }
+                            }
                         }
 
                         // 2-Column Parameter Sliders for Layer #2 + 3D Graded History Tracers
@@ -1790,7 +2324,7 @@ FocusScope {
                             rowSpacing: 6
 
                             LayerSlider {
-                                label: "3D Tracer Slices"
+                                label: "L2 Tracers (1–16x)"
                                 value: root.tracerCount
                                 minValue: 1
                                 maxValue: 16
@@ -1907,6 +2441,36 @@ FocusScope {
                             }
                         }
 
+                        // Song Progress Arc Selector Row (0% -> 100% Song Journey Options)
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 5
+
+                            Text {
+                                text: "Song Progress Arc (0→100%):"
+                                textFormat: Text.PlainText
+                                font.family: "JetBrainsMono Nerd Font"
+                                font.pixelSize: 10
+                                font.bold: true
+                                color: root.accentColour
+                            }
+
+                            Repeater {
+                                model: Engine.TRACK_ARC_MODES.length
+                                delegate: VizPillButton {
+                                    required property int index
+                                    text: Engine.TRACK_ARC_MODES[index]
+                                    active: root.trackArcMode === index
+                                    horizontalPad: 7
+                                    onClicked: {
+                                        root.trackArcMode = index
+                                        vizCanvas.requestPaint()
+                                        root.requestActionFeedback("Song Progress Arc: " + Engine.TRACK_ARC_MODES[index])
+                                    }
+                                }
+                            }
+                        }
+
                         // Direct 6-Mode Pill Selector for Layer #3 (Never alters Layer #1 or Layer #2!)
                         RowLayout {
                             Layout.fillWidth: true
@@ -1988,7 +2552,7 @@ FocusScope {
     }
 
     // =========================================================================
-    // BOTTOM TRACK, LIVE AUDIO TELEMETRY & TRANSPORT HUD
+    // BOTTOM TRACK, INTERACTIVE PROGRESS SCRUBBER (0%->100%) & TRANSPORT HUD
     // =========================================================================
     Rectangle {
         id: bottomHud
@@ -1996,158 +2560,257 @@ FocusScope {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.margins: 8
-        height: 54
+        height: 68
         radius: 8
-        color: Qt.rgba(0.04, 0.05, 0.08, 0.86)
+        color: Qt.rgba(0.04, 0.05, 0.08, 0.88)
         border.width: 1
         border.color: Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.30)
         visible: root.showHud
 
-        RowLayout {
+        readonly property real trackRatio: root.duration > 0.5 ? Math.max(0.0, Math.min(1.0, root.position / root.duration)) : 0.0
+        readonly property int trackPercent: Math.round(trackRatio * 100)
+
+        ColumnLayout {
             anchors.fill: parent
             anchors.leftMargin: 10
             anchors.rightMargin: 10
-            spacing: 10
+            anchors.topMargin: 5
+            anchors.bottomMargin: 5
+            spacing: 4
 
-            // Clicking the mini vinyl badge switches to the full Turntable stage
-            Item {
-                Layout.preferredWidth: 38
-                Layout.preferredHeight: 38
+            // Top Row inside Bottom HUD: Interactive Track Progress & Seek Scrubber Bar (0% -> 100%)
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
 
-                Vinyl {
-                    anchors.fill: parent
-                    artPath: root.artPath
-                    spinning: root.playing
-                    accentColour: root.accentColour
-                    bassLevel: root.liveBass
+                Text {
+                    text: root.formatTime(root.position)
+                    textFormat: Text.PlainText
+                    font.family: "JetBrainsMono Nerd Font"
+                    font.pixelSize: 10
+                    font.bold: true
+                    color: root.accentColour
                 }
 
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        root.setStage(root.stageMode === "turntable" ? "visualiser" : "turntable")
+                // Interactive Seek & Song-Arc Progress Bar
+                Rectangle {
+                    id: seekBarTrack
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 8
+                    radius: 4
+                    color: Qt.rgba(1, 1, 1, 0.12)
+                    border.width: 1
+                    border.color: Qt.rgba(1, 1, 1, 0.18)
+
+                    // Quarter-track chapter markers (25% / 50% / 75% Climax)
+                    Repeater {
+                        model: [0.25, 0.50, 0.75]
+                        delegate: Rectangle {
+                            required property real modelData
+                            x: parent.width * modelData
+                            width: 1
+                            height: parent.height
+                            color: modelData === 0.75
+                                ? Qt.rgba(root.urgentColour.r, root.urgentColour.g, root.urgentColour.b, 0.55)
+                                : Qt.rgba(1, 1, 1, 0.22)
+                        }
+                    }
+
+                    Rectangle {
+                        width: parent.width * bottomHud.trackRatio
+                        height: parent.height
+                        radius: 4
+                        color: bottomHud.trackRatio >= 0.70 && bottomHud.trackRatio <= 0.85
+                            ? root.urgentColour
+                            : root.accentColour
+                    }
+
+                    Rectangle {
+                        x: Math.max(0, Math.min(parent.width - width, parent.width * bottomHud.trackRatio - width * 0.5))
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 12
+                        height: 12
+                        radius: 6
+                        color: seekMouseArea.pressed ? root.urgentColour : "#ffffff"
+                        border.width: 2
+                        border.color: root.accentColour
+                    }
+
+                    MouseArea {
+                        id: seekMouseArea
+                        anchors.fill: parent
+                        anchors.topMargin: -5
+                        anchors.bottomMargin: -5
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        function seekAtX(mx) {
+                            if (root.duration > 0.5) {
+                                var ratio = Math.max(0.0, Math.min(1.0, mx / Math.max(1, seekBarTrack.width)))
+                                var targetSec = ratio * root.duration
+                                root.position = targetSec
+                                root.requestSeek(targetSec)
+                                vizCanvas.requestPaint()
+                            }
+                        }
+                        onPressed: mouse => seekAtX(mouse.x)
+                        onPositionChanged: mouse => { if (pressed) seekAtX(mouse.x) }
                     }
                 }
-            }
-
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 2
 
                 Text {
-                    Layout.fillWidth: true
-                    text: root.trackTitle || "Bandarchy Psychedelic Stage"
+                    text: bottomHud.trackPercent + "% · -" + root.formatTime(Math.max(0, root.duration - root.position)) + " / " + root.formatTime(root.duration)
                     textFormat: Text.PlainText
                     font.family: "JetBrainsMono Nerd Font"
-                    font.pixelSize: 12
-                    font.bold: true
+                    font.pixelSize: 10
                     color: root.foregroundColour
-                    elide: Text.ElideRight
                 }
 
-                Text {
-                    Layout.fillWidth: true
-                    text: (root.trackArtist ? root.trackArtist : "Bandarchy") +
-                          (root.trackAlbum ? (" · " + root.trackAlbum) : "") +
-                          "  [L: Layers & Presets · G: L1 Bg · M: L2 Viz · E: L3 Art · K: Tracers · T: TTE · F: Full]"
-                    textFormat: Text.PlainText
-                    font.family: "JetBrainsMono Nerd Font"
-                    font.pixelSize: 9
-                    color: Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.72)
-                    elide: Text.ElideRight
+                VizPillButton {
+                    visible: root.stageMode === "visualiser"
+                    text: "Arc: " + (Engine.TRACK_ARC_MODES[root.trackArcMode] || "Climax").split(" ")[0]
+                    active: root.trackArcMode > 0
+                    horizontalPad: 6
+                    pillHeight: 18
+                    fontSize: 9
+                    onClicked: root.cycleTrackArcMode()
                 }
             }
 
-            // Live 4-Bar Audio Telemetry Meter (BASS / MID / HIGH / BEAT)
-            Rectangle {
-                Layout.preferredWidth: 96
-                Layout.preferredHeight: 34
-                radius: 5
-                color: Qt.rgba(1, 1, 1, 0.05)
-                border.width: 1
-                border.color: root.liveBeat > 0.35 ? root.urgentColour : Qt.rgba(1, 1, 1, 0.14)
+            // Bottom Row inside Bottom HUD: Vinyl Badge + Track Metadata + Live 4-Bar Audio Telemetry + Transport
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
 
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: 4
-                    spacing: 4
+                // Clicking the mini vinyl badge switches to the full Turntable stage
+                Item {
+                    Layout.preferredWidth: 34
+                    Layout.preferredHeight: 34
 
-                    Repeater {
-                        model: [
-                            { tag: "B", val: root.liveBass, col: root.accentColour },
-                            { tag: "M", val: root.liveMid,  col: "#38bdf8" },
-                            { tag: "H", val: root.liveHigh, col: "#c084fc" },
-                            { tag: "!", val: root.liveBeat, col: root.urgentColour }
-                        ]
+                    Vinyl {
+                        anchors.fill: parent
+                        artPath: root.artPath
+                        spinning: root.playing && root.showHud
+                        accentColour: root.accentColour
+                        bassLevel: root.liveBass
+                    }
 
-                        delegate: ColumnLayout {
-                            required property var modelData
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            spacing: 1
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.setStage(root.stageMode === "turntable" ? "visualiser" : "turntable")
+                        }
+                    }
+                }
 
-                            Item {
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 1
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.trackTitle || "Bandarchy Psychedelic Stage"
+                        textFormat: Text.PlainText
+                        font.family: "JetBrainsMono Nerd Font"
+                        font.pixelSize: 11
+                        font.bold: true
+                        color: root.foregroundColour
+                        elide: Text.ElideRight
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: (root.trackArtist ? root.trackArtist : "Bandarchy") +
+                              (root.trackAlbum ? (" · " + root.trackAlbum) : "") +
+                              "  [L: Layers & Presets · G: L1 Field · M: L2 Viz · E: L3 Art · K: L2 Tracers · T: TTE · F: Full]"
+                        textFormat: Text.PlainText
+                        font.family: "JetBrainsMono Nerd Font"
+                        font.pixelSize: 9
+                        color: Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.72)
+                        elide: Text.ElideRight
+                    }
+                }
+
+                // Live 4-Bar Audio Telemetry Meter (BASS / MID / HIGH / BEAT)
+                Rectangle {
+                    Layout.preferredWidth: 92
+                    Layout.preferredHeight: 30
+                    radius: 5
+                    color: Qt.rgba(1, 1, 1, 0.05)
+                    border.width: 1
+                    border.color: root.liveBeat > 0.35 ? root.urgentColour : Qt.rgba(1, 1, 1, 0.14)
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 3
+                        spacing: 4
+
+                        Repeater {
+                            model: 4
+
+                            delegate: ColumnLayout {
+                                required property int index
+                                readonly property string barTag: index === 0 ? "B" : (index === 1 ? "M" : (index === 2 ? "H" : "!"))
+                                readonly property real barVal: index === 0 ? root.liveBass : (index === 1 ? root.liveMid : (index === 2 ? root.liveHigh : root.liveBeat))
+                                readonly property color barCol: index === 0 ? root.accentColour : (index === 1 ? "#38bdf8" : (index === 2 ? "#c084fc" : root.urgentColour))
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
+                                spacing: 1
 
-                                Rectangle {
-                                    anchors.bottom: parent.bottom
-                                    width: parent.width
-                                    height: Math.max(2, parent.height * Math.min(1.0, parent.parent.modelData.val))
-                                    radius: 2
-                                    color: parent.parent.modelData.col
+                                Item {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+
+                                    Rectangle {
+                                        anchors.bottom: parent.bottom
+                                        width: parent.width
+                                        height: Math.max(2, parent.height * Math.min(1.0, parent.parent.barVal))
+                                        radius: 2
+                                        color: parent.parent.barCol
+                                    }
                                 }
-                            }
 
-                            Text {
-                                Layout.alignment: Qt.AlignHCenter
-                                text: parent.modelData.tag
-                                textFormat: Text.PlainText
-                                font.family: "JetBrainsMono Nerd Font"
-                                font.pixelSize: 7
-                                font.bold: true
-                                color: root.foregroundColour
+                                Text {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    text: parent.barTag
+                                    textFormat: Text.PlainText
+                                    font.family: "JetBrainsMono Nerd Font"
+                                    font.pixelSize: 7
+                                    font.bold: true
+                                    color: root.foregroundColour
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            RowLayout {
-                spacing: 6
+                RowLayout {
+                    spacing: 6
 
-                VizPillButton {
-                    text: "󰒮"
-                    fontSize: 13
-                    horizontalPad: 8
-                    pillHeight: 28
-                    onClicked: root.requestPrev()
-                }
+                    VizPillButton {
+                        text: "󰒮"
+                        fontSize: 13
+                        horizontalPad: 8
+                        pillHeight: 26
+                        onClicked: root.requestPrev()
+                    }
 
-                VizPillButton {
-                    text: root.playing ? "󰏤" : "󰐊"
-                    active: true
-                    fontSize: 14
-                    horizontalPad: 10
-                    pillHeight: 28
-                    onClicked: root.requestPlayPause()
-                }
+                    VizPillButton {
+                        text: root.playing ? "󰏤" : "󰐊"
+                        active: true
+                        fontSize: 14
+                        horizontalPad: 10
+                        pillHeight: 26
+                        onClicked: root.requestPlayPause()
+                    }
 
-                VizPillButton {
-                    text: "󰒭"
-                    fontSize: 13
-                    horizontalPad: 8
-                    pillHeight: 28
-                    onClicked: root.requestNext()
-                }
-
-                Text {
-                    text: root.formatTime(root.position) + " / " + root.formatTime(root.duration)
-                    textFormat: Text.PlainText
-                    font.family: "JetBrainsMono Nerd Font"
-                    font.pixelSize: 11
-                    color: root.accentColour
+                    VizPillButton {
+                        text: "󰒭"
+                        fontSize: 13
+                        horizontalPad: 8
+                        pillHeight: 26
+                        onClicked: root.requestNext()
+                    }
                 }
             }
         }

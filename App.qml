@@ -11,7 +11,7 @@ ShellRoot {
 
     Service {
         id: service
-        visualiserActive: true
+        visualiserActive: win.visible && appVisualiser.stageMode !== "off"
     }
 
     FloatingWindow {
@@ -22,6 +22,14 @@ ShellRoot {
         minimumSize: Qt.size(900, 580)
         color: "#07090e"
         visible: true
+        property bool hasShown: false
+        onVisibleChanged: {
+            if (visible) {
+                hasShown = true
+            } else if (hasShown) {
+                Qt.quit()
+            }
+        }
 
         property color colBg: "#07090e"
         property color colFg: "#e2e8f0"
@@ -441,10 +449,10 @@ ShellRoot {
                     }
                 }
             } else if (win.leftTab === 2) {
-                if (event.key === Qt.Key_Down || event.key === Qt.Key_J || event.key === Qt.Key_Right || event.key === Qt.Key_L) {
+                if (event.key === Qt.Key_Down || event.key === Qt.Key_J || event.key === Qt.Key_Right) {
                     appVisualiser.cycleMode(1)
                     event.accepted = true
-                } else if (event.key === Qt.Key_Up || event.key === Qt.Key_K || event.key === Qt.Key_Left || event.key === Qt.Key_H) {
+                } else if (event.key === Qt.Key_Up || event.key === Qt.Key_Left) {
                     appVisualiser.cycleMode(-1)
                     event.accepted = true
                 }
@@ -452,13 +460,43 @@ ShellRoot {
 
             if (!event.accepted) {
                 if (event.key === Qt.Key_M) { appVisualiser.cycleMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
+                else if (event.key === Qt.Key_G) { appVisualiser.cycleLayer1Mode((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
+                else if (event.key === Qt.Key_E) { appVisualiser.cycleLayer3Mode((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
                 else if (event.key === Qt.Key_C) { appVisualiser.cyclePalette((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
+                else if (event.key === Qt.Key_K) { appVisualiser.cycleTracers((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
+                else if (event.key === Qt.Key_L) { appVisualiser.showLayerDrawer = !appVisualiser.showLayerDrawer; event.accepted = true }
+                else if (event.key === Qt.Key_H) { appVisualiser.toggleHudVisibility(); event.accepted = true }
+                else if (event.key === Qt.Key_Z) {
+                    if (win.visualiserMaximised && !appVisualiser.showHud) {
+                        appVisualiser.showHud = true
+                        win.visualiserMaximised = false
+                    } else {
+                        appVisualiser.setStage("visualiser")
+                        appVisualiser.showLayerDrawer = false
+                        appVisualiser.showTracerPopover = false
+                        appVisualiser.showHud = false
+                        win.visualiserMaximised = true
+                    }
+                    event.accepted = true
+                }
                 else if (event.key === Qt.Key_R) { appVisualiser.randomiseVisuals(); event.accepted = true }
+                else if (event.key === Qt.Key_S) { appVisualiser.triggerShatterImpulse(); event.accepted = true }
                 else if (event.key === Qt.Key_X) { appVisualiser.autoCycle = !appVisualiser.autoCycle; event.accepted = true }
                 else if (event.key === Qt.Key_A) { service.toggleUseAlbumArt(); event.accepted = true }
                 else if (event.key === Qt.Key_B) { service.toggleAsciiMode(); event.accepted = true }
                 else if (event.key === Qt.Key_T) { appVisualiser.toggleInCanvasTte(); event.accepted = true }
-                else if (event.key === Qt.Key_F || event.key === Qt.Key_V) { win.visualiserMaximised = !win.visualiserMaximised; event.accepted = true }
+                else if (event.key === Qt.Key_F || event.key === Qt.Key_V) {
+                    if (event.modifiers & Qt.ShiftModifier) {
+                        appVisualiser.setStage("visualiser")
+                        appVisualiser.showLayerDrawer = false
+                        appVisualiser.showTracerPopover = false
+                        appVisualiser.showHud = false
+                        win.visualiserMaximised = true
+                    } else {
+                        win.visualiserMaximised = !win.visualiserMaximised
+                    }
+                    event.accepted = true
+                }
                 else if (event.key === Qt.Key_Space) { service.togglePlayPause(); event.accepted = true }
                 else if (event.key === Qt.Key_N) { service.nextTrack(); event.accepted = true }
             }
@@ -1701,9 +1739,13 @@ ShellRoot {
                                         onClicked: service.cycleLayer3Source()
                                     }
                                     ActionPill {
-                                        text: "TRACERS: " + appVisualiser.tracerCount + "x"
-                                        active: appVisualiser.tracerCount > 1
-                                        onClicked: appVisualiser.cycleTracers()
+                                        text: "L2 Tracers: " + appVisualiser.tracerCount + "x ▾"
+                                        active: appVisualiser.showTracerPopover || appVisualiser.tracerCount > 1
+                                        primary: appVisualiser.showTracerPopover
+                                        onClicked: {
+                                            appVisualiser.setStage("visualiser")
+                                            appVisualiser.showTracerPopover = !appVisualiser.showTracerPopover
+                                        }
                                     }
                                     ActionPill {
                                         text: "󰍹 TTE"
@@ -2117,7 +2159,7 @@ ShellRoot {
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        visible: win.visualiserMaximised || appVisualiser.stageMode !== "off"
+                        visible: win.visible && (win.visualiserMaximised || appVisualiser.stageMode !== "off")
                         radius: win.visualiserMaximised ? 0 : 8
                         color: win.colBg
                         border.width: win.visualiserMaximised ? 0 : 1
