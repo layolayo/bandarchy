@@ -813,7 +813,7 @@ ShellRoot {
                                             readonly property bool isCurrentAlbum: service.albumId === modelData.id
                                             readonly property bool isKeyboardFocused: win.focusedAlbumIndex === index
                                             readonly property var tracksList: modelData.tracks || []
-                                            readonly property bool isAlbumDownloading: Boolean(service.downloading && service.downloadingAlbumId === modelData.id)
+                                            readonly property bool isAlbumDownloading: Boolean(service.downloading && service.downloadAlbumId === modelData.id)
 
                                             width: ListView.view.width - 12
                                             height: expanded
@@ -1649,7 +1649,7 @@ ShellRoot {
                                     }
                                 }
 
-                                // 3 Layer Quick Toggles + Drawer Toggle
+                                // 3 Layer Quick Toggles + Presets & Drawer Toggles
                                 RowLayout {
                                     Layout.fillWidth: true
                                     spacing: 5
@@ -1659,7 +1659,7 @@ ShellRoot {
                                         onClicked: appVisualiser.layer1Enabled = !appVisualiser.layer1Enabled
                                     }
                                     ActionPill {
-                                        text: "L2 Psych: " + (appVisualiser.layer2Enabled ? "ON" : "OFF")
+                                        text: "L2 Viz: " + (appVisualiser.layer2Enabled ? "ON" : "OFF")
                                         active: appVisualiser.layer2Enabled
                                         onClicked: appVisualiser.layer2Enabled = !appVisualiser.layer2Enabled
                                     }
@@ -1669,41 +1669,56 @@ ShellRoot {
                                         onClicked: appVisualiser.layer3Enabled = !appVisualiser.layer3Enabled
                                     }
                                     ActionPill {
-                                        text: "󰒓 3-Layer Sliders"
-                                        primary: appVisualiser.showConfigDrawer
-                                        active: !appVisualiser.showConfigDrawer
+                                        text: "󰀻 Presets"
+                                        primary: appVisualiser.showLayerDrawer && appVisualiser.activeConfigLayer === 0
+                                        active: true
                                         onClicked: {
                                             appVisualiser.setStage("visualiser")
-                                            appVisualiser.showConfigDrawer = !appVisualiser.showConfigDrawer
+                                            appVisualiser.activeConfigLayer = 0
+                                            appVisualiser.showLayerDrawer = true
+                                        }
+                                    }
+                                    ActionPill {
+                                        text: "󰒓 Layers"
+                                        primary: appVisualiser.showLayerDrawer
+                                        active: !appVisualiser.showLayerDrawer
+                                        onClicked: {
+                                            appVisualiser.setStage("visualiser")
+                                            appVisualiser.showLayerDrawer = !appVisualiser.showLayerDrawer
                                         }
                                     }
                                 }
 
-                                // Layer 3 Content Source + TTE Controls
+                                // Layer 3 Content Source + Tracers + Random TTE Controls
                                 RowLayout {
                                     Layout.fillWidth: true
                                     spacing: 5
                                     ActionPill {
                                         text: !service.useAlbumArt
-                                            ? "󰀬 L3 Source: Words (Banner)"
-                                            : (service.asciiMode === "braille" ? "󰀥 L3 Source: Braille Art ⣿" : "󰀥 L3 Source: Block Art █")
+                                            ? "󰀬 L3: Words"
+                                            : (service.asciiMode === "braille" ? "󰀥 L3: Braille ⣿" : "󰀥 L3: Block █")
                                         active: true
                                         onClicked: service.cycleLayer3Source()
                                     }
                                     ActionPill {
-                                        text: "auto TTE Morph"
-                                        active: appVisualiser.layer3Mode === 5
+                                        text: "TRACERS: " + appVisualiser.tracerCount + "x"
+                                        active: appVisualiser.tracerCount > 1
+                                        onClicked: appVisualiser.cycleTracers()
+                                    }
+                                    ActionPill {
+                                        text: "󰍹 TTE"
+                                        active: appVisualiser.layer3Mode === 5 && appVisualiser.layer3Enabled
                                         onClicked: {
                                             appVisualiser.setStage("visualiser")
-                                            appVisualiser.toggleInCanvasTte()
+                                            appVisualiser.activateAndCycleTteInCanvas()
                                         }
                                     }
                                     ActionPill {
                                         text: "󰆍 TTE Term"
-                                        onClicked: service.launchTtfxScreensaver(appVisualiser.currentTtfxEffect())
+                                        onClicked: service.launchTtfxScreensaver("random")
                                     }
                                     ActionPill {
-                                        text: "🎲 Surprise"
+                                        text: "󰒟 Mutate"
                                         onClicked: appVisualiser.randomiseVisuals()
                                     }
                                 }
@@ -1970,7 +1985,6 @@ ShellRoot {
                                                 pillHeight: 28
                                                 onClicked: {
                                                     service.saveAuth(appUserInput.text.trim(), appCookieInput.text.trim(), "", "")
-                                                    service.syncCollection(false)
                                                     appRootRect.forceActiveFocus()
                                                 }
                                             }
@@ -2051,10 +2065,7 @@ ShellRoot {
                                         Text {
                                             Layout.fillWidth: true
                                             text: (service.downloading || service.syncing)
-                                                ? ("󰇚 " + service.downloadStatusSummary +
-                                                   (service.downloadQueue && service.downloadQueue.length > 0
-                                                     ? (" · +" + service.downloadQueue.length + " queued")
-                                                     : ""))
+                                                ? ("󰇚 " + service.downloadStatusSummary)
                                                 : (service.downloadStatusText !== ""
                                                     ? ("󰄬 " + service.downloadStatusText)
                                                     : ("󰀥 Collection Ready · " + service.purchasedCount + " Purchased · " + service.localCount + " Local"))
@@ -2156,6 +2167,9 @@ ShellRoot {
                             }
                             onRequestSelectTtfxEffect: effectName => {
                                 service.setTtfxEffect(effectName)
+                            }
+                            onRequestStageModeChange: newStageMode => {
+                                service.setStageMode(newStageMode)
                             }
                             onRequestActionFeedback: message => {
                                 service.notifyAction(message)

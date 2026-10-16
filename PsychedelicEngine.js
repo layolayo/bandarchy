@@ -51,6 +51,27 @@ var LAYER1_MODE_NAMES = LAYER1_MODES
 var LAYER2_MODE_NAMES = LAYER2_MODES
 var LAYER3_MODE_NAMES = LAYER3_MODES
 
+var LAYER1_EQ_STYLES = [
+    "Skyline Mountain",
+    "LED Bars & Peaks",
+    "Mirrored Reflection",
+    "3D Waterfall Ridges",
+    "Synth Sun Rays",
+    "Centre Twin Wave"
+]
+
+var LAYER1_EQ_LAYOUTS = [
+    "Low→High",
+    "Centre-Out",
+    "Stereo Mirror"
+]
+
+var LAYER1_EQ_DAMPING = [
+    "Snappy",
+    "Smooth",
+    "Peak-Hold"
+]
+
 var TTFX_EFFECTS = [
     "waves",
     "blackhole",
@@ -138,13 +159,17 @@ function colourWithAlpha(col, alpha) {
         var b = parseInt(s.slice(offset + 4, offset + 6), 16)
         return "rgba(" + r + "," + g + "," + b + "," + a + ")"
     }
+    if (s.indexOf("rgb(") === 0) {
+        return "rgba(" + s.slice(4, -1) + "," + a + ")"
+    }
     return s
 }
 
 function buildPalette(theme, hueShift, paletteIndex) {
     var palIdx = ((Number(paletteIndex) || 0) % PALETTES.length + PALETTES.length) % PALETTES.length
     var preset = PALETTES[palIdx] || PALETTES[0]
-    var base = [
+    var h = Number(hueShift) || 0
+    return [
         preset[0],
         preset[1],
         preset[2],
@@ -153,20 +178,35 @@ function buildPalette(theme, hueShift, paletteIndex) {
         preset[5],
         (theme && theme.accent) ? theme.accent.toString() : "#6ee7b7",
         (theme && theme.urgent) ? theme.urgent.toString() : "#f472b6",
-        hslToHex(hueShift, 0.92, 0.62),
-        hslToHex(hueShift + 90, 0.95, 0.60),
-        hslToHex(hueShift + 180, 0.92, 0.62),
-        hslToHex(hueShift + 270, 0.94, 0.64)
+        hslToHex(h, 0.96, 0.58),
+        hslToHex(h + 45, 0.96, 0.60),
+        hslToHex(h + 95, 0.95, 0.58),
+        hslToHex(h + 145, 0.94, 0.60),
+        hslToHex(h + 195, 0.96, 0.62),
+        hslToHex(h + 245, 0.95, 0.60),
+        hslToHex(h + 295, 0.96, 0.62),
+        hslToHex(h + 335, 0.98, 0.68)
     ]
-    return base
 }
 
 function createState() {
     var smooth = []
     var peaks = []
+    var waveHist = []
     for (var i = 0; i < 64; i++) {
         smooth.push(0.04)
         peaks.push(0.06)
+    }
+    for (var wh = 0; wh < 18; wh++) {
+        var snap = []
+        for (var b = 0; b < 32; b++) snap.push(0.05)
+        waveHist.push({
+            bands: snap,
+            bass: 0.05,
+            mid: 0.05,
+            high: 0.05,
+            hue: (wh * 20) % 360
+        })
     }
 
     var stars = []
@@ -201,6 +241,7 @@ function createState() {
         silentFrames: 0,
         smoothBands: smooth,
         peakBands: peaks,
+        waveHistory: waveHist,
         waveform: [],
         bass: 0.0,
         mid: 0.0,
@@ -236,6 +277,10 @@ function createState() {
         artRows: 0,
         artCols: 0,
         artBurst: 0.0,
+        clearFeedbackFrames: 0,
+        lastL1: true,
+        lastL2: true,
+        lastL3: true,
         lastFrameMs: 0.0
     }
 }
@@ -260,7 +305,7 @@ function rebuildArtCells(state, asciiLines, mode) {
     state.artRows = rows
     state.artCols = Math.max(1, cols)
 
-    // Sample non-blank cells up to ~680 autonomous particles for locked 60+ FPS
+    // Sample non-blank cells up to 520 autonomous particles (48x24 active grid budget) for <0.4ms 60 FPS
     var candidates = []
     for (var y = 0; y < rows; y++) {
         var line = asciiLines[y] || ""
@@ -269,14 +314,23 @@ function rebuildArtCells(state, asciiLines, mode) {
             if (ch === " " || ch === "⠀") continue
             var code = ch.charCodeAt(0)
             var density = 0.65
+            var brailleMask = 0
             if (code >= 0x2800 && code <= 0x28FF) {
-                var bits = code - 0x2800
+                brailleMask = code - 0x2800
                 var pop = 0
                 for (var b = 0; b < 8; b++) {
-                    if ((bits >> b) & 1) pop++
+                    if ((brailleMask >> b) & 1) pop++
                 }
                 if (pop <= 1) continue
                 density = pop / 8.0
+            } else if (ch === "░" || ch === "." || ch === "·") {
+                density = 0.25
+            } else if (ch === "▒" || ch === ":") {
+                density = 0.50
+            } else if (ch === "▓") {
+                density = 0.78
+            } else if (ch === "█") {
+                density = 1.0
             }
             var nx = (x / Math.max(1, cols - 1)) * 2.0 - 1.0
             var ny = (y / Math.max(1, rows - 1)) * 2.0 - 1.0
@@ -286,12 +340,13 @@ function rebuildArtCells(state, asciiLines, mode) {
                 nx: nx,
                 ny: ny,
                 ch: ch,
+                brailleMask: brailleMask,
                 density: density
             })
         }
     }
 
-    var maxParticles = 1400
+    var maxParticles = 520
     var stride = candidates.length > maxParticles ? (candidates.length / maxParticles) : 1.0
     var cells = []
     var count = Math.min(maxParticles, candidates.length)
@@ -318,6 +373,7 @@ function rebuildArtCells(state, asciiLines, mode) {
             vx: (Math.random() - 0.5) * 0.4,
             vy: (Math.random() - 0.5) * 0.4,
             ch: c.ch,
+            brailleMask: c.brailleMask,
             mutCh: BRAILLE_MUTANTS[i % BRAILLE_MUTANTS.length],
             density: c.density,
             colIdx: Math.floor(((ang + Math.PI) / (Math.PI * 2)) * 8 + dist * 3) % 8,
@@ -361,10 +417,11 @@ function randomiseState(state) {
 }
 
 function stepState(state, rawBands, active, cfg, dt) {
+    cfg = normaliseConfig(cfg)
     dt = clamp(Number(dt) || 0.016, 0.004, 0.055)
-    var reactivity = clamp(Number(cfg && cfg.layer2Reactivity !== undefined ? cfg.layer2Reactivity : (cfg && cfg.sensitivity !== undefined ? cfg.sensitivity : 1.35)), 0.15, 4.0)
-    var l2Speed = clamp(Number(cfg && cfg.layer2Speed !== undefined ? cfg.layer2Speed : 1.0), 0.1, 4.0)
-    var chaos = clamp(Number(cfg && cfg.layer2Chaos !== undefined ? cfg.layer2Chaos : 0.4), 0.0, 2.0)
+    var reactivity = clamp(Number(cfg.layer2Reactivity !== undefined ? cfg.layer2Reactivity : 1.35), 0.15, 4.0)
+    var l2Speed = clamp(Number(cfg.layer2Speed !== undefined ? cfg.layer2Speed : 1.0), 0.1, 4.0)
+    var chaos = clamp(Number(cfg.layer2Chaos !== undefined ? cfg.layer2Chaos : 0.4), 0.0, 2.0)
 
     var n = rawBands ? rawBands.length : 0
     var maxRaw = 0.0
@@ -386,22 +443,17 @@ function stepState(state, rawBands, active, cfg, dt) {
 
     var denom = Math.max(60.0, state.rollingPeak)
     var useSynthFallback = active && state.silentFrames > 15
-
-    var bassSum = 0.0
-    var midSum = 0.0
-    var highSum = 0.0
+    var bassSum = 0.0, midSum = 0.0, highSum = 0.0
 
     for (var i = 0; i < 64; i++) {
         var norm = 0.0
         if (useSynthFallback) {
-            // Rhythmic harmonic synthesis when PipeWire/cava stream is warming up
             var beatWave = Math.pow(Math.max(0.0, Math.sin(state.t * 4.4)), 6.0)
             var sub = i < 10 ? beatWave * 0.85 : 0.0
             var harm = (0.28 + 0.24 * Math.sin(state.t * 2.7 + i * 0.22) + 0.18 * Math.cos(state.t * 5.3 - i * 0.35))
             norm = clamp((sub + harm) * reactivity * 0.75, 0.03, 1.0)
         } else if (n > 0) {
             var raw = Number(rawBands[i % n]) || 0.0
-            // Non-linear gamma boost so quiet passages still produce vivid movement
             norm = clamp(Math.pow(clamp(raw / denom, 0.0, 1.25), 0.72) * reactivity, 0.0, 1.0)
         } else {
             norm = 0.03 + 0.02 * Math.sin(state.t * 1.8 + i * 0.2)
@@ -423,30 +475,33 @@ function stepState(state, rawBands, active, cfg, dt) {
         else highSum += s
     }
 
-    var bass = clamp(bassSum / 11.0, 0.0, 1.0)
-    var mid = clamp(midSum / 24.0, 0.0, 1.0)
-    var high = clamp(highSum / 30.0, 0.0, 1.0)
+    var bassRaw = clamp(bassSum / 11.0, 0.0, 1.0)
+    var midRaw = clamp(midSum / 24.0, 0.0, 1.0)
+    var highRaw = clamp(highSum / 30.0, 0.0, 1.0)
 
     // MilkDrop relative audio attenuation (`bass_att`, `mid_att`, `treb_att`)
-    // Fast envelope vs 3-second slow baseline so both quiet ambient passages and loud drops react vividly
-    state.bassFast = 0.65 * (state.bassFast || bass) + 0.35 * bass
-    state.bassSlow = 0.985 * (state.bassSlow || bass) + 0.015 * bass
-    state.midFast = 0.65 * (state.midFast || mid) + 0.35 * mid
-    state.midSlow = 0.985 * (state.midSlow || mid) + 0.015 * mid
-    state.trebFast = 0.65 * (state.trebFast || high) + 0.35 * high
-    state.trebSlow = 0.985 * (state.trebSlow || high) + 0.015 * high
+    state.bassFast = 0.65 * (state.bassFast || bassRaw) + 0.35 * bassRaw
+    state.bassSlow = 0.985 * (state.bassSlow || bassRaw) + 0.015 * bassRaw
+    state.midFast = 0.65 * (state.midFast || midRaw) + 0.35 * midRaw
+    state.midSlow = 0.985 * (state.midSlow || midRaw) + 0.015 * midRaw
+    state.trebFast = 0.65 * (state.trebFast || highRaw) + 0.35 * highRaw
+    state.trebSlow = 0.985 * (state.trebSlow || highRaw) + 0.015 * highRaw
 
     state.bassAtt = clamp(state.bassFast / Math.max(0.04, state.bassSlow), 0.2, 3.5)
     state.midAtt = clamp(state.midFast / Math.max(0.04, state.midSlow), 0.2, 3.5)
     state.trebAtt = clamp(state.trebFast / Math.max(0.04, state.trebSlow), 0.2, 3.5)
 
-    state.bass = bass
-    state.mid = mid
-    state.high = high
-    state.bassSmooth = bass
-    state.midSmooth = mid
-    state.highSmooth = high
-    state.energy = clamp(bass * 0.50 + mid * 0.32 + high * 0.18, 0.0, 1.0)
+    var bass = clamp(bassRaw * (0.58 + 0.42 * state.bassAtt), 0.0, 1.35)
+    var mid = clamp(midRaw * (0.58 + 0.42 * state.midAtt), 0.0, 1.35)
+    var high = clamp(highRaw * (0.58 + 0.42 * state.trebAtt), 0.0, 1.35)
+
+    state.bass = clamp(bass, 0.0, 1.0)
+    state.mid = clamp(mid, 0.0, 1.0)
+    state.high = clamp(high, 0.0, 1.0)
+    state.bassSmooth = state.bass
+    state.midSmooth = state.mid
+    state.highSmooth = state.high
+    state.energy = clamp(state.bass * 0.50 + state.mid * 0.32 + state.high * 0.18, 0.0, 1.0)
 
     // Dual-envelope onset / beat detector
     state.kickFast = lerp(state.kickFast || bass, bass, clamp(dt * 28.0, 0.1, 0.85))
@@ -490,10 +545,49 @@ function stepState(state, rawBands, active, cfg, dt) {
 
     state.artBurst = Math.max(0.0, (state.artBurst || 0.0) - dt * 1.8)
 
+    // Music-Driven Parameter Modulation envelopes (`musicDrive`)
+    var rawIntensity = clamp(state.energy * 0.65 + state.beatPulse * 0.45 + (state.bassAtt - 1.0) * 0.25, 0.0, 1.5)
+    state.musicIntensity = lerp(state.musicIntensity || 0.35, rawIntensity, clamp(dt * 8.0, 0.05, 0.4))
+    state.musicCalm = clamp(1.0 - state.musicIntensity * 0.85, 0.08, 1.0)
+
+    var mDrive = cfg.musicDrive !== undefined ? Boolean(cfg.musicDrive) : true
+    state.liveDismantle = mDrive
+        ? clamp(cfg.layer3Dismantle * (0.20 + 1.45 * state.musicIntensity + state.beatPulse * 1.15), 0.10, 3.20)
+        : cfg.layer3Dismantle
+    state.liveRebuild = mDrive
+        ? clamp(cfg.layer3Rebuild * (0.45 + 1.65 * state.musicCalm), 0.15, 3.20)
+        : cfg.layer3Rebuild
+    state.liveEvolution = mDrive
+        ? clamp(cfg.layer3Evolution * (0.40 + 1.15 * state.mid + 0.55 * cfg.trackProgress), 0.10, 3.00)
+        : cfg.layer3Evolution
+    state.liveTracerSpeed = mDrive
+        ? clamp(cfg.tracerSpeed * (0.60 + 0.95 * state.musicIntensity + state.beatPulse * 0.55), 0.15, 3.00)
+        : cfg.tracerSpeed
+    state.liveTracerDrift = mDrive
+        ? clamp(cfg.tracerDrift * (0.65 + 0.85 * state.mid), 0.0, 2.50)
+        : cfg.tracerDrift
+
     var timeStep = dt * l2Speed * (active ? (0.85 + state.energy * 1.85 + state.beatPulse * 0.65) : 0.25)
     state.t += timeStep
     state.phase += timeStep * 0.75 * state.rotPolarity
     state.hueShift = (state.hueShift + dt * (22.0 + state.energy * 95.0 + state.beatPulse * 80.0)) % 360.0
+
+    // Record 32-band snapshot into state.waveHistory ring buffer (for Cthugha 3D Plasma Tunnel & L1 3D Waterfall EQ)
+    if (!state.waveHistory) state.waveHistory = []
+    var snapBands = []
+    for (var wb = 0; wb < 32; wb++) {
+        snapBands.push(state.smoothBands[wb * 2] || 0.04)
+    }
+    state.waveHistory.unshift({
+        bands: snapBands,
+        bass: state.bass,
+        mid: state.mid,
+        high: state.high,
+        hue: state.hueShift
+    })
+    if (state.waveHistory.length > 18) {
+        state.waveHistory.length = 18
+    }
 
     // Step shockwaves
     for (var sw = state.shockwaves.length - 1; sw >= 0; sw--) {
@@ -547,9 +641,15 @@ function stepArtCells(state, cfg, dt) {
     if (n === 0) return
 
     var l3Mode = (Number(cfg.layer3Mode) || 0) % LAYER3_MODES.length
-    var dismantle = clamp(Number(cfg.layer3Dismantle !== undefined ? cfg.layer3Dismantle : 1.15), 0.0, 4.0)
-    var rebuild = clamp(Number(cfg.layer3Rebuild !== undefined ? cfg.layer3Rebuild : 1.0), 0.05, 4.0)
-    var evoRate = clamp(Number(cfg.layer3Evolution !== undefined ? cfg.layer3Evolution : 0.65), 0.0, 3.0)
+    var dismantle = state.liveDismantle !== undefined
+        ? state.liveDismantle
+        : clamp(Number(cfg.layer3Dismantle !== undefined ? cfg.layer3Dismantle : 1.15), 0.0, 4.0)
+    var rebuild = state.liveRebuild !== undefined
+        ? state.liveRebuild
+        : clamp(Number(cfg.layer3Rebuild !== undefined ? cfg.layer3Rebuild : 1.0), 0.05, 4.0)
+    var evoRate = state.liveEvolution !== undefined
+        ? state.liveEvolution
+        : clamp(Number(cfg.layer3Evolution !== undefined ? cfg.layer3Evolution : 0.65), 0.0, 3.0)
     var trackProg = clamp(Number(cfg.trackProgress) || 0.0, 0.0, 1.0)
 
     // Evolution blend: increases as the song plays AND slowly breathes with phase,
@@ -644,85 +744,152 @@ function stepArtCells(state, cfg, dt) {
 // LAYER #1 — Background & Iterative Framebuffer Feedback Engine
 // ---------------------------------------------------------------------------
 
+function mapEqBandIndex(slot, totalSlots, layoutMode) {
+    var norm = slot / Math.max(1, totalSlots - 1)
+    if (layoutMode === 1) {
+        // Centre-Out: Bass (band 0) in the centre, expanding symmetrically to highs at left/right edges
+        var distFromCentre = Math.abs(norm - 0.5) * 2.0
+        return clamp(Math.floor(distFromCentre * 63), 0, 63)
+    }
+    if (layoutMode === 2) {
+        // Stereo Mirror: High->Low->High mirrored wings
+        var wing = 1.0 - Math.abs(norm - 0.5) * 2.0
+        return clamp(Math.floor(wing * 63), 0, 63)
+    }
+    // Default 0: Low->High left-to-right
+    return clamp(Math.floor(norm * 63), 0, 63)
+}
+
+function sampleEqBandValue(state, bandIdx, dampingMode, eqGain) {
+    var s = state.smoothBands[bandIdx] || 0.0
+    var p = state.peakBands[bandIdx] || s
+    var val = s
+    if (dampingMode === 0) {
+        // Snappy transient punch
+        val = s * (1.0 + state.beatPulse * 0.45)
+    } else if (dampingMode === 2) {
+        // Peak-Hold weighted
+        val = lerp(s, p, 0.65)
+    } else {
+        // Smooth liquid
+        var prevB = state.smoothBands[Math.max(0, bandIdx - 1)] || s
+        var nextB = state.smoothBands[Math.min(63, bandIdx + 1)] || s
+        val = (prevB + s * 2.0 + nextB) * 0.25
+    }
+    return clamp(val * eqGain, 0.0, 1.6)
+}
+
 function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg) {
     var bgHex = (theme && theme.background) ? theme.background.toString() : "#06080e"
     var enabled = cfg ? Boolean(cfg.layer1Enabled) : true
+    var l2On = cfg ? Boolean(cfg.layer2Enabled) : true
+    var l3On = cfg ? Boolean(cfg.layer3Enabled) : true
+
+    // Detect any layer ON/OFF toggle so disabled layers clear from the persistent buffer immediately
+    if (state.lastL1 !== enabled || state.lastL2 !== l2On || state.lastL3 !== l3On) {
+        state.lastL1 = enabled
+        state.lastL2 = l2On
+        state.lastL3 = l3On
+        state.clearFeedbackFrames = Math.max(state.clearFeedbackFrames || 0, 2)
+    }
+
+    if (!enabled || (state.clearFeedbackFrames && state.clearFeedbackFrames > 0)) {
+        if (state.clearFeedbackFrames && state.clearFeedbackFrames > 0) {
+            state.clearFeedbackFrames = state.clearFeedbackFrames - 1
+        }
+        ctx.globalCompositeOperation = "source-over"
+        ctx.globalAlpha = 1.0
+        ctx.clearRect(0, 0, w, h)
+        ctx.fillStyle = bgHex
+        ctx.fillRect(0, 0, w, h)
+        if (!enabled) return
+    }
+
     var l1Mode = cfg ? ((Number(cfg.layer1Mode) || 0) % LAYER1_MODES.length) : 0
     var trail = cfg && cfg.layer1Trail !== undefined ? clamp(Number(cfg.layer1Trail), 0.10, 0.97) : 0.84
     var dim = cfg && cfg.layer1Dim !== undefined ? clamp(Number(cfg.layer1Dim), 0.0, 0.92) : 0.16
     var density = cfg && cfg.layer1Density !== undefined ? clamp(Number(cfg.layer1Density), 0.2, 3.0) : 1.0
     var speed = cfg && cfg.layer1Speed !== undefined ? clamp(Number(cfg.layer1Speed), 0.1, 4.0) : 1.0
-
-    if (!enabled) {
-        ctx.globalCompositeOperation = "source-over"
-        ctx.fillStyle = bgHex
-        ctx.fillRect(0, 0, w, h)
-        return
+    if (cfg && cfg.musicDrive) {
+        speed = clamp(speed * (0.65 + 0.95 * (state.musicIntensity || 0.35)), 0.1, 4.0)
     }
 
     var cx = w * 0.5
     var cy = h * 0.5
     var minDim = Math.min(w, h)
+    var endPt = computeTracerEndpoint(
+        w,
+        h,
+        state.t,
+        state.liveTracerDrift !== undefined ? state.liveTracerDrift : (cfg ? cfg.tracerDrift : 1.0),
+        speed
+    )
 
+    // Zero-copy persistent framebuffer trail fade (no QQuickCanvasItem::toImage() CPU deep copy!)
     ctx.globalCompositeOperation = "source-over"
+    ctx.globalAlpha = 1.0
+    var veilAlpha = l1Mode === 5
+        ? clamp(0.45 + dim * 0.5, 0.35, 0.95)
+        : clamp((1.0 - trail) * 0.85 + dim * 0.30, 0.06, 0.65)
+    ctx.fillStyle = colourWithAlpha(bgHex, veilAlpha)
+    ctx.fillRect(0, 0, w, h)
 
-    if (l1Mode === 0 && canvasItem) {
-        // Mode 0: MilkDrop / Geiss Iterative Framebuffer Feedback Warp
-        // Draw the persistent canvas back onto itself with zoom + slight rotation, then fade veil
-        var zoom = 1.0 + (0.010 + state.bass * 0.042 + state.beatPulse * 0.028) * speed
-        var rot = Math.sin(state.t * 0.55) * (0.008 + state.mid * 0.022) * speed * state.rotPolarity
+    if (l1Mode === 0) {
+        // Mode 0: MilkDrop / Geiss Expanding Logarithmic Warp Tunnel Rings with Moving Endpoint Tracers
         ctx.save()
-        ctx.translate(cx, cy)
-        ctx.rotate(rot)
-        ctx.scale(zoom, zoom)
-        ctx.globalAlpha = clamp(trail, 0.55, 0.95)
-        try {
-            ctx.drawImage(canvasItem, -cx, -cy, w, h)
-        } catch (e) {}
-        ctx.restore()
-        ctx.globalAlpha = 1.0
-        ctx.fillStyle = colourWithAlpha(bgHex, clamp((1.0 - trail) * 0.85 + dim * 0.35, 0.06, 0.65))
-        ctx.fillRect(0, 0, w, h)
-    } else if (l1Mode === 1 && canvasItem) {
-        // Mode 1: G-Force Polar FlowField Feedback + Vector Streams
-        var pull = 1.0 - (0.012 + state.mid * 0.032) * speed
-        var curl = (0.014 + state.bass * 0.030) * speed
-        ctx.save()
-        ctx.translate(cx + Math.cos(state.t * 1.4) * state.bass * 6.0, cy + Math.sin(state.t * 1.4) * state.bass * 6.0)
-        ctx.rotate(curl)
-        ctx.scale(pull, pull * (1.0 + state.bass * 0.03))
-        ctx.globalAlpha = clamp(trail, 0.55, 0.94)
-        try {
-            ctx.drawImage(canvasItem, -cx, -cy, w, h)
-        } catch (e) {}
-        ctx.restore()
-        ctx.globalAlpha = 1.0
-        ctx.fillStyle = colourWithAlpha(bgHex, clamp((1.0 - trail) * 0.90 + dim * 0.35, 0.07, 0.65))
-        ctx.fillRect(0, 0, w, h)
-
-        // Flow-field vector filaments batched by colour
-        ctx.lineWidth = 1.3
-        for (var fb = 0; fb < 3; fb++) {
-            ctx.strokeStyle = colourWithAlpha(palette[(fb * 3) % palette.length], (0.16 + state.mid * 0.25) * (1.0 - dim))
+        ctx.globalCompositeOperation = "lighter"
+        var ringCount = Math.max(5, Math.min(10, Math.round(7 * density)))
+        for (var rb = 0; rb < 3; rb++) {
+            ctx.strokeStyle = colourWithAlpha(palette[(rb * 2) % palette.length], (0.22 + state.bass * 0.34) * (1.0 - dim))
+            ctx.lineWidth = 1.4 + state.bass * 1.6
             ctx.beginPath()
-            var fCount = Math.floor(18 * density)
-            for (var fi = 0; fi < fCount; fi++) {
-                var fa = (fi / fCount) * Math.PI * 2 + fb * 0.7 + state.t * 0.4
-                var fr1 = minDim * (0.12 + ((fi * 0.19 + state.t * 0.25) % 0.55))
-                var fr2 = fr1 + minDim * (0.05 + state.smoothBands[(fi * 3) & 63] * 0.12)
-                ctx.moveTo(cx + Math.cos(fa) * fr1, cy + Math.sin(fa) * fr1)
-                ctx.lineTo(cx + Math.cos(fa + 0.14) * fr2, cy + Math.sin(fa + 0.14) * fr2)
+            for (var rIdx = rb; rIdx < ringCount; rIdx += 3) {
+                var rProg = ((rIdx / ringCount) + (state.t * 0.28 * speed) % (1.0 / ringCount)) % 1.0
+                var baseR = Math.pow(rProg, 1.42) * minDim * 0.68
+                // Rings originate at the moving vanishing endpoint and expand towards the user!
+                var ringCX = cx + endPt.dx * 0.65 * (1.0 - rProg)
+                var ringCY = cy + endPt.dy * 0.65 * (1.0 - rProg)
+                var rot = state.phase * (rIdx % 2 === 0 ? 0.35 : -0.35)
+                var segs = 28
+                for (var s = 0; s <= segs; s++) {
+                    var ang = (s / segs) * Math.PI * 2 + rot
+                    var bVal = state.smoothBands[(s * 2 + rIdx * 7) & 63]
+                    var rr = baseR * (1.0 + Math.sin(ang * 4.0 + state.t * 1.8) * 0.08 + bVal * 0.16)
+                    var wx = ringCX + Math.cos(ang) * rr
+                    var wy = ringCY + Math.sin(ang) * rr
+                    if (s === 0) ctx.moveTo(wx, wy)
+                    else ctx.lineTo(wx, wy)
+                }
             }
             ctx.stroke()
         }
-    } else {
-        // Standard trail veil for modes 2..5
-        var veilAlpha = l1Mode === 5 ? clamp(0.45 + dim * 0.5, 0.35, 0.95) : clamp((1.0 - trail) + dim * 0.3, 0.08, 0.65)
-        ctx.fillStyle = colourWithAlpha(bgHex, veilAlpha)
-        ctx.fillRect(0, 0, w, h)
-    }
-
-    if (l1Mode === 2) {
+        ctx.restore()
+    } else if (l1Mode === 1) {
+        // Mode 1: G-Force Polar FlowField Vector Streams from Moving Vanishing Endpoint
+        ctx.save()
+        ctx.globalCompositeOperation = "lighter"
+        ctx.lineWidth = 1.4 + state.bass * 1.2
+        var focalX = cx + endPt.dx * 0.55
+        var focalY = cy + endPt.dy * 0.55
+        for (var fb = 0; fb < 3; fb++) {
+            ctx.strokeStyle = colourWithAlpha(palette[(fb * 3) % palette.length], (0.24 + state.mid * 0.32) * (1.0 - dim))
+            ctx.beginPath()
+            var fCount = Math.max(8, Math.min(28, Math.floor(18 * density)))
+            for (var fi = 0; fi < fCount; fi++) {
+                var fa = (fi / fCount) * Math.PI * 2 + fb * 0.7 + state.t * 0.4 * speed
+                var depthP = (fi * 0.19 + state.t * 0.25 * speed) % 0.65
+                var fr1 = minDim * (0.06 + depthP)
+                var fr2 = fr1 + minDim * (0.07 + state.smoothBands[(fi * 3) & 63] * 0.15)
+                var curl = 0.14 + state.mid * 0.18
+                var ox = lerp(focalX, cx, depthP)
+                var oy = lerp(focalY, cy, depthP)
+                ctx.moveTo(ox + Math.cos(fa) * fr1, oy + Math.sin(fa) * fr1)
+                ctx.lineTo(ox + Math.cos(fa + curl) * fr2, oy + Math.sin(fa + curl) * fr2)
+            }
+            ctx.stroke()
+        }
+        ctx.restore()
+    } else if (l1Mode === 2) {
         // Mode 2: Cthugha Rave Flame / Plasma Buffer seeded from 64-band spectrum
         ctx.save()
         ctx.globalCompositeOperation = "lighter"
@@ -732,7 +899,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             ctx.beginPath()
             for (var f = cBucket; f < flames.length; f += 4) {
                 var fm = flames[f]
-                var fx = fm.x * w
+                var fx = fm.x * w + endPt.dx * 0.25 * (1.0 - fm.y)
                 var fy = fm.y * h
                 var fw = (w / 22.0) * (0.7 + fm.energy * 1.8) * density
                 var fh = h * (0.06 + fm.energy * 0.22) * density
@@ -753,9 +920,11 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
         ctx.stroke()
         ctx.restore()
     } else if (l1Mode === 3) {
-        // Mode 3: Relativistic 3D Starfield Warp
+        // Mode 3: Relativistic 3D Starfield Warp streaming from Moving Vanishing Endpoint
         ctx.save()
         ctx.globalCompositeOperation = "lighter"
+        var starOriginX = cx + endPt.dx * 0.60
+        var starOriginY = cy + endPt.dy * 0.60
         var starLimit = Math.min(state.stars.length, Math.floor(90 * density))
         for (var sbk = 0; sbk < 3; sbk++) {
             ctx.strokeStyle = colourWithAlpha(palette[(sbk * 3) % palette.length], (0.45 + state.high * 0.4) * (1.0 - dim))
@@ -763,10 +932,10 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             ctx.beginPath()
             for (var sIdx = sbk; sIdx < starLimit; sIdx += 3) {
                 var st = state.stars[sIdx]
-                var sx0 = cx + (st.x / st.pz) * minDim * 0.55
-                var sy0 = cy + (st.y / st.pz) * minDim * 0.55
-                var sx1 = cx + (st.x / st.z) * minDim * 0.55
-                var sy1 = cy + (st.y / st.z) * minDim * 0.55
+                var sx0 = starOriginX + (st.x / st.pz) * minDim * 0.55
+                var sy0 = starOriginY + (st.y / st.pz) * minDim * 0.55
+                var sx1 = starOriginX + (st.x / st.z) * minDim * 0.55
+                var sy1 = starOriginY + (st.y / st.z) * minDim * 0.55
                 ctx.moveTo(sx0, sy0)
                 ctx.lineTo(sx1, sy1)
             }
@@ -774,11 +943,20 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
         }
         ctx.restore()
     } else if (l1Mode === 4) {
-        // Mode 4: Synthwave Horizon & High-Excursion 64-Band Skyline Equaliser
-        var horizonY = cy + h * 0.08 + Math.sin(state.t * 0.7) * 8.0
+        // Mode 4: Synthwave Horizon & Configurable Equaliser Backdrop (6 Styles, 3 Layouts, Gain & Response)
+        var eqStyle = cfg && cfg.layer1EqStyle !== undefined ? ((Number(cfg.layer1EqStyle) || 0) % LAYER1_EQ_STYLES.length) : 0
+        var eqLayout = cfg && cfg.layer1EqLayout !== undefined ? ((Number(cfg.layer1EqLayout) || 0) % LAYER1_EQ_LAYOUTS.length) : 0
+        var eqGain = cfg && cfg.layer1EqGain !== undefined ? clamp(Number(cfg.layer1EqGain), 0.2, 3.0) : 1.25
+        var eqDamping = cfg && cfg.layer1EqDamping !== undefined ? ((Number(cfg.layer1EqDamping) || 0) % 3) : 0
+
+        var horizonY = cy + h * 0.08 + endPt.dy * 0.22
+        var vanishX = cx + endPt.dx * 0.48
         ctx.save()
+        ctx.globalCompositeOperation = "lighter"
+
+        // Perspective SynthGrid floor below horizonY
         ctx.strokeStyle = colourWithAlpha(palette[0], (0.28 + state.bass * 0.42) * (1.0 - dim))
-        ctx.lineWidth = 1.2 + state.bass * 1.5
+        ctx.lineWidth = 1.2 + state.bass * 1.4
         ctx.beginPath()
         var rows = Math.max(5, Math.floor(11 * density))
         for (var r = 1; r <= rows; r++) {
@@ -790,28 +968,160 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
         }
         var cols = Math.max(8, Math.floor(16 * density))
         for (var c = -cols; c <= cols; c++) {
-            var topX = cx + c * (w * 0.015)
+            var topX = vanishX + c * (w * 0.015)
             var botX = cx + c * (w * 0.14)
             ctx.moveTo(topX, horizonY)
             ctx.lineTo(botX, h)
         }
         ctx.stroke()
 
-        // High-excursion 64-band skyline equaliser above the horizon
-        ctx.fillStyle = colourWithAlpha(palette[2], (0.22 + state.energy * 0.35) * (1.0 - dim))
-        ctx.strokeStyle = colourWithAlpha(palette[1], (0.65 + state.bass * 0.3) * (1.0 - dim))
-        ctx.lineWidth = 2.0
-        ctx.beginPath()
-        ctx.moveTo(0, horizonY)
-        for (var b = 0; b < 64; b++) {
-            var bx = (b / 63.0) * w
-            var bh = state.smoothBands[b] * h * 0.36
-            ctx.lineTo(bx, horizonY - bh)
+        var maxEqH = h * 0.42
+
+        if (eqStyle === 0) {
+            // Style 0: Skyline Mountain (Multi-layer neon mountain silhouette + glowing crest)
+            for (var mLayer = 1; mLayer >= 0; mLayer--) {
+                var layerScale = mLayer === 0 ? 1.0 : 0.62
+                ctx.fillStyle = colourWithAlpha(palette[(mLayer * 3 + 2) % palette.length], (0.20 + state.energy * 0.30) * (1.0 - dim))
+                ctx.strokeStyle = colourWithAlpha(palette[(mLayer * 2 + 1) % palette.length], (0.72 + state.bass * 0.28) * (1.0 - dim))
+                ctx.lineWidth = mLayer === 0 ? 2.4 : 1.5
+                ctx.beginPath()
+                ctx.moveTo(0, horizonY)
+                for (var b0 = 0; b0 < 64; b0++) {
+                    var idx0 = mapEqBandIndex((b0 + mLayer * 5) & 63, 64, eqLayout)
+                    var v0 = sampleEqBandValue(state, idx0, eqDamping, eqGain) * layerScale
+                    ctx.lineTo((b0 / 63.0) * w, horizonY - v0 * maxEqH)
+                }
+                ctx.lineTo(w, horizonY)
+                ctx.closePath()
+                ctx.fill()
+                ctx.stroke()
+            }
+        } else if (eqStyle === 1) {
+            // Style 1: LED Bars & Floating Peak-Hold Indicators
+            var barCount = 32
+            var slotW = w / barCount
+            var barW = slotW * 0.72
+            for (var bk = 0; bk < 4; bk++) {
+                ctx.fillStyle = colourWithAlpha(palette[(bk * 3) % palette.length], (0.55 + state.bass * 0.35) * (1.0 - dim))
+                ctx.beginPath()
+                for (var bi = bk; bi < barCount; bi += 4) {
+                    var idx1 = mapEqBandIndex(bi, barCount, eqLayout)
+                    var v1 = sampleEqBandValue(state, idx1, eqDamping, eqGain)
+                    var bh1 = v1 * maxEqH
+                    var bx1 = bi * slotW + (slotW - barW) * 0.5
+                    ctx.rect(bx1, horizonY - bh1, barW, bh1)
+                }
+                ctx.fill()
+            }
+            // Floating Peak-Hold caps
+            ctx.fillStyle = colourWithAlpha(palette[7 % palette.length], 0.92 * (1.0 - dim))
+            ctx.beginPath()
+            for (var pi = 0; pi < barCount; pi++) {
+                var idxP = mapEqBandIndex(pi, barCount, eqLayout)
+                var pk = clamp((state.peakBands[idxP] || 0.06) * eqGain, 0.02, 1.65)
+                var pY = horizonY - pk * maxEqH - 4.0
+                var pX = pi * slotW + (slotW - barW) * 0.5
+                ctx.rect(pX, pY, barW, 3.0)
+            }
+            ctx.fill()
+        } else if (eqStyle === 2) {
+            // Style 2: Mirrored Horizon Reflection (Upward bars + downward translucent water reflection)
+            var mBars = 40
+            var mSlot = w / mBars
+            var mBarW = mSlot * 0.74
+            for (var mb = 0; mb < 3; mb++) {
+                ctx.fillStyle = colourWithAlpha(palette[(mb * 4) % palette.length], (0.58 + state.energy * 0.32) * (1.0 - dim))
+                ctx.beginPath()
+                for (var mi = mb; mi < mBars; mi += 3) {
+                    var idx2 = mapEqBandIndex(mi, mBars, eqLayout)
+                    var v2 = sampleEqBandValue(state, idx2, eqDamping, eqGain)
+                    var upH = v2 * maxEqH
+                    ctx.rect(mi * mSlot, horizonY - upH, mBarW, upH)
+                }
+                ctx.fill()
+
+                // Downward water reflection
+                ctx.fillStyle = colourWithAlpha(palette[(mb * 4 + 2) % palette.length], 0.24 * (1.0 - dim))
+                ctx.beginPath()
+                for (var mr = mb; mr < mBars; mr += 3) {
+                    var idx2r = mapEqBandIndex(mr, mBars, eqLayout)
+                    var v2r = sampleEqBandValue(state, idx2r, eqDamping, eqGain)
+                    var dnH = v2r * (h - horizonY) * 0.68
+                    ctx.rect(mr * mSlot, horizonY + 2, mBarW, dnH)
+                }
+                ctx.fill()
+            }
+        } else if (eqStyle === 3) {
+            // Style 3: 3D Waterfall Spectrum Ridges marching down the SynthGrid towards the user!
+            var hist = state.waveHistory || []
+            var ridgeCount = Math.min(10, hist.length)
+            for (var rg = ridgeCount - 1; rg >= 0; rg--) {
+                var snap = hist[rg]
+                var rFrac = rg / Math.max(1, ridgeCount - 1)
+                var ridgeBaseY = lerp(horizonY, h * 0.92, Math.pow(1.0 - rFrac, 1.35))
+                var ridgeW = lerp(w * 0.42, w * 0.98, 1.0 - rFrac)
+                var leftX = vanishX * rFrac + (w - ridgeW) * 0.5 * (1.0 - rFrac)
+                ctx.strokeStyle = colourWithAlpha(palette[(rg * 2) % palette.length], (0.85 - rFrac * 0.58) * (1.0 - dim))
+                ctx.lineWidth = 2.4 - rFrac * 1.2
+                ctx.beginPath()
+                for (var sb3 = 0; sb3 < 32; sb3++) {
+                    var bMapped = Math.floor(mapEqBandIndex(sb3, 32, eqLayout) / 2)
+                    var bv3 = (snap.bands[bMapped] || 0.05) * eqGain * (1.15 - rFrac * 0.45)
+                    var rx = leftX + (sb3 / 31.0) * ridgeW
+                    var ry = ridgeBaseY - bv3 * maxEqH * 0.65
+                    if (sb3 === 0) ctx.moveTo(rx, ry)
+                    else ctx.lineTo(rx, ry)
+                }
+                ctx.stroke()
+            }
+        } else if (eqStyle === 4) {
+            // Style 4: Synthwave Horizon Sun & Radial Equaliser Corona Rays
+            var sunR = minDim * (0.20 + state.bass * 0.06)
+            // Segmented retro sun bands
+            for (var sl = 0; sl < 6; sl++) {
+                ctx.fillStyle = colourWithAlpha(palette[(sl + 8) % palette.length], (0.32 - sl * 0.03) * (1.0 - dim))
+                var bandTop = horizonY - sunR * (1.0 - sl * 0.15)
+                var bandH = sunR * 0.11
+                var chordW = Math.sqrt(Math.max(0.0, sunR * sunR - Math.pow(horizonY - bandTop, 2))) * 2.0
+                ctx.fillRect(vanishX - chordW * 0.5, bandTop, chordW, bandH)
+            }
+            // Radial equaliser rays erupting around the upper semicircle of the sun
+            ctx.strokeStyle = colourWithAlpha(palette[1], (0.78 + state.beatPulse * 0.22) * (1.0 - dim))
+            ctx.lineWidth = 2.2 + state.bass * 1.5
+            ctx.beginPath()
+            var rayCount = 40
+            for (var ryIdx = 0; ryIdx <= rayCount; ryIdx++) {
+                var rAng = Math.PI + (ryIdx / rayCount) * Math.PI
+                var bIdx4 = mapEqBandIndex(ryIdx, rayCount + 1, eqLayout)
+                var v4 = sampleEqBandValue(state, bIdx4, eqDamping, eqGain)
+                var rInner = sunR * 0.95
+                var rOuter = sunR + v4 * maxEqH * 0.85
+                ctx.moveTo(vanishX + Math.cos(rAng) * rInner, horizonY + Math.sin(rAng) * rInner)
+                ctx.lineTo(vanishX + Math.cos(rAng) * rOuter, horizonY + Math.sin(rAng) * rOuter)
+            }
+            ctx.stroke()
+        } else {
+            // Style 5: Centre-Symmetric Twin Wave Ribbon (Bass anchored at vanishX expanding to wings)
+            for (var wingPass = 0; wingPass < 3; wingPass++) {
+                ctx.strokeStyle = colourWithAlpha(palette[(wingPass * 3) % palette.length], (0.75 - wingPass * 0.15) * (1.0 - dim))
+                ctx.fillStyle = colourWithAlpha(palette[(wingPass * 3 + 1) % palette.length], 0.14 * (1.0 - dim))
+                ctx.lineWidth = 2.4 - wingPass * 0.5
+                ctx.beginPath()
+                ctx.moveTo(0, horizonY)
+                for (var cw = 0; cw < 64; cw++) {
+                    var distC = Math.abs((cw / 63.0) - 0.5) * 2.0
+                    var cBand = clamp(Math.floor(distC * 63), 0, 63)
+                    var cv = sampleEqBandValue(state, cBand, eqDamping, eqGain) * (1.0 - wingPass * 0.22)
+                    var harmMod = Math.sin(cw * 0.35 + state.t * 3.0 + wingPass) * 0.15 + 0.85
+                    var wy5 = horizonY - cv * maxEqH * harmMod * (1.0 - distC * 0.25)
+                    ctx.lineTo((cw / 63.0) * w, wy5)
+                }
+                ctx.lineTo(w, horizonY)
+                ctx.closePath()
+                ctx.fill()
+                ctx.stroke()
+            }
         }
-        ctx.lineTo(w, horizonY)
-        ctx.closePath()
-        ctx.fill()
-        ctx.stroke()
         ctx.restore()
     }
 
@@ -828,8 +1138,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             var sides = wave.sides || 6
             for (var v = 0; v <= sides; v++) {
                 var ang = (v / sides) * Math.PI * 2 + state.phase * 0.5
-                var vx = cx + Math.cos(ang) * wr
-                var vy = cy + Math.sin(ang) * wr
+                var vx = cx + endPt.dx * 0.3 * (1.0 - wave.r) + Math.cos(ang) * wr
+                var vy = cy + endPt.dy * 0.3 * (1.0 - wave.r) + Math.sin(ang) * wr
                 if (v === 0) ctx.moveTo(vx, vy)
                 else ctx.lineTo(vx, vy)
             }
@@ -840,25 +1150,49 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
 }
 
 // ---------------------------------------------------------------------------
+// Universal 3D Graded History Tracer Helpers (Shared by L1, L2, and L3)
+// ---------------------------------------------------------------------------
+
+function computeTracerEndpoint(w, h, t, drift, speed) {
+    var d = clamp(Number(drift !== undefined ? drift : 1.0), 0.0, 2.5)
+    var sp = clamp(Number(speed !== undefined ? speed : 1.0), 0.15, 3.0)
+    var wt = t * 0.42 * sp
+    var dx = (Math.sin(wt) * 0.24 + Math.cos(wt * 0.63 + 1.3) * 0.14) * w * d
+    var dy = (Math.cos(wt * 0.79) * 0.22 + Math.sin(wt * 0.51 + 2.1) * 0.12) * h * d
+    return { dx: dx, dy: dy }
+}
+
+function rotatePaletteForEcho(palette, echoIdx) {
+    if (!palette || palette.length === 0 || echoIdx <= 0) return palette
+    var out = []
+    var len = palette.length
+    for (var i = 0; i < len; i++) {
+        out.push(palette[(i + echoIdx) % len])
+    }
+    return out
+}
+
+// ---------------------------------------------------------------------------
 // LAYER #2 — 12 Psychedelic & Classic Nightclub Visualiser Modes (Batched)
 // ---------------------------------------------------------------------------
 
-// Mode 0: MilkDrop Geiss Cathedral (Dual Harmonic Custom Waves + N-Fold Kaleidoscope)
+// Mode 0: MilkDrop Geiss Cathedral (Dual Harmonic Custom Waves + 6-Fold Kaleidoscope)
 function drawMode0MilkDrop(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
     var minDim = Math.min(w, h) * (cfg.layer2Zoom || 1.0)
-    var facets = Math.max(1, Math.min(16, Math.round(cfg.layer2Facets || 8)))
-    var comp = clamp(cfg.layer2Complexity || 1.0, 0.3, 3.0)
-    var pts = Math.floor(36 * clamp(comp, 0.5, 1.8))
+    var facets = 6
+    var lod = state.echoLod || 1.0
+    var comp = clamp(cfg.layer2Complexity || 1.0, 0.4, 2.0) * lod
+    var pts = Math.max(10, Math.floor(24 * clamp(comp, 0.4, 1.5)))
 
     ctx.save()
     ctx.translate(cx, cy)
     ctx.globalCompositeOperation = "lighter"
 
-    for (var ring = 0; ring < 4; ring++) {
+    for (var ring = 0; ring < 3; ring++) {
         ctx.strokeStyle = colourWithAlpha(palette[(ring * 2) % palette.length], 0.58 + state.bass * 0.35)
-        ctx.lineWidth = (ring === 0 ? 2.4 : 1.6) + state.beatPulse * 1.5
+        ctx.lineWidth = (ring === 0 ? 2.2 : 1.5) + state.beatPulse * 1.4
         ctx.beginPath()
 
         for (var f = 0; f < facets; f++) {
@@ -869,7 +1203,7 @@ function drawMode0MilkDrop(ctx, w, h, state, palette, cfg) {
                 var bIdx = (i * 2 + ring * 11) & 63
                 var bv = state.smoothBands[bIdx]
                 var r = minDim * (0.08 + u * 0.38 + bv * 0.18 + state.bass * 0.06)
-                var theta = baseAng + flip * (u * (Math.PI * 2 / Math.max(2, facets)) + Math.sin(u * 6.0 + state.t * 2.2 + ring) * (0.22 + state.mid * 0.38))
+                var theta = baseAng + flip * (u * (Math.PI * 2 / facets) + Math.sin(u * 6.0 + state.t * 2.2 + ring) * (0.22 + state.mid * 0.38))
                 var px = Math.cos(theta) * r
                 var py = Math.sin(theta) * r
                 if (i === 0) ctx.moveTo(px, py)
@@ -886,8 +1220,9 @@ function drawMode1AvsSuperScope(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
     var scale = Math.min(w, h) * 0.44 * (cfg.layer2Zoom || 1.0)
-    var comp = clamp(cfg.layer2Complexity || 1.0, 0.3, 3.0)
-    var N = Math.floor(140 * clamp(comp, 0.5, 2.0))
+    var lod = state.echoLod || 1.0
+    var comp = clamp(cfg.layer2Complexity || 1.0, 0.4, 2.0) * lod
+    var N = Math.max(32, Math.floor(88 * clamp(comp, 0.4, 1.5)))
     var harm = state.avsHarmonics || { m: 3, n: 5, k: 2, twist: 1.4, style: 0 }
 
     var rotX = state.t * 0.65 + state.bass * 0.8
@@ -901,7 +1236,7 @@ function drawMode1AvsSuperScope(ctx, w, h, state, palette, cfg) {
 
     for (var strand = 0; strand < 3; strand++) {
         ctx.strokeStyle = colourWithAlpha(palette[(strand * 3) % palette.length], 0.68 + state.bass * 0.28)
-        ctx.lineWidth = 2.0 + (strand === 0 ? state.bass * 2.2 : 0.5)
+        ctx.lineWidth = 1.9 + (strand === 0 ? state.bass * 2.0 : 0.4)
         ctx.beginPath()
 
         var sPhase = strand * (Math.PI * 2 / 3.0)
@@ -936,9 +1271,10 @@ function drawMode2GForceWaveShape(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
     var maxR = Math.min(w, h) * 0.45 * (cfg.layer2Zoom || 1.0)
-    var petals = Math.max(2, Math.min(16, Math.round(cfg.layer2Facets || 6)))
-    var comp = clamp(cfg.layer2Complexity || 1.0, 0.3, 3.0)
-    var steps = Math.floor(120 * clamp(comp, 0.5, 1.8))
+    var petals = 6
+    var lod = state.echoLod || 1.0
+    var comp = clamp(cfg.layer2Complexity || 1.0, 0.4, 2.0) * lod
+    var steps = Math.max(28, Math.floor(76 * clamp(comp, 0.4, 1.5)))
 
     ctx.save()
     ctx.translate(cx, cy)
@@ -946,7 +1282,7 @@ function drawMode2GForceWaveShape(ctx, w, h, state, palette, cfg) {
 
     for (var layer = 0; layer < 4; layer++) {
         ctx.strokeStyle = colourWithAlpha(palette[(layer * 2 + 1) % palette.length], 0.55 + state.energy * 0.35)
-        ctx.lineWidth = 1.8 + (3 - layer) * 0.5 + state.bass * 1.6
+        ctx.lineWidth = 1.7 + (3 - layer) * 0.4 + state.bass * 1.4
         ctx.beginPath()
 
         var dir = (layer % 2 === 0) ? 1.0 : -1.0
@@ -969,162 +1305,344 @@ function drawMode2GForceWaveShape(ctx, w, h, state, palette, cfg) {
     ctx.restore()
 }
 
-// Mode 3: Cthugha 1990s Rave Oscilloscope & Laser Strobe Spokes
+// Mode 3: Cthugha 3D Volumetric Plasma & Flame Oscilloscope Tunnel
 function drawMode3CthughaRave(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
-    var maxR = Math.min(w, h) * 0.44 * (cfg.layer2Zoom || 1.0)
+    var maxR = Math.min(w, h) * 0.46 * (cfg.layer2Zoom || 1.0)
+    var isEcho = Boolean(state.isTracerEcho)
+    var numSlices = isEcho ? 3 : 8
+    var ringSteps = isEcho ? 28 : 48
+    var hist = state.waveHistory
+    var histLen = hist ? hist.length : 0
 
     ctx.save()
     ctx.translate(cx, cy)
     ctx.globalCompositeOperation = "lighter"
 
-    // Laser strobe spokes from centre
-    var spokes = Math.max(4, Math.round((cfg.layer2Facets || 8) * 2))
-    ctx.strokeStyle = colourWithAlpha(palette[3], 0.32 + state.beatPulse * 0.48)
-    ctx.lineWidth = 1.5 + state.beatPulse * 2.0
-    ctx.beginPath()
-    for (var sp = 0; sp < spokes; sp++) {
-        var sa = (sp / spokes) * Math.PI * 2 + state.phase * 0.6
-        var sbv = state.smoothBands[(sp * 3) & 63]
-        var sr0 = maxR * 0.12
-        var sr1 = maxR * (0.45 + sbv * 0.65 + state.bass * 0.25)
-        ctx.moveTo(Math.cos(sa) * sr0, Math.sin(sa) * sr0)
-        ctx.lineTo(Math.cos(sa) * sr1, Math.sin(sa) * sr1)
-    }
-    ctx.stroke()
+    // 1. Volumetric Flame & Plasma Shroud Waves receding in 3D tunnel depth (using waveHistory ring buffer)
+    for (var s = numSlices - 1; s >= 0; s--) {
+        var depthFrac = s / Math.max(1, numSlices - 1) // 0 = front, 1 = deep core
+        var persp = 1.0 - depthFrac * 0.72
+        var baseR = maxR * persp * (0.88 + state.bass * 0.24)
+        var hIdx = histLen > 0 ? ((state.waveHistoryHead - 1 - s * 2 + histLen * 4) % histLen) : 0
+        var waveSlice = (histLen > 0 && hist[hIdx]) ? hist[hIdx] : state.smoothBands
+        var rot = state.phase * (s % 2 === 0 ? 0.65 : -0.55) + s * 0.28
+        var colFill = palette[(s * 2 + state.beatCount) % palette.length]
+        var colStroke = palette[(s * 2 + 3 + state.beatCount) % palette.length]
 
-    // 3 Concentric High-Excursion Oscilloscope Rings
-    for (var ring = 0; ring < 3; ring++) {
-        var baseR = maxR * (0.28 + ring * 0.26 + state.bass * 0.12)
-        ctx.strokeStyle = colourWithAlpha(palette[ring % palette.length], 0.72 + state.bass * 0.25)
-        ctx.lineWidth = 2.2 - ring * 0.4 + state.bass * 1.5
+        ctx.fillStyle = colourWithAlpha(colFill, (0.09 + (1.0 - depthFrac) * 0.14 + state.bass * 0.08) * (isEcho ? 0.55 : 1.0))
+        ctx.strokeStyle = colourWithAlpha(colStroke, 0.42 + (1.0 - depthFrac) * 0.52)
+        ctx.lineWidth = (1.2 + (1.0 - depthFrac) * 2.2 + state.bass * 1.4) * (isEcho ? 0.75 : 1.0)
+
         ctx.beginPath()
-        for (var i = 0; i <= 64; i++) {
-            var idx = i & 63
-            var a = (i / 64.0) * Math.PI * 2 + state.phase * (ring % 2 === 0 ? 1 : -1)
-            var disp = (state.smoothBands[(idx + ring * 17) & 63] - 0.18) * maxR * (0.38 + state.energy * 0.25)
-            var r = Math.max(12, baseR + disp * (i % 2 === 0 ? 1 : -0.6))
-            var x = Math.cos(a) * r
-            var y = Math.sin(a) * r
-            if (i === 0) ctx.moveTo(x, y)
-            else ctx.lineTo(x, y)
+        for (var i = 0; i <= ringSteps; i++) {
+            var u = i / ringSteps
+            var a = u * Math.PI * 2 + rot
+            var bIdx = (i * 2 + s * 5) & 63
+            var wVal = waveSlice[bIdx] !== undefined ? waveSlice[bIdx] : state.smoothBands[bIdx]
+            var flame = Math.sin(u * Math.PI * 12 + state.t * 5.5 - s * 0.9) * (0.12 + state.mid * 0.22)
+            var excursion = (wVal - 0.14 + flame) * maxR * persp * (0.42 + state.energy * 0.35)
+            var r = Math.max(8, baseR + excursion)
+            var px = Math.cos(a) * r
+            var py = Math.sin(a) * r - Math.abs(excursion) * 0.22 * (1.0 - depthFrac) // upward Cthugha flame lift
+            if (i === 0) ctx.moveTo(px, py)
+            else ctx.lineTo(px, py)
         }
         ctx.closePath()
+        ctx.fill()
         ctx.stroke()
     }
+
+    // 2. Dual-Channel Stereo Flame Ribbon Oscilloscope across the horizon core
+    if (!isEcho || (state.echoIndex || 0) < 3) {
+        var hSteps = isEcho ? 24 : 48
+        var spanW = w * 0.44 * (cfg.layer2Zoom || 1.0)
+        ctx.fillStyle = colourWithAlpha(palette[1 % palette.length], 0.18 + state.bass * 0.16)
+        ctx.strokeStyle = colourWithAlpha(palette[0 % palette.length], 0.88)
+        ctx.lineWidth = 2.4 + state.beatPulse * 1.8
+        ctx.beginPath()
+        for (var k = 0; k <= hSteps; k++) {
+            var kx = ((k / hSteps) * 2.0 - 1.0) * spanW
+            var kb = state.smoothBands[(k * 2) & 63]
+            var ky = (kb - 0.25) * Math.sin(k * 0.55 + state.t * 7.0) * maxR * (0.48 + state.bass * 0.45)
+            if (k === 0) ctx.moveTo(kx, ky)
+            else ctx.lineTo(kx, ky)
+        }
+        for (var k2 = hSteps; k2 >= 0; k2--) {
+            var kx2 = ((k2 / hSteps) * 2.0 - 1.0) * spanW
+            var kb2 = state.smoothBands[(k2 * 2 + 1) & 63]
+            var ky2 = -(kb2 * 0.55 + 0.08) * maxR * 0.32
+            ctx.lineTo(kx2, ky2)
+        }
+        ctx.closePath()
+        ctx.fill()
+        ctx.stroke()
+    }
+
     ctx.restore()
 }
 
-// Mode 4: Jeff Minter VLM (Virtual Light Machine / Tempest 2000) Neon Vector Lattice
+// Mode 4: Jeff Minter VLM (Virtual Light Machine / Tempest 2000) Rapid-Zoom Textured Neon Web
 function drawMode4MinterVlm(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
-    var maxR = Math.min(w, h) * 0.48 * (cfg.layer2Zoom || 1.0)
-    var facets = Math.max(3, Math.min(20, Math.round((cfg.layer2Facets || 8) * 1.5)))
-    var depthRings = Math.max(4, Math.min(12, Math.floor(7 * (cfg.layer2Complexity || 1.0))))
+    // Rapid in-and-out Llamasoft zoom surge driven by bass, beatPulse, and multi-frequency oscillation
+    var zoomSurge = 1.0
+        + Math.sin(state.t * 4.4 + state.bass * 2.8) * (0.38 + state.bass * 0.34)
+        + Math.cos(state.t * 2.1 - state.mid * 2.0) * 0.18
+        + state.beatPulse * 0.42
+    var maxR = Math.min(w, h) * 0.48 * (cfg.layer2Zoom || 1.0) * clamp(zoomSurge, 0.48, 1.95)
+    var facets = 10
+    var lod = state.echoLod || 1.0
+    var depthRings = Math.max(4, Math.min(9, Math.floor(7 * (cfg.layer2Complexity || 1.0) * lod)))
+    var isEcho = Boolean(state.isTracerEcho)
 
     ctx.save()
     ctx.translate(cx, cy)
     ctx.globalCompositeOperation = "lighter"
 
-    // Tempest 2000 3D Web Rim & Plunging Vector Spikes batched by depth
-    for (var d = 0; d < depthRings; d++) {
-        var zProg = ((d / depthRings) + (state.t * 0.42) % (1.0 / depthRings)) % 1.0
-        var r = Math.pow(zProg, 1.55) * maxR * (1.0 + state.bass * 0.22)
-        var twist = (1.0 - zProg) * Math.sin(state.t * 1.1) * (0.65 + state.mid * 0.85) + state.phase * 0.4
-
-        ctx.strokeStyle = colourWithAlpha(palette[(d + state.beatCount) % palette.length], (0.25 + zProg * 0.65))
-        ctx.lineWidth = 1.2 + zProg * 1.8 + state.beatPulse * 1.2
-        ctx.beginPath()
-
+    // Precompute 3D Tempest web ring vertices so we can render both checkered quad textures AND thick neon vector struts
+    var ringPts = []
+    var ringZ = []
+    var scrollSpeed = 0.68 + state.bass * 0.55
+    for (var d = 0; d <= depthRings; d++) {
+        var zProg = clamp((d + ((state.t * scrollSpeed) % 1.0)) / depthRings, 0.04, 1.15)
+        ringZ.push(zProg)
+        var r = Math.pow(zProg, 1.48) * maxR
+        var twist = (1.0 - zProg) * Math.sin(state.t * 1.85) * (0.75 + state.mid * 0.95) + state.phase * 0.45
+        var pts = []
         for (var s = 0; s <= facets; s++) {
-            var bIdx = (s * 4 + d * 5) & 63
-            var spike = 1.0 + state.smoothBands[bIdx] * 0.34 * ((s + d) % 2 === 0 ? 1 : -0.5)
+            var bIdx = ((s % facets) * 6 + d * 5) & 63
+            var spike = 1.0 + state.smoothBands[bIdx] * 0.42 * (((s + d) & 1) === 0 ? 1.0 : -0.55)
             var a = (s / facets) * Math.PI * 2 + twist
-            var px = Math.cos(a) * r * spike
-            var py = Math.sin(a) * r * spike
-            if (s === 0) ctx.moveTo(px, py)
-            else ctx.lineTo(px, py)
+            pts.push({
+                x: Math.cos(a) * r * spike,
+                y: Math.sin(a) * r * spike,
+                band: state.smoothBands[bIdx]
+            })
+        }
+        ringPts.push(pts)
+    }
+
+    // 1. Textured / Checkered Llamasoft Web Lane Panels (batched into 2 palette buckets for speed)
+    if (!isEcho || (state.echoIndex || 0) < 3) {
+        for (var pBucket = 0; pBucket < 2; pBucket++) {
+            var panelCol = palette[(pBucket * 4 + state.beatCount * 2) % palette.length]
+            ctx.fillStyle = colourWithAlpha(panelCol, isEcho ? 0.12 : (0.18 + state.bass * 0.16))
+            ctx.beginPath()
+            for (var d0 = 0; d0 < depthRings; d0++) {
+                var p0 = ringPts[d0]
+                var p1 = ringPts[d0 + 1]
+                for (var s0 = 0; s0 < facets; s0++) {
+                    if (((d0 + s0) & 1) !== pBucket) continue
+                    // Sub-panel inner bevel for textured synth-arcade look
+                    ctx.moveTo(p0[s0].x, p0[s0].y)
+                    ctx.lineTo(p0[s0 + 1].x, p0[s0 + 1].y)
+                    ctx.lineTo(p1[s0 + 1].x, p1[s0 + 1].y)
+                    ctx.lineTo(p1[s0].x, p1[s0].y)
+                    ctx.closePath()
+                }
+            }
+            ctx.fill()
+        }
+    }
+
+    // 2. Thick High-Luminance Radial Lane Beams + Tempest Chevron Spikes
+    ctx.strokeStyle = colourWithAlpha(palette[(1 + state.beatCount) % palette.length], 0.78 + state.high * 0.22)
+    ctx.lineWidth = (isEcho ? 2.0 : 3.2) + state.bass * 2.4
+    ctx.beginPath()
+    for (var sLane = 0; sLane < facets; sLane++) {
+        ctx.moveTo(ringPts[0][sLane].x, ringPts[0][sLane].y)
+        for (var dLane = 1; dLane <= depthRings; dLane++) {
+            ctx.lineTo(ringPts[dLane][sLane].x, ringPts[dLane][sLane].y)
+        }
+    }
+    ctx.stroke()
+
+    // 3. Thick Neon Concentric Web Rim Polygons surging in & out
+    for (var dr = 0; dr <= depthRings; dr++) {
+        var zp = ringZ[dr]
+        var ptsR = ringPts[dr]
+        ctx.strokeStyle = colourWithAlpha(palette[(dr * 2 + state.beatCount) % palette.length], 0.35 + zp * 0.65)
+        // Thick arcade vector lines (up to 6.5px on foreground web rim!)
+        ctx.lineWidth = (1.8 + zp * 3.4 + state.beatPulse * 1.8) * (isEcho ? 0.72 : 1.0)
+        ctx.beginPath()
+        for (var sr = 0; sr <= facets; sr++) {
+            if (sr === 0) ctx.moveTo(ptsR[sr].x, ptsR[sr].y)
+            else ctx.lineTo(ptsR[sr].x, ptsR[sr].y)
         }
         ctx.stroke()
     }
+
     ctx.restore()
 }
 
-// Mode 5: Julia & Mandelbrot Fractal Orbit Traps + Sacred Recursive Canopy (Batched by Depth)
+// Mode 5: 3D Psychedelic Fractal Landscape & Infinite Julia Horizon Canyon
 function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
-    var cy = h * 0.5
-    var minDim = Math.min(w, h) * (cfg.layer2Zoom || 1.0)
-    var branches = Math.max(3, Math.min(12, Math.round(cfg.layer2Facets || 6)))
-    var maxDepth = Math.min(5, Math.max(3, Math.round(3 + (cfg.layer2Complexity || 1.0))))
+    var zoom = cfg.layer2Zoom || 1.0
+    var isEcho = Boolean(state.isTracerEcho)
+    var lod = state.echoLod || 1.0
+
+    // Horizon sits above centre with audio-reactive camera pitch & roll
+    var camRoll = Math.sin(state.t * 0.52) * 0.08 * (1.0 + state.mid * 0.6)
+    var horizonY = h * (0.34 + Math.sin(state.t * 0.38) * 0.04)
+
+    // Live audio-modulated Julia set constant c = cRe + i*cIm
+    var cRe = -0.74 + Math.cos(state.t * 0.44) * (0.16 + state.bass * 0.14)
+    var cIm = 0.26 + Math.sin(state.t * 0.58) * (0.16 + state.mid * 0.14)
 
     ctx.save()
-    ctx.translate(cx, cy)
+    ctx.translate(cx, horizonY)
+    ctx.rotate(camRoll)
     ctx.globalCompositeOperation = "lighter"
 
-    // Pre-collect segments per depth level so we only call ctx.stroke() once per depth!
-    var depthBuckets = []
-    for (var d = 0; d <= maxDepth; d++) depthBuckets.push([])
-
-    var spread = 0.44 + state.mid * 0.45 + Math.sin(state.t * 0.9) * 0.16
-    var decay = 0.68 + state.bass * 0.10
-
-    function collectBranch(x, y, len, angle, depth, bandSeed) {
-        if (depth <= 0 || len < 3.0) return
-        var bVal = state.smoothBands[bandSeed & 63] || 0.0
-        var nx = x + Math.cos(angle) * len * (1.0 + bVal * 0.32)
-        var ny = y + Math.sin(angle) * len * (1.0 + bVal * 0.32)
-        depthBuckets[depth].push(x, y, nx, ny)
-        var curl = Math.sin(state.t * 1.6 + depth) * 0.16 * (1.0 + state.high)
-        collectBranch(nx, ny, len * decay, angle + spread + curl, depth - 1, bandSeed + 7)
-        collectBranch(nx, ny, len * decay, angle - spread + curl, depth - 1, bandSeed + 15)
-    }
-
-    var trunkLen = minDim * (0.14 + state.bass * 0.09)
-    for (var b = 0; b < branches; b++) {
-        var rootAngle = (b * Math.PI * 2) / branches + state.phase * 0.35
-        collectBranch(0, 0, trunkLen, rootAngle, maxDepth, b * 9)
-    }
-
-    for (var lv = 1; lv <= maxDepth; lv++) {
-        var segs = depthBuckets[lv]
-        if (segs.length === 0) continue
-        ctx.strokeStyle = colourWithAlpha(palette[(lv * 2) % palette.length], 0.32 + (lv / maxDepth) * 0.52)
-        ctx.lineWidth = 0.8 + lv * 0.55 + state.bass * 0.8
+    // 1. Infinite Zooming 3D Julia Mandelbrot Horizon Portal in the sky above the canyon
+    var portalRings = isEcho ? 2 : 4
+    var portalSteps = isEcho ? 24 : 40
+    var minDim = Math.min(w, h) * zoom
+    for (var pr = portalRings - 1; pr >= 0; pr--) {
+        var pZoom = ((pr + (state.t * 0.85) % 1.0) / portalRings)
+        var pScale = minDim * (0.08 + pZoom * 0.28) * (1.0 + state.bass * 0.22)
+        var pCol = palette[(pr * 3 + state.beatCount) % palette.length]
+        ctx.fillStyle = colourWithAlpha(pCol, (0.08 + (1.0 - pZoom) * 0.12) * (isEcho ? 0.5 : 1.0))
+        ctx.strokeStyle = colourWithAlpha(palette[(pr * 3 + 1) % palette.length], 0.45 + (1.0 - pZoom) * 0.45)
+        ctx.lineWidth = 1.4 + (1.0 - pZoom) * 1.8 + state.beatPulse * 1.2
         ctx.beginPath()
-        for (var j = 0; j < segs.length; j += 4) {
-            ctx.moveTo(segs[j], segs[j + 1])
-            ctx.lineTo(segs[j + 2], segs[j + 3])
+        for (var ps = 0; ps <= portalSteps; ps++) {
+            var pa = (ps / portalSteps) * Math.PI * 2 + state.phase * (pr % 2 === 0 ? 0.5 : -0.5)
+            var zr = Math.cos(pa) * (0.78 + pZoom * 0.25)
+            var zi = Math.sin(pa) * (0.78 + pZoom * 0.25)
+            for (var it = 0; it < 3; it++) {
+                var tr = zr * zr - zi * zi + cRe
+                zi = 2.0 * zr * zi + cIm
+                zr = tr
+            }
+            var mag = Math.sqrt(zr * zr + zi * zi)
+            var orbR = pScale * (0.62 + 0.32 * Math.atan(mag) + state.smoothBands[(ps + pr * 9) & 63] * 0.25)
+            var px = Math.cos(pa) * orbR * 1.35
+            var py = -minDim * 0.09 + Math.sin(pa) * orbR * 0.72
+            if (ps === 0) ctx.moveTo(px, py)
+            else ctx.lineTo(px, py)
         }
+        ctx.closePath()
+        ctx.fill()
         ctx.stroke()
     }
 
-    // Julia orbit contour rings in the core
-    var cRe = -0.72 + Math.cos(state.t * 0.48) * (0.18 + state.bass * 0.18)
-    var cIm = 0.27 + Math.sin(state.t * 0.62) * (0.18 + state.mid * 0.18)
-    ctx.strokeStyle = colourWithAlpha(palette[1], 0.62 + state.beatPulse * 0.32)
-    ctx.lineWidth = 1.8
-    ctx.beginPath()
-    var jSteps = 72
-    for (var s = 0; s <= jSteps; s++) {
-        var a = (s / jSteps) * Math.PI * 2
-        var zr = Math.cos(a) * 0.85
-        var zi = Math.sin(a) * 0.85
-        for (var it = 0; it < 3; it++) {
-            var tr = zr * zr - zi * zi + cRe
-            zi = 2 * zr * zi + cIm
-            zr = tr
+    // 2. Continuous 3D Fractal Canyon & Mountain Landscape flying past the viewer
+    var zSlices = isEcho ? 5 : Math.max(8, Math.min(14, Math.round(11 * (cfg.layer2Complexity || 1.0) * lod)))
+    var xCols = isEcho ? 12 : 20
+    var flySpeed = 2.6 + state.bass * 1.8
+    var scrollZ = state.t * flySpeed
+    var spanW = w * 0.68 * zoom
+    var floorH = h * 0.68 * zoom
+
+    var prevSlicePts = null
+    // Render back-to-front (far horizon z = zSlices down to near foreground z = 1)
+    for (var z = zSlices; z >= 1; z--) {
+        var zDist = z - (scrollZ % 1.0)
+        var persp = 1.0 / (0.38 + zDist * 0.28) // 3D perspective projection factor
+        var depthNorm = clamp(1.0 - (zDist / (zSlices + 0.5)), 0.05, 1.0)
+        var worldZ = Math.floor(scrollZ) + z
+        var baseY = floorH * persp * 0.52
+
+        var curPts = []
+        for (var c = 0; c <= xCols; c++) {
+            var u = (c / xCols) * 2.0 - 1.0 // -1 (left wall) .. 0 (riverbed) .. +1 (right wall)
+            // Evaluate 3-iteration Julia fractal potential at world coordinates (u, worldZ)
+            var jx = u * 1.15 + Math.sin(worldZ * 0.32) * 0.22
+            var jy = Math.cos(worldZ * 0.27 + u * 1.4) * 0.65
+            for (var jit = 0; jit < 3; jit++) {
+                var jtr = jx * jx - jy * jy + cRe
+                jy = 2.0 * jx * jy + cIm
+                jx = jtr
+            }
+            var juliaPot = Math.atan(Math.sqrt(jx * jx + jy * jy)) / 1.5708 // [0..1]
+            var bIdx = (c * 3 + (worldZ & 15) * 4) & 63
+            var audioLift = state.smoothBands[bIdx] * (0.45 + state.bass * 0.55)
+
+            // Canyon profile: deep bioluminescent riverbed in the centre, towering fractal mountain ridges on both flanks
+            var canyonWall = Math.pow(Math.abs(u), 1.25) * 1.35 + 0.12
+            var ridgeHeight = (juliaPot * 0.68 + audioLift * 0.62) * canyonWall * minDim * 0.42 * persp
+            var sx = (u + Math.sin(worldZ * 0.22 + state.t * 0.4) * 0.08 * (1.0 - depthNorm)) * spanW * persp
+            var sy = baseY - ridgeHeight
+            curPts.push({ x: sx, y: sy, u: u, pot: juliaPot, band: audioLift })
         }
-        var rad = minDim * (0.14 + 0.10 * Math.atan(Math.sqrt(zr * zr + zi * zi)) + state.smoothBands[s & 63] * 0.12)
-        var px = Math.cos(a - state.phase) * rad
-        var py = Math.sin(a - state.phase) * rad
-        if (s === 0) ctx.moveTo(px, py)
-        else ctx.lineTo(px, py)
+
+        var sliceCol = palette[((worldZ % palette.length) + palette.length) % palette.length]
+        var ridgeCol = palette[((worldZ + 2) % palette.length + palette.length) % palette.length]
+
+        // Filled translucent 3D terrain curtain + longitudinal canyon ribs connecting to previous depth slice
+        if (prevSlicePts && (!isEcho || z <= 3)) {
+            ctx.fillStyle = colourWithAlpha(sliceCol, (0.07 + depthNorm * 0.15) * (isEcho ? 0.5 : 1.0))
+            ctx.beginPath()
+            for (var k = 0; k <= xCols; k++) {
+                if (k === 0) ctx.moveTo(curPts[k].x, curPts[k].y)
+                else ctx.lineTo(curPts[k].x, curPts[k].y)
+            }
+            for (var kBack = xCols; kBack >= 0; kBack--) {
+                ctx.lineTo(prevSlicePts[kBack].x, prevSlicePts[kBack].y)
+            }
+            ctx.closePath()
+            ctx.fill()
+
+            // Longitudinal 3D wireframe canyon struts
+            ctx.strokeStyle = colourWithAlpha(sliceCol, 0.25 + depthNorm * 0.45)
+            ctx.lineWidth = 0.9 + depthNorm * 1.4
+            ctx.beginPath()
+            for (var kRib = 0; kRib <= xCols; kRib += 2) {
+                ctx.moveTo(prevSlicePts[kRib].x, prevSlicePts[kRib].y)
+                ctx.lineTo(curPts[kRib].x, curPts[kRib].y)
+            }
+            ctx.stroke()
+        }
+
+        // Crisp neon fractal ridge crest across the slice
+        ctx.strokeStyle = colourWithAlpha(ridgeCol, 0.38 + depthNorm * 0.60)
+        ctx.lineWidth = (1.2 + depthNorm * 2.4 + state.bass * 1.2) * (isEcho ? 0.75 : 1.0)
+        ctx.beginPath()
+        for (var k2 = 0; k2 <= xCols; k2++) {
+            if (k2 === 0) ctx.moveTo(curPts[k2].x, curPts[k2].y)
+            else ctx.lineTo(curPts[k2].x, curPts[k2].y)
+        }
+        ctx.stroke()
+
+        // 3D Fractal Crystal Flora sprouting along foreground canyon peaks
+        if (!isEcho && z <= 5 && (worldZ % 2 === 0)) {
+            ctx.strokeStyle = colourWithAlpha(palette[(worldZ + 4) % palette.length], 0.55 + depthNorm * 0.42)
+            ctx.lineWidth = 1.2 + depthNorm * 1.4
+            ctx.beginPath()
+            for (var tc = 2; tc <= xCols - 2; tc += (xCols - 4)) {
+                var root = curPts[tc]
+                var stemH = minDim * 0.14 * persp * (0.75 + root.band * 0.65)
+                var sway = Math.sin(state.t * 2.2 + worldZ + tc) * 0.32
+                var tipX = root.x + Math.sin(sway) * stemH * 0.45
+                var tipY = root.y - stemH
+                ctx.moveTo(root.x, root.y)
+                ctx.lineTo(tipX, tipY)
+                // Twin recursive fractal canopy forks
+                var forkLen = stemH * 0.58
+                for (var f = -1; f <= 1; f += 2) {
+                    var fa = sway + f * (0.52 + state.mid * 0.35)
+                    var fx = tipX + Math.sin(fa) * forkLen
+                    var fy = tipY - Math.cos(fa) * forkLen
+                    ctx.moveTo(tipX, tipY)
+                    ctx.lineTo(fx, fy)
+                    // Second-order crystal twigs
+                    ctx.moveTo(fx, fy)
+                    ctx.lineTo(fx + Math.sin(fa + f * 0.45) * forkLen * 0.55, fy - Math.cos(fa + f * 0.45) * forkLen * 0.55)
+                    ctx.moveTo(fx, fy)
+                    ctx.lineTo(fx + Math.sin(fa - f * 0.45) * forkLen * 0.55, fy - Math.cos(fa - f * 0.45) * forkLen * 0.55)
+                }
+            }
+            ctx.stroke()
+        }
+
+        prevSlicePts = curPts
     }
-    ctx.closePath()
-    ctx.stroke()
+
     ctx.restore()
 }
 
@@ -1133,8 +1651,10 @@ function drawMode6DmtChrysanthemum(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
     var maxR = Math.min(w, h) * 0.45 * (cfg.layer2Zoom || 1.0)
-    var symmetry = Math.max(4, Math.min(24, Math.round((cfg.layer2Facets || 8) * 1.5)))
-    var rings = Math.max(4, Math.min(10, Math.round(6 * (cfg.layer2Complexity || 1.0))))
+    var symmetry = 8
+    var lod = state.echoLod || 1.0
+    var rings = Math.max(3, Math.min(7, Math.round(5 * (cfg.layer2Complexity || 1.0) * lod)))
+    var steps = state.isTracerEcho ? 28 : 44
 
     ctx.save()
     ctx.translate(cx, cy)
@@ -1145,11 +1665,9 @@ function drawMode6DmtChrysanthemum(ctx, w, h, state, palette, cfg) {
         var baseR = maxR * frac * (0.85 + state.bass * 0.25)
         var rot = state.phase * ((r % 2 === 0) ? 1.0 : -1.0) * (1.2 - frac * 0.5)
         ctx.strokeStyle = colourWithAlpha(palette[(r * 2) % palette.length], 0.48 + (1.0 - frac) * 0.42)
-        ctx.fillStyle = colourWithAlpha(palette[(r * 2 + 1) % palette.length], 0.07 + state.bass * 0.08)
         ctx.lineWidth = 1.5 + (1.0 - frac) * 1.5 + state.beatPulse * 1.2
         ctx.beginPath()
 
-        var steps = symmetry * 6
         for (var i = 0; i <= steps; i++) {
             var a = (i / steps) * Math.PI * 2
             var bVal = state.smoothBands[(i + r * 7) & 63]
@@ -1161,7 +1679,6 @@ function drawMode6DmtChrysanthemum(ctx, w, h, state, palette, cfg) {
             else ctx.lineTo(px, py)
         }
         ctx.closePath()
-        ctx.fill()
         ctx.stroke()
     }
     ctx.restore()
@@ -1172,7 +1689,8 @@ function drawMode7SpacetimeQuasar(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
     var minDim = Math.min(w, h) * (cfg.layer2Zoom || 1.0)
-    var gridN = Math.max(8, Math.min(20, Math.round(13 * (cfg.layer2Complexity || 1.0))))
+    var lod = state.echoLod || 1.0
+    var gridN = Math.max(5, Math.min(13, Math.round(9 * (cfg.layer2Complexity || 1.0) * lod)))
 
     var w1x = cx + Math.cos(state.t * 0.9) * minDim * 0.22
     var w1y = cy + Math.sin(state.t * 1.2) * minDim * 0.16
@@ -1220,7 +1738,7 @@ function drawMode7SpacetimeQuasar(ctx, w, h, state, palette, cfg) {
     ctx.stroke()
 
     // Vertical warped grid lines batched in one path
-    ctx.strokeStyle = colourWithAlpha(palette[2], 0.38 + state.mid * 0.35)
+    ctx.strokeStyle = colourWithAlpha(palette[2 % palette.length], 0.38 + state.mid * 0.35)
     ctx.beginPath()
     for (var col = 0; col <= gridN; col++) {
         var vx = (col / gridN) * w
@@ -1234,11 +1752,11 @@ function drawMode7SpacetimeQuasar(ctx, w, h, state, palette, cfg) {
     ctx.stroke()
 
     // Quasar relativistic accretion rings
-    ctx.strokeStyle = colourWithAlpha(palette[1], 0.72 + state.beatPulse * 0.25)
+    ctx.strokeStyle = colourWithAlpha(palette[1 % palette.length], 0.72 + state.beatPulse * 0.25)
     ctx.lineWidth = 2.2 + state.bass * 2.0
     ctx.beginPath()
-    for (var a = 0; a <= 64; a++) {
-        var ang = (a / 64.0) * Math.PI * 2 + state.phase
+    for (var a = 0; a <= 36; a++) {
+        var ang = (a / 36.0) * Math.PI * 2 + state.phase
         var ar = minDim * (0.09 + state.smoothBands[a & 63] * 0.18 + state.bass * 0.08)
         var qx = cx + Math.cos(ang) * ar
         var qy = cy + Math.sin(ang) * ar * 0.55
@@ -1255,8 +1773,9 @@ function drawMode8AlienMycelium(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
     var minDim = Math.min(w, h) * (cfg.layer2Zoom || 1.0)
-    var tendrils = Math.max(6, Math.min(24, Math.round((cfg.layer2Facets || 8) * 2)))
-    var segs = Math.max(10, Math.min(24, Math.round(16 * (cfg.layer2Complexity || 1.0))))
+    var tendrils = 12
+    var lod = state.echoLod || 1.0
+    var segs = Math.max(6, Math.min(18, Math.round(12 * (cfg.layer2Complexity || 1.0) * lod)))
 
     ctx.save()
     ctx.translate(cx, cy)
@@ -1265,7 +1784,7 @@ function drawMode8AlienMycelium(ctx, w, h, state, palette, cfg) {
     for (var bucket = 0; bucket < 3; bucket++) {
         ctx.strokeStyle = colourWithAlpha(palette[(bucket * 3) % palette.length], 0.55 + state.mid * 0.35)
         ctx.fillStyle = colourWithAlpha(palette[(bucket * 3 + 1) % palette.length], 0.70)
-        ctx.lineWidth = 2.0 + state.bass * 1.8
+        ctx.lineWidth = 1.9 + state.bass * 1.6
         ctx.beginPath()
 
         var nodeSpores = []
@@ -1282,32 +1801,33 @@ function drawMode8AlienMycelium(ctx, w, h, state, palette, cfg) {
                 px += Math.cos(curAng) * stepLen
                 py += Math.sin(curAng) * stepLen
                 ctx.lineTo(px, py)
-                if (s % 5 === 0 || s === segs) {
-                    nodeSpores.push(px, py, 2.2 + bVal * 5.0)
+                if (!state.isTracerEcho && (s % 5 === 0 || s === segs)) {
+                    nodeSpores.push(px, py, 2.2 + bVal * 4.2)
                 }
             }
         }
         ctx.stroke()
 
-        // Bioluminescent spore nodes
-        ctx.beginPath()
-        for (var sp = 0; sp < nodeSpores.length; sp += 3) {
-            var sx = nodeSpores[sp], sy = nodeSpores[sp + 1], sr = nodeSpores[sp + 2]
-            ctx.moveTo(sx + sr, sy)
-            ctx.arc(sx, sy, sr, 0, Math.PI * 2)
+        if (nodeSpores.length > 0) {
+            ctx.beginPath()
+            for (var sp = 0; sp < nodeSpores.length; sp += 3) {
+                var sx = nodeSpores[sp], sy = nodeSpores[sp + 1], sr = nodeSpores[sp + 2]
+                ctx.rect(sx - sr, sy - sr, sr * 2.0, sr * 2.0)
+            }
+            ctx.fill()
         }
-        ctx.fill()
     }
     ctx.restore()
 }
 
-// Mode 9: Cyber-Shamanic Matrix Vortex Tunnel (Batched vector rings + sparse core glyphs)
+// Mode 9: Cyber-Shamanic Matrix Vortex Tunnel (Batched vector rings)
 function drawMode9CyberMatrix(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
     var maxR = Math.min(w, h) * 0.48 * (cfg.layer2Zoom || 1.0)
-    var rings = Math.max(6, Math.min(16, Math.round(10 * (cfg.layer2Complexity || 1.0))))
-    var sectors = Math.max(8, Math.min(24, Math.round((cfg.layer2Facets || 8) * 2)))
+    var lod = state.echoLod || 1.0
+    var rings = Math.max(4, Math.min(11, Math.round(8 * (cfg.layer2Complexity || 1.0) * lod)))
+    var sectors = 12
 
     ctx.save()
     ctx.translate(cx, cy)
@@ -1335,33 +1855,45 @@ function drawMode9CyberMatrix(ctx, w, h, state, palette, cfg) {
     ctx.restore()
 }
 
-// Mode 10: 4D Sacred Polytope (Tesseract + Icosahedron + Star Mandala)
+// Precomputed 4D Tesseract cell quad faces for volumetric hyper-facet rendering
+var TESSERACT_FACES = [
+    [0, 1, 3, 2], [4, 5, 7, 6], [8, 9, 11, 10], [12, 13, 15, 14],
+    [0, 1, 9, 8], [2, 3, 11, 10], [4, 5, 13, 12], [6, 7, 15, 14]
+]
+
+// Mode 10: Unlocked Pure 4D Hypercube (Tesseract rotating freely in all 6 4D/3D planes with Volumetric Hyper-Facets)
 function drawMode10SacredPolytope(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
-    var scale = Math.min(w, h) * 0.30 * (cfg.layer2Zoom || 1.0) * (1.0 + state.bass * 0.28 + state.beatPulse * 0.16)
+    var scale = Math.min(w, h) * 0.32 * (cfg.layer2Zoom || 1.0) * (1.0 + state.bass * 0.28 + state.beatPulse * 0.16)
 
     ctx.save()
     ctx.translate(cx, cy)
     ctx.globalCompositeOperation = "lighter"
 
-    // 16 vertices of a 4D Tesseract rotated in XW, YW, ZW and 3D XY, XZ
-    var aXW = state.t * 0.72 + state.bass * 0.9
-    var aYW = state.t * 0.54 - state.mid * 0.7
-    var aZW = state.t * 0.38 + state.high * 0.6
+    // Full 6-plane 4D rotation (XW, YW, ZW + 3D XY, XZ, YZ) — completely unlocked!
+    var aXW = state.t * 0.78 + state.bass * 0.95
+    var aYW = state.t * 0.56 - state.mid * 0.75
+    var aZW = state.t * 0.41 + state.high * 0.65
+    var aXY = state.phase * 0.48
+    var aXZ = state.t * 0.33
+
     var cosXW = Math.cos(aXW), sinXW = Math.sin(aXW)
     var cosYW = Math.cos(aYW), sinYW = Math.sin(aYW)
     var cosZW = Math.cos(aZW), sinZW = Math.sin(aZW)
+    var cosXY = Math.cos(aXY), sinXY = Math.sin(aXY)
+    var cosXZ = Math.cos(aXZ), sinXZ = Math.sin(aXZ)
 
     var proj = []
     for (var i = 0; i < 16; i++) {
         var bVal = state.smoothBands[(i * 4) & 63]
-        var m = 1.0 + bVal * 0.34
+        var m = 1.0 + bVal * 0.32
         var x = ((i & 1) ? 1 : -1) * m
         var y = ((i & 2) ? 1 : -1) * m
         var z = ((i & 4) ? 1 : -1) * m
         var w4 = ((i & 8) ? 1 : -1) * m
 
+        // 4D plane rotations (XW, YW, ZW)
         var x1 = x * cosXW - w4 * sinXW
         var w1 = x * sinXW + w4 * cosXW
         var y2 = y * cosYW - w1 * sinYW
@@ -1369,46 +1901,89 @@ function drawMode10SacredPolytope(ctx, w, h, state, palette, cfg) {
         var z3 = z * cosZW - w2 * sinZW
         var w3 = z * sinZW + w2 * cosZW
 
-        var d4 = 2.6 / (3.4 - clamp(w3, -1.8, 1.8))
-        var d3 = 2.2 / (3.2 - clamp(z3 * d4, -1.8, 1.8))
+        // Free 3D spatial rotations (XY, XZ)
+        var rx1 = x1 * cosXY - y2 * sinXY
+        var ry1 = x1 * sinXY + y2 * cosXY
+        var rx2 = rx1 * cosXZ - z3 * sinXZ
+        var rz2 = rx1 * sinXZ + z3 * cosXZ
+
+        var d4 = 2.65 / (3.35 - clamp(w3, -1.85, 1.85))
+        var d3 = 2.25 / (3.15 - clamp(rz2 * d4, -1.85, 1.85))
+        var pScale = d4 * d3
         proj.push({
-            x: x1 * d4 * d3 * scale,
-            y: y2 * d4 * d3 * scale
+            x: rx2 * pScale * scale,
+            y: ry1 * pScale * scale,
+            p: pScale
         })
     }
 
-    // 32 edges of the 4D hypercube batched into 2 colour paths
-    for (var grp = 0; grp < 2; grp++) {
-        ctx.strokeStyle = colourWithAlpha(palette[(grp * 3) % palette.length], 0.72 + state.bass * 0.25)
-        ctx.lineWidth = 1.8 + grp * 0.6 + state.beatPulse * 1.4
-        ctx.beginPath()
-        for (var u = 0; u < 16; u++) {
-            for (var bit = grp * 2; bit < (grp + 1) * 2; bit++) {
-                var v = u ^ (1 << bit)
-                if (u < v) {
-                    ctx.moveTo(proj[u].x, proj[u].y)
-                    ctx.lineTo(proj[v].x, proj[v].y)
-                }
-            }
+    // Translucent Volumetric 4D Hyper-Cell Faces
+    if (!state.isTracerEcho || (state.echoIndex || 0) < 3) {
+        for (var f = 0; f < TESSERACT_FACES.length; f++) {
+            var face = TESSERACT_FACES[f]
+            ctx.fillStyle = colourWithAlpha(palette[(f * 2) % palette.length], state.isTracerEcho ? 0.05 : (0.09 + state.bass * 0.08))
+            ctx.beginPath()
+            ctx.moveTo(proj[face[0]].x, proj[face[0]].y)
+            ctx.lineTo(proj[face[1]].x, proj[face[1]].y)
+            ctx.lineTo(proj[face[2]].x, proj[face[2]].y)
+            ctx.lineTo(proj[face[3]].x, proj[face[3]].y)
+            ctx.closePath()
+            ctx.fill()
         }
-        ctx.stroke()
     }
 
-    // Outer Sacred Star Mandala ring
-    var points = Math.max(6, Math.min(24, Math.round((cfg.layer2Facets || 8) * 2)))
-    var rOuter = scale * 1.38
-    ctx.strokeStyle = colourWithAlpha(palette[1], 0.45 + state.mid * 0.4)
-    ctx.lineWidth = 1.3
+    // Group 0: Inner 3D cube cell (w = -1, vertices 0..7, 12 edges)
+    ctx.strokeStyle = colourWithAlpha(palette[0 % palette.length], 0.82 + state.bass * 0.18)
+    ctx.lineWidth = 2.2 + state.beatPulse * 1.4
     ctx.beginPath()
-    for (var p = 0; p < points; p++) {
-        var pa1 = (p / points) * Math.PI * 2 + state.phase * 0.4
-        var pa2 = (((p + Math.floor(points / 3)) % points) / points) * Math.PI * 2 + state.phase * 0.4
-        var pr1 = rOuter * (1.0 + state.smoothBands[(p * 3) & 63] * 0.24)
-        var pr2 = rOuter * (1.0 + state.smoothBands[((p + 5) * 3) & 63] * 0.24)
-        ctx.moveTo(Math.cos(pa1) * pr1, Math.sin(pa1) * pr1)
-        ctx.lineTo(Math.cos(pa2) * pr2, Math.sin(pa2) * pr2)
+    for (var u0 = 0; u0 < 8; u0++) {
+        for (var b0 = 0; b0 < 3; b0++) {
+            var v0 = u0 ^ (1 << b0)
+            if (u0 < v0) {
+                ctx.moveTo(proj[u0].x, proj[u0].y)
+                ctx.lineTo(proj[v0].x, proj[v0].y)
+            }
+        }
     }
     ctx.stroke()
+
+    // Group 1: Outer 3D cube cell (w = +1, vertices 8..15, 12 edges)
+    ctx.strokeStyle = colourWithAlpha(palette[3 % palette.length], 0.82 + state.mid * 0.18)
+    ctx.lineWidth = 2.2 + state.beatPulse * 1.4
+    ctx.beginPath()
+    for (var u1 = 8; u1 < 16; u1++) {
+        for (var b1 = 0; b1 < 3; b1++) {
+            var v1 = u1 ^ (1 << b1)
+            if (u1 < v1) {
+                ctx.moveTo(proj[u1].x, proj[u1].y)
+                ctx.lineTo(proj[v1].x, proj[v1].y)
+            }
+        }
+    }
+    ctx.stroke()
+
+    // Group 2: 8 Fourth-Dimensional W-axis Hyper-Struts connecting inner and outer cubes (bit 3)
+    ctx.strokeStyle = colourWithAlpha(palette[6 % palette.length], 0.88 + state.high * 0.12)
+    ctx.lineWidth = 2.5 + state.bass * 1.6
+    ctx.beginPath()
+    for (var u2 = 0; u2 < 8; u2++) {
+        var v2 = u2 ^ 8
+        ctx.moveTo(proj[u2].x, proj[u2].y)
+        ctx.lineTo(proj[v2].x, proj[v2].y)
+    }
+    ctx.stroke()
+
+    // Glowing 4D corner vertices on the front slices
+    if (!state.isTracerEcho || (state.echoIndex || 0) < 3) {
+        ctx.fillStyle = colourWithAlpha(palette[1 % palette.length], 0.88)
+        ctx.beginPath()
+        for (var k = 0; k < 16; k++) {
+            var nr = Math.max(1.8, 2.4 * proj[k].p)
+            ctx.rect(proj[k].x - nr, proj[k].y - nr, nr * 2.0, nr * 2.0)
+        }
+        ctx.fill()
+    }
+
     ctx.restore()
 }
 
@@ -1417,8 +1992,9 @@ function drawMode11StrangeAttractor(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
     var scale = Math.min(w, h) * 0.24 * (cfg.layer2Zoom || 1.0) * (1.0 + state.bass * 0.22)
-    var comp = clamp(cfg.layer2Complexity || 1.0, 0.3, 3.0)
-    var steps = Math.floor(180 * clamp(comp, 0.5, 2.0))
+    var lod = state.echoLod || 1.0
+    var comp = clamp(cfg.layer2Complexity || 1.0, 0.4, 2.0) * lod
+    var steps = Math.max(36, Math.floor(110 * clamp(comp, 0.4, 1.5)))
 
     var a = -1.4 + Math.sin(state.t * 0.35) * (0.45 + state.bass * 0.35)
     var b = 1.6 + Math.cos(state.t * 0.28) * (0.45 + state.mid * 0.35)
@@ -1452,9 +2028,7 @@ function drawMode11StrangeAttractor(ctx, w, h, state, palette, cfg) {
     ctx.restore()
 }
 
-function drawLayer2Visualiser(ctx, w, h, state, palette, cfg) {
-    if (cfg && !cfg.layer2Enabled) return
-    var m = ((Number(cfg && cfg.layer2Mode !== undefined ? cfg.layer2Mode : (cfg && cfg.mode)) || 0) % MODE_NAMES.length + MODE_NAMES.length) % MODE_NAMES.length
+function drawSingleLayer2Mode(ctx, w, h, state, palette, cfg, m) {
     if (m === 0) drawMode0MilkDrop(ctx, w, h, state, palette, cfg)
     else if (m === 1) drawMode1AvsSuperScope(ctx, w, h, state, palette, cfg)
     else if (m === 2) drawMode2GForceWaveShape(ctx, w, h, state, palette, cfg)
@@ -1469,20 +2043,109 @@ function drawLayer2Visualiser(ctx, w, h, state, palette, cfg) {
     else drawMode11StrangeAttractor(ctx, w, h, state, palette, cfg)
 }
 
+function drawLayer2Visualiser(ctx, w, h, state, palette, cfg) {
+    if (cfg && !cfg.layer2Enabled) return
+    var m = ((Number(cfg && cfg.layer2Mode !== undefined ? cfg.layer2Mode : (cfg && cfg.mode)) || 0) % MODE_NAMES.length + MODE_NAMES.length) % MODE_NAMES.length
+
+    // Universal 3D Graded History Tracer Engine across ALL 12 Layer #2 Modes!
+    var tracerCount = clamp(Math.round(Number(cfg && cfg.tracerCount !== undefined ? cfg.tracerCount : 9)), 1, 16)
+    var tracerSpeed = state.liveTracerSpeed !== undefined
+        ? state.liveTracerSpeed
+        : clamp(Number(cfg && cfg.tracerSpeed !== undefined ? cfg.tracerSpeed : 1.15), 0.15, 3.0)
+    var tracerDrift = state.liveTracerDrift !== undefined
+        ? state.liveTracerDrift
+        : clamp(Number(cfg && cfg.tracerDrift !== undefined ? cfg.tracerDrift : 1.0), 0.0, 2.5)
+    var tracerDir = Number(cfg && cfg.tracerDirection !== undefined ? cfg.tracerDirection : 1)
+
+    if (tracerCount <= 1) {
+        state.isTracerEcho = false
+        state.echoIndex = 0
+        state.echoLod = 1.0
+        drawSingleLayer2Mode(ctx, w, h, state, palette, cfg, m)
+        return
+    }
+
+    var cx = w * 0.5
+    var cy = h * 0.5
+    var baseT = state.t
+    var basePhase = state.phase
+    var endPt = computeTracerEndpoint(w, h, baseT, tracerDrift, tracerSpeed)
+    var lagStep = 0.052 * (0.45 + 0.55 * tracerSpeed)
+    var effDir = (tracerDir === 0) ? Math.sin(baseT * 0.55 * tracerSpeed) : clamp(tracerDir, -1, 1)
+
+    // Render from oldest historical echo slice (e = tracerCount - 1) to leading front edge (e = 0)
+    for (var e = tracerCount - 1; e >= 0; e--) {
+        var u = e / Math.max(1, tracerCount - 1)
+        var curveU = Math.pow(u, 1.10)
+
+        state.t = baseT - e * lagStep
+        state.phase = basePhase - e * lagStep * 1.35
+        state.echoIndex = e
+        state.echoCount = tracerCount
+        state.echoAge = u
+        state.isTracerEcho = (e > 0)
+        state.echoLod = (e === 0) ? 1.0 : (tracerCount > 8 ? 0.48 : 0.65)
+
+        var echoPalette = rotatePaletteForEcho(palette, e)
+
+        // 3D Z-Flow & Moving Vanishing Endpoint projection:
+        //   effDir >= 0 ("Towards User"): geometry spawns near the moving endpoint and historical tracers expand TOWARDS the user!
+        //   effDir <  0 ("To Endpoint"):  geometry starts large in the foreground and trails into the moving vanishing endpoint!
+        var zScale = 1.0
+        var tx = 0.0
+        var ty = 0.0
+        if (effDir >= 0) {
+            var towardsAmt = 0.5 + 0.5 * effDir
+            zScale = 0.58 + curveU * (0.85 + 0.52 * tracerSpeed * towardsAmt)
+            tx = endPt.dx * (0.45 * (1.0 - curveU) - 0.35 * curveU)
+            ty = endPt.dy * (0.45 * (1.0 - curveU) - 0.35 * curveU)
+        } else {
+            var awayAmt = Math.abs(effDir)
+            zScale = 1.12 / (1.0 + curveU * (1.35 + 0.75 * tracerSpeed * awayAmt))
+            tx = endPt.dx * curveU
+            ty = endPt.dy * curveU
+        }
+
+        var alphaE = (e === 0) ? 0.98 : (Math.pow(1.0 - u * 0.86, 1.42) * 0.68)
+        var twistAngle = Math.sin(baseT * 0.36 * tracerSpeed) * 0.14 * curveU
+
+        ctx.save()
+        ctx.globalAlpha = clamp(alphaE, 0.04, 1.0)
+        ctx.translate(cx + tx, cy + ty)
+        ctx.scale(zScale, zScale)
+        ctx.rotate(twistAngle)
+        ctx.translate(-cx, -cy)
+        drawSingleLayer2Mode(ctx, w, h, state, echoPalette, cfg, m)
+        ctx.restore()
+    }
+
+    state.t = baseT
+    state.phase = basePhase
+    state.isTracerEcho = false
+    state.echoIndex = 0
+    state.echoLod = 1.0
+}
+
 // ---------------------------------------------------------------------------
-// LAYER #3 — Album Art Dismantle, Evolution & Rebuild Engine (Batched < 1.5ms)
+// LAYER #3 — Album Art & Song Words Dismantle, Evolution, Tracers & Rebuild
 // ---------------------------------------------------------------------------
+
+// Precomputed 2x4 Braille dot relative offsets within [-0.36..+0.36, -0.40..+0.40]
+var BRAILLE_DOT_DX = [-0.24, -0.24, -0.24,  0.24,  0.24,  0.24, -0.24,  0.24]
+var BRAILLE_DOT_DY = [-0.36, -0.12,  0.12, -0.36, -0.12,  0.12,  0.36,  0.36]
 
 function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFrames) {
     if (!cfg || !cfg.layer3Enabled) return
 
     var l3Mode = (Number(cfg.layer3Mode) || 0) % LAYER3_MODES.length
     var asciiMode = cfg.layer3AsciiMode || cfg.asciiMode || "braille"
+    var isWordsBanner = (l3Mode === 5 || asciiMode === "banner" || cfg.useAlbumArt === false)
+    var isBrailleArt = (!isWordsBanner && asciiMode !== "block")
 
     // When in Omarchy TTE Keyframe Morph mode (l3Mode === 5) or Banner/Words mode (asciiMode === "banner" or !cfg.useAlbumArt),
     // prefer `cfg.bannerLines` (the wrapped & compressed artist/track words, e.g. 'BASS COMMUNION') if available!
     var effectiveLines = asciiLines
-    if ((l3Mode === 5 || asciiMode === "banner" || cfg.useAlbumArt === false) && cfg.bannerLines && cfg.bannerLines.length > 0) {
+    if (isWordsBanner && cfg.bannerLines && cfg.bannerLines.length > 0) {
         effectiveLines = cfg.bannerLines
     } else if (cfg.useAlbumArt && (asciiMode === "braille" || asciiMode === "block") && cfg.artLines && cfg.artLines.length > 0) {
         effectiveLines = cfg.artLines
@@ -1510,8 +2173,8 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     var halfW = boxW * 0.5
     var halfH = boxH * 0.5
 
-    var tileW = Math.max(2.0, cellW * 0.96)
-    var tileH = Math.max(2.0, cellH * 0.96)
+    var tileW = Math.max(2.0, cellW * 0.88)
+    var tileH = Math.max(2.0, cellH * 0.88)
 
     // If Mode 5 (Omarchy TTE Keyframe Evolution) and ttfxFrames are available, modulate positions/visibility from current TTE frame
     var activeTtfxFrame = null
@@ -1521,72 +2184,125 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
         activeTtfxFrame = ttfxFrames[clamp(fIdx, 0, ttfxFrames.length - 1)]
     }
 
-    ctx.save()
-    ctx.globalCompositeOperation = "lighter"
+    // Layer #3 3D Graded History Tracers (`layer3Tracers`)
+    var l3Tracers = clamp(Math.round(Number(cfg.layer3Tracers !== undefined ? cfg.layer3Tracers : 4)), 1, 8)
+    var tracerSpeed = state.liveTracerSpeed !== undefined
+        ? state.liveTracerSpeed
+        : clamp(Number(cfg.tracerSpeed !== undefined ? cfg.tracerSpeed : 1.15), 0.15, 3.0)
+    var tracerDrift = state.liveTracerDrift !== undefined
+        ? state.liveTracerDrift
+        : clamp(Number(cfg.tracerDrift !== undefined ? cfg.tracerDrift : 1.0), 0.0, 2.5)
+    var tracerDir = Number(cfg.tracerDirection !== undefined ? cfg.tracerDirection : 1)
+    var endPt = computeTracerEndpoint(w, h, state.t, tracerDrift, tracerSpeed)
+    var numBuckets = 6
 
-    // Batch all autonomous cells into 8 palette colour buckets with exact sub-block geometry (`▀`, `▄`, `▌`, `▐`, `█`)
-    var numBuckets = 8
-    for (var b = 0; b < numBuckets; b++) {
-        var col = palette[(b + Math.floor(state.hueShift / 45)) % palette.length]
-        ctx.fillStyle = colourWithAlpha(col, 0.78 + state.bass * 0.20)
-        ctx.beginPath()
+    for (var e = l3Tracers - 1; e >= 0; e--) {
+        var isEcho = (e > 0)
+        var u = l3Tracers > 1 ? (e / (l3Tracers - 1)) : 0.0
+        var zScale = (tracerDir >= 0)
+            ? (1.0 + u * 0.36 * tracerSpeed)
+            : (1.0 / (1.0 + u * 0.55 * tracerSpeed))
+        var tx = endPt.dx * u * 0.42 * (tracerDir >= 0 ? -1.0 : 1.0)
+        var ty = endPt.dy * u * 0.42 * (tracerDir >= 0 ? -1.0 : 1.0)
+        var passAlpha = isEcho ? (Math.pow(1.0 - u * 0.82, 1.4) * 0.34) : (0.84 + state.bass * 0.16)
+        var cellStride = isEcho ? (numBuckets * 2) : numBuckets
 
-        for (var i = b; i < cells.length; i += numBuckets) {
-            var p = cells[i]
-            if (l3Mode === 1 && p.alive < 0.42) continue
+        ctx.save()
+        ctx.globalCompositeOperation = "lighter"
+        ctx.globalAlpha = clamp(passAlpha, 0.05, 1.0)
+        if (isEcho) {
+            ctx.translate(cx + tx, cy + ty)
+            ctx.scale(zScale, zScale)
+            ctx.translate(-cx, -cy)
+        }
 
-            var bVal = state.smoothBands[(i * 3) & 63] || 0.0
-            var px = cx + p.x * halfW
-            var py = cy + p.y * halfH
+        for (var b = 0; b < numBuckets; b++) {
+            var col = palette[(b + e + Math.floor(state.hueShift / 60)) % palette.length]
+            ctx.fillStyle = col
+            ctx.beginPath()
 
-            if (activeTtfxFrame && p.gy < activeTtfxFrame.length) {
-                var tLine = activeTtfxFrame[p.gy] || ""
-                var tCh = p.gx < tLine.length ? tLine.charAt(p.gx) : " "
-                if (tCh === " " || tCh === "⠀") {
-                    px += Math.cos(p.phase + state.t * 3.0) * (14.0 + state.bass * 32.0)
-                    py += Math.sin(p.phase - state.t * 3.0) * (14.0 + state.bass * 32.0)
+            for (var i = b; i < cells.length; i += cellStride) {
+                var p = cells[i]
+                if (l3Mode === 1 && p.alive < 0.42) continue
+
+                var bVal = state.smoothBands[(i * 3) & 63] || 0.0
+                var px = cx + p.x * halfW
+                var py = cy + p.y * halfH
+
+                if (activeTtfxFrame && p.gy < activeTtfxFrame.length) {
+                    var tLine = activeTtfxFrame[p.gy] || ""
+                    var tCh = p.gx < tLine.length ? tLine.charAt(p.gx) : " "
+                    if (tCh === " " || tCh === "⠀") {
+                        px += Math.cos(p.phase + state.t * 3.0) * (14.0 + state.bass * 32.0)
+                        py += Math.sin(p.phase - state.t * 3.0) * (14.0 + state.bass * 32.0)
+                    }
+                }
+
+                var pulseBoost = 0.82 + p.density * 0.18 + bVal * 0.22
+                var szW = tileW * pulseBoost
+                var szH = tileH * pulseBoost
+
+                if (p.brailleMask > 0 || isBrailleArt) {
+                    // Genuine 2x4 Braille pinpoint dot-matrix rendering (NEVER solid blocks!)
+                    var mask = p.brailleMask || (((i * 37 + 13) & 0xFF) | 0x09)
+                    var dotW = Math.max(1.2, szW * 0.22)
+                    var dotH = Math.max(1.2, szH * 0.16)
+                    // Draw up to 4 active Braille dots per cell for crisp stipple detail at <0.4ms
+                    var drawnDots = 0
+                    for (var bit = 0; bit < 8; bit++) {
+                        if ((mask >> bit) & 1) {
+                            var dx = px + BRAILLE_DOT_DX[bit] * szW
+                            var dy = py + BRAILLE_DOT_DY[bit] * szH
+                            ctx.rect(dx - dotW * 0.5, dy - dotH * 0.5, dotW, dotH)
+                            drawnDots++
+                            if (isEcho && drawnDots >= 2) break
+                        }
+                    }
+                } else if (isWordsBanner) {
+                    // Crisp neon laser-stipple typography for Song/Artist Words (NEVER chunky solid blocks!)
+                    var dotS = Math.max(1.3, Math.min(szW, szH) * 0.26)
+                    if (p.ch === "░" || p.ch === "." || p.ch === "·") {
+                        ctx.rect(px - dotS * 0.5, py - dotS * 0.5, dotS, dotS)
+                    } else if (p.ch === "▒" || p.ch === ":") {
+                        ctx.rect(px - szW * 0.24, py - szH * 0.24, dotS, dotS)
+                        ctx.rect(px + szW * 0.12, py + szH * 0.12, dotS, dotS)
+                    } else if (p.ch === "▓") {
+                        ctx.rect(px - szW * 0.25, py - szH * 0.25, dotS, dotS)
+                        ctx.rect(px + szW * 0.12, py - szH * 0.25, dotS, dotS)
+                        ctx.rect(px - dotS * 0.5, py + szH * 0.14, dotS, dotS)
+                    } else if (p.ch === "▀") {
+                        ctx.rect(px - szW * 0.36, py - szH * 0.36, szW * 0.72, Math.max(1.4, szH * 0.28))
+                    } else if (p.ch === "▄") {
+                        ctx.rect(px - szW * 0.36, py + szH * 0.08, szW * 0.72, Math.max(1.4, szH * 0.28))
+                    } else if (p.ch === "▌") {
+                        ctx.rect(px - szW * 0.36, py - szH * 0.36, Math.max(1.4, szW * 0.28), szH * 0.72)
+                    } else if (p.ch === "▐") {
+                        ctx.rect(px + szW * 0.08, py - szH * 0.36, Math.max(1.4, szW * 0.28), szH * 0.72)
+                    } else {
+                        // Sleek twin neon ledger bars / pinpoints instead of a heavy solid rectangle
+                        var barH = Math.max(1.3, szH * 0.24)
+                        ctx.rect(px - szW * 0.36, py - szH * 0.32, szW * 0.72, barH)
+                        ctx.rect(px - szW * 0.36, py + szH * 0.08, szW * 0.72, barH)
+                    }
+                } else {
+                    // Explicit Block Cover Art mode (`█ Block Art`): classic ANSI half-block mosaic
+                    if (p.ch === "▀") {
+                        ctx.rect(px - szW * 0.5, py - szH * 0.5, szW, szH * 0.52)
+                    } else if (p.ch === "▄") {
+                        ctx.rect(px - szW * 0.5, py - szH * 0.02, szW, szH * 0.52)
+                    } else if (p.ch === "▌") {
+                        ctx.rect(px - szW * 0.5, py - szH * 0.5, szW * 0.52, szH)
+                    } else if (p.ch === "▐") {
+                        ctx.rect(px - szW * 0.02, py - szH * 0.5, szW * 0.52, szH)
+                    } else {
+                        ctx.rect(px - szW * 0.46, py - szH * 0.46, szW * 0.92, szH * 0.92)
+                    }
                 }
             }
-
-            var pulseBoost = 0.85 + p.density * 0.25 + bVal * 0.35 + state.beatPulse * 0.22
-            var szW = tileW * pulseBoost
-            var szH = tileH * pulseBoost
-
-            // Sub-cell geometry preserves the exact typography of Omarchy's Delta Corps Priest 1 font (`▀`, `▄`, `▌`, `▐`, `█`)
-            if (p.ch === "▀") {
-                ctx.rect(px - szW * 0.5, py - szH * 0.5, szW, szH * 0.54)
-            } else if (p.ch === "▄") {
-                ctx.rect(px - szW * 0.5, py - szH * 0.04, szW, szH * 0.54)
-            } else if (p.ch === "▌") {
-                ctx.rect(px - szW * 0.5, py - szH * 0.5, szW * 0.54, szH)
-            } else if (p.ch === "▐") {
-                ctx.rect(px - szW * 0.04, py - szH * 0.5, szW * 0.54, szH)
-            } else {
-                ctx.rect(px - szW * 0.5, py - szH * 0.5, szW, szH)
-            }
+            ctx.fill()
         }
-        ctx.fill()
+        ctx.restore()
     }
-
-    // Sparse glowing Braille/Unicode glyph accents on high-energy peaks
-    if (w >= 260) {
-        var glyphStep = Math.max(16, Math.floor(cells.length / 40))
-        var fontPx = Math.max(9, Math.min(16, Math.round(tileH * 1.15)))
-        ctx.font = "bold " + fontPx + "px 'JetBrainsMono Nerd Font'"
-        ctx.textAlign = "center"
-        ctx.textBaseline = "middle"
-        ctx.fillStyle = colourWithAlpha("#ffffff", 0.72 + state.beatPulse * 0.25)
-        var evoProg = clamp(Number(cfg.trackProgress) || 0.0, 0.0, 1.0)
-        for (var g = 0; g < cells.length; g += glyphStep) {
-            var gp = cells[g]
-            var gx = cx + gp.x * halfW
-            var gy = cy + gp.y * halfH
-            var glyph = (evoProg > 0.35 && ((g + state.beatCount) % 3 === 0)) ? gp.mutCh : gp.ch
-            ctx.fillText(glyph, gx, gy)
-        }
-    }
-
-    ctx.restore()
 }
 
 // ---------------------------------------------------------------------------
@@ -1601,26 +2317,36 @@ function normaliseConfig(cfg, mode, asciiLines) {
     return {
         playing: c.playing !== undefined ? Boolean(c.playing) : true,
         palette: Number(c.palette) || 0,
+        musicDrive: c.musicDrive !== undefined ? Boolean(c.musicDrive) : true,
+        tracerCount: c.tracerCount !== undefined ? clamp(Math.round(Number(c.tracerCount)), 1, 16) : 9,
+        tracerSpeed: c.tracerSpeed !== undefined ? clamp(Number(c.tracerSpeed), 0.15, 3.0) : 1.15,
+        tracerDrift: c.tracerDrift !== undefined ? clamp(Number(c.tracerDrift), 0.0, 2.5) : 1.0,
+        tracerDirection: c.tracerDirection !== undefined ? Number(c.tracerDirection) : 1,
         layer1Enabled: c.layer1Enabled !== undefined ? Boolean(c.layer1Enabled) : true,
         layer1Mode: Number(c.layer1Mode) || 0,
         layer1Trail: Number(c.layer1Trail !== undefined ? c.layer1Trail : (c.layer1Persistence !== undefined ? c.layer1Persistence : 0.85)),
         layer1Speed: Number(c.layer1Speed !== undefined ? c.layer1Speed : 1.0),
         layer1Density: Number(c.layer1Density !== undefined ? c.layer1Density : 1.0),
         layer1Dim: Number(c.layer1Dim !== undefined ? c.layer1Dim : 0.15),
+        layer1EqStyle: c.layer1EqStyle !== undefined ? clamp(Math.round(Number(c.layer1EqStyle)), 0, 5) : 0,
+        layer1EqLayout: c.layer1EqLayout !== undefined ? clamp(Math.round(Number(c.layer1EqLayout)), 0, 2) : 0,
+        layer1EqGain: c.layer1EqGain !== undefined ? clamp(Number(c.layer1EqGain), 0.4, 2.5) : 1.25,
+        layer1EqDamping: c.layer1EqDamping !== undefined ? clamp(Math.round(Number(c.layer1EqDamping)), 0, 2) : 0,
         layer2Enabled: c.layer2Enabled !== undefined ? Boolean(c.layer2Enabled) : true,
         layer2Mode: Number(c.layer2Mode !== undefined ? c.layer2Mode : (c.mode !== undefined ? c.mode : (mode || 0))),
-        layer2Facets: Number(c.layer2Facets !== undefined ? c.layer2Facets : (c.symmetryFolds !== undefined ? c.symmetryFolds : 8)),
+        layer2Facets: Number(c.layer2Facets !== undefined ? c.layer2Facets : (c.symmetryFolds !== undefined ? c.symmetryFolds : 6)),
         layer2Complexity: Number(c.layer2Complexity !== undefined ? c.layer2Complexity : 1.0),
         layer2Speed: Number(c.layer2Speed !== undefined ? c.layer2Speed : 1.0),
         layer2Reactivity: Number(c.layer2Reactivity !== undefined ? c.layer2Reactivity : (c.sensitivity !== undefined ? c.sensitivity : 1.35)),
         layer2Zoom: Number(c.layer2Zoom !== undefined ? c.layer2Zoom : 1.0),
         layer2Chaos: Number(c.layer2Chaos !== undefined ? c.layer2Chaos : 0.45),
-        layer3Enabled: c.layer3Enabled !== undefined ? Boolean(c.layer3Enabled) : Boolean(c.useAlbumArt || (asciiLines && asciiLines.length > 0)),
+        layer3Enabled: c.layer3Enabled !== undefined ? Boolean(c.layer3Enabled) : true,
         layer3Mode: Number(c.layer3Mode) || 0,
         layer3Dismantle: Number(c.layer3Dismantle !== undefined ? c.layer3Dismantle : 1.15),
         layer3Rebuild: Number(c.layer3Rebuild !== undefined ? c.layer3Rebuild : 1.0),
         layer3Evolution: Number(c.layer3Evolution !== undefined ? c.layer3Evolution : 0.85),
         layer3Scale: Number(c.layer3Scale !== undefined ? c.layer3Scale : 1.0),
+        layer3Tracers: c.layer3Tracers !== undefined ? clamp(Math.round(Number(c.layer3Tracers)), 1, 8) : 4,
         layer3AsciiMode: c.layer3AsciiMode || c.asciiMode || "braille",
         asciiMode: c.asciiMode || c.layer3AsciiMode || "braille",
         useAlbumArt: c.useAlbumArt !== undefined ? Boolean(c.useAlbumArt) : true,
@@ -1652,9 +2378,9 @@ function renderFrame(ctx, w, h, state, mode, theme, asciiLines, asciiSource, ttf
     // Layer #1: Background & Iterative Framebuffer Feedback
     drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, effectiveCfg)
 
-    // Layer #2: Psychedelic & Nightclub Visualiser Engine
+    // Layer #2: Psychedelic & Nightclub Visualiser Engine (with Universal 3D Graded History Tracers)
     drawLayer2Visualiser(ctx, w, h, state, palette, effectiveCfg)
 
-    // Layer #3: Album Art Dismantle, Evolution & Rebuild Engine
+    // Layer #3: Album Art & Words Dismantle, Evolution, Tracers & Rebuild Engine
     drawLayer3AlbumArt(ctx, w, h, state, palette, effectiveCfg, asciiLines, ttfxFrames)
 }

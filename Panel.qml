@@ -615,6 +615,9 @@ Item {
                 onRequestSelectTtfxEffect: effectName => {
                     if (root.service) root.service.setTtfxEffect(effectName)
                 }
+                onRequestStageModeChange: newStageMode => {
+                    if (root.service) root.service.setStageMode(newStageMode)
+                }
                 onRequestActionFeedback: msg => {
                     if (root.service) root.service.notifyAction(msg)
                 }
@@ -967,7 +970,7 @@ Item {
                                     readonly property bool isCurrentAlbum: root.service && root.service.albumId === modelData.id
                                     readonly property bool isKeyboardFocused: root.focusedAlbumIndex === index
                                     readonly property var tracksList: modelData.tracks || []
-                                    readonly property bool isAlbumDownloading: Boolean(root.service && root.service.downloading && root.service.downloadingAlbumId === modelData.id)
+                                    readonly property bool isAlbumDownloading: Boolean(root.service && root.service.downloading && root.service.downloadAlbumId === modelData.id)
 
                                     width: albumList.width - 12
                                     height: expanded
@@ -1451,10 +1454,7 @@ Item {
                                         text: {
                                             if (!root.service) return "Bandarchy Collection"
                                             if (root.service.downloading || root.service.syncing) {
-                                                return "󰇚 " + root.service.downloadStatusSummary +
-                                                       (root.service.downloadQueue && root.service.downloadQueue.length > 0
-                                                         ? (" · +" + root.service.downloadQueue.length + " queued")
-                                                         : "")
+                                                return "󰇚 " + root.service.downloadStatusSummary
                                             }
                                             if (root.service.downloadStatusText !== "") {
                                                 return "󰄬 " + root.service.downloadStatusText
@@ -2031,6 +2031,9 @@ Item {
                         onRequestSelectTtfxEffect: effectName => {
                             if (root.service) root.service.setTtfxEffect(effectName)
                         }
+                        onRequestStageModeChange: newStageMode => {
+                            if (root.service) root.service.setStageMode(newStageMode)
+                        }
                         onRequestActionFeedback: msg => {
                             if (root.service) root.service.notifyAction(msg)
                         }
@@ -2247,7 +2250,6 @@ Item {
                                         onClicked: {
                                             if (root.service) {
                                                 root.service.saveAuth(userInput.text.trim(), cookieInput.text.trim(), "", "")
-                                                root.service.syncCollection(false)
                                             }
                                             panelFrame.forceActiveFocus()
                                         }

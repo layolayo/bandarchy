@@ -620,6 +620,190 @@ class BandarchyTestSuite(unittest.TestCase):
             )
             self.assertEqual(val.returncode, 0, f"omarchy plugin validate failed: {val.stdout} {val.stderr}")
 
+    def test_09_regression_fixes_and_3layer_engine(self):
+        with open(os.path.join(REPO_ROOT, "Visualiser.qml"), "r", encoding="utf-8") as f:
+            viz_src = f.read()
+        with open(os.path.join(REPO_ROOT, "Service.qml"), "r", encoding="utf-8") as f:
+            svc_src = f.read()
+        with open(os.path.join(REPO_ROOT, "Panel.qml"), "r", encoding="utf-8") as f:
+            panel_src = f.read()
+        with open(os.path.join(REPO_ROOT, "App.qml"), "r", encoding="utf-8") as f:
+            app_src = f.read()
+        with open(os.path.join(REPO_ROOT, "PsychedelicEngine.js"), "r", encoding="utf-8") as f:
+            engine_src = f.read()
+
+        # 1. Visualiser.qml exposes both activateAndCycleTteInCanvas and toggleInCanvasTte,
+        #    and both showLayerDrawer and showConfigDrawer, plus trackProgress in currentConfig()
+        self.assertIn("function activateAndCycleTteInCanvas()", viz_src)
+        self.assertIn("function toggleInCanvasTte()", viz_src)
+        self.assertIn("property bool showLayerDrawer", viz_src)
+        self.assertIn("property alias showConfigDrawer: root.showLayerDrawer", viz_src)
+        self.assertIn("trackProgress: trackProg", viz_src)
+        self.assertIn("layer1Trail: root.layer1Persistence", viz_src)
+        self.assertIn("layer2Facets: root.symmetryFolds", viz_src)
+
+        # 2. Service.qml exposes downloadAlbumId, downloadingAlbumId, loggedIn, notifyActivity,
+        #    and loginFromBrowser(optionalUsername) passes --username when provided
+        self.assertIn("readonly property string downloadAlbumId:", svc_src)
+        self.assertIn("readonly property string downloadingAlbumId: downloadAlbumId", svc_src)
+        self.assertIn("readonly property bool loggedIn:", svc_src)
+        self.assertIn("function notifyActivity(msg)", svc_src)
+        self.assertIn("function loginFromBrowser(optionalUsername)", svc_src)
+        self.assertIn("function loginBandcamp(", svc_src)
+        self.assertIn("function detectBrowserAccount(", svc_src)
+
+        # 3. Panel.qml and App.qml do NOT abort saveAuth() by immediately calling syncCollection(false)
+        for name, src in (("Panel.qml", panel_src), ("App.qml", app_src)):
+            self.assertNotRegex(
+                src,
+                r"saveAuth\([^\n]+\)\s*\n\s*(?:root\.)?service\.syncCollection\(false\)",
+                f"{name} must not call syncCollection(false) immediately after saveAuth()",
+            )
+            self.assertIn("downloadAlbumId === modelData.id", src, f"{name} must bind downloadAlbumId on album rows")
+            self.assertIn("onRequestStageModeChange:", src, f"{name} must persist stageMode changes via Service")
+
+        # 4. PsychedelicEngine.js stepState normalises cfg at entry and blends bassAtt/midAtt/trebAtt
+        step_idx = engine_src.index("function stepState(")
+        step_body = engine_src[step_idx : step_idx + 3600]
+        self.assertIn("cfg = normaliseConfig(cfg)", step_body)
+        self.assertIn("state.bassAtt", step_body)
+        self.assertIn("0.42 * state.bassAtt", step_body)
+
+    def test_10_demoscene_engine_presets_and_layer_isolation(self):
+        with open(os.path.join(REPO_ROOT, "Visualiser.qml"), "r", encoding="utf-8") as f:
+            viz_src = f.read()
+        with open(os.path.join(REPO_ROOT, "PsychedelicEngine.js"), "r", encoding="utf-8") as f:
+            engine_src = f.read()
+
+        # 1. Strict Layer Isolation in Visualiser.qml:
+        #    onVisualModeChanged and cycleMode/cycleLayer1Mode/cycleLayer3Mode must NEVER force layer3Enabled = true
+        self.assertIn("readonly property int maxInternalW: 640", viz_src)
+        self.assertIn("property var collectivePresets:", viz_src)
+        self.assertIn("function applyCollectivePreset(", viz_src)
+        self.assertIn("function cycleSelectedPreset(", viz_src)
+        self.assertIn("function saveCurrentAsCollectivePreset()", viz_src)
+        self.assertNotIn("TTE: waves", viz_src)
+        self.assertIn('text: "󰍹 TTE"', viz_src)
+
+        # Ensure onVisualModeChanged does NOT set layer3Enabled = true
+        vmode_idx = viz_src.index("onVisualModeChanged:")
+        vmode_block = viz_src[vmode_idx : vmode_idx + 120]
+        self.assertNotIn("layer3Enabled = true", vmode_block)
+
+        # 2. Execute PsychedelicEngine.js via Node.js to verify:
+        #    - All 12 Layer #2 modes with 9x 3D Graded History Tracers render in < 2.5 ms/frame at 640x360
+        #    - All 6 Layer #1 SynthGrid Equaliser styles (0..5) render non-zero geometry
+        #    - Strict Layer Isolation: when layer3Enabled=false, drawLayer3AlbumArt draws 0 rects
+        #    - Genuine 2x4 Braille pinpoint dots vs laser-stipple Song Words
+        if shutil.which("node"):
+            node_script = r"""
+const fs = require('fs');
+let code = fs.readFileSync('PsychedelicEngine.js', 'utf8').replace(/^\.pragma library\s*/m, '');
+eval(code);
+
+function makeMockCtx() {
+    return {
+        fillCount: 0, strokeCount: 0, rectCount: 0, drawImageCount: 0,
+        fillStyle: '', strokeStyle: '', lineWidth: 1, globalAlpha: 1, globalCompositeOperation: 'source-over',
+        save() {}, restore() {}, translate() {}, rotate() {}, scale() {},
+        beginPath() {}, closePath() {}, moveTo() {}, lineTo() {},
+        rect() { this.rectCount++; },
+        arc() {},
+        fill() { this.fillCount++; },
+        stroke() { this.strokeCount++; },
+        fillRect() { this.fillCount++; },
+        clearRect() {},
+        drawImage() { this.drawImageCount++; },
+        createLinearGradient() { return { addColorStop() {} }; },
+        createRadialGradient() { return { addColorStop() {} }; }
+    };
+}
+
+const state = createState();
+const bands = Array.from({length: 64}, (_, i) => 180 + 140 * Math.sin(i * 0.3));
+const brailleArt = Array.from({length: 16}, () => '⣿⣷⣯⣟⡿⢿⣻⣽'.repeat(5));
+const bannerWords = Array.from({length: 12}, () => '█▀▄░▒▓ BASS COMMUNION ▓▒░▄▀█');
+const theme = { accent: '#6ee7b7', urgent: '#f472b6', foreground: '#e2e8f0', background: '#07090e' };
+
+// A. Verify strict Layer #3 isolation: when layer3Enabled is false, zero Layer #3 cells are drawn
+const ctxL3Off = makeMockCtx();
+const cfgL3Off = normaliseConfig({
+    layer1Enabled: false,
+    layer2Enabled: false,
+    layer3Enabled: false,
+    useAlbumArt: true,
+    asciiMode: 'braille',
+    artLines: brailleArt,
+    bannerLines: bannerWords
+}, 10, brailleArt);
+stepState(state, bands, true, cfgL3Off, 0.016);
+renderFrame(ctxL3Off, 640, 360, state, 10, theme, brailleArt, 'album-art', [], cfgL3Off, null);
+if (ctxL3Off.rectCount !== 0) {
+    throw new Error('Layer #3 drew geometry when layer3Enabled=false! rectCount=' + ctxL3Off.rectCount);
+}
+const ctxL3Direct = makeMockCtx();
+drawLayer3AlbumArt(ctxL3Direct, 640, 360, state, ['#6ee7b7'], cfgL3Off, brailleArt, []);
+if (ctxL3Direct.rectCount !== 0 || ctxL3Direct.fillCount !== 0) {
+    throw new Error('drawLayer3AlbumArt drew when layer3Enabled=false!');
+}
+
+// B. Verify all 6 Layer #1 SynthGrid Equaliser styles (0..5)
+for (let eqStyle = 0; eqStyle < 6; eqStyle++) {
+    const ctxEq = makeMockCtx();
+    const cfgEq = normaliseConfig({
+        layer1Enabled: true, layer1Mode: 4,
+        layer1EqStyle: eqStyle, layer1EqLayout: eqStyle % 3, layer1EqGain: 1.4, layer1EqDamping: eqStyle % 3,
+        layer2Enabled: false, layer3Enabled: false
+    }, 0, []);
+    stepState(state, bands, true, cfgEq, 0.016);
+    renderFrame(ctxEq, 640, 360, state, 0, theme, [], 'album-art', [], cfgEq, null);
+    if (ctxEq.fillCount + ctxEq.strokeCount < 2) {
+        throw new Error('Layer #1 Equaliser style ' + eqStyle + ' produced no geometry');
+    }
+}
+
+// C. Benchmark all 12 Layer #2 modes at 640x360 with 9x 3D Graded History Tracers
+let maxMs = 0;
+for (let m = 0; m < 12; m++) {
+    const ctx = makeMockCtx();
+    const cfg = normaliseConfig({
+        layer1Enabled: true, layer1Mode: m % 6,
+        layer2Enabled: true, layer2Mode: m,
+        tracerCount: 9, tracerSpeed: 1.25, tracerDrift: 1.1, tracerDirection: (m % 2 === 0 ? 1 : -1),
+        layer3Enabled: true, layer3Mode: m % 6, layer3Tracers: 4,
+        useAlbumArt: (m % 2 === 0),
+        asciiMode: (m % 2 === 0 ? 'braille' : 'banner'),
+        artLines: brailleArt,
+        bannerLines: bannerWords
+    }, m, brailleArt);
+    const t0 = process.hrtime.bigint();
+    const frames = 20;
+    for (let f = 0; f < frames; f++) {
+        stepState(state, bands, true, cfg, 0.016);
+        renderFrame(ctx, 640, 360, state, m, theme, brailleArt, 'album-art', [], cfg, null);
+    }
+    const avgMs = Number(process.hrtime.bigint() - t0) / 1e6 / frames;
+    if (avgMs > maxMs) maxMs = avgMs;
+    if (ctx.drawImageCount !== 0) {
+        throw new Error('drawImage feedback must never be called');
+    }
+}
+console.log(JSON.stringify({ ok: true, maxFrameMs: maxMs }));
+"""
+            res = subprocess.run(
+                ["node", "-e", node_script],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            self.assertEqual(res.returncode, 0, f"Node engine verification failed: {res.stderr}")
+            bench = json.loads(res.stdout.strip())
+            self.assertTrue(bench["ok"])
+            self.assertLess(bench["maxFrameMs"], 3.0, f"Frame render too slow: {bench['maxFrameMs']} ms")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+

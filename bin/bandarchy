@@ -1448,9 +1448,10 @@ def extract_ttfx_frames(
     if not os.path.isfile(TTFX_BIN) or not os.path.isfile(screensaver_txt_path):
         return []
 
-    effect = (effect or "waves").lower()
+    effect = (effect or "random").lower()
     if effect not in TTFX_EFFECTS or effect == "random":
-        effect = "waves"
+        non_random = [e for e in TTFX_EFFECTS if e != "random"]
+        effect = secrets.choice(non_random) if non_random else "waves"
 
     width = bounded_int(width, 68, 20, 140)
     height = bounded_int(height, 30, 10, 70)
@@ -3262,9 +3263,10 @@ def cmd_ascii_art(args) -> None:
     width = bounded_int(args.width, 72, 20, 160)
     height = bounded_int(args.height, 32, 10, 80)
     threshold = bounded_int(args.threshold, 50, 10, 90)
-    effect = (getattr(args, "effect", None) or "waves").lower()
+    effect = (getattr(args, "effect", None) or "random").lower()
     if effect not in TTFX_EFFECTS or effect == "random":
-        effect = "waves"
+        non_random = [e for e in TTFX_EFFECTS if e != "random"]
+        effect = secrets.choice(non_random) if non_random else "waves"
 
     image_path = args.image or ""
     banner_text = args.text or ""
@@ -3370,6 +3372,11 @@ def cmd_screensaver(args) -> None:
         f"--frame-rate 120 --canvas-width 0 --canvas-height 0 --reuse-canvas "
         f"--anchor-canvas c --anchor-text c --no-eol --no-restore-cursor {effect_flag}"
     )
+    ttfx_random_loop_cmd_str = (
+        f"{TTFX_BIN} -i '{SCREENSAVER_TXT_FILE}' "
+        f"--frame-rate 120 --canvas-width 0 --canvas-height 0 --reuse-canvas "
+        f"--anchor-canvas c --anchor-text c --no-eol --no-restore-cursor --random-effect"
+    )
 
     if args.dry_run:
         emit({
@@ -3387,8 +3394,8 @@ def cmd_screensaver(args) -> None:
         f"deadline=$((SECONDS + 2)); "
         f"while ((SECONDS < deadline)) && [[ $(stty size 2>/dev/null) == '24 80' ]]; do sleep 0.02; done; "
         f"while true; do "
-        f"'{self_bin}' ascii-art --mode {mode_flag} --use-album-art {use_art_flag} >/dev/null 2>&1 || true; "
-        f"{ttfx_cmd_str} & "
+        f"'{self_bin}' ascii-art --mode {mode_flag} --use-album-art {use_art_flag} --effect random >/dev/null 2>&1 || true; "
+        f"{ttfx_random_loop_cmd_str} & "
         f"pid=$!; "
         f"while kill -0 $pid 2>/dev/null; do "
         f"if read -r -n1 -t 1; then kill $pid 2>/dev/null; exit 0; fi; "
@@ -3816,12 +3823,19 @@ def cmd_cmd(args) -> None:
             die("seek requires --value SECONDS")
         mpv_request(["seek", float(args.value), "absolute"])
     elif action == "loop":
+        hist = read_json(HISTORY_FILE, {}) or {}
         if args.value is None:
             cur = mpv_get("loop-playlist")
-            target_loop = "no" if cur in ("inf", "force", True) else "inf"
+            if cur is None:
+                is_looping = bool(hist.get("loopPlaylist", False))
+            else:
+                is_looping = cur in ("inf", "force", True)
+            target_loop = "no" if is_looping else "inf"
         else:
             target_loop = "inf" if args.value > 0 else "no"
         mpv_request(["set_property", "loop-playlist", target_loop])
+        hist["loopPlaylist"] = target_loop == "inf"
+        write_json(HISTORY_FILE, hist)
         emit({"action": action, "loop": target_loop == "inf"})
         return
     elif action == "jump":
@@ -3905,7 +3919,7 @@ def main() -> None:
     p.add_argument("--threshold", type=int, default=50)
     p.add_argument("--invert", action="store_true")
     p.add_argument("--use-album-art", choices=["0", "1"], default=None)
-    p.add_argument("--effect", default="waves", help="ttfx effect to extract keyframes for")
+    p.add_argument("--effect", default="random", help="ttfx effect to extract keyframes for (defaults to random)")
     p.set_defaults(func=cmd_ascii_art)
 
     p = sub.add_parser("screensaver", help="launch Omarchy ttfx screensaver with transcoded album art")

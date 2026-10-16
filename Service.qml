@@ -44,6 +44,7 @@ Item {
     property string username: ""
     property bool authenticated: false
     property bool loggedOut: false
+    readonly property bool loggedIn: Boolean(root.authenticated || (root.username && !root.loggedOut))
     property bool hasIdentity: false
     property bool hasBrowserSession: false
     property string downloadDir: ""
@@ -67,6 +68,7 @@ Item {
     // Live download progress convenience properties for UI footers & buttons
     readonly property bool downloading: Boolean(root.downloadState && root.downloadState.running)
     readonly property string downloadAlbumId: (root.downloadState && root.downloadState.albumId) ? String(root.downloadState.albumId) : ""
+    readonly property string downloadingAlbumId: downloadAlbumId
     readonly property string downloadTitle: (root.downloadState && root.downloadState.title) ? String(root.downloadState.title) : ""
     readonly property string downloadStage: (root.downloadState && root.downloadState.stage) ? String(root.downloadState.stage) : ""
     readonly property int downloadPercent: (root.downloadState && root.downloadState.percent !== undefined) ? Math.max(0, Math.min(100, Number(root.downloadState.percent) || 0)) : 0
@@ -111,6 +113,10 @@ Item {
         activityClearTimer.restart()
     }
 
+    function notifyActivity(msg) {
+        notifyAction(msg)
+    }
+
     // History & Intelligent / Custom Playlists state
     property var lastPlayedTrack: null
     property var recentTracks: []
@@ -127,7 +133,7 @@ Item {
     property var bannerLines: []
     property var artLines: []
     property var ttfxFrames: []
-    property string ttfxEffect: "waves"
+    property string ttfxEffect: "random"
     property bool visualiserActive: stageMode === "visualiser" || stageMode === "turntable"
     property bool fullscreenVisualiserOpen: false
 
@@ -534,7 +540,7 @@ Item {
     }
 
     function refreshAsciiArt(customAlbumId, customEffect) {
-        if (customEffect) root.ttfxEffect = customEffect
+        root.ttfxEffect = "random"
         if (asciiProc.running) asciiProc.running = false
         asciiProc.outBuf = ""
         var effMode = (!root.useAlbumArt || root.asciiMode === "banner") ? "banner" : root.asciiMode
@@ -542,7 +548,7 @@ Item {
             root.binPath, "ascii-art",
             "--mode", effMode,
             "--use-album-art", root.useAlbumArt ? "1" : "0",
-            "--effect", root.ttfxEffect || "waves",
+            "--effect", "random",
             "--width", "68",
             "--height", "30"
         ]
@@ -559,10 +565,9 @@ Item {
     }
 
     function setTtfxEffect(effectName) {
-        if (!effectName) return
-        root.ttfxEffect = effectName
-        refreshAsciiArt("", effectName)
-        root.notifyAction("TTE Effect: " + effectName)
+        root.ttfxEffect = "random"
+        refreshAsciiArt("", "random")
+        root.notifyAction("TTE Effect Randomised")
     }
 
     function toggleUseAlbumArt() {
@@ -603,6 +608,28 @@ Item {
         refreshAsciiArt()
     }
 
+    function setAsciiSourceMode(modeStr) {
+        if (modeStr === "banner" || modeStr === "words") {
+            root.useAlbumArt = false
+            root.asciiMode = "banner"
+            root.notifyAction("Layer #3 Source: Artist/Track Words (Banner)")
+        } else if (modeStr === "block") {
+            root.useAlbumArt = true
+            root.asciiMode = "block"
+            root.notifyAction("Layer #3 Source: Cover Art (Block █)")
+        } else {
+            root.useAlbumArt = true
+            root.asciiMode = "braille"
+            root.notifyAction("Layer #3 Source: Cover Art (Braille ⣿)")
+        }
+        Quickshell.execDetached([
+            root.binPath, "auth",
+            "--use-album-art", root.useAlbumArt ? "1" : "0",
+            "--ascii-mode", root.asciiMode
+        ])
+        refreshAsciiArt()
+    }
+
     function cycleLayer3Source() {
         toggleAsciiMode()
     }
@@ -613,7 +640,7 @@ Item {
             root.binPath, "screensaver",
             "--mode", effMode,
             "--use-album-art", root.useAlbumArt ? "1" : "0",
-            "--effect", effectName || root.ttfxEffect || "waves"
+            "--effect", "random"
         ]
         if (root.albumId) cmd.push("--album", root.albumId)
         else if (root.artPath) cmd.push("--image", root.artPath)
@@ -621,7 +648,7 @@ Item {
             cmd.push("--text", root.trackArtist || root.trackTitle)
         }
         Quickshell.execDetached(cmd)
-        root.notifyAction("Launched Omarchy TTE Terminal (" + (effectName || root.ttfxEffect || "waves") + ")")
+        root.notifyAction("Launched Omarchy TTE Screensaver (Random Effects)")
     }
 
     function openExternal(target, customMsg) {
@@ -891,13 +918,25 @@ Item {
         root.notifyAction("Opened bandcamp.com/login in browser — click 'Detect From Browser' after signing in")
     }
 
-    function loginFromBrowser() {
+    function openBandcampLoginInBrowser() {
+        openBandcampLogin()
+    }
+
+    function loginFromBrowser(optionalUsername) {
         if (syncAuthProc.running) syncAuthProc.running = false
+        var args = [root.binPath, "login", "--detect-browser"]
+        if (optionalUsername !== undefined && String(optionalUsername).trim().length > 0) {
+            args.push("--username", String(optionalUsername).trim())
+        }
         root.syncing = true
         syncAuthProc.outBuf = ""
-        syncAuthProc.command = [root.binPath, "login", "--detect-browser"]
+        syncAuthProc.command = args
         syncAuthProc.running = true
         root.notifyAction("Detecting Bandcamp session from browser & syncing purchases...")
+    }
+
+    function detectBrowserAccount(optionalUsername) {
+        loginFromBrowser(optionalUsername)
     }
 
     function logoutBandcamp() {
@@ -934,6 +973,10 @@ Item {
         syncAuthProc.command = args
         syncAuthProc.running = true
         root.notifyAction("Logging in & synchronising Bandcamp collection...")
+    }
+
+    function loginBandcamp(username, identity, downloadDir, format) {
+        saveAuth(username, identity, downloadDir, format)
     }
 
     function addBandcampUrl(url) {
