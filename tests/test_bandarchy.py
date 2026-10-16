@@ -514,7 +514,15 @@ class BandarchyTestSuite(unittest.TestCase):
         self.assertIn("function randomiseState", engine_js)
         self.assertIn("if (useAlbumArt && mode !== 10)", engine_js)
 
-        # Verify both Panel.qml and App.qml implement expandable album track drawers and keyboard navigation
+        # Verify Service.qml implements addAlbumOrCreatePlaylist and addTrackOrCreatePlaylist
+        with open(os.path.join(REPO_ROOT, "Service.qml"), "r", encoding="utf-8") as f:
+            service_src = f.read()
+        self.assertIn("function addAlbumOrCreatePlaylist", service_src)
+        self.assertIn("function addTrackOrCreatePlaylist", service_src)
+
+        # Verify both Panel.qml and App.qml implement expandable album track drawers,
+        # track play & add-to-playlist actions, custom playlist track navigation,
+        # inner track ListView auto-scrolling, and 1-4 / Tab keyboard navigation
         for nav_qml in ("Panel.qml", "App.qml"):
             with open(os.path.join(REPO_ROOT, nav_qml), "r", encoding="utf-8") as f:
                 nav_src = f.read()
@@ -523,6 +531,12 @@ class BandarchyTestSuite(unittest.TestCase):
             self.assertIn("ensureAlbumTracks", nav_src, f"{nav_qml} missing ensureAlbumTracks call")
             self.assertIn("focusedAlbumIndex", nav_src, f"{nav_qml} missing focusedAlbumIndex")
             self.assertIn("focusedTrackIndex", nav_src, f"{nav_qml} missing focusedTrackIndex")
+            self.assertIn("focusedPlaylistTrackIndex", nav_src, f"{nav_qml} missing focusedPlaylistTrackIndex")
+            self.assertIn("addTrackOrCreatePlaylist", nav_src, f"{nav_qml} missing addTrackOrCreatePlaylist")
+            self.assertIn("addAlbumOrCreatePlaylist", nav_src, f"{nav_qml} missing addAlbumOrCreatePlaylist")
+            self.assertIn("positionViewAtIndex(currentIndex, ListView.Contain)", nav_src, f"{nav_qml} missing inner ListView auto-scroll")
+            self.assertIn("Qt.Key_1", nav_src, f"{nav_qml} missing 1-4 tab switching")
+            self.assertIn("Qt.Key_4", nav_src, f"{nav_qml} missing 1-4 tab switching")
 
         # Verify App.qml loads cleanly in Quickshell with zero QML errors
         if shutil.which("quickshell") and (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):

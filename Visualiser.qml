@@ -133,10 +133,11 @@ FocusScope {
     }
 
     Keys.onPressed: event => {
-        if (event.key === Qt.Key_1) { visualMode = 0; event.accepted = true }
-        else if (event.key === Qt.Key_2) { visualMode = 1; event.accepted = true }
-        else if (event.key === Qt.Key_3) { visualMode = 2; event.accepted = true }
-        else if (event.key === Qt.Key_4) { visualMode = 3; event.accepted = true }
+        var allowDirectMode1To4 = root.isFullscreen || Boolean(event.modifiers & (Qt.AltModifier | Qt.ControlModifier))
+        if (event.key === Qt.Key_1 && allowDirectMode1To4) { visualMode = 0; event.accepted = true }
+        else if (event.key === Qt.Key_2 && allowDirectMode1To4) { visualMode = 1; event.accepted = true }
+        else if (event.key === Qt.Key_3 && allowDirectMode1To4) { visualMode = 2; event.accepted = true }
+        else if (event.key === Qt.Key_4 && allowDirectMode1To4) { visualMode = 3; event.accepted = true }
         else if (event.key === Qt.Key_5) { visualMode = 4; event.accepted = true }
         else if (event.key === Qt.Key_6) { visualMode = 5; event.accepted = true }
         else if (event.key === Qt.Key_7) { visualMode = 6; event.accepted = true }

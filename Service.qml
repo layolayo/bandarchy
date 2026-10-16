@@ -533,6 +533,38 @@ Item {
         playlistsProc.running = true
     }
 
+    function addAlbumOrCreatePlaylist(albumId, albumTitle, artistName, preferredPlaylistId) {
+        if (!albumId) return
+        if (root.playlists && root.playlists.length > 0) {
+            var pid = preferredPlaylistId || root.playlists[0].id
+            addAlbumToPlaylist(pid, albumId)
+        } else {
+            createPlaylist(
+                (artistName || "Bandarchy") + " Mix",
+                "Created from " + (albumTitle || "album"),
+                "",
+                albumId,
+                ""
+            )
+        }
+    }
+
+    function addTrackOrCreatePlaylist(trackId, trackTitle, artistName, preferredPlaylistId) {
+        if (!trackId) return
+        if (root.playlists && root.playlists.length > 0) {
+            var pid = preferredPlaylistId || root.playlists[0].id
+            addTrackToPlaylist(pid, trackId)
+        } else {
+            createPlaylist(
+                (artistName || "Bandarchy") + " Mix",
+                "Created from " + (trackTitle || "track"),
+                "",
+                "",
+                trackId
+            )
+        }
+    }
+
     function removeTrackFromPlaylist(playlistId, index) {
         if (!playlistId) return
         if (playlistsProc.running) playlistsProc.running = false

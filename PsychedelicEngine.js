@@ -363,6 +363,16 @@ function paletteColour(paletteIndex, t, energy, alpha, themeColours) {
 }
 
 function stepAudio(state, rawBands, playing, sensitivity) {
+    if (!state.smoothBands) state.smoothBands = []
+    if (!state.peakBands) state.peakBands = []
+    if (!state.shockwaves) state.shockwaves = []
+    if (state.phase === undefined) state.phase = 0.0
+    if (state.bassSmooth === undefined) state.bassSmooth = 0.0
+    if (state.midSmooth === undefined) state.midSmooth = 0.0
+    if (state.highSmooth === undefined) state.highSmooth = 0.0
+    if (state.energySmooth === undefined) state.energySmooth = 0.0
+    if (state.beatPulse === undefined) state.beatPulse = 0.0
+    if (state.beatCooldown === undefined) state.beatCooldown = 0
     var sens = clamp(sensitivity || 1.0, 0.25, 3.0)
     var n = 64
     var bassSum = 0.0
@@ -551,38 +561,38 @@ function drawJuliaAndFractals(ctx, w, h, state, paletteIndex, symmetryFolds, the
             var py = (gy + 0.5) * cellH
             var hue = normIter * 0.85 + trapFactor * 0.4 + state.phase * 0.07 + bandVal * 0.25
             var rad = (0.28 + intensity * 0.62) * Math.min(cellW, cellH)
+            var cellRot = zr * 0.5 + state.phase * 0.4
 
-            ctx.save()
-            ctx.translate(px, py)
-            ctx.rotate(zr * 0.5 + state.phase * 0.4)
             ctx.fillStyle = paletteColour(paletteIndex, hue, intensity, 0.24 + intensity * 0.48, tc)
             ctx.strokeStyle = paletteColour(paletteIndex, hue + 0.22, intensity, 0.42 + intensity * 0.45, tc)
             ctx.lineWidth = 1.1
 
-            // Multi-faceted fractal diamond / hex cell
+            // Multi-faceted fractal diamond / hex cell (computed in screen coords to avoid 640 ctx.save/restore per frame)
             ctx.beginPath()
             var sides = (iter % 2 === 0) ? 4 : 6
             for (var s = 0; s < sides; s++) {
-                var a = (s / sides) * Math.PI * 2.0
+                var a = (s / sides) * Math.PI * 2.0 + cellRot
                 var r = rad * (s % 2 === 0 ? 1.0 : 0.62 + trapFactor * 0.38)
-                if (s === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r)
-                else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r)
+                var vx = px + Math.cos(a) * r
+                var vy = py + Math.sin(a) * r
+                if (s === 0) ctx.moveTo(vx, vy)
+                else ctx.lineTo(vx, vy)
             }
             ctx.closePath()
             ctx.fill()
             ctx.stroke()
-            ctx.restore()
         }
     }
     ctx.restore()
 
     // 2. Symmetrical Recursive Audio-Reactive Fractal Canopies radiating from centre
-    var trunks = Math.max(5, symmetryFolds > 1 ? symmetryFolds : 6)
+    var trunks = Math.min(8, Math.max(5, symmetryFolds > 1 ? symmetryFolds : 6))
     var trunkLen = minDim * (0.11 + state.bassSmooth * 0.09 + state.beatPulse * 0.03)
+    var branchDepth = trunks >= 8 ? 4 : 5
     ctx.save()
     for (var t = 0; t < trunks; t++) {
         var baseAngle = (t / trunks) * Math.PI * 2.0 + state.phase * 0.22
-        drawFractalBranch(ctx, cx, cy, trunkLen, baseAngle, 5, 5, state, paletteIndex, tc, t)
+        drawFractalBranch(ctx, cx, cy, trunkLen, baseAngle, branchDepth, branchDepth, state, paletteIndex, tc, t)
     }
     ctx.restore()
 }
@@ -751,6 +761,7 @@ function drawRandomisedShapesAndKaleidoscope(ctx, w, h, state, paletteIndex, sym
     ctx.save()
     ctx.translate(cx, cy)
 
+    var shapeStride = folds >= 8 ? 2 : 1
     for (var f = 0; f < folds; f++) {
         ctx.save()
         ctx.rotate((f / folds) * Math.PI * 2.0)
@@ -758,7 +769,7 @@ function drawRandomisedShapesAndKaleidoscope(ctx, w, h, state, paletteIndex, sym
             ctx.scale(1.0, -1.0)
         }
 
-        for (var s = 0; s < shapes.length; s++) {
+        for (var s = 0; s < shapes.length; s += shapeStride) {
             var shape = shapes[s]
             var bandVal = state.smoothBands[shape.band] || 0.05
             var r = shape.dist * minDim * 0.48 * (0.85 + state.bassSmooth * 0.22)
@@ -974,9 +985,18 @@ function drawAlienBioluminescence(ctx, w, h, state, paletteIndex, symmetryFolds,
             if (s % 2 === 0) {
                 var normalAng = curAng + Math.PI * 0.5
                 var ciliaLen = (1.0 - sFrac * 0.5) * (8.0 + sBand * 22.0)
+                var cosN = Math.cos(normalAng)
+                var sinN = Math.sin(normalAng)
                 for (var side = -1; side <= 1; side += 2) {
-                    var cxEnd = nx + Math.cos(normalAng * side) * ciliaLen * side
-                    var cyEnd = ny + Math.sin(normalAng * side) * ciliaLen * side
+                    var cxEnd = nx + cosN * ciliaLen * side
+                    var cyEnd = ny + sinN * ciliaLen * side
+                    ctx.strokeStyle = paletteColour(paletteIndex, tHue + 0.16, sBand + 0.3, 0.44, tc)
+                    ctx.lineWidth = 1.0
+                    ctx.beginPath()
+                    ctx.moveTo(nx, ny)
+                    ctx.lineTo(cxEnd, cyEnd)
+                    ctx.stroke()
+
                     ctx.fillStyle = paletteColour(paletteIndex, tHue + 0.28, sBand + 0.4, 0.68, tc)
                     ctx.beginPath()
                     ctx.arc(cxEnd, cyEnd, 1.6 + sBand * 3.2, 0, Math.PI * 2.0)
@@ -1589,10 +1609,11 @@ function renderFrame(ctx, w, h, state, rawBands, options) {
         drawAsciiMatrix(ctx, w, h, state, paletteIndex, mode, asciiLines, ttfxFrames, asciiMode, false, themeColours)
     } else {
         // Mode 11: Cosmic Chimera Overdrive (multi-layered mind-bending fusion)
+        var chimeraFolds = Math.min(6, Math.max(4, symmetryFolds))
         drawSpaceTimeWarpLandscape(ctx, w, h, state, paletteIndex, themeColours)
-        drawHyperspaceSwirls(ctx, w, h, state, paletteIndex, symmetryFolds, themeColours)
-        drawRandomisedShapesAndKaleidoscope(ctx, w, h, state, paletteIndex, symmetryFolds > 1 ? symmetryFolds : 4, themeColours)
-        drawAlienBioluminescence(ctx, w, h, state, paletteIndex, symmetryFolds, themeColours)
+        drawHyperspaceSwirls(ctx, w, h, state, paletteIndex, chimeraFolds, themeColours)
+        drawRandomisedShapesAndKaleidoscope(ctx, w, h, state, paletteIndex, chimeraFolds, themeColours)
+        drawAlienBioluminescence(ctx, w, h, state, paletteIndex, Math.min(4, chimeraFolds), themeColours)
     }
 
     // 3. Optional Album Art / TTE ASCII overlay when explicitly toggled ON in other modes

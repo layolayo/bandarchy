@@ -59,6 +59,7 @@ Item {
     property int focusedTrackIndex: -1
     property int focusedSmartTrackIndex: 0
     property int focusedPlaylistIndex: 0
+    property int focusedPlaylistTrackIndex: -1
     property int playlistPaneFocus: 0
 
     function toggleAlbumExpand(albumId, albumIdx) {
@@ -87,7 +88,9 @@ Item {
             }
             return
         }
-        if (root.activeTab === 2) return
+
+        var isFsViz = Boolean(root.service && root.service.fullscreenVisualiserOpen)
+        var hasCtrlOrAlt = Boolean(event.modifiers & (Qt.ControlModifier | Qt.AltModifier))
 
         if (event.key === Qt.Key_Slash) {
             root.activeTab = 0
@@ -98,19 +101,62 @@ Item {
         }
         if (event.key === Qt.Key_Tab) {
             root.activeTab = (root.activeTab + 1) % 4
-            if (root.activeTab !== 2) panelFrame.forceActiveFocus()
+            panelFrame.forceActiveFocus()
             event.accepted = true
             return
         }
         if (event.key === Qt.Key_Backtab) {
             root.activeTab = (root.activeTab + 3) % 4
-            if (root.activeTab !== 2) panelFrame.forceActiveFocus()
+            panelFrame.forceActiveFocus()
             event.accepted = true
             return
+        }
+        if (!isFsViz && !hasCtrlOrAlt) {
+            if (event.key === Qt.Key_1) {
+                root.activeTab = 0
+                panelFrame.forceActiveFocus()
+                event.accepted = true
+                return
+            }
+            if (event.key === Qt.Key_2) {
+                root.activeTab = 1
+                panelFrame.forceActiveFocus()
+                event.accepted = true
+                return
+            }
+            if (event.key === Qt.Key_3) {
+                root.activeTab = 2
+                panelFrame.forceActiveFocus()
+                event.accepted = true
+                return
+            }
+            if (event.key === Qt.Key_4) {
+                root.activeTab = 3
+                panelFrame.forceActiveFocus()
+                event.accepted = true
+                return
+            }
         }
         if (event.key === Qt.Key_Space) {
             if (root.service) root.service.togglePlayPause()
             event.accepted = true
+            return
+        }
+
+        if (root.activeTab === 2) {
+            if (event.key === Qt.Key_M) { panelVisualiser.cycleMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
+            else if (event.key === Qt.Key_C) { panelVisualiser.cyclePalette((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
+            else if (event.key === Qt.Key_K) { panelVisualiser.cycleSymmetry(); event.accepted = true }
+            else if (event.key === Qt.Key_R) { panelVisualiser.randomiseVisuals(); event.accepted = true }
+            else if (event.key === Qt.Key_X) { panelVisualiser.autoCycle = !panelVisualiser.autoCycle; event.accepted = true }
+            else if (event.key === Qt.Key_A) { if (root.service) root.service.toggleUseAlbumArt(); event.accepted = true }
+            else if (event.key === Qt.Key_B) { if (root.service) root.service.toggleAsciiMode(); event.accepted = true }
+            else if (event.key === Qt.Key_T) { if (root.service) root.service.launchTtfxScreensaver(panelVisualiser.currentTtfxEffect()); event.accepted = true }
+            else if (event.key === Qt.Key_H) { panelVisualiser.showHud = !panelVisualiser.showHud; event.accepted = true }
+            else if (event.key === Qt.Key_F || event.key === Qt.Key_V) {
+                if (root.service) root.service.fullscreenVisualiserOpen = !root.service.fullscreenVisualiserOpen
+                event.accepted = true
+            }
             return
         }
 
@@ -183,6 +229,16 @@ Item {
                     root.service.playAlbum(curAlbum.id, Math.max(0, root.focusedTrackIndex), "auto", false)
                 }
                 event.accepted = true
+            } else if (event.key === Qt.Key_A || event.key === Qt.Key_Plus) {
+                if (curAlbum && root.service) {
+                    if (isExpanded && root.focusedTrackIndex >= 0 && root.focusedTrackIndex < tracks.length) {
+                        var tr = tracks[root.focusedTrackIndex]
+                        root.service.addTrackOrCreatePlaylist(tr.id, tr.title, curAlbum.artist, root.selectedPlaylistId)
+                    } else {
+                        root.service.addAlbumOrCreatePlaylist(curAlbum.id, curAlbum.title, curAlbum.artist, root.selectedPlaylistId)
+                    }
+                }
+                event.accepted = true
             } else if (event.key === Qt.Key_Escape) {
                 if (root.selectedAlbumId !== "") {
                     root.selectedAlbumId = ""
@@ -193,40 +249,100 @@ Item {
         } else if (root.activeTab === 1) {
             var smartTracks = (root.service && root.service.smartPlaylist && root.service.smartPlaylist.tracks) ? root.service.smartPlaylist.tracks : []
             var customPls = (root.service && root.service.playlists) ? root.service.playlists : []
-            if (event.key === Qt.Key_Left || event.key === Qt.Key_H) {
-                root.playlistPaneFocus = 0
+            var curPlIdx = customPls.length > 0 ? Math.max(0, Math.min(customPls.length - 1, root.focusedPlaylistIndex)) : 0
+            root.focusedPlaylistIndex = curPlIdx
+            var curPl = customPls.length > 0 ? customPls[curPlIdx] : null
+            var curPlTracks = (curPl && curPl.tracks) ? curPl.tracks : []
+            var isPlExpanded = Boolean(curPl && root.selectedPlaylistId === curPl.id)
+
+            if (event.key === Qt.Key_Left || event.key === Qt.Key_H || event.key === Qt.Key_Backspace) {
+                if (root.playlistPaneFocus === 1 && isPlExpanded) {
+                    if (root.focusedPlaylistTrackIndex >= 0) {
+                        root.focusedPlaylistTrackIndex = -1
+                    } else {
+                        root.selectedPlaylistId = ""
+                    }
+                } else {
+                    root.playlistPaneFocus = 0
+                }
                 event.accepted = true
             } else if (event.key === Qt.Key_Right || event.key === Qt.Key_L) {
-                root.playlistPaneFocus = 1
+                if (root.playlistPaneFocus === 0) {
+                    root.playlistPaneFocus = 1
+                } else if (curPl) {
+                    if (!isPlExpanded) {
+                        root.selectedPlaylistId = curPl.id
+                        root.focusedPlaylistTrackIndex = curPlTracks.length > 0 ? 0 : -1
+                    } else if (root.focusedPlaylistTrackIndex < 0 && curPlTracks.length > 0) {
+                        root.focusedPlaylistTrackIndex = 0
+                    }
+                }
                 event.accepted = true
             } else if (event.key === Qt.Key_Down || event.key === Qt.Key_J) {
                 if (root.playlistPaneFocus === 0 && smartTracks.length > 0) {
                     root.focusedSmartTrackIndex = Math.min(smartTracks.length - 1, root.focusedSmartTrackIndex + 1)
+                    smartPlaylistList.positionViewAtIndex(root.focusedSmartTrackIndex, ListView.Contain)
                 } else if (root.playlistPaneFocus === 1 && customPls.length > 0) {
-                    root.focusedPlaylistIndex = Math.min(customPls.length - 1, root.focusedPlaylistIndex + 1)
+                    if (isPlExpanded && curPlTracks.length > 0 && root.focusedPlaylistTrackIndex < curPlTracks.length - 1) {
+                        root.focusedPlaylistTrackIndex = root.focusedPlaylistTrackIndex + 1
+                    } else if (curPlIdx < customPls.length - 1) {
+                        root.focusedPlaylistIndex = curPlIdx + 1
+                        root.focusedPlaylistTrackIndex = -1
+                        customPlaylistList.positionViewAtIndex(root.focusedPlaylistIndex, ListView.Contain)
+                    }
                 }
                 event.accepted = true
             } else if (event.key === Qt.Key_Up || event.key === Qt.Key_K) {
                 if (root.playlistPaneFocus === 0 && smartTracks.length > 0) {
                     root.focusedSmartTrackIndex = Math.max(0, root.focusedSmartTrackIndex - 1)
+                    smartPlaylistList.positionViewAtIndex(root.focusedSmartTrackIndex, ListView.Contain)
                 } else if (root.playlistPaneFocus === 1 && customPls.length > 0) {
-                    root.focusedPlaylistIndex = Math.max(0, root.focusedPlaylistIndex - 1)
+                    if (isPlExpanded && root.focusedPlaylistTrackIndex >= 0) {
+                        root.focusedPlaylistTrackIndex = root.focusedPlaylistTrackIndex - 1
+                    } else if (curPlIdx > 0) {
+                        root.focusedPlaylistIndex = curPlIdx - 1
+                        var prevPl = customPls[root.focusedPlaylistIndex]
+                        if (prevPl && root.selectedPlaylistId === prevPl.id && prevPl.tracks && prevPl.tracks.length > 0) {
+                            root.focusedPlaylistTrackIndex = prevPl.tracks.length - 1
+                        } else {
+                            root.focusedPlaylistTrackIndex = -1
+                        }
+                        customPlaylistList.positionViewAtIndex(root.focusedPlaylistIndex, ListView.Contain)
+                    }
                 }
                 event.accepted = true
             } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                 if (root.playlistPaneFocus === 0 && smartTracks.length > 0 && root.service) {
                     root.service.playSmartPlaylist(root.service.smartPreset, "", root.focusedSmartTrackIndex)
-                } else if (root.playlistPaneFocus === 1 && customPls.length > 0) {
-                    var pl = customPls[root.focusedPlaylistIndex]
-                    if (pl) {
-                        if ((event.modifiers & Qt.ShiftModifier) && root.service) {
-                            root.service.playPlaylist(pl.id, 0, false)
+                } else if (root.playlistPaneFocus === 1 && curPl) {
+                    if ((event.modifiers & Qt.ShiftModifier) && root.service) {
+                        root.service.playPlaylist(curPl.id, Math.max(0, root.focusedPlaylistTrackIndex), false)
+                    } else if (isPlExpanded && root.focusedPlaylistTrackIndex >= 0 && root.service) {
+                        root.service.playPlaylist(curPl.id, root.focusedPlaylistTrackIndex, false)
+                    } else {
+                        if (isPlExpanded) {
+                            root.selectedPlaylistId = ""
+                            root.focusedPlaylistTrackIndex = -1
                         } else {
-                            root.selectedPlaylistId = (root.selectedPlaylistId === pl.id) ? "" : pl.id
+                            root.selectedPlaylistId = curPl.id
+                            root.focusedPlaylistTrackIndex = curPlTracks.length > 0 ? 0 : -1
                         }
                     }
                 }
                 event.accepted = true
+            } else if (event.key === Qt.Key_P) {
+                if (root.playlistPaneFocus === 0 && smartTracks.length > 0 && root.service) {
+                    root.service.playSmartPlaylist(root.service.smartPreset, "", root.focusedSmartTrackIndex)
+                } else if (root.playlistPaneFocus === 1 && curPl && root.service) {
+                    root.service.playPlaylist(curPl.id, Math.max(0, root.focusedPlaylistTrackIndex), false)
+                }
+                event.accepted = true
+            } else if (event.key === Qt.Key_Escape) {
+                if (root.selectedPlaylistId !== "") {
+                    root.selectedPlaylistId = ""
+                    root.focusedPlaylistTrackIndex = -1
+                    event.accepted = true
+                }
             }
         }
     }
@@ -699,7 +815,7 @@ Item {
                         spacing: 8
                         Text {
                             Layout.fillWidth: true
-                            text: "󰌌 Keys: ↑↓/jk Navigate · Enter/→ Open Tracks & Play · ←/Esc Collapse · p Play Album · / Search · Tab Switch"
+                            text: "󰌌 Keys: ↑↓/jk Navigate · Enter/→ Open Tracks & Play · ←/Esc Collapse · p Play Album · a/+ +Playlist · / Search · 1-4/Tab Switch"
                             textFormat: Text.PlainText
                             font.family: "JetBrainsMono Nerd Font"
                             font.pixelSize: 9
@@ -716,6 +832,13 @@ Item {
                         clip: true
                         spacing: 6
                         model: root.service ? root.service.albums : []
+                        onModelChanged: {
+                            Qt.callLater(function() {
+                                if (root.focusedAlbumIndex >= 0 && albumList.count > root.focusedAlbumIndex) {
+                                    albumList.positionViewAtIndex(root.focusedAlbumIndex, ListView.Contain)
+                                }
+                            })
+                        }
 
                         delegate: Rectangle {
                             id: albumCard
@@ -963,18 +1086,12 @@ Item {
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: {
                                                     if (!root.service) return
-                                                    if (root.service.playlists && root.service.playlists.length > 0) {
-                                                        var pid = root.selectedPlaylistId || root.service.playlists[0].id
-                                                        root.service.addAlbumToPlaylist(pid, modelData.id)
-                                                    } else {
-                                                        root.service.createPlaylist(
-                                                            (modelData.artist || "Bandarchy") + " Mix",
-                                                            "Created from " + (modelData.title || "album"),
-                                                            "",
-                                                            modelData.id,
-                                                            ""
-                                                        )
-                                                    }
+                                                    root.service.addAlbumOrCreatePlaylist(
+                                                        modelData.id,
+                                                        modelData.title,
+                                                        modelData.artist,
+                                                        root.selectedPlaylistId
+                                                    )
                                                     panelFrame.forceActiveFocus()
                                                 }
                                             }
@@ -1016,12 +1133,19 @@ Item {
 
                                 // Expanded Track List Drawer
                                 ListView {
+                                    id: albumTracksListView
                                     Layout.fillWidth: true
                                     Layout.fillHeight: true
                                     visible: albumCard.expanded
                                     clip: true
                                     spacing: 2
                                     model: albumCard.tracksList
+                                    currentIndex: albumCard.isKeyboardFocused ? root.focusedTrackIndex : -1
+                                    onCurrentIndexChanged: {
+                                        if (currentIndex >= 0 && count > currentIndex) {
+                                            positionViewAtIndex(currentIndex, ListView.Contain)
+                                        }
+                                    }
 
                                     delegate: Rectangle {
                                         required property var modelData
@@ -1043,7 +1167,7 @@ Item {
                                             anchors.fill: parent
                                             anchors.leftMargin: 8
                                             anchors.rightMargin: 8
-                                            spacing: 8
+                                            spacing: 6
 
                                             Text {
                                                 text: isTrackPlaying ? "󰐊" : ((index + 1) + ".")
@@ -1063,6 +1187,89 @@ Item {
                                                 font.bold: isTrackPlaying || isTrackFocused
                                                 color: (isTrackPlaying || isTrackFocused) ? root.colAccent : root.colFg
                                                 elide: Text.ElideRight
+
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        root.focusedAlbumIndex = albumCard.index
+                                                        root.focusedTrackIndex = index
+                                                        if (root.service) {
+                                                            root.service.playAlbum(albumCard.modelData.id, index, "auto", false)
+                                                        }
+                                                        panelFrame.forceActiveFocus()
+                                                    }
+                                                }
+                                            }
+
+                                            // Explicit Play Track Action Button
+                                            Rectangle {
+                                                Layout.preferredHeight: 20
+                                                Layout.preferredWidth: playTrkBtnTxt.implicitWidth + 10
+                                                radius: 4
+                                                color: isTrackPlaying
+                                                    ? root.colAccent
+                                                    : Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.18)
+                                                border.width: 1
+                                                border.color: root.colAccent
+                                                Text {
+                                                    id: playTrkBtnTxt
+                                                    anchors.centerIn: parent
+                                                    text: "󰐊 Play"
+                                                    textFormat: Text.PlainText
+                                                    font.family: "JetBrainsMono Nerd Font"
+                                                    font.pixelSize: 9
+                                                    font.bold: true
+                                                    color: isTrackPlaying ? "#07090e" : root.colAccent
+                                                }
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        root.focusedAlbumIndex = albumCard.index
+                                                        root.focusedTrackIndex = index
+                                                        if (root.service) {
+                                                            root.service.playAlbum(albumCard.modelData.id, index, "auto", false)
+                                                        }
+                                                        panelFrame.forceActiveFocus()
+                                                    }
+                                                }
+                                            }
+
+                                            // Add Track to Playlist Action Button
+                                            Rectangle {
+                                                Layout.preferredHeight: 20
+                                                Layout.preferredWidth: addPlRowTxt.implicitWidth + 10
+                                                radius: 4
+                                                color: Qt.rgba(1, 1, 1, 0.06)
+                                                border.width: 1
+                                                border.color: root.colBorder
+                                                Text {
+                                                    id: addPlRowTxt
+                                                    anchors.centerIn: parent
+                                                    text: "󰐑 +List"
+                                                    textFormat: Text.PlainText
+                                                    font.family: "JetBrainsMono Nerd Font"
+                                                    font.pixelSize: 9
+                                                    color: root.colFg
+                                                }
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        root.focusedAlbumIndex = albumCard.index
+                                                        root.focusedTrackIndex = index
+                                                        if (root.service) {
+                                                            root.service.addTrackOrCreatePlaylist(
+                                                                modelData.id,
+                                                                modelData.title,
+                                                                albumCard.modelData.artist,
+                                                                root.selectedPlaylistId
+                                                            )
+                                                        }
+                                                        panelFrame.forceActiveFocus()
+                                                    }
+                                                }
                                             }
 
                                             // Seed Intelligent Radio from this track
@@ -1088,6 +1295,7 @@ Item {
                                                             root.service.refreshSmartPlaylist("radio", modelData.id)
                                                             root.activeTab = 1
                                                         }
+                                                        panelFrame.forceActiveFocus()
                                                     }
                                                 }
                                             }
@@ -1098,20 +1306,6 @@ Item {
                                                 font.family: "JetBrainsMono Nerd Font"
                                                 font.pixelSize: 10
                                                 color: root.colMuted
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            anchors.rightMargin: 70
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                root.focusedAlbumIndex = albumCard.index
-                                                root.focusedTrackIndex = index
-                                                if (root.service) {
-                                                    root.service.playAlbum(albumCard.modelData.id, index, "auto", false)
-                                                }
-                                                panelFrame.forceActiveFocus()
                                             }
                                         }
                                     }
@@ -1308,6 +1502,7 @@ Item {
 
                             // Generated Intelligent Playlist Track List
                             ListView {
+                                id: smartPlaylistList
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 clip: true
@@ -1474,6 +1669,7 @@ Item {
 
                             // User Playlists ListView
                             ListView {
+                                id: customPlaylistList
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 clip: true
@@ -1525,6 +1721,7 @@ Item {
                                                         root.playlistPaneFocus = 1
                                                         root.focusedPlaylistIndex = plCard.index
                                                         root.selectedPlaylistId = plCard.isExpanded ? "" : modelData.id
+                                                        root.focusedPlaylistTrackIndex = root.selectedPlaylistId ? 0 : -1
                                                         panelFrame.forceActiveFocus()
                                                     }
                                                 }
@@ -1581,14 +1778,25 @@ Item {
                                             clip: true
                                             spacing: 2
                                             model: plCard.plTracks
+                                            currentIndex: plCard.isPlFocused ? root.focusedPlaylistTrackIndex : -1
+                                            onCurrentIndexChanged: {
+                                                if (currentIndex >= 0 && count > currentIndex) {
+                                                    positionViewAtIndex(currentIndex, ListView.Contain)
+                                                }
+                                            }
 
                                             delegate: Rectangle {
                                                 required property var modelData
                                                 required property int index
+                                                readonly property bool isPlTrackFocused: plCard.isPlFocused && root.focusedPlaylistTrackIndex === index
                                                 width: ListView.view.width
                                                 height: 22
                                                 radius: 3
-                                                color: Qt.rgba(1, 1, 1, 0.03)
+                                                color: isPlTrackFocused
+                                                    ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.20)
+                                                    : Qt.rgba(1, 1, 1, 0.03)
+                                                border.width: isPlTrackFocused ? 1 : 0
+                                                border.color: root.colAccent
 
                                                 RowLayout {
                                                     anchors.fill: parent
@@ -1602,13 +1810,17 @@ Item {
                                                         textFormat: Text.PlainText
                                                         font.family: "JetBrainsMono Nerd Font"
                                                         font.pixelSize: 10
-                                                        color: root.colFg
+                                                        font.bold: isPlTrackFocused
+                                                        color: isPlTrackFocused ? root.colAccent : root.colFg
                                                         elide: Text.ElideRight
 
                                                         MouseArea {
                                                             anchors.fill: parent
                                                             cursorShape: Qt.PointingHandCursor
                                                             onClicked: {
+                                                                root.playlistPaneFocus = 1
+                                                                root.focusedPlaylistIndex = plCard.index
+                                                                root.focusedPlaylistTrackIndex = index
                                                                 if (root.service) root.service.playPlaylist(plCard.modelData.id, index, false)
                                                                 panelFrame.forceActiveFocus()
                                                             }
@@ -1644,6 +1856,7 @@ Item {
                 // TAB 2: PSYCHEDELIC OMARCHY SCREENSAVER VISUALISER
                 // ===========================================================
                 Visualiser {
+                    id: panelVisualiser
                     anchors.fill: parent
                     visible: root.activeTab === 2
                     isFullscreen: false

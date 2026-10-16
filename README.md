@@ -27,12 +27,13 @@
    - **Album Art as a Selectable Option (Not Fixed)**: Modes 1–10 and 12 run as pure full-canvas psychedelic visualisers without a fixed ASCII box on top. Select Mode 11 (`[` key or `[ Album Art` chip) for the dedicated Album Art ASCII Matrix mode, or press `A` (`Album Art: OFF/ON`) to optionally overlay transcoded album art onto any mode.
 
 3. **Full Keyboard Navigation (`Panel.qml` & `App.qml`)**
-   - `↑` / `↓` (`j` / `k`): Move highlight across albums, through tracks inside an expanded album, or through playlist tracks.
-   - `Enter` / `→` (`l`): Expand or collapse the selected album's track list; when a track is highlighted inside an expanded album, `Enter` plays that track immediately.
-   - `Shift+Enter` or `p`: Play the highlighted album immediately from the first (or selected) track.
-   - `←` (`h`) / `Backspace` / `Esc`: Collapse the expanded track list or step focus back from tracks to the album row.
+   - `↑` / `↓` (`j` / `k`): Move highlight across albums, through tracks inside an expanded album, or through intelligent and custom playlist tracks (with automatic viewport scrolling).
+   - `Enter` / `→` (`l`): Expand or collapse the selected album's track list (showing track number, title, duration, `󰐊 Play`, `󰐑 +List`, and `󰐑 Radio` actions); when a track is highlighted inside an expanded album or custom playlist, `Enter` plays that track immediately.
+   - `Shift+Enter` or `p`: Play the highlighted album or playlist immediately from the first (or selected) track.
+   - `a` or `+`: Add the highlighted track (when inside an expanded album) or album to the active custom playlist (creating a new playlist automatically if none exists yet).
+   - `←` (`h`) / `Backspace` / `Esc`: Collapse the expanded track list or step focus back from tracks to the album/playlist row.
    - `/`: Focus the collection search bar (`Esc`, `↓`, or `Enter` returns focus to the album list).
-   - `Tab` / `Shift+Tab`: Switch between Collection, Intelligent & Custom Playlists, Visualiser, and Sync tabs.
+   - `Tab` / `Shift+Tab` or `1` – `4` (when not in visualiser fullscreen): Switch cleanly between Collection, Intelligent & Custom Playlists, Visualiser, and Sync tabs.
 
 4. **Intelligent Playlists (Seeded from Last Track Played) & Custom User Playlists**
    - Tracks playback history in `~/.local/share/bandarchy/history.json` (`lastPlayedTrack` and `recentTracks`).
