@@ -68,6 +68,8 @@ Item {
     property string asciiMode: "braille"
     property string asciiSource: "album-art"
     property var asciiLines: []
+    property var ttfxFrames: []
+    property string ttfxEffect: "waves"
     property bool visualiserActive: false
     property bool fullscreenVisualiserOpen: false
 
@@ -156,6 +158,7 @@ Item {
                 root.playlistCount = Number(p.playlistCount) || 0
                 root.shuffle = Boolean(p.shuffle)
                 root.loop = Boolean(p.loop)
+                root.queue = p.queue || []
             } catch (e) {}
         }
     }
@@ -185,7 +188,7 @@ Item {
         }
     }
 
-    // ASCII Art transcoder process (`omarchy-transcode-ascii` / `omarchy-ascii`)
+    // ASCII Art transcoder process (`omarchy-transcode-ascii` / `omarchy-ascii` + `/usr/bin/ttfx`)
     Process {
         id: asciiProc
         property string outBuf: ""
@@ -200,6 +203,8 @@ Item {
                 var d = JSON.parse(raw)
                 if (d.ok && d.lines) {
                     root.asciiLines = d.lines
+                    root.ttfxFrames = d.ttfxFrames || []
+                    if (d.ttfxEffect) root.ttfxEffect = d.ttfxEffect
                     root.asciiSource = d.source || "album-art"
                     if (d.mode) root.asciiMode = d.mode
                     if (d.useAlbumArt !== undefined) root.useAlbumArt = Boolean(d.useAlbumArt)
@@ -334,13 +339,15 @@ Item {
         collectionProc.running = true
     }
 
-    function refreshAsciiArt(customAlbumId) {
+    function refreshAsciiArt(customAlbumId, customEffect) {
+        if (customEffect) root.ttfxEffect = customEffect
         if (asciiProc.running) asciiProc.running = false
         asciiProc.outBuf = ""
         var cmd = [
             root.binPath, "ascii-art",
             "--mode", root.asciiMode,
             "--use-album-art", root.useAlbumArt ? "1" : "0",
+            "--effect", root.ttfxEffect || "waves",
             "--width", "68",
             "--height", "30"
         ]
@@ -355,6 +362,12 @@ Item {
         }
         asciiProc.command = cmd
         asciiProc.running = true
+    }
+
+    function setTtfxEffect(effectName) {
+        if (!effectName || effectName === root.ttfxEffect) return
+        root.ttfxEffect = effectName
+        refreshAsciiArt("", effectName)
     }
 
     function toggleUseAlbumArt() {
@@ -401,7 +414,7 @@ Item {
         smartProc.running = true
     }
 
-    function playSmartPlaylist(preset, seedTrackId) {
+    function playSmartPlaylist(preset, seedTrackId, startIndex) {
         if (preset) root.smartPreset = preset
         if (smartProc.running) smartProc.running = false
         smartProc.outBuf = ""
@@ -409,6 +422,7 @@ Item {
             root.binPath, "smart-playlist",
             "--preset", root.smartPreset,
             "--limit", "25",
+            "--track-index", String(startIndex || 0),
             "--play"
         ]
         if (seedTrackId) cmd.push("--seed-track", seedTrackId)

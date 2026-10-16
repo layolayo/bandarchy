@@ -275,6 +275,27 @@ ShellRoot {
                                             }
 
                                             Rectangle {
+                                                visible: !modelData.isLocal && Boolean(modelData.purchased || modelData.tralbumId || modelData.url)
+                                                width: 68; height: 26; radius: 5
+                                                color: "#15322c"
+                                                border.width: 1
+                                                border.color: win.colAccent
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: (service.downloading && service.downloadingAlbumId === modelData.id) ? "󰇚 Sync…" : "󰇚 Download"
+                                                    textFormat: Text.PlainText
+                                                    font.family: "JetBrainsMono Nerd Font"
+                                                    font.pixelSize: 10
+                                                    color: win.colAccent
+                                                }
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: service.downloadAlbum(modelData.id)
+                                                }
+                                            }
+
+                                            Rectangle {
                                                 width: 56; height: 26; radius: 5
                                                 color: win.colAccent
                                                 Text {
@@ -395,7 +416,7 @@ ShellRoot {
 
                                 ListView {
                                     Layout.fillWidth: true
-                                    Layout.preferredHeight: 170
+                                    Layout.preferredHeight: 165
                                     clip: true
                                     spacing: 3
                                     model: (service.smartPlaylist && service.smartPlaylist.tracks) ? service.smartPlaylist.tracks : []
@@ -424,18 +445,79 @@ ShellRoot {
                                         MouseArea {
                                             anchors.fill: parent
                                             cursorShape: Qt.PointingHandCursor
-                                            onClicked: service.playTrack(modelData.id, modelData.albumId)
+                                            onClicked: service.playSmartPlaylist(service.smartPreset, "", index)
                                         }
                                     }
                                 }
 
-                                Text {
-                                    text: "󰐑 Custom User Playlists (" + service.playlists.length + ")"
-                                    textFormat: Text.PlainText
-                                    font.family: "JetBrainsMono Nerd Font"
-                                    font.pixelSize: 11
-                                    font.bold: true
-                                    color: win.colFg
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 6
+
+                                    Text {
+                                        text: "󰐑 Custom Playlists (" + service.playlists.length + ")"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                        color: win.colFg
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 24
+                                        radius: 4
+                                        color: "#0b0f17"
+                                        border.width: 1
+                                        border.color: appNewPlaylist.activeFocus ? win.colAccent : win.colBorder
+
+                                        TextInput {
+                                            id: appNewPlaylist
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 6
+                                            anchors.rightMargin: 6
+                                            verticalAlignment: Text.AlignVCenter
+                                            font.family: "JetBrainsMono Nerd Font"
+                                            font.pixelSize: 10
+                                            color: win.colFg
+                                            clip: true
+
+                                            Text {
+                                                anchors.fill: parent
+                                                verticalAlignment: Text.AlignVCenter
+                                                text: "New playlist name…"
+                                                textFormat: Text.PlainText
+                                                font.family: "JetBrainsMono Nerd Font"
+                                                font.pixelSize: 9
+                                                color: win.colMuted
+                                                visible: !appNewPlaylist.text && !appNewPlaylist.activeFocus
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        width: 58; height: 24; radius: 4
+                                        color: win.colAccent
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "+ Create"
+                                            textFormat: Text.PlainText
+                                            font.family: "JetBrainsMono Nerd Font"
+                                            font.pixelSize: 9
+                                            font.bold: true
+                                            color: "#07090e"
+                                        }
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                var t = appNewPlaylist.text.trim()
+                                                if (!t) t = "Custom Mix " + (service.playlists.length + 1)
+                                                service.createPlaylist(t, "User playlist", "", service.albumId, "")
+                                                appNewPlaylist.text = ""
+                                            }
+                                        }
+                                    }
                                 }
 
                                 ListView {
@@ -577,6 +659,7 @@ ShellRoot {
                             position: service.position
                             duration: service.duration
                             asciiLines: service.asciiLines
+                            ttfxFrames: service.ttfxFrames
                             useAlbumArt: service.useAlbumArt
                             asciiMode: service.asciiMode
                             asciiSource: service.asciiSource
@@ -598,6 +681,9 @@ ShellRoot {
                             onRequestToggleAsciiMode: service.toggleAsciiMode()
                             onRequestLaunchTtfxScreensaver: effectName => {
                                 service.launchTtfxScreensaver(effectName)
+                            }
+                            onRequestSelectTtfxEffect: effectName => {
+                                service.setTtfxEffect(effectName)
                             }
                         }
                     }

@@ -10,7 +10,8 @@ depends=('python' 'mpv' 'cava' 'quickshell' 'curl' 'sqlite')
 optdepends=(
   'yt-dlp: Bandcamp stream fallback extraction'
   'ffmpeg: Audio duration probing and format conversion'
-  'python-terminaltexteffects: Native ttfx terminal screensaver effects'
+  'ttfx: Native Omarchy terminal screensaver effects'
+  'imagemagick: Album art ASCII transcoding via omarchy-transcode-ascii'
 )
 source=()
 sha256sums=()

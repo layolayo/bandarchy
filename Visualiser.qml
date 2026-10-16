@@ -24,6 +24,7 @@ FocusScope {
 
     // Omarchy screensaver / ASCII album art properties
     property var asciiLines: []
+    property var ttfxFrames: []
     property bool useAlbumArt: true
     property string asciiMode: "braille"
     property string asciiSource: "album-art"
@@ -49,13 +50,18 @@ FocusScope {
     signal requestToggleUseAlbumArt()
     signal requestToggleAsciiMode()
     signal requestLaunchTtfxScreensaver(string effectName)
+    signal requestSelectTtfxEffect(string effectName)
 
     property var engineState: Engine.createState()
+
+    onVisualModeChanged: {
+        root.requestSelectTtfxEffect(root.currentTtfxEffect())
+        vizCanvas.requestPaint()
+    }
 
     function cycleMode(delta) {
         var count = Engine.MODE_NAMES.length
         visualMode = (visualMode + delta + count) % count
-        vizCanvas.requestPaint()
     }
 
     function cyclePalette(delta) {
@@ -65,8 +71,8 @@ FocusScope {
     }
 
     function currentTtfxEffect() {
-        var map = ["waves", "blackhole", "beams", "rings", "vhstape", "random"]
-        return map[visualMode % map.length] || "random"
+        var map = ["waves", "blackhole", "beams", "rings", "vhstape", "matrix"]
+        return map[visualMode % map.length] || "waves"
     }
 
     function formatTime(sec) {
@@ -137,6 +143,7 @@ FocusScope {
                 palette: root.paletteIndex,
                 sensitivity: root.sensitivity,
                 asciiLines: root.asciiLines,
+                ttfxFrames: root.ttfxFrames,
                 asciiMode: root.asciiMode,
                 useAlbumArt: root.useAlbumArt,
                 themeColours: {

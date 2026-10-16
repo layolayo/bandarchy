@@ -924,6 +924,93 @@ def render_omarchy_ascii_banner(text: str) -> list[str]:
     return [clean_words]
 
 
+def extract_ttfx_frames(
+    screensaver_txt_path: str,
+    width: int = 68,
+    height: int = 30,
+    effect: str = "waves",
+    max_frames: int = 28,
+) -> list[list[str]]:
+    """Run Omarchy's `/usr/bin/ttfx` screensaver engine in instant headless mode
+    (`--frame-rate 0 --no-color --ignore-terminal-dimensions`) on the transcoded
+    album cover art (or Omarchy banner) and sample keyframes across the effect
+    lifecycle so the QML visualiser manipulates genuine `ttfx` frames as the song plays.
+    """
+    if not os.path.isfile(TTFX_BIN) or not os.path.isfile(screensaver_txt_path):
+        return []
+
+    effect = (effect or "waves").lower()
+    if effect not in TTFX_EFFECTS or effect == "random":
+        effect = "waves"
+
+    width = bounded_int(width, 68, 20, 140)
+    height = bounded_int(height, 30, 10, 70)
+    max_frames = bounded_int(max_frames, 28, 6, 64)
+
+    try:
+        with open(screensaver_txt_path, "rb") as f:
+            txt_hash = hashlib.sha256(f.read()).hexdigest()[:20]
+    except OSError:
+        return []
+
+    ensure_private_dir(ASCII_DIR)
+    cache_key = hashlib.sha256(
+        f"{txt_hash}:{width}:{height}:{effect}:{max_frames}".encode("utf-8")
+    ).hexdigest()[:24]
+    cache_path = os.path.join(ASCII_DIR, f"ttfx_{cache_key}.json")
+
+    cached = read_json(cache_path, None)
+    if isinstance(cached, list) and cached:
+        return cached
+
+    cmd = [
+        TTFX_BIN,
+        "-i",
+        screensaver_txt_path,
+        "--ignore-terminal-dimensions",
+        "--canvas-width",
+        str(width),
+        "--canvas-height",
+        str(height),
+        "--frame-rate",
+        "0",
+        "--no-color",
+        "--anchor-canvas",
+        "c",
+        "--anchor-text",
+        "c",
+        "--seed",
+        "42",
+        effect,
+    ]
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=4)
+        if r.returncode != 0 or not r.stdout:
+            return []
+        raw_text = r.stdout.decode("utf-8", errors="replace")
+        chunks = re.split(r"\x1b\[\d+A", raw_text)
+        ansi_re = re.compile(r"\x1b\[[?0-9;]*[a-zA-Z]|\x1b[78]")
+        frames: list[list[str]] = []
+        for ch in chunks:
+            cleaned = ansi_re.sub("", ch)
+            flines = [l.rstrip("\r") for l in cleaned.splitlines()[:height]]
+            if any(l.strip() for l in flines):
+                frames.append(flines)
+        if not frames:
+            return []
+        if len(frames) <= max_frames:
+            sampled = frames
+        else:
+            sampled = [
+                frames[min(len(frames) - 1, int(round(i * (len(frames) - 1) / (max_frames - 1))))]
+                for i in range(max_frames)
+            ]
+        write_json(cache_path, sampled, mode=0o600)
+        return sampled
+    except Exception:
+        return []
+
+
 # --------------------------------------------------------------------------- #
 # Local Music & Bandcamp ZIP Scanner
 # --------------------------------------------------------------------------- #
@@ -1722,11 +1809,13 @@ def start_queue(tracks: list[dict], source: dict, shuffle: bool = False, start_i
             "tracks": tracks,
         },
     )
-    first = tracks[min(max(0, start_index), len(tracks) - 1)]
+    actual_idx = min(max(0, start_index), len(tracks) - 1)
+    first = tracks[actual_idx]
     record_history(first)
-    mpv_launch(PLAYLIST_M3U_FILE, shuffle=shuffle, start_index=start_index, loop=loop)
+    mpv_launch(PLAYLIST_M3U_FILE, shuffle=shuffle, start_index=actual_idx, loop=loop)
     emit({
         "playing": True,
+        "trackIndex": actual_idx,
         "trackCount": len(tracks),
         "source": source,
         "shuffle": shuffle,
@@ -1906,15 +1995,103 @@ def download_album_to_local(album: dict, preferred_format: str, settings: dict) 
 # CLI Command Handlers
 # --------------------------------------------------------------------------- #
 
+def get_playback_state() -> dict:
+    """Query running mpv IPC socket and return complete playback state dict."""
+    if not mpv_running():
+        return {
+            "playing": False,
+            "paused": False,
+            "title": "",
+            "artist": "",
+            "album": "",
+            "albumId": "",
+            "trackId": "",
+            "playSource": "local",
+            "artPath": "",
+            "position": 0.0,
+            "duration": 0.0,
+            "volume": 100.0,
+            "playlistPos": 0,
+            "playlistCount": 0,
+            "shuffle": False,
+            "loop": False,
+            "queue": [],
+        }
+
+    pos = mpv_get("playlist-pos")
+    path = mpv_get("path") or ""
+    queue = read_json(QUEUE_FILE, {}) or {}
+    tracks = queue.get("tracks") or []
+    entry = {}
+    if path:
+        for t in tracks:
+            if t.get("target") == path or (t.get("localPath") and t["localPath"] == path):
+                entry = t
+                break
+    if not entry and isinstance(pos, int) and 0 <= pos < len(tracks):
+        entry = tracks[pos]
+
+    meta = mpv_get("metadata") or {}
+    meta = {str(k).lower(): v for k, v in meta.items()} if isinstance(meta, dict) else {}
+
+    title = bounded_text(entry.get("title") or meta.get("title") or mpv_get("media-title") or "")
+    artist = bounded_text(entry.get("artist") or meta.get("artist") or "")
+    album = bounded_text(entry.get("album") or meta.get("album") or "")
+    art_path = entry.get("artPath") or ""
+    if not art_path or not os.path.exists(art_path):
+        art_path = ensure_cover_svg(entry.get("albumId") or "now", artist or "Bandarchy", album or title or "Music")
+
+    if entry and entry.get("id"):
+        record_history(entry)
+
+    return {
+        "playing": True,
+        "paused": bool(mpv_get("pause")),
+        "title": title,
+        "artist": artist,
+        "album": album,
+        "albumId": entry.get("albumId") or "",
+        "trackId": entry.get("id") or "",
+        "playSource": entry.get("playSource") or ("local" if os.path.exists(path) else "stream"),
+        "artPath": art_path,
+        "position": bounded_float(mpv_get("time-pos") or 0.0),
+        "duration": bounded_float(mpv_get("duration") or entry.get("duration") or 0.0),
+        "volume": bounded_float(mpv_get("volume") or 100.0, 100.0, 0.0, 130.0),
+        "playlistPos": bounded_int(pos, 0),
+        "playlistCount": bounded_int(mpv_get("playlist-count") or len(tracks), len(tracks)),
+        "shuffle": bool(queue.get("shuffle")),
+        "loop": mpv_get("loop-playlist") in ("inf", "force", True),
+        "queue": [
+            {
+                "id": t.get("id") or "",
+                "title": t.get("title") or "",
+                "artist": t.get("artist") or "",
+                "album": t.get("album") or "",
+                "albumId": t.get("albumId") or "",
+                "duration": t.get("duration") or 0,
+                "playSource": t.get("playSource") or "local",
+            }
+            for t in tracks[:200]
+        ],
+    }
+
+
 def cmd_status(args) -> None:
     settings = load_settings()
     idx = ensure_index()
+    auth = read_json(AUTH_FILE, {}) or {}
     favs = read_json(FAVOURITES_FILE, {"items": []}) or {"items": []}
     pls = load_playlists()
+    playback = get_playback_state()
     hist = read_json(HISTORY_FILE, {}) or {}
-    dl_prog = read_json(DOWNLOAD_PROGRESS_FILE, {}) or {}
+    sync_prog = dict(read_json(SYNC_PROGRESS_FILE, {}) or {})
+    sync_prog["running"] = is_locked(SYNC_LOCK_FILE)
+    dl_prog = dict(read_json(DOWNLOAD_PROGRESS_FILE, {}) or {})
+    dl_prog["running"] = is_locked(DOWNLOAD_LOCK_FILE)
+    username = settings.get("username") or idx.get("username") or ""
     emit({
-        "username": settings.get("username") or idx.get("username") or "",
+        "username": username,
+        "authenticated": bool(auth.get("identity") or idx.get("hasBrowserSession") or username),
         "hasBrowserSession": bool(idx.get("hasBrowserSession")),
         "downloadDir": settings.get("downloadDir") or DEFAULT_DOWNLOAD_DIR,
         "preferredFormat": settings.get("preferredFormat") or "flac",
@@ -1925,13 +2102,20 @@ def cmd_status(args) -> None:
         "localCount": idx.get("localCount") or 0,
         "trackCount": idx.get("trackCount") or 0,
         "playlistCount": len(pls),
+        "playlists": pls,
         "lastPlayedTrack": hist.get("lastPlayedTrack"),
+        "recentTracks": (hist.get("recentTracks") or [])[:25],
         "indexedAt": idx.get("indexedAt") or 0,
         "favouritesCount": len(favs.get("items") or []),
+        "favourites": favs.get("items") or [],
         "availableZips": idx.get("availableZips") or [],
-        "playing": mpv_running(),
-        "downloading": is_locked(DOWNLOAD_LOCK_FILE),
+        "playing": playback["playing"],
+        "playback": playback,
+        "sync": sync_prog,
+        "downloading": dl_prog["running"],
         "downloadProgress": dl_prog,
+        "download": dl_prog,
+        "lastError": dl_prog.get("error") or idx.get("networkNote") or "",
     })
 
 
@@ -2100,7 +2284,8 @@ def cmd_auth(args) -> None:
 
 def cmd_ascii_art(args) -> None:
     """Convert album cover art (via omarchy-transcode-ascii) or text (via omarchy-ascii)
-    into a character matrix for the Omarchy screensaver-style visualiser.
+    into a character matrix and extract real Omarchy `/usr/bin/ttfx` screensaver engine
+    keyframes for the visualiser.
     """
     settings = load_settings()
     idx = ensure_index()
@@ -2114,6 +2299,9 @@ def cmd_ascii_art(args) -> None:
     width = bounded_int(args.width, 72, 20, 160)
     height = bounded_int(args.height, 32, 10, 80)
     threshold = bounded_int(args.threshold, 50, 10, 90)
+    effect = (getattr(args, "effect", None) or "waves").lower()
+    if effect not in TTFX_EFFECTS or effect == "random":
+        effect = "waves"
 
     image_path = args.image or ""
     banner_text = args.text or ""
@@ -2155,8 +2343,16 @@ def cmd_ascii_art(args) -> None:
         source_kind = "omarchy-ascii"
 
     max_cols = max((len(l) for l in lines), default=0)
-    # Also write to SCREENSAVER_TXT_FILE so `ttfx -i` can consume it directly
+    # Write to SCREENSAVER_TXT_FILE so `ttfx -i` can consume it directly
     atomic_write(SCREENSAVER_TXT_FILE, ("\n".join(lines) + "\n").encode("utf-8"), 0o600, fatal=False)
+
+    ttfx_frames = extract_ttfx_frames(
+        SCREENSAVER_TXT_FILE,
+        width=max(max_cols, width),
+        height=max(len(lines), height),
+        effect=effect,
+        max_frames=28,
+    )
 
     emit({
         "source": source_kind,
@@ -2168,6 +2364,9 @@ def cmd_ascii_art(args) -> None:
         "lineCount": len(lines),
         "colCount": max_cols,
         "lines": lines,
+        "ttfxEffect": effect,
+        "ttfxFrameCount": len(ttfx_frames),
+        "ttfxFrames": ttfx_frames,
         "text": "\n".join(lines),
         "screensaverFile": SCREENSAVER_TXT_FILE,
     })
@@ -2175,7 +2374,6 @@ def cmd_ascii_art(args) -> None:
 
 def cmd_screensaver(args) -> None:
     """Transcode the active album cover (or Omarchy banner) and launch `ttfx`."""
-    # First generate the screensaver text file
     with quiet():
         cmd_ascii_art(args)
 
@@ -2186,7 +2384,6 @@ def cmd_screensaver(args) -> None:
     effect_flag = "--random-effect" if effect == "random" else effect
 
     if args.dry_run:
-        # Run a quick verification frame offscreen/dry-run
         emit({
             "launched": False,
             "dryRun": True,
@@ -2199,16 +2396,27 @@ def cmd_screensaver(args) -> None:
     if not os.path.isfile(TTFX_BIN):
         die("ttfx is not installed on this system")
 
-    # Launch inside the user's configured terminal with Omarchy's screensaver styling
+    self_bin = os.path.abspath(__file__)
+    use_art_flag = "1" if str(args.use_album_art) != "0" else "0"
+    mode_flag = args.mode if args.mode in ("braille", "block", "banner") else "braille"
+
+    # Match `/home/matthew/omarchy/bin/omarchy-screensaver`:
+    # 1. Wait for Hyprland/compositor to resize the pty away from 80x24 before ttfx measures canvas
+    # 2. Refresh SCREENSAVER_TXT_FILE on each cycle in case the playing track changed
+    # 3. Poll with `read -r -n1 -t 1` while `kill -0 $pid` so ttfx loops continuously until a key is pressed
     runner_sh = (
         f"printf '\\033]11;rgb:00/00/00\\007'; "
+        f"deadline=$((SECONDS + 2)); "
+        f"while ((SECONDS < deadline)) && [[ $(stty size 2>/dev/null) == '24 80' ]]; do sleep 0.02; done; "
         f"while true; do "
+        f"'{self_bin}' ascii-art --mode {mode_flag} --use-album-art {use_art_flag} >/dev/null 2>&1 || true; "
         f"{TTFX_BIN} -i '{SCREENSAVER_TXT_FILE}' "
         f"--frame-rate 120 --canvas-width 0 --canvas-height 0 --reuse-canvas "
         f"--anchor-canvas c --anchor-text c {effect_flag} --no-eol --no-restore-cursor & "
         f"pid=$!; "
-        f"if read -r -n1; then kill $pid 2>/dev/null; exit 0; fi; "
-        f"wait $pid 2>/dev/null || break; "
+        f"while kill -0 $pid 2>/dev/null; do "
+        f"if read -r -n1 -t 1; then kill $pid 2>/dev/null; exit 0; fi; "
+        f"done; "
         f"done"
     )
 
@@ -2285,6 +2493,7 @@ def cmd_smart_playlist(args) -> None:
             mode="auto",
             api_base=settings.get("apiBase") or "https://bandcamp.com",
         )
+        start_idx = bounded_int(getattr(args, "track_index", 0), 0, 0, max(0, len(playable) - 1))
         start_queue(
             playable,
             {
@@ -2294,7 +2503,7 @@ def cmd_smart_playlist(args) -> None:
                 "seedTrackId": (smart.get("seed") or {}).get("id") or "",
             },
             shuffle=False,
-            start_index=0,
+            start_index=start_idx,
             loop=bool(args.loop),
         )
         return
@@ -2465,10 +2674,20 @@ def cmd_play(args) -> None:
         )
         return
 
+    target_album = None
     if args.album:
         target_album = next((a for a in albums if a.get("id") == args.album or a.get("url") == args.album), None)
         if not target_album:
             die(f"album not found in collection: {args.album}")
+    elif args.track_id:
+        for a in albums:
+            if any(t.get("id") == args.track_id for t in (a.get("tracks") or [])):
+                target_album = a
+                break
+        if not target_album:
+            die(f"track not found in collection: {args.track_id}")
+
+    if target_album:
         tracks = resolve_playable_tracks(target_album, mode=mode, api_base=api_base)
         start_idx = max(0, int(args.track_index or 0))
         if args.track_id:
@@ -2504,7 +2723,7 @@ def cmd_play(args) -> None:
         )
         return
 
-    die("play requires --album <id>, --playlist <id>, or --scope all|purchased|local")
+    die("play requires --album <id>, --track-id <id>, --playlist <id>, or --scope all|purchased|local")
 
 
 def cmd_download(args) -> None:
@@ -2596,7 +2815,14 @@ def cmd_cmd(args) -> None:
             die("seek requires --value SECONDS")
         mpv_request(["seek", float(args.value), "absolute"])
     elif action == "loop":
-        mpv_request(["set_property", "loop-playlist", "inf" if (args.value or 0) > 0 else "no"])
+        if args.value is None:
+            cur = mpv_get("loop-playlist")
+            target_loop = "no" if cur in ("inf", "force", True) else "inf"
+        else:
+            target_loop = "inf" if args.value > 0 else "no"
+        mpv_request(["set_property", "loop-playlist", target_loop])
+        emit({"action": action, "loop": target_loop == "inf"})
+        return
     elif action == "jump":
         if args.value is None:
             die("jump requires --value PLAYLIST_INDEX")
@@ -2607,65 +2833,11 @@ def cmd_cmd(args) -> None:
 
 
 def cmd_now(args) -> None:
-    if not mpv_running():
-        hist = read_json(HISTORY_FILE, {}) or {}
-        emit({"playing": False, "lastPlayedTrack": hist.get("lastPlayedTrack")})
-        return
-    pos = mpv_get("playlist-pos")
-    path = mpv_get("path") or ""
-    queue = read_json(QUEUE_FILE, {}) or {}
-    tracks = queue.get("tracks") or []
-    entry = {}
-    if path:
-        for t in tracks:
-            if t.get("target") == path or (t.get("localPath") and t["localPath"] == path):
-                entry = t
-                break
-    if not entry and isinstance(pos, int) and 0 <= pos < len(tracks):
-        entry = tracks[pos]
-
-    meta = mpv_get("metadata") or {}
-    meta = {str(k).lower(): v for k, v in meta.items()} if isinstance(meta, dict) else {}
-
-    title = bounded_text(entry.get("title") or meta.get("title") or mpv_get("media-title") or "")
-    artist = bounded_text(entry.get("artist") or meta.get("artist") or "")
-    album = bounded_text(entry.get("album") or meta.get("album") or "")
-    art_path = entry.get("artPath") or ""
-    if not art_path or not os.path.exists(art_path):
-        art_path = ensure_cover_svg(entry.get("albumId") or "now", artist or "Bandarchy", album or title or "Music")
-
-    if entry and entry.get("id"):
-        record_history(entry)
-
+    playback = get_playback_state()
+    hist = read_json(HISTORY_FILE, {}) or {}
     emit({
-        "playing": True,
-        "paused": bool(mpv_get("pause")),
-        "title": title,
-        "artist": artist,
-        "album": album,
-        "albumId": entry.get("albumId") or "",
-        "trackId": entry.get("id") or "",
-        "playSource": entry.get("playSource") or ("local" if os.path.exists(path) else "stream"),
-        "artPath": art_path,
-        "position": bounded_float(mpv_get("time-pos") or 0.0),
-        "duration": bounded_float(mpv_get("duration") or entry.get("duration") or 0.0),
-        "volume": bounded_float(mpv_get("volume") or 100.0, 100.0, 0.0, 130.0),
-        "playlistPos": bounded_int(pos, 0),
-        "playlistCount": bounded_int(mpv_get("playlist-count") or len(tracks), len(tracks)),
-        "shuffle": bool(queue.get("shuffle")),
-        "loop": mpv_get("loop-playlist") in ("inf", "force", True),
-        "queue": [
-            {
-                "id": t.get("id") or "",
-                "title": t.get("title") or "",
-                "artist": t.get("artist") or "",
-                "album": t.get("album") or "",
-                "albumId": t.get("albumId") or "",
-                "duration": t.get("duration") or 0,
-                "playSource": t.get("playSource") or "local",
-            }
-            for t in tracks[:200]
-        ],
+        **playback,
+        "lastPlayedTrack": hist.get("lastPlayedTrack"),
     })
 
 
@@ -2712,6 +2884,7 @@ def main() -> None:
     p.add_argument("--threshold", type=int, default=50)
     p.add_argument("--invert", action="store_true")
     p.add_argument("--use-album-art", choices=["0", "1"], default=None)
+    p.add_argument("--effect", default="waves", help="ttfx effect to extract keyframes for")
     p.set_defaults(func=cmd_ascii_art)
 
     p = sub.add_parser("screensaver", help="launch Omarchy ttfx screensaver with transcoded album art")
@@ -2733,6 +2906,7 @@ def main() -> None:
     p.add_argument("--seed-album", help="seed album id")
     p.add_argument("--preset", choices=["radio", "kindred", "journey", "purchased"], default="radio")
     p.add_argument("--limit", type=int, default=25)
+    p.add_argument("--track-index", type=int, default=0, help="0-based track index to start from when --play is used")
     p.add_argument("--play", action="store_true", help="start playing immediately")
     p.add_argument("--loop", action="store_true")
     p.add_argument("--save-as", help="save generated intelligent playlist as a user playlist")

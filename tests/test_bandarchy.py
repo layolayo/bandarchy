@@ -311,16 +311,20 @@ class BandarchyTestSuite(unittest.TestCase):
         self.assertEqual(search_res["albums"][0]["artist"], "Porcupine Tree")
 
     def test_03_ascii_art_transcoding_and_use_album_art_option(self):
-        # 1. Braille mode with Use Album Art = 1
-        braille = self.run_cli("ascii-art", "--image", self.cover_path, "--mode", "braille", "--use-album-art", "1", "--width", "40", "--height", "20")
+        # 1. Braille mode with Use Album Art = 1 + ttfxFrames extraction
+        braille = self.run_cli("ascii-art", "--image", self.cover_path, "--mode", "braille", "--use-album-art", "1", "--width", "40", "--height", "20", "--effect", "waves")
         self.assertEqual(braille["source"], "album-art")
         self.assertTrue(braille["useAlbumArt"])
         self.assertEqual(braille["rows"], 20)
         self.assertEqual(braille["cols"], 40)
         self.assertTrue(os.path.isfile(braille["screensaverFile"]))
+        if shutil.which("ttfx") or os.path.isfile("/usr/bin/ttfx"):
+            self.assertGreater(braille.get("ttfxFrameCount", 0), 5)
+            self.assertIsInstance(braille.get("ttfxFrames"), list)
+            self.assertEqual(len(braille["ttfxFrames"][0]), 20)
 
         # 2. Block mode with Use Album Art = 1
-        block = self.run_cli("ascii-art", "--image", self.cover_path, "--mode", "block", "--use-album-art", "1", "--width", "40", "--height", "20")
+        block = self.run_cli("ascii-art", "--image", self.cover_path, "--mode", "block", "--use-album-art", "1", "--width", "40", "--height", "20", "--effect", "blackhole")
         self.assertEqual(block["source"], "album-art")
         self.assertEqual(block["mode"], "block")
         self.assertEqual(block["rows"], 20)
@@ -358,14 +362,40 @@ class BandarchyTestSuite(unittest.TestCase):
     def test_05_playback_and_intelligent_playlists_from_last_track(self):
         # Play an album so history.json records `lastPlayedTrack`
         all_coll = self.run_cli("collection", "--scope", "local")
-        first_album_id = all_coll["albums"][0]["id"]
+        first_album = all_coll["albums"][0]
+        first_album_id = first_album["id"]
         play_res = self.run_cli("play", "--album", first_album_id)
         self.assertTrue(play_res["playing"])
 
-        # Wait briefly for mpv IPC socket to come up and verify `now`
+        # Wait briefly for mpv IPC socket to come up and verify both `now` and `status`
         time.sleep(0.4)
         now_res = self.run_cli("now")
         self.assertTrue(now_res["playing"])
+
+        status_res = self.run_cli("status")
+        self.assertIn("playback", status_res)
+        self.assertTrue(status_res["playback"]["playing"])
+        self.assertEqual(status_res["playback"]["albumId"], first_album_id)
+        self.assertTrue(status_res["playback"]["title"])
+        self.assertIn("authenticated", status_res)
+        self.assertIn("playlists", status_res)
+        self.assertIn("recentTracks", status_res)
+        self.assertIn("favourites", status_res)
+        self.assertIn("sync", status_res)
+        self.assertIn("download", status_res)
+
+        # Verify `cmd loop` without `--value` toggles loop-playlist on and off
+        loop_on = self.run_cli("cmd", "loop")
+        self.assertTrue(loop_on.get("loop"))
+        loop_off = self.run_cli("cmd", "loop")
+        self.assertFalse(loop_off.get("loop"))
+
+        # Verify standalone `play --track-id <id>` without `--album`
+        if len(first_album.get("tracks", [])) > 1:
+            second_track_id = first_album["tracks"][1]["id"]
+            tr_play = self.run_cli("play", "--track-id", second_track_id)
+            self.assertTrue(tr_play["playing"])
+            self.assertEqual(tr_play["track"]["id"], second_track_id)
 
         # Stop playback cleanly
         self.run_cli("cmd", "stop")
@@ -376,6 +406,12 @@ class BandarchyTestSuite(unittest.TestCase):
             self.assertEqual(smart["preset"], preset)
             self.assertIsNotNone(smart["seed"])
             self.assertGreaterEqual(smart["trackCount"], 2)
+
+        # Verify `smart-playlist --play --track-index 1`
+        smart_play = self.run_cli("smart-playlist", "--preset", "radio", "--play", "--track-index", "1")
+        self.assertTrue(smart_play["playing"])
+        self.assertEqual(smart_play["trackIndex"], 1)
+        self.run_cli("cmd", "stop")
 
         # Save an intelligent playlist as a custom playlist
         saved = self.run_cli("smart-playlist", "--preset", "kindred", "--save-as", "Kindred Steven Wilson")

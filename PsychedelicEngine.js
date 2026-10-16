@@ -55,6 +55,7 @@ function createState() {
 
     return {
         phase: 0.0,
+        ttfxCursor: 0.0,
         bassSmooth: 0.08,
         midSmooth: 0.06,
         highSmooth: 0.05,
@@ -244,6 +245,7 @@ function stepAudio(state, rawBands, playing, sensitivity) {
     state.highSmooth = state.highSmooth * 0.80 + high * 0.20
     state.energySmooth = state.energySmooth * 0.80 + energy * 0.20
     state.phase += 0.018 + state.energySmooth * 0.052
+    state.ttfxCursor = (state.ttfxCursor || 0.0) + 0.08 + state.energySmooth * 0.48 + state.beatPulse * 0.32
 
     for (var s = state.shockwaves.length - 1; s >= 0; s--) {
         state.shockwaves[s].radius += state.shockwaves[s].speed
@@ -291,11 +293,21 @@ function drawBackdrop(ctx, w, h, state, paletteIndex, themeColours) {
 }
 
 // Core Omarchy Screensaver TTE Character Matrix Renderer:
-// Takes the transcoded album cover art (or Omarchy ASCII banner) lines and
-// manipulates every glyph cell in real time according to the active TTE mode
-// and 64-band Cava audio spectrum.
-function drawAsciiMatrix(ctx, w, h, state, paletteIndex, mode, asciiLines, asciiMode, useAlbumArt, themeColours) {
+// Takes the transcoded album cover art (or Omarchy ASCII banner) lines plus
+// genuine `/usr/bin/ttfx` animation frames and manipulates every glyph cell
+// in real time according to the active TTE mode and 64-band Cava audio spectrum.
+function drawAsciiMatrix(ctx, w, h, state, paletteIndex, mode, asciiLines, ttfxFrames, asciiMode, useAlbumArt, themeColours) {
     if (!asciiLines || asciiLines.length === 0) return
+
+    var ttfxLines = null
+    if (ttfxFrames && ttfxFrames.length > 0) {
+        var totalF = ttfxFrames.length
+        var minF = Math.min(totalF - 1, Math.floor(totalF * 0.22))
+        var span = Math.max(1, totalF - minF)
+        var cyc = Math.floor(state.ttfxCursor || 0) % Math.max(1, span * 2 - 2)
+        var offset = cyc < span ? cyc : (span * 2 - 2 - cyc)
+        ttfxLines = ttfxFrames[minF + offset] || null
+    }
 
     var rows = asciiLines.length
     var cols = 0
@@ -337,6 +349,7 @@ function drawAsciiMatrix(ctx, w, h, state, paletteIndex, mode, asciiLines, ascii
 
     for (var row = 0; row < rows; row++) {
         var line = asciiLines[row] || ""
+        var tLine = (ttfxLines && row < ttfxLines.length) ? (ttfxLines[row] || "") : ""
         var normY = rows > 1 ? (row / (rows - 1)) : 0.5
         // Horizontal VHS glitch offset for Mode 4
         var rowGlitch = 0.0
@@ -347,8 +360,11 @@ function drawAsciiMatrix(ctx, w, h, state, paletteIndex, mode, asciiLines, ascii
             }
         }
 
-        for (var col = 0; col < line.length; col++) {
-            var rawCh = line.charAt(col)
+        for (var col = 0; col < cols; col++) {
+            var baseCh = col < line.length ? line.charAt(col) : " "
+            var ttfxCh = col < tLine.length ? tLine.charAt(col) : " "
+            var hasTtfx = ttfxCh && ttfxCh !== " " && ttfxCh !== "⠀"
+            var rawCh = hasTtfx ? ttfxCh : baseCh
             var bandIdx = (col + row * 2) % 64
             var bandVal = state.smoothBands[bandIdx] || 0.05
             var ch = mutateGlyph(rawCh, bandVal + state.beatPulse * 0.35, asciiMode, state.phase, row, col)
@@ -365,7 +381,10 @@ function drawAsciiMatrix(ctx, w, h, state, paletteIndex, mode, asciiLines, ascii
             var drawX = baseX
             var drawY = baseY
             var hueT = (col / cols) * 0.5 + (row / rows) * 0.3 + state.phase * 0.08
-            var alpha = clamp(0.48 + bandVal * 0.52 + state.beatPulse * 0.18, 0.25, 1.0)
+            var alpha = clamp((hasTtfx ? 0.56 : 0.32) + bandVal * 0.52 + state.beatPulse * 0.18, 0.22, 1.0)
+            if (hasTtfx && ttfxCh !== baseCh) {
+                hueT += 0.22
+            }
 
             if (mode === 0) {
                 // Mode 0: TTE Waves & ColourShift
@@ -571,6 +590,7 @@ function renderFrame(ctx, w, h, state, rawBands, options) {
     var paletteIndex = (opts.palette || 0) % PALETTE_NAMES.length
     var sensitivity = opts.sensitivity || 1.0
     var asciiLines = opts.asciiLines || []
+    var ttfxFrames = opts.ttfxFrames || []
     var asciiMode = opts.asciiMode || "braille"
     var useAlbumArt = opts.useAlbumArt !== undefined ? Boolean(opts.useAlbumArt) : true
     var themeColours = opts.themeColours || {}
@@ -594,7 +614,7 @@ function renderFrame(ctx, w, h, state, rawBands, options) {
     drawAsciiMatrix(
         ctx, w, h, state,
         paletteIndex, mode,
-        asciiLines, asciiMode, useAlbumArt,
+        asciiLines, ttfxFrames, asciiMode, useAlbumArt,
         themeColours
     )
 }

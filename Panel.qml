@@ -98,6 +98,7 @@ Item {
                 position: root.service ? root.service.position : 0.0
                 duration: root.service ? root.service.duration : 0.0
                 asciiLines: root.service ? root.service.asciiLines : []
+                ttfxFrames: root.service ? root.service.ttfxFrames : []
                 useAlbumArt: root.service ? root.service.useAlbumArt : true
                 asciiMode: root.service ? root.service.asciiMode : "braille"
                 asciiSource: root.service ? root.service.asciiSource : "album-art"
@@ -119,6 +120,9 @@ Item {
                 onRequestToggleAsciiMode: if (root.service) root.service.toggleAsciiMode()
                 onRequestLaunchTtfxScreensaver: effectName => {
                     if (root.service) root.service.launchTtfxScreensaver(effectName)
+                }
+                onRequestSelectTtfxEffect: effectName => {
+                    if (root.service) root.service.setTtfxEffect(effectName)
                 }
             }
         }
@@ -1030,7 +1034,7 @@ Item {
                                         anchors.fill: parent
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
-                                            if (root.service) root.service.playTrack(modelData.id, modelData.albumId)
+                                            if (root.service) root.service.playSmartPlaylist(root.service.smartPreset, "", index)
                                         }
                                     }
                                 }
@@ -1302,6 +1306,7 @@ Item {
                     position: root.service ? root.service.position : 0.0
                     duration: root.service ? root.service.duration : 0.0
                     asciiLines: root.service ? root.service.asciiLines : []
+                    ttfxFrames: root.service ? root.service.ttfxFrames : []
                     useAlbumArt: root.service ? root.service.useAlbumArt : true
                     asciiMode: root.service ? root.service.asciiMode : "braille"
                     asciiSource: root.service ? root.service.asciiSource : "album-art"
@@ -1323,6 +1328,9 @@ Item {
                     onRequestToggleAsciiMode: if (root.service) root.service.toggleAsciiMode()
                     onRequestLaunchTtfxScreensaver: effectName => {
                         if (root.service) root.service.launchTtfxScreensaver(effectName)
+                    }
+                    onRequestSelectTtfxEffect: effectName => {
+                        if (root.service) root.service.setTtfxEffect(effectName)
                     }
                 }
 
