@@ -954,87 +954,54 @@ ShellRoot {
                                                         }
                                                     }
 
-                                                    // Album Title, Artist & Left-Aligned Info Tags
+                                                    // Album Title, Artist & Left-Aligned Info Tag (clipped so text never overflows behind right buttons)
                                                     Item {
                                                         Layout.fillWidth: true
                                                         Layout.preferredHeight: 42
+                                                        clip: true
 
                                                         ColumnLayout {
                                                             anchors.fill: parent
                                                             spacing: 2
 
-                                                            RowLayout {
+                                                            Text {
                                                                 Layout.fillWidth: true
-                                                                spacing: 5
-
-                                                                Text {
-                                                                    Layout.fillWidth: true
-                                                                    text: modelData.title || "Untitled Album"
-                                                                    textFormat: Text.PlainText
-                                                                    font.family: "JetBrainsMono Nerd Font"
-                                                                    font.pixelSize: 11
-                                                                    font.bold: true
-                                                                    color: (appAlbumCard.isCurrentAlbum || appAlbumCard.isKeyboardFocused) ? win.colAccent : win.colFg
-                                                                    elide: Text.ElideRight
-                                                                }
+                                                                text: modelData.title || "Untitled Album"
+                                                                textFormat: Text.PlainText
+                                                                font.family: "JetBrainsMono Nerd Font"
+                                                                font.pixelSize: 11
+                                                                font.bold: true
+                                                                color: (appAlbumCard.isCurrentAlbum || appAlbumCard.isKeyboardFocused) ? win.colAccent : win.colFg
+                                                                elide: Text.ElideRight
                                                             }
 
                                                             RowLayout {
                                                                 Layout.fillWidth: true
                                                                 spacing: 5
 
-                                                                // Left-aligned flat informational tags (distinct from right-side action buttons)
                                                                 Rectangle {
-                                                                    visible: Boolean(modelData.purchased)
-                                                                    Layout.preferredHeight: 15
-                                                                    Layout.preferredWidth: appPurBadgeTxt.implicitWidth + 6
-                                                                    radius: 3
-                                                                    color: Qt.rgba(win.colAccent.r, win.colAccent.g, win.colAccent.b, 0.14)
-                                                                    border.width: 0
-                                                                    Text {
-                                                                        id: appPurBadgeTxt
-                                                                        anchors.centerIn: parent
-                                                                        text: "PURCHASED"
-                                                                        textFormat: Text.PlainText
-                                                                        font.family: "JetBrainsMono Nerd Font"
-                                                                        font.pixelSize: 8
-                                                                        font.bold: true
-                                                                        color: win.colAccent
-                                                                    }
-                                                                }
-
-                                                                Rectangle {
-                                                                    Layout.preferredHeight: 15
+                                                                    Layout.preferredHeight: 14
                                                                     Layout.preferredWidth: appLocBadgeTxt.implicitWidth + 6
                                                                     radius: 3
                                                                     color: modelData.isLocal
-                                                                        ? Qt.rgba(win.colAccent.r, win.colAccent.g, win.colAccent.b, 0.12)
-                                                                        : Qt.rgba(win.colUrgent.r, win.colUrgent.g, win.colUrgent.b, 0.14)
+                                                                        ? Qt.rgba(win.colAccent.r, win.colAccent.g, win.colAccent.b, 0.14)
+                                                                        : Qt.rgba(win.colFg.r, win.colFg.g, win.colFg.b, 0.08)
                                                                     border.width: 0
                                                                     Text {
                                                                         id: appLocBadgeTxt
                                                                         anchors.centerIn: parent
-                                                                        text: modelData.isLocal ? "LOCAL" : "STREAM"
+                                                                        text: modelData.isLocal ? "LOCAL" : "CLOUD"
                                                                         textFormat: Text.PlainText
                                                                         font.family: "JetBrainsMono Nerd Font"
                                                                         font.pixelSize: 8
                                                                         font.bold: true
-                                                                        color: modelData.isLocal ? win.colAccent : win.colUrgent
+                                                                        color: modelData.isLocal ? win.colAccent : win.colMuted
                                                                     }
                                                                 }
 
                                                                 Text {
-                                                                    text: (modelData.numTracks || tracksList.length || 0) + " trk" +
-                                                                          (modelData.audioFormat ? (" · " + modelData.audioFormat) : "")
-                                                                    textFormat: Text.PlainText
-                                                                    font.family: "JetBrainsMono Nerd Font"
-                                                                    font.pixelSize: 9
-                                                                    color: win.colAccent
-                                                                }
-
-                                                                Text {
                                                                     Layout.fillWidth: true
-                                                                    text: "· " + (modelData.artist || "Unknown Artist")
+                                                                    text: (modelData.artist || "Unknown Artist") + " · " + (modelData.numTracks || tracksList.length || 0) + " trk"
                                                                     textFormat: Text.PlainText
                                                                     font.family: "JetBrainsMono Nerd Font"
                                                                     font.pixelSize: 10
@@ -1054,35 +1021,34 @@ ShellRoot {
                                                         }
                                                     }
 
-                                                    // Download button with live track X/Y (Z%) progress
+                                                    // Compact Save / Download button with live track X/Y (Z%) progress
                                                     ActionPill {
                                                         visible: !modelData.isLocal && Boolean(modelData.purchased || modelData.tralbumId || modelData.url)
                                                         text: appAlbumCard.isAlbumDownloading
                                                             ? ("󰇚 " + (service.downloadTrackTotal > 0
                                                                 ? (service.downloadTrackIndex + "/" + service.downloadTrackTotal + " (" + service.downloadPercent + "%)")
                                                                 : (service.downloadPercent + "%")))
-                                                            : "󰇚 Download"
+                                                            : "󰇚 Save"
                                                         active: appAlbumCard.isAlbumDownloading
-                                                        danger: !appAlbumCard.isAlbumDownloading
                                                         fontSize: 9
-                                                        horizontalPad: 8
-                                                        pillHeight: 26
+                                                        horizontalPad: 6
+                                                        pillHeight: 24
                                                         onClicked: {
                                                             service.downloadAlbum(modelData.id, "flac")
                                                             appRootRect.forceActiveFocus()
                                                         }
                                                     }
 
-                                                    // Play / Stream Album button (primary fill ONLY when actively playing this album)
+                                                    // Compact Play / Stream Album button (primary fill ONLY when actively playing this album)
                                                     ActionPill {
                                                         text: appAlbumCard.isCurrentAlbum
                                                             ? (service.paused ? "󰐊 Paused" : "󰏤 Playing")
-                                                            : (modelData.isLocal ? "󰐊 Play" : "󰐊 Stream")
+                                                            : "󰐊 Play"
                                                         primary: appAlbumCard.isCurrentAlbum
                                                         active: !appAlbumCard.isCurrentAlbum
                                                         fontSize: 9
-                                                        horizontalPad: 9
-                                                        pillHeight: 26
+                                                        horizontalPad: 7
+                                                        pillHeight: 24
                                                         onClicked: {
                                                             win.focusedAlbumIndex = appAlbumCard.index
                                                             if (appAlbumCard.isCurrentAlbum && service.playing) {
@@ -1094,12 +1060,12 @@ ShellRoot {
                                                         }
                                                     }
 
-                                                    // Add Album to Playlist button
+                                                    // Compact Add Album to Playlist button
                                                     ActionPill {
                                                         text: "󰐑"
-                                                        fontSize: 11
-                                                        horizontalPad: 7
-                                                        pillHeight: 26
+                                                        fontSize: 10
+                                                        horizontalPad: 6
+                                                        pillHeight: 24
                                                         onClicked: {
                                                             service.addAlbumOrCreatePlaylist(
                                                                 modelData.id,
@@ -1111,13 +1077,13 @@ ShellRoot {
                                                         }
                                                     }
 
-                                                    // Expand Tracks & Info button
+                                                    // Compact Expand Tracks & Info chevron button
                                                     ActionPill {
-                                                        text: (appAlbumCard.expanded ? "󰅃 " : "󰅀 ") + "Tracks"
+                                                        text: appAlbumCard.expanded ? "󰅃" : "󰅀"
                                                         active: appAlbumCard.expanded
-                                                        fontSize: 9
-                                                        horizontalPad: 7
-                                                        pillHeight: 26
+                                                        fontSize: 10
+                                                        horizontalPad: 6
+                                                        pillHeight: 24
                                                         onClicked: {
                                                             win.toggleAlbumExpand(modelData.id, appAlbumCard.index)
                                                             appRootRect.forceActiveFocus()
@@ -2235,6 +2201,7 @@ ShellRoot {
                             urgentColour: win.colUrgent
                             foregroundColour: win.colFg
                             backgroundColour: win.colBg
+                            persistedConfig: service.visualiserConfig
 
                             onRequestToggleFullscreen: {
                                 win.visualiserMaximised = !win.visualiserMaximised
@@ -2260,6 +2227,9 @@ ShellRoot {
                             }
                             onRequestActionFeedback: message => {
                                 service.notifyAction(message)
+                            }
+                            onRequestSaveVisualiserConfig: cfg => {
+                                service.saveVisualiserConfig(cfg)
                             }
                         }
                     }

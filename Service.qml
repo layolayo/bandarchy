@@ -136,6 +136,8 @@ Item {
     property string ttfxEffect: "random"
     property bool visualiserActive: false
     property bool fullscreenVisualiserOpen: false
+    property var visualiserConfig: ({})
+    property bool visualiserConfigLoaded: false
 
     // 60 FPS 64-band Cava spectrum
     property var spectrumBands: []
@@ -143,6 +145,7 @@ Item {
     readonly property bool activelyPlaying: root.playing && !root.paused
 
     Component.onCompleted: {
+        loadVisualiserConfig()
         refreshStatus()
         loadCollection("all", "")
         loadPlaylists()
@@ -468,6 +471,60 @@ Item {
                 } catch (e) {}
             }
         }
+    }
+
+    // Persisted visualiser configuration (`~/.config/bandarchy/visualiser.json`) loader/saver process
+    Process {
+        id: visualiserConfigProc
+        command: [root.binPath, "visualiser-config", "--get"]
+        property string outBuf: ""
+        stdout: SplitParser {
+            onRead: line => { visualiserConfigProc.outBuf += line }
+        }
+        onExited: {
+            var raw = visualiserConfigProc.outBuf.trim()
+            visualiserConfigProc.outBuf = ""
+            if (!raw) return
+            try {
+                var d = JSON.parse(raw)
+                if (d.ok && d.config && typeof d.config === "object") {
+                    root.visualiserConfig = d.config
+                    root.visualiserConfigLoaded = true
+                    var changedAscii = false
+                    if (d.config.useAlbumArt !== undefined && Boolean(d.config.useAlbumArt) !== root.useAlbumArt) {
+                        root.useAlbumArt = Boolean(d.config.useAlbumArt)
+                        changedAscii = true
+                    }
+                    if (d.config.asciiMode === "braille" || d.config.asciiMode === "block") {
+                        if (root.asciiMode !== d.config.asciiMode) {
+                            root.asciiMode = d.config.asciiMode
+                            changedAscii = true
+                        }
+                    }
+                    if (changedAscii) {
+                        root.refreshAsciiArt()
+                    }
+                }
+            } catch (e) {}
+        }
+    }
+
+    function loadVisualiserConfig() {
+        if (visualiserConfigProc.running) visualiserConfigProc.running = false
+        visualiserConfigProc.outBuf = ""
+        visualiserConfigProc.command = [root.binPath, "visualiser-config", "--get"]
+        visualiserConfigProc.running = true
+    }
+
+    function saveVisualiserConfig(cfgObj) {
+        if (!cfgObj || typeof cfgObj !== "object") return
+        var merged = Object.assign({}, root.visualiserConfig || {}, cfgObj)
+        root.visualiserConfig = merged
+        root.visualiserConfigLoaded = true
+        Quickshell.execDetached([
+            root.binPath, "visualiser-config",
+            "--set", JSON.stringify(merged)
+        ])
     }
 
     // Cava 60 FPS 64-band live audio spectrum process

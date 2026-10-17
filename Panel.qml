@@ -603,6 +603,7 @@ Item {
                 urgentColour: root.colUrgent
                 foregroundColour: root.colFg
                 backgroundColour: root.colBg
+                persistedConfig: root.service ? root.service.visualiserConfig : ({})
 
                 onRequestToggleFullscreen: {
                     if (root.service) root.service.fullscreenVisualiserOpen = false
@@ -628,6 +629,9 @@ Item {
                 }
                 onRequestActionFeedback: msg => {
                     if (root.service) root.service.notifyAction(msg)
+                }
+                onRequestSaveVisualiserConfig: cfg => {
+                    if (root.service) root.service.saveVisualiserConfig(cfg)
                 }
             }
         }
@@ -1043,90 +1047,57 @@ Item {
                                                 }
                                             }
 
-                                            // Album Title, Artist & Left-Aligned Info Tags
+                                            // Album Title, Artist & Left-Aligned Info Tag (clipped so text never overflows behind right buttons)
                                             Item {
                                                 Layout.fillWidth: true
                                                 Layout.preferredHeight: 44
+                                                clip: true
 
                                                 ColumnLayout {
                                                     anchors.fill: parent
                                                     spacing: 3
 
-                                                    RowLayout {
+                                                    Text {
                                                         Layout.fillWidth: true
-                                                        spacing: 6
-
-                                                        Text {
-                                                            Layout.fillWidth: true
-                                                            text: (modelData.title || "Untitled Album")
-                                                            textFormat: Text.PlainText
-                                                            font.family: "JetBrainsMono Nerd Font"
-                                                            font.pixelSize: 12
-                                                            font.bold: true
-                                                            color: (albumCard.isCurrentAlbum || albumCard.isKeyboardFocused) ? root.colAccent : root.colFg
-                                                            elide: Text.ElideRight
-                                                        }
+                                                        text: (modelData.title || "Untitled Album")
+                                                        textFormat: Text.PlainText
+                                                        font.family: "JetBrainsMono Nerd Font"
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                        color: (albumCard.isCurrentAlbum || albumCard.isKeyboardFocused) ? root.colAccent : root.colFg
+                                                        elide: Text.ElideRight
                                                     }
 
                                                     RowLayout {
                                                         Layout.fillWidth: true
                                                         spacing: 5
 
-                                                        // Left-aligned flat informational tags (distinct from right-side action buttons)
                                                         Rectangle {
-                                                            visible: Boolean(modelData.purchased)
-                                                            Layout.preferredHeight: 16
-                                                            Layout.preferredWidth: purTxt.implicitWidth + 8
-                                                            radius: 3
-                                                            color: Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.14)
-                                                            border.width: 0
-                                                            Text {
-                                                                id: purTxt
-                                                                anchors.centerIn: parent
-                                                                text: "PURCHASED"
-                                                                textFormat: Text.PlainText
-                                                                font.family: "JetBrainsMono Nerd Font"
-                                                                font.pixelSize: 8
-                                                                font.bold: true
-                                                                color: root.colAccent
-                                                            }
-                                                        }
-
-                                                        Rectangle {
-                                                            Layout.preferredHeight: 16
-                                                            Layout.preferredWidth: locTxt.implicitWidth + 8
+                                                            Layout.preferredHeight: 15
+                                                            Layout.preferredWidth: locTxt.implicitWidth + 6
                                                             radius: 3
                                                             color: modelData.isLocal
-                                                                ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.12)
-                                                                : Qt.rgba(root.colUrgent.r, root.colUrgent.g, root.colUrgent.b, 0.14)
+                                                                ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.14)
+                                                                : Qt.rgba(root.colFg.r, root.colFg.g, root.colFg.b, 0.08)
                                                             border.width: 0
                                                             Text {
                                                                 id: locTxt
                                                                 anchors.centerIn: parent
-                                                                text: modelData.isLocal ? "LOCAL" : "STREAM"
+                                                                text: modelData.isLocal ? "LOCAL" : "CLOUD"
                                                                 textFormat: Text.PlainText
                                                                 font.family: "JetBrainsMono Nerd Font"
                                                                 font.pixelSize: 8
                                                                 font.bold: true
-                                                                color: modelData.isLocal ? root.colAccent : root.colUrgent
+                                                                color: modelData.isLocal ? root.colAccent : root.colMuted
                                                             }
                                                         }
 
                                                         Text {
-                                                            text: (modelData.numTracks || tracksList.length || 0) + " trk" +
-                                                                  (modelData.audioFormat ? (" · " + modelData.audioFormat) : "")
-                                                            textFormat: Text.PlainText
-                                                            font.family: "JetBrainsMono Nerd Font"
-                                                            font.pixelSize: 9
-                                                            color: root.colAccent
-                                                        }
-
-                                                        Text {
                                                             Layout.fillWidth: true
-                                                            text: "· " + (modelData.artist || "Unknown Artist")
+                                                            text: (modelData.artist || "Unknown Artist") + " · " + (modelData.numTracks || tracksList.length || 0) + " trk"
                                                             textFormat: Text.PlainText
                                                             font.family: "JetBrainsMono Nerd Font"
-                                                            font.pixelSize: 11
+                                                            font.pixelSize: 10
                                                             color: root.colMuted
                                                             elide: Text.ElideRight
                                                         }
@@ -1143,9 +1114,9 @@ Item {
                                                 }
                                             }
 
-                                            // Action buttons: Play/Stream, Download (with live X/Y %), +Playlist, Expand Tracks
+                                            // Compact Action buttons: Save/Download, Play, +Playlist, Expand Tracks
                                             RowLayout {
-                                                spacing: 5
+                                                spacing: 4
 
                                                 ActionPill {
                                                     visible: !modelData.isLocal && Boolean(modelData.purchased || modelData.tralbumId || modelData.url)
@@ -1153,12 +1124,11 @@ Item {
                                                         ? ("󰇚 " + (root.service.downloadTrackTotal > 0
                                                             ? (root.service.downloadTrackIndex + "/" + root.service.downloadTrackTotal + " (" + root.service.downloadPercent + "%)")
                                                             : (root.service.downloadPercent + "%")))
-                                                        : "󰇚 Download"
+                                                        : "󰇚 Save"
                                                     active: albumCard.isAlbumDownloading
-                                                    danger: !albumCard.isAlbumDownloading
-                                                    fontSize: 10
-                                                    horizontalPad: 8
-                                                    pillHeight: 28
+                                                    fontSize: 9
+                                                    horizontalPad: 6
+                                                    pillHeight: 24
                                                     onClicked: {
                                                         if (root.service) root.service.downloadAlbum(modelData.id, "flac")
                                                         panelFrame.forceActiveFocus()
@@ -1168,12 +1138,12 @@ Item {
                                                 ActionPill {
                                                     text: albumCard.isCurrentAlbum
                                                         ? ((root.service && root.service.paused) ? "󰐊 Paused" : "󰏤 Playing")
-                                                        : (modelData.isLocal ? "󰐊 Play" : "󰐊 Stream")
+                                                        : "󰐊 Play"
                                                     primary: albumCard.isCurrentAlbum
                                                     active: !albumCard.isCurrentAlbum
-                                                    fontSize: 10
-                                                    horizontalPad: 9
-                                                    pillHeight: 28
+                                                    fontSize: 9
+                                                    horizontalPad: 7
+                                                    pillHeight: 24
                                                     onClicked: {
                                                         root.focusedAlbumIndex = albumCard.index
                                                         if (root.service) {
@@ -1189,9 +1159,9 @@ Item {
 
                                                 ActionPill {
                                                     text: "󰐑"
-                                                    fontSize: 12
-                                                    horizontalPad: 8
-                                                    pillHeight: 28
+                                                    fontSize: 10
+                                                    horizontalPad: 6
+                                                    pillHeight: 24
                                                     onClicked: {
                                                         if (!root.service) return
                                                         root.service.addAlbumOrCreatePlaylist(
@@ -1205,11 +1175,11 @@ Item {
                                                 }
 
                                                 ActionPill {
-                                                    text: (albumCard.expanded ? "󰅃 " : "󰅀 ") + "Tracks"
+                                                    text: albumCard.expanded ? "󰅃" : "󰅀"
                                                     active: albumCard.expanded
                                                     fontSize: 10
-                                                    horizontalPad: 8
-                                                    pillHeight: 28
+                                                    horizontalPad: 6
+                                                    pillHeight: 24
                                                     onClicked: {
                                                         root.toggleAlbumExpand(modelData.id, albumCard.index)
                                                         panelFrame.forceActiveFocus()
@@ -2026,6 +1996,7 @@ Item {
                         urgentColour: root.colUrgent
                         foregroundColour: root.colFg
                         backgroundColour: root.colBg
+                        persistedConfig: root.service ? root.service.visualiserConfig : ({})
 
                         onRequestToggleFullscreen: {
                             if (root.service) {
@@ -2051,6 +2022,9 @@ Item {
                         }
                         onRequestActionFeedback: msg => {
                             if (root.service) root.service.notifyAction(msg)
+                        }
+                        onRequestSaveVisualiserConfig: cfg => {
+                            if (root.service) root.service.saveVisualiserConfig(cfg)
                         }
                     }
 

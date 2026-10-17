@@ -970,6 +970,169 @@ console.log('OK');
             res = subprocess.run(["node", "-e", node_script], cwd=REPO_ROOT, capture_output=True, text=True, timeout=15)
             self.assertEqual(res.returncode, 0, f"Node test_11 failed: {res.stderr}")
 
+    def test_12_saved_layer_configs_minter_joint_fix_backdrop_3d_tanks_and_album_row(self):
+        # 1. Test `bandarchy visualiser-config --get` and `--set <json>` disk persistence round-trip
+        viz_cfg_file = os.path.join(self.env["XDG_CONFIG_HOME"], "bandarchy", "visualiser.json")
+        if os.path.exists(viz_cfg_file):
+            os.remove(viz_cfg_file)
+        res_empty = self.run_cli("visualiser-config", "--get")
+        self.assertEqual(res_empty["status"], "ok")
+        self.assertEqual(res_empty["config"], {})
+
+        sample_cfg = {
+            "version": 1,
+            "paletteIndex": 3,
+            "backdropEnabled": True,
+            "backdropMode": 4,
+            "backdropSpeed": 1.35,
+            "layer1AutoRandomise": True,
+            "layer2AutoRandomise": False,
+            "layer3AutoRandomise": True,
+            "savedL1Configs": [{"name": "Custom L1", "l1Mode": 4, "l1Speed": 0.25}],
+            "savedL2Configs": [{"name": "Custom L2", "l2Mode": 4, "tracerCount": 8}],
+            "savedL3Configs": [{"name": "Custom L3", "l3Mode": 5, "layer3Tracers": 4}],
+        }
+        res_set = self.run_cli("visualiser-config", "--set", json.dumps(sample_cfg))
+        self.assertEqual(res_set["status"], "ok")
+        self.assertEqual(res_set["config"]["backdropMode"], 4)
+        self.assertEqual(res_set["config"]["savedL1Configs"][0]["name"], "Custom L1")
+
+        res_get = self.run_cli("visualiser-config", "--get")
+        self.assertEqual(res_get["status"], "ok")
+        self.assertEqual(res_get["config"]["paletteIndex"], 3)
+        self.assertEqual(res_get["config"]["savedL2Configs"][0]["tracerCount"], 8)
+
+        # Edge case: invalid JSON passed to `--set` must return an error without corrupting saved config
+        proc_bad = subprocess.run(
+            [BIN_PATH, "visualiser-config", "--set", "{not-valid-json"],
+            env=self.env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertNotEqual(proc_bad.returncode, 0)
+        res_after_bad = self.run_cli("visualiser-config", "--get")
+        self.assertEqual(res_after_bad["config"]["paletteIndex"], 3)
+
+        # 2. Verify Visualiser.qml, App.qml, Panel.qml, Service.qml, and share/psychedelic.frag upgrades
+        with open(os.path.join(REPO_ROOT, "Visualiser.qml"), "r", encoding="utf-8") as f:
+            viz_src = f.read()
+        with open(os.path.join(REPO_ROOT, "App.qml"), "r", encoding="utf-8") as f:
+            app_src = f.read()
+        with open(os.path.join(REPO_ROOT, "Panel.qml"), "r", encoding="utf-8") as f:
+            panel_src = f.read()
+        with open(os.path.join(REPO_ROOT, "Service.qml"), "r", encoding="utf-8") as f:
+            svc_src = f.read()
+        with open(os.path.join(REPO_ROOT, "share", "psychedelic.frag"), "r", encoding="utf-8") as f:
+            frag_src = f.read()
+
+        # Individual Layer Saved Configs & Strict Single-Layer Isolation
+        for fn_name in (
+            "function saveCurrentL1Config()",
+            "function applySavedL1Config(",
+            "function deleteSavedL1Config(",
+            "function saveCurrentL2Config()",
+            "function applySavedL2Config(",
+            "function deleteSavedL2Config(",
+            "function saveCurrentL3Config()",
+            "function applySavedL3Config(",
+            "function deleteSavedL3Config(",
+            "function buildPersistedConfigSnapshot()",
+            "function applyPersistedConfig(",
+            "function resetAllVisualiserDefaults()",
+        ):
+            self.assertIn(fn_name, viz_src, f"Missing {fn_name} in Visualiser.qml")
+
+        # Verify applySavedL1Config never modifies visualMode or layer3Mode
+        l1_apply_idx = viz_src.index("function applySavedL1Config(")
+        l1_apply_body = viz_src[l1_apply_idx : viz_src.index("function cycleSavedL1Config(")]
+        self.assertNotIn("root.visualMode", l1_apply_body)
+        self.assertNotIn("root.layer3Mode", l1_apply_body)
+
+        # Verify applySavedL2Config never modifies layer1Mode or layer3Mode
+        l2_apply_idx = viz_src.index("function applySavedL2Config(")
+        l2_apply_body = viz_src[l2_apply_idx : viz_src.index("function cycleSavedL2Config(")]
+        self.assertNotIn("root.layer1Mode", l2_apply_body)
+        self.assertNotIn("root.layer3Mode", l2_apply_body)
+
+        # Verify applySavedL3Config never modifies layer1Mode or visualMode
+        l3_apply_idx = viz_src.index("function applySavedL3Config(")
+        l3_apply_body = viz_src[l3_apply_idx : viz_src.index("function cycleSavedL3Config(")]
+        self.assertNotIn("root.layer1Mode", l3_apply_body)
+        self.assertNotIn("root.visualMode", l3_apply_body)
+
+        # Independent GPU Shader Backdrop & live uniform push in frameAnim
+        self.assertIn("property bool backdropEnabled: true", viz_src)
+        self.assertIn("property int backdropMode: 0", viz_src)
+        self.assertIn("gpuShaderStage.uTime =", viz_src)
+        self.assertIn("property real uL2Mode: root.backdropMode", viz_src)
+        self.assertIn("if (m == 0)", frag_src)
+        self.assertIn("else if (m == 5)", frag_src)
+
+        # Per-Layer Auto-Randomise ON/OFF toggles & Tab 4 General & Quality
+        self.assertIn("property bool layer1AutoRandomise: false", viz_src)
+        self.assertIn("property bool layer2AutoRandomise: false", viz_src)
+        self.assertIn("property bool layer3AutoRandomise: false", viz_src)
+        self.assertIn("󰒓 General & Quality", viz_src)
+        self.assertIn("function saveVisualiserConfig(", svc_src)
+
+        # Verify Album Row layout fix in both App.qml and Panel.qml
+        for name, src in (("App.qml", app_src), ("Panel.qml", panel_src)):
+            self.assertIn('text: modelData.isLocal ? "LOCAL" : "CLOUD"', src, f"{name} must use compact LOCAL/CLOUD badge")
+            self.assertIn(': "󰇚 Save"', src, f"{name} must use compact non-danger Save button")
+            self.assertNotIn("danger: !appAlbumCard.isAlbumDownloading", src)
+            self.assertNotIn("danger: !albumCard.isAlbumDownloading", src)
+            self.assertIn("persistedConfig:", src, f"{name} must bind persistedConfig on Visualiser")
+            self.assertIn("onRequestSaveVisualiserConfig:", src, f"{name} must bind onRequestSaveVisualiserConfig on Visualiser")
+
+        # 3. Verify Node.js PsychedelicEngine.js:
+        #    - BACKDROP_MODES has 7 entries
+        #    - evalMinterShapeProfile smoothly interpolates across continuous worldRing (no integer discontinuity)
+        #    - L1 Mode 4 (TRON / Battlezone Landscape) renders 8-edge pyramids, 12-edge cubes, 3D Battlezone tanks, and locked worldScroll
+        if shutil.which("node"):
+            node_script = r"""
+const fs = require('fs');
+let code = fs.readFileSync('PsychedelicEngine.js', 'utf8').replace(/^\.pragma library\s*/m, '');
+eval(code);
+
+if (!Array.isArray(BACKDROP_MODES) || BACKDROP_MODES.length !== 7) {
+    throw new Error('Expected 7 BACKDROP_MODES, got ' + JSON.stringify(BACKDROP_MODES));
+}
+
+// Verify evalMinterShapeProfile is C0-continuous across integer ring boundaries (no sudden joint snap!)
+for (let w = 0.85; w <= 2.15; w += 0.01) {
+    const v0 = evalMinterShapeProfile(0.37, w, 1.5, 4);
+    const v1 = evalMinterShapeProfile(0.37, w + 0.001, 1.5, 4);
+    if (Math.abs(v1 - v0) > 0.015) {
+        throw new Error('Discontinuity in evalMinterShapeProfile at w=' + w + ': dv=' + Math.abs(v1 - v0));
+    }
+}
+
+// Verify project3DPoint and append3DWireframeTank produce valid 3D projected coordinates and muzzle point
+let moveCount = 0, lineCount = 0;
+const mockCtx = {
+    moveTo() { moveCount++; },
+    lineTo() { lineCount++; },
+    closePath() {},
+    beginPath() {},
+    fill() {},
+    stroke() {},
+    rect() {},
+    arc() {},
+    save() {},
+    restore() {},
+    createLinearGradient() { return { addColorStop() {} }; },
+    createRadialGradient() { return { addColorStop() {} }; }
+};
+const muzzle = append3DWireframeTank(mockCtx, 320, 240, 40, 0.25, 0.6, 0.1, 0.4, 0.12, 1.2);
+if (!muzzle || !Number.isFinite(muzzle.x) || !Number.isFinite(muzzle.y) || lineCount < 25) {
+    throw new Error('append3DWireframeTank failed: lineCount=' + lineCount + ' muzzle=' + JSON.stringify(muzzle));
+}
+console.log('OK');
+"""
+            res = subprocess.run(["node", "-e", node_script], cwd=REPO_ROOT, capture_output=True, text=True, timeout=15)
+            self.assertEqual(res.returncode, 0, f"Node test_12 failed: {res.stderr}")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
