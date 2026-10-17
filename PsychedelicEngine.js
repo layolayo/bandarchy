@@ -84,7 +84,7 @@ var LAYER1_SHAPE_STYLES = [
 ]
 
 var TRACK_ARC_MODES = [
-    "Off (Manual)",
+    "Dynamic Audio Arc",
     "Song Climax Arc (75% Peak)",
     "Progressive Dismantle (0→100%)",
     "Progressive Rebuild (0→100%)",
@@ -421,7 +421,7 @@ function rebuildArtCells(state, asciiLines, mode) {
         var dist = Math.sqrt(c.nx * c.nx + c.ny * c.ny)
         var ang = Math.atan2(c.ny, c.nx)
         // Evolved target coordinates stay anchored near the true glyph coordinates (c.nx, c.ny)
-        // with a subtle harmonic wave offset so letters remain recognizable even during evolution
+        // with a subtle harmonic wave offset so letters remain recognisable even during evolution
         var evoX = c.nx + Math.cos(ang * 3.0 + dist * 4.0) * 0.08
         var evoY = c.ny + Math.sin(ang * 3.0 - dist * 4.0) * 0.08
 
@@ -641,8 +641,12 @@ function stepState(state, rawBands, active, cfg, dt) {
     state.trackArcChapter = Math.min(3, Math.floor(trackProg * 4.0))
 
     if (arcMode === 0) {
-        // 0: Off (Manual) — parameters stay independent of track position
-        arcEvoBoost = 0.0
+        // 0: Dynamic Audio Arc — quiet passages coalesce & hold, loud drops/choruses surge outward
+        var audioSurge = clamp((state.musicIntensity - 0.32) * 1.45 + Math.max(0.0, state.bassAtt - 1.0) * 0.45, 0.0, 1.35)
+        arcDismantleMul = 0.45 + 1.15 * audioSurge
+        arcRebuildMul = clamp(1.65 - 0.85 * audioSurge, 0.45, 1.85)
+        arcEvoBoost = 0.65 * audioSurge
+        arcSpeedBoost = 0.82 + 0.48 * audioSurge
     } else if (arcMode === 1) {
         // 1: Song Climax Arc (0% Calm -> 75% Peak -> 100% Resolve)
         var climaxCurve = Math.sin(Math.pow(trackProg, 0.82) * Math.PI)
@@ -2856,60 +2860,65 @@ function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
     ctx.restore()
 }
 
-// Mode 6: 3D Sacred Lotus Hyperspace Dome & Jewelled Mandala Vault
+// Mode 6: 3D Sacred Lotus Hyperspace Dome & Harmonic Ripple Flower
 function drawMode6DmtChrysanthemum(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
     var maxR = Math.min(w, h) * 0.46 * (cfg.layer2Zoom || 1.0)
-    var symmetry = clamp(Math.round(Number(cfg.layer2Facets) || 8), 6, 16)
+    var diagR = Math.hypot(w, h) * 0.68 * (cfg.layer2Zoom || 1.0)
+    var symmetry = clamp(Math.round(Number(cfg.layer2Facets) || 6), 4, 16)
     var isEcho = Boolean(state.isTracerEcho)
     var lod = state.echoLod || 1.0
-    var rings = isEcho ? 3 : Math.max(4, Math.min(7, Math.round(5 * (cfg.layer2Complexity || 1.0) * lod)))
-    var steps = isEcho ? 24 : 40
+    var rings = isEcho ? 4 : Math.max(6, Math.min(10, Math.round(7 * (cfg.layer2Complexity || 1.0) * lod)))
+    var steps = isEcho ? 28 : 48
+    var palShift = Math.floor((state.hueShift || 0) / 45)
+    var driftT = state.driftTime !== undefined ? state.driftTime : state.t
+    var endPt = computeTracerEndpoint(w, h, driftT, cfg.tracerDrift !== undefined ? cfg.tracerDrift : 1.0, 1.0)
 
     // 3D hemispherical dome camera breathing (pitch & roll)
-    var camTilt = Math.sin(state.t * 0.48) * 0.34
+    var camTilt = Math.sin(state.t * 0.48) * 0.28
     var camRoll = Math.cos(state.t * 0.36) * 0.14 * (1.0 + state.mid * 0.5)
     var cosTilt = Math.cos(camTilt), sinTilt = Math.sin(camTilt)
 
     ctx.save()
-    ctx.translate(cx, cy)
+    ctx.translate(cx + endPt.dx * 0.28, cy + endPt.dy * 0.28)
     ctx.rotate(camRoll)
     ctx.globalCompositeOperation = "source-over"
 
     var prevDomeRing = null
-    // 1. 3D Hemispherical Lotus Dome Tiers (outer rim r = rings inward to apex r = 1)
+    // 1. Concentric Harmonic Ripple Flower (`sin(r * 18.0 - t * 4.0 + sin(a * petals + t))`) & 3D Lotus Dome Tiers
     for (var r = rings; r >= 1; r--) {
         var frac = r / rings
-        // Hemispherical z-elevation rises toward the central dome apex
-        var domeZ = Math.cos(frac * Math.PI * 0.46) * (0.45 + state.bass * 0.28)
-        var rot = state.phase * ((r % 2 === 0) ? 1.0 : -1.0) * (1.25 - frac * 0.45)
+        var domeZ = Math.cos(frac * Math.PI * 0.46) * (0.42 + state.bass * 0.24)
         var curRing = []
 
         for (var i = 0; i <= steps; i++) {
             var a = (i / steps) * Math.PI * 2
             var bVal = state.smoothBands[(i + r * 7) & 63]
-            var petal = Math.sin(a * symmetry + rot) * (0.14 + bVal * 0.24 + state.mid * 0.10)
-                      + Math.cos(a * symmetry * 2.0 - rot * 1.5) * 0.06
-            var rad3 = frac * (0.82 + state.bass * 0.22 + petal)
+            // Exact Harmonic Ripple Flower wave equation: sin(r * 18 - t * 4 + sin(a * petals + t)) * 0.5 + 0.5
+            var flowerWave = Math.sin(frac * 18.0 - state.t * 4.0 + Math.sin(a * symmetry + state.t) * (1.0 + state.bass * 0.75)) * 0.5 + 0.5
+            var petal = (flowerWave - 0.5) * (0.26 + bVal * 0.24 + state.mid * 0.12)
+                      + Math.cos(a * symmetry * 2.0 - state.phase * 1.2) * 0.06
+            var rad3 = frac * (0.86 + state.bass * 0.18 + petal)
             var x3 = Math.cos(a) * rad3
             var y3 = Math.sin(a) * rad3
             var z3 = domeZ + petal * 0.35
 
-            // 3D pitch rotation & perspective projection
+            // 3D pitch rotation & perspective projection expanding out toward diagR
             var yRot = y3 * cosTilt - z3 * sinTilt
             var zRot = y3 * sinTilt + z3 * cosTilt
             var persp = 1.55 / (2.10 - clamp(zRot, -1.1, 1.1))
+            var ringScale = lerp(maxR, diagR * 0.86, frac * frac)
             curRing.push({
-                x: x3 * maxR * persp,
-                y: yRot * maxR * persp
+                x: x3 * ringScale * persp,
+                y: yRot * ringScale * persp
             })
         }
 
-        var jewelCol = palette[(r * 2 + state.beatCount) % palette.length]
-        var goldCol = palette[(r * 2 + 1 + state.beatCount) % palette.length]
+        var jewelCol = palette[(r * 2 + palShift) % palette.length]
+        var goldCol = palette[(r * 2 + 1 + palShift) % palette.length]
 
-        // Filled translucent jewelled lotus petals & dome cells between tiers
+        // Filled translucent jewelled lotus petals & harmonic flower wave cells between tiers
         if (prevDomeRing && (!isEcho || (state.echoIndex || 0) < 3)) {
             ctx.fillStyle = colourWithAlpha(jewelCol, (0.09 + (1.0 - frac) * 0.14 + state.bass * 0.08) * (isEcho ? 0.5 : 1.0))
             ctx.beginPath()
@@ -2934,9 +2943,9 @@ function drawMode6DmtChrysanthemum(ctx, w, h, state, palette, cfg) {
             ctx.stroke()
         }
 
-        // Thick glowing sacred lotus tier crest
+        // Thick glowing harmonic ripple flower crest
         ctx.strokeStyle = colourWithAlpha(goldCol, 0.54 + (1.0 - frac) * 0.44)
-        ctx.lineWidth = (1.6 + (1.0 - frac) * 2.2 + state.beatPulse * 1.4) * (isEcho ? 0.75 : 1.0)
+        ctx.lineWidth = (1.6 + (1.0 - frac) * 2.2 + state.beatPulse * 1.2) * (isEcho ? 0.75 : 1.0)
         ctx.beginPath()
         for (var p = 0; p <= steps; p++) {
             if (p === 0) ctx.moveTo(curRing[p].x, curRing[p].y)
@@ -2953,9 +2962,9 @@ function drawMode6DmtChrysanthemum(ctx, w, h, state, palette, cfg) {
         var starR = maxR * (0.24 + state.bass * 0.12 + state.beatPulse * 0.08)
         for (var tri = 0; tri < 2; tri++) {
             var triRot = state.phase * (tri === 0 ? 1.35 : -1.35) + tri * (Math.PI / symmetry)
-            ctx.fillStyle = colourWithAlpha(palette[(tri * 4 + 2) % palette.length], 0.16 + state.bass * 0.14)
-            ctx.strokeStyle = colourWithAlpha(palette[(tri * 4) % palette.length], 0.88)
-            ctx.lineWidth = 2.2 + state.beatPulse * 1.4
+            ctx.fillStyle = colourWithAlpha(palette[(tri * 4 + 2 + palShift) % palette.length], 0.16 + state.bass * 0.14)
+            ctx.strokeStyle = colourWithAlpha(palette[(tri * 4 + palShift) % palette.length], 0.88)
+            ctx.lineWidth = 2.2 + state.beatPulse * 1.2
             ctx.beginPath()
             for (var sv = 0; sv <= symmetry; sv++) {
                 var sa = (sv / symmetry) * Math.PI * 2 + triRot
@@ -2971,7 +2980,7 @@ function drawMode6DmtChrysanthemum(ctx, w, h, state, palette, cfg) {
         }
 
         // Radiant crown stamen filaments erupting from the sacred lotus apex
-        ctx.strokeStyle = colourWithAlpha(palette[1 % palette.length], 0.74 + state.high * 0.26)
+        ctx.strokeStyle = colourWithAlpha(palette[(1 + palShift) % palette.length], 0.74 + state.high * 0.26)
         ctx.lineWidth = 1.4 + state.bass * 1.2
         ctx.beginPath()
         for (var cf = 0; cf < symmetry; cf++) {
@@ -3138,12 +3147,13 @@ function drawMode8AlienMycelium(ctx, w, h, state, palette, cfg) {
     // 1. 3D Translucent Bioluminescent Jellyfish Bell / Mycelial Canopy Dome (3 layered umbrella bells)
     var bellLayers = isEcho ? 2 : 4
     var bellSteps = isEcho ? 20 : 32
+    var palShift = Math.floor((state.hueShift || 0) / 45)
     for (var bl = bellLayers - 1; bl >= 0; bl--) {
         var bFrac = (bl + 1) / bellLayers
         var bellW = minDim * (0.14 + bFrac * 0.22) * (1.0 - pulseContract * 0.14 + state.bass * 0.18)
         var bellH = minDim * (0.09 + bFrac * 0.14) * (1.0 + pulseContract * 0.18 + state.bass * 0.14)
-        var canopyCol = palette[(bl * 2 + state.beatCount) % palette.length]
-        var rimCol = palette[(bl * 2 + 1 + state.beatCount) % palette.length]
+        var canopyCol = palette[(bl * 2 + palShift) % palette.length]
+        var rimCol = palette[(bl * 2 + 1 + palShift) % palette.length]
 
         ctx.fillStyle = colourWithAlpha(canopyCol, (0.10 + (1.0 - bFrac) * 0.12 + state.bass * 0.08) * (isEcho ? 0.5 : 1.0))
         ctx.strokeStyle = colourWithAlpha(rimCol, 0.55 + (1.0 - bFrac) * 0.40)
@@ -3590,8 +3600,9 @@ function drawMode11StrangeAttractor(ctx, w, h, state, palette, cfg) {
             rightPts.push({ x: corePts[k].x - nx * hw, y: corePts[k].y - ny * hw })
         }
 
-        var ribFillCol = palette[(ribbon * 3 + state.beatCount) % palette.length]
-        var ribStrokeCol = palette[(ribbon * 3 + 1 + state.beatCount) % palette.length]
+        var palShift = Math.floor((state.hueShift || 0) / 45)
+        var ribFillCol = palette[(ribbon * 3 + palShift) % palette.length]
+        var ribStrokeCol = palette[(ribbon * 3 + 1 + palShift) % palette.length]
 
         // 1. Filled translucent 3D phase-space manifold ribbon
         if (!isEcho || (state.echoIndex || 0) < 3) {

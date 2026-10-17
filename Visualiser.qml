@@ -58,9 +58,9 @@ FocusScope {
 
     // Global Music-Driven Modulation, GPU Shader, Song Arc & Universal 3D Graded History Tracer state
     property bool musicDrive: true
-    property bool gpuShaderEnabled: false
+    property bool gpuShaderEnabled: true
     property int hudFocusedLayer: 2 // 1 = L1 Strip, 2 = L2 Strip, 3 = L3 Strip on Row 2 of topHud
-    property int trackArcMode: 1 // 0 = Dynamic Audio Arc, 1 = Climax (75%), 2 = Dismantle, 3 = Rebuild, 4 = Quarters
+    property int trackArcMode: 0 // 0 = Dynamic Audio Arc, 1 = Climax (75%), 2 = Dismantle, 3 = Rebuild, 4 = Quarters
     property int tracerCount: 4
     property real tracerSpeed: 1.15
     property real tracerDrift: 1.00
@@ -298,6 +298,7 @@ FocusScope {
     property var engineState: Engine.createState()
 
     function clearCanvasImmediate() {
+        root._cachedFrameConfig = root.currentConfig()
         if (root.engineState) {
             root.engineState.clearFeedbackFrames = 3
         }
@@ -312,9 +313,53 @@ FocusScope {
         }
     }
 
-    onLayer1EnabledChanged: clearCanvasImmediate()
+    function syncLayer1MasterFromSubs() {
+        if (!root.layer1FieldEnabled && !root.layer1EqEnabled && !root.layer1ShapesEnabled) {
+            if (root.layer1Enabled) root.layer1Enabled = false
+        }
+    }
+
+    onLayer1EnabledChanged: {
+        if (root.layer1Enabled && !root.layer1FieldEnabled && !root.layer1EqEnabled && !root.layer1ShapesEnabled) {
+            root.layer1FieldEnabled = true
+        }
+        clearCanvasImmediate()
+    }
+    onLayer1FieldEnabledChanged: {
+        syncLayer1MasterFromSubs()
+        clearCanvasImmediate()
+    }
+    onLayer1EqEnabledChanged: {
+        syncLayer1MasterFromSubs()
+        clearCanvasImmediate()
+    }
+    onLayer1ShapesEnabledChanged: {
+        syncLayer1MasterFromSubs()
+        clearCanvasImmediate()
+    }
+    onLayer1ModeChanged: clearCanvasImmediate()
+    onLayer1EqStyleChanged: clearCanvasImmediate()
+    onLayer1ShapeStyleChanged: clearCanvasImmediate()
     onLayer2EnabledChanged: clearCanvasImmediate()
     onLayer3EnabledChanged: clearCanvasImmediate()
+
+    onBannerLinesChanged: {
+        if (root.engineState) {
+            root.engineState.artSourceKey = ""
+            root.engineState.l3FormFactor = 1.0
+            root.engineState.artBurst = 0.0
+        }
+        if (vizCanvas) vizCanvas.requestPaint()
+    }
+
+    onArtLinesChanged: {
+        if (root.engineState) {
+            root.engineState.artSourceKey = ""
+            root.engineState.l3FormFactor = 1.0
+            root.engineState.artBurst = 0.0
+        }
+        if (vizCanvas) vizCanvas.requestPaint()
+    }
 
     onUseAlbumArtChanged: {
         vizCanvas.requestPaint()
@@ -635,7 +680,10 @@ FocusScope {
         var total = Engine.LAYER3_MODES.length
         var nextM = (root.layer3Mode + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total
         root.layer3Mode = nextM
-        Engine.shatterAlbumArt(root.engineState, 1.35)
+        if (root.engineState) {
+            root.engineState.l3FormFactor = 0.25
+        }
+        Engine.shatterAlbumArt(root.engineState, 0.95)
         if (nextM === 5) {
             root.requestSelectTtfxEffect("random")
         }
@@ -646,11 +694,26 @@ FocusScope {
     function randomiseVisuals() {
         Engine.randomiseState(root.engineState)
         paletteIndex = (paletteIndex + 1 + Math.floor(Math.random() * (Engine.PALETTE_NAMES.length - 1))) % Engine.PALETTE_NAMES.length
-        if (root.layer3Enabled && root.layer3AutoRandomise) {
+        if (root.layer1Enabled) {
+            if (root.layer1FieldEnabled) {
+                root.layer1Mode = (root.layer1Mode + 1 + Math.floor(Math.random() * Math.max(1, Engine.LAYER1_MODES.length - 1))) % Engine.LAYER1_MODES.length
+            }
+            if (root.layer1EqEnabled) {
+                root.layer1EqStyle = (root.layer1EqStyle + 1 + Math.floor(Math.random() * Math.max(1, Engine.LAYER1_EQ_STYLES.length - 1))) % Engine.LAYER1_EQ_STYLES.length
+            }
+            if (root.layer1ShapesEnabled) {
+                root.layer1ShapeStyle = (root.layer1ShapeStyle + 1 + Math.floor(Math.random() * Math.max(1, Engine.LAYER1_SHAPE_STYLES.length - 1))) % Engine.LAYER1_SHAPE_STYLES.length
+            }
+        }
+        if (root.layer2Enabled) {
+            root.visualMode = (root.visualMode + 1 + Math.floor(Math.random() * Math.max(1, Engine.MODE_NAMES.length - 1))) % Engine.MODE_NAMES.length
+            root.symmetryIndex = Math.floor(Math.random() * Engine.SYMMETRY_OPTIONS.length)
+        }
+        if (root.layer3Enabled) {
             root.randomiseLayer3()
         }
-        vizCanvas.requestPaint()
-        root.requestActionFeedback("Mutated psychedelic seed + palette (" + Engine.PALETTE_NAMES[paletteIndex] + ")")
+        clearCanvasImmediate()
+        root.requestActionFeedback("Randomised active layers & palette (" + Engine.PALETTE_NAMES[paletteIndex] + ")")
     }
 
     function triggerShatterImpulse() {
@@ -1067,9 +1130,9 @@ FocusScope {
 
     property var _cachedFrameConfig: null
 
-    // Auto-Morph Evolution Timer: strictly respects each layer's enabled state (NEVER turns on a disabled layer!)
+    // Auto-Cycle Evolution Timer (18s): strictly respects each layer's enabled state (NEVER turns on a disabled layer!)
     Timer {
-        interval: 10000
+        interval: 18000
         running: root.visible && root.autoCycle && root.stageMode === "visualiser"
         repeat: true
         onTriggered: {
@@ -1109,10 +1172,10 @@ FocusScope {
         }
     }
 
-    // Independent Layer #3 Auto-Randomise Timer (Cycles L3 Modes & TTE effects automatically every 45s when L3 Auto-Randomise is ON)
+    // Independent Layer #3 Auto-Randomise Timer (Cycles L3 Modes & TTE effects automatically every 9s when L3 Auto-Randomise is ON)
     Timer {
         id: l3RandomiseTimer
-        interval: 45000
+        interval: 9000
         running: root.visible && root.stageMode === "visualiser" && root.layer3Enabled && root.layer3AutoRandomise
         repeat: true
         onTriggered: {
@@ -1290,7 +1353,7 @@ FocusScope {
                 root.asciiLines,
                 root.asciiSource,
                 root.ttfxFrames,
-                root._cachedFrameConfig || root.currentConfig(),
+                root.currentConfig(),
                 vizCanvas
             )
         }
@@ -1522,25 +1585,25 @@ FocusScope {
                     onClicked: root.cyclePalette(1)
                 }
 
-                // Mutate seed
+                // Randomise active layers & palette
                 VizPillButton {
                     visible: root.stageMode === "visualiser"
-                    text: "󰒟 Mutate"
+                    text: "󰒟 Randomise"
                     urgent: true
                     horizontalPad: 7
                     onClicked: root.randomiseVisuals()
                 }
 
-                // Auto-Morph
+                // Auto-Cycle active layers & palette every 18s
                 VizPillButton {
                     visible: root.stageMode === "visualiser"
-                    Layout.preferredWidth: 74
-                    text: root.autoCycle ? "󰑐 Auto: ON" : "󰑐 Auto"
+                    Layout.preferredWidth: 108
+                    text: root.autoCycle ? "󰑐 Auto-Cycle: ON" : "󰑐 Auto-Cycle: OFF"
                     active: root.autoCycle
                     horizontalPad: 6
                     onClicked: {
                         root.autoCycle = !root.autoCycle
-                        root.requestActionFeedback("Auto-Morph Evolution: " + (root.autoCycle ? "ON" : "OFF"))
+                        root.requestActionFeedback("Auto-Cycle " + (root.autoCycle ? "ON (changes visuals every 18s)" : "OFF"))
                     }
                 }
 
@@ -1579,11 +1642,25 @@ FocusScope {
                 }
             }
 
-            // Row 2A: Contextual Strip for Layer #1 (7 Field Modes + Equaliser + Beat Shapes)
+            // Row 2A: Contextual Strip for Layer #1 (Field Toggle + 7 Field Modes + Equaliser + Beat Shapes)
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 4
                 visible: root.stageMode === "visualiser" && root.hudFocusedLayer === 1
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 6
+                    text: root.layer1FieldEnabled ? "Field: ON" : "Field: OFF"
+                    active: root.layer1Enabled && root.layer1FieldEnabled
+                    onClicked: {
+                        root.layer1FieldEnabled = !root.layer1FieldEnabled
+                        if (root.layer1FieldEnabled) root.layer1Enabled = true
+                        root.clearCanvasImmediate()
+                        root.requestActionFeedback("L1 Field: " + (root.layer1FieldEnabled ? ("ON (" + Engine.LAYER1_MODES[root.layer1Mode] + ")") : "OFF"))
+                    }
+                }
 
                 Repeater {
                     model: ["Flame", "SynthGrid", "StarWarp", "Nebula", "Battlezone", "DeathStar", "BlackHole"]
@@ -1602,6 +1679,10 @@ FocusScope {
                             root.layer1Mode = index
                             root.clearCanvasImmediate()
                             root.requestActionFeedback("L1 Field: " + Engine.LAYER1_MODES[index])
+                        }
+                        onRightClicked: {
+                            root.layer1FieldEnabled = !root.layer1FieldEnabled
+                            root.clearCanvasImmediate()
                         }
                     }
                 }
@@ -1791,11 +1872,16 @@ FocusScope {
                     pillHeight: 22
                     fontSize: 9
                     horizontalPad: 6
-                    text: root.layer3AutoRandomise ? "󰑐 Auto L3: ON" : "󰑐 Auto L3"
+                    text: root.layer3AutoRandomise ? "󰑐 Auto L3: ON" : "󰑐 Auto L3: OFF"
                     active: root.layer3AutoRandomise
                     onClicked: {
                         root.layer3AutoRandomise = !root.layer3AutoRandomise
-                        root.requestActionFeedback("Layer #3 Auto-Randomise: " + (root.layer3AutoRandomise ? "ON" : "OFF"))
+                        if (root.layer3AutoRandomise) {
+                            root.layer3Enabled = true
+                            root.randomiseLayer3()
+                        } else {
+                            root.requestActionFeedback("Layer #3 Auto-Randomise: OFF")
+                        }
                     }
                 }
             }
@@ -2716,7 +2802,12 @@ FocusScope {
                                 active: root.layer3AutoRandomise
                                 onClicked: {
                                     root.layer3AutoRandomise = !root.layer3AutoRandomise
-                                    root.requestActionFeedback("Layer #3 Auto-Randomise: " + (root.layer3AutoRandomise ? "ON" : "OFF"))
+                                    if (root.layer3AutoRandomise) {
+                                        root.layer3Enabled = true
+                                        root.randomiseLayer3()
+                                    } else {
+                                        root.requestActionFeedback("Layer #3 Auto-Randomise: OFF")
+                                    }
                                 }
                             }
 

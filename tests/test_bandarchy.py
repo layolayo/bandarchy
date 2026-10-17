@@ -690,7 +690,7 @@ class BandarchyTestSuite(unittest.TestCase):
         self.assertIn("property bool layer1EqEnabled: true", viz_src)
         self.assertIn("property bool layer1ShapesEnabled: true", viz_src)
         self.assertIn("property bool showTracerPopover: false", viz_src)
-        self.assertIn("property int trackArcMode: 1", viz_src)
+        self.assertIn("property int trackArcMode: 0", viz_src)
         self.assertIn("function toggleZenFullscreen()", viz_src)
         self.assertIn("id: hudAutoHideTimer", viz_src)
         self.assertNotIn('"lighter"', engine_src)
@@ -863,21 +863,31 @@ console.log(JSON.stringify({ ok: true, maxFrameMs: maxMs }));
         self.assertTrue(os.path.isfile(qsb_path), "share/psychedelic.frag.qsb must exist")
         self.assertGreater(os.path.getsize(qsb_path), 512, "share/psychedelic.frag.qsb must be non-empty")
 
-        # 2. Verify Visualiser.qml, App.qml, Panel.qml, Service.qml new features
+        # 2. Verify Visualiser.qml, App.qml, Panel.qml, Service.qml, PsychedelicEngine.js new features
         with open(os.path.join(REPO_ROOT, "Visualiser.qml"), "r", encoding="utf-8") as f:
             viz_src = f.read()
         with open(os.path.join(REPO_ROOT, "Service.qml"), "r", encoding="utf-8") as f:
             svc_src = f.read()
         with open(os.path.join(REPO_ROOT, "App.qml"), "r", encoding="utf-8") as f:
             app_src = f.read()
+        with open(os.path.join(REPO_ROOT, "PsychedelicEngine.js"), "r", encoding="utf-8") as f:
+            engine_src = f.read()
 
-        self.assertIn("property bool gpuShaderEnabled: false", viz_src)
+        self.assertIn("property bool gpuShaderEnabled: true", viz_src)
         self.assertIn("visible: root.showHud && root.isFullscreen", viz_src)
         self.assertIn("function setAsciiSourceMode(", svc_src)
         self.assertIn("fastPlayPollTimer", svc_src)
         self.assertIn("applyOmarchyTheme", app_src)
+        self.assertIn("function syncLayer1MasterFromSubs()", viz_src)
+        self.assertIn("onBannerLinesChanged:", viz_src)
+        self.assertIn("onArtLinesChanged:", viz_src)
+        self.assertIn("interval: 9000", viz_src)
+        self.assertIn("interval: 18000", viz_src)
+        self.assertIn('text: "󰒟 Randomise"', viz_src)
+        self.assertIn("Dynamic Audio Arc", engine_src)
+        self.assertNotIn("+ state.beatCount)", engine_src)
 
-        # 3. Verify Node.js monotonic phase accumulators, 7 L1 modes, 7 EQ styles, and all 4 Layer #3 combinations
+        # 3. Verify Node.js monotonic phase accumulators, 7 L1 modes, 7 EQ styles, Dynamic Audio Arc, and all 4 Layer #3 combinations
         if shutil.which("node"):
             node_script = r"""
 const fs = require('fs');
@@ -905,6 +915,7 @@ function makeMockCtx() {
 const state = createState();
 if (LAYER1_MODES.length !== 7) throw new Error('Expected 7 LAYER1_MODES, got ' + LAYER1_MODES.length);
 if (LAYER1_EQ_STYLES.length !== 7) throw new Error('Expected 7 LAYER1_EQ_STYLES, got ' + LAYER1_EQ_STYLES.length);
+if (TRACK_ARC_MODES[0] !== 'Dynamic Audio Arc') throw new Error('Expected TRACK_ARC_MODES[0] to be Dynamic Audio Arc');
 
 // Verify monotonic phase accumulators never jump backwards under extreme bass/speed swings
 let prevL1 = 0, prevTunnel = 0, prevZoom = 0, prevMatrix = 0;
