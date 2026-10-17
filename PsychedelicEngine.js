@@ -173,6 +173,9 @@ function lerp(a, b, t) {
 }
 
 function smoothstep(edge0, edge1, x) {
+    if (edge0 > edge1) {
+        return 1.0 - smoothstep(edge1, edge0, x)
+    }
     var t = clamp((x - edge0) / Math.max(0.00001, edge1 - edge0), 0.0, 1.0)
     return t * t * (3.0 - 2.0 * t)
 }
@@ -291,6 +294,7 @@ function createState() {
     return {
         t: 0.0,
         l1Time: 0.0,
+        backdropTime: 0.0,
         driftTime: 0.0,
         zoomTime: 0.0,
         tunnelTime: 0.0,
@@ -715,10 +719,12 @@ function stepState(state, rawBands, active, cfg, dt) {
 
     // Smoothly integrated phase accumulators (eliminates d/dt[t * v(t)] phase teleportation!)
     var l1Speed = clamp(Number(cfg && cfg.layer1Speed !== undefined ? cfg.layer1Speed : 1.0), 0.05, 4.0)
+    var bdSpeed = clamp(Number(cfg && cfg.backdropSpeed !== undefined ? cfg.backdropSpeed : 1.0), 0.1, 3.0)
     var trSpeedCfg = clamp(Number(cfg && cfg.tracerSpeed !== undefined ? cfg.tracerSpeed : 1.0), 0.2, 2.5)
     var timeStep = dt * l2Speed * (active ? (0.35 + state.energySmooth * 0.45) : 0.18)
     state.t += timeStep
     state.l1Time = (state.l1Time || 0.0) + dt * l1Speed * (active ? (0.85 + state.bassSmooth * 0.55) : 0.45)
+    state.backdropTime = (state.backdropTime || 0.0) + dt * bdSpeed * (active ? (0.42 + state.energySmooth * 0.45) : 0.22)
     state.driftTime = (state.driftTime || 0.0) + dt * 0.28 * trSpeedCfg
     state.zoomTime = (state.zoomTime || 0.0) + dt * 0.38 * l2Speed * (0.75 + state.bassSmooth * 0.45)
     state.tunnelTime = (state.tunnelTime || 0.0) + dt * 0.52 * l2Speed * trSpeedCfg * (0.72 + state.bassSmooth * 0.42)
@@ -2588,12 +2594,10 @@ function drawMode0MilkDrop(ctx, w, h, state, palette, cfg) {
     var vaultZBase = Math.floor(vaultTravel)
     // 1. 3D Vaulted Cathedral Dome expanding from diminishing endpoint (zProg -> 0) out past all 4 screen borders (zProg -> 1)
     for (var v = 0; v < numVaults; v++) {
-        var zProg = clamp((v + vaultZFract) / numVaults, 0.001, 1.15) // 0 = deep apex, 1 = past screen borders
+        var zProg = clamp((v + vaultZFract) / numVaults, 0.0, 1.15) // 0 = deep apex, 1 = past screen borders
         var worldVault = vaultZBase - v
         var birthFade0 = smoothstep(0.0, 0.20, zProg)
         var persp = Math.pow(zProg, 1.78) * 1.38
-        var snapIdx0 = ((worldVault % Math.max(1, hist.length)) + Math.max(1, hist.length)) % Math.max(1, hist.length)
-        var snap = (hist.length > 0 && hist[snapIdx0] && hist[snapIdx0].bands) ? hist[snapIdx0].bands : state.smoothBands
         var spineX = endPt.dx * 0.65 * Math.pow(1.0 - Math.min(1.0, zProg), 1.35)
         var spineY = endPt.dy * 0.65 * Math.pow(1.0 - Math.min(1.0, zProg), 1.35)
         var curRing = []
@@ -2603,8 +2607,8 @@ function drawMode0MilkDrop(ctx, w, h, state, palette, cfg) {
             var flip = (f % 2 === 0) ? 1.0 : -1.0
             for (var i = 0; i < ptsPerFacet; i++) {
                 var u = i / ptsPerFacet
-                var bIdx = (i * 2 + (worldVault & 15) * 5) & 31
-                var bv = snap[bIdx] !== undefined ? snap[bIdx] : (state.smoothBands[bIdx] || 0.1)
+                var bIdx = (i * 2 + (worldVault & 15) * 5) & 63
+                var bv = state.smoothBands[bIdx] || 0.1
                 var arch = Math.sin(u * Math.PI) * (0.28 + bv * 0.28 + state.bass * 0.14)
                 var r = diagR * persp * (0.28 + arch)
                 var theta = baseAng + flip * ((u - 0.5) * (Math.PI * 2 / facets) + Math.sin(u * 4.0 + state.t * 1.4 + worldVault * 0.45) * (0.12 + state.mid * 0.16))
@@ -2623,37 +2627,41 @@ function drawMode0MilkDrop(ctx, w, h, state, palette, cfg) {
 
         if (prevVaultRing && (!isEcho || (state.echoIndex || 0) < 2)) {
             var wallFade0 = Math.min(prevVaultFade, birthFade0)
-            ctx.fillStyle = colourWithAlpha(vaultCol, (0.06 + (1.0 - zProg * 0.5) * 0.10 + state.bass * 0.06) * wallFade0 * (isEcho ? 0.5 : 1.0))
-            ctx.beginPath()
-            for (var q = 0; q < totalPts; q += 2) {
-                var qNext = (q + 1) % totalPts
-                ctx.moveTo(prevVaultRing[q].x, prevVaultRing[q].y)
-                ctx.lineTo(prevVaultRing[qNext].x, prevVaultRing[qNext].y)
-                ctx.lineTo(curRing[qNext].x, curRing[qNext].y)
-                ctx.lineTo(curRing[q].x, curRing[q].y)
-                ctx.closePath()
-            }
-            ctx.fill()
+            if (wallFade0 > 0.01) {
+                ctx.fillStyle = colourWithAlpha(vaultCol, (0.06 + (1.0 - zProg * 0.5) * 0.10 + state.bass * 0.06) * wallFade0 * (isEcho ? 0.5 : 1.0))
+                ctx.beginPath()
+                for (var q = 0; q < totalPts; q += 2) {
+                    var qNext = (q + 1) % totalPts
+                    ctx.moveTo(prevVaultRing[q].x, prevVaultRing[q].y)
+                    ctx.lineTo(prevVaultRing[qNext].x, prevVaultRing[qNext].y)
+                    ctx.lineTo(curRing[qNext].x, curRing[qNext].y)
+                    ctx.lineTo(curRing[q].x, curRing[q].y)
+                    ctx.closePath()
+                }
+                ctx.fill()
 
-            ctx.strokeStyle = colourWithAlpha(vaultCol, (0.24 + zProg * 0.38) * wallFade0)
-            ctx.lineWidth = (0.8 + zProg * 1.6) * (0.35 + 0.65 * wallFade0)
+                ctx.strokeStyle = colourWithAlpha(vaultCol, (0.24 + zProg * 0.38) * wallFade0)
+                ctx.lineWidth = (0.8 + zProg * 1.6) * wallFade0
+                ctx.beginPath()
+                for (var qr = 0; qr < totalPts; qr += Math.max(2, Math.floor(ptsPerFacet / 2))) {
+                    ctx.moveTo(prevVaultRing[qr].x, prevVaultRing[qr].y)
+                    ctx.lineTo(curRing[qr].x, curRing[qr].y)
+                }
+                ctx.stroke()
+            }
+        }
+
+        if (birthFade0 > 0.01) {
+            ctx.strokeStyle = colourWithAlpha(ribCol, (0.42 + Math.sin(Math.min(1.0, zProg) * Math.PI) * 0.52) * birthFade0)
+            ctx.lineWidth = clamp(1.2 + zProg * 2.8 + state.beatPulse * 0.8, 0.8, 4.5) * birthFade0 * (isEcho ? 0.75 : 1.0)
             ctx.beginPath()
-            for (var qr = 0; qr < totalPts; qr += Math.max(2, Math.floor(ptsPerFacet / 2))) {
-                ctx.moveTo(prevVaultRing[qr].x, prevVaultRing[qr].y)
-                ctx.lineTo(curRing[qr].x, curRing[qr].y)
+            for (var p = 0; p <= totalPts; p++) {
+                var pt = curRing[p % totalPts]
+                if (p === 0) ctx.moveTo(pt.x, pt.y)
+                else ctx.lineTo(pt.x, pt.y)
             }
             ctx.stroke()
         }
-
-        ctx.strokeStyle = colourWithAlpha(ribCol, (0.42 + Math.sin(Math.min(1.0, zProg) * Math.PI) * 0.52) * birthFade0)
-        ctx.lineWidth = clamp(1.2 + zProg * 2.8 + state.beatPulse * 0.8, 0.8, 4.5) * (0.35 + 0.65 * birthFade0) * (isEcho ? 0.75 : 1.0)
-        ctx.beginPath()
-        for (var p = 0; p <= totalPts; p++) {
-            var pt = curRing[p % totalPts]
-            if (p === 0) ctx.moveTo(pt.x, pt.y)
-            else ctx.lineTo(pt.x, pt.y)
-        }
-        ctx.stroke()
 
         prevVaultRing = curRing
         prevVaultFade = birthFade0
@@ -2822,7 +2830,6 @@ function drawMode2GForceWaveShape(ctx, w, h, state, palette, cfg) {
     var trCount = clamp(Math.round(Number(cfg.tracerCount) || 6), 1, 16)
     var numRings = isEcho ? 3 : Math.max(5, Math.min(11, Math.round(4 + trCount * 0.45 * comp)))
     var steps = isEcho ? 28 : Math.max(36, Math.floor(54 * clamp(comp, 0.5, 1.3)))
-    var hist = state.waveHistory || []
     var palShift = Math.floor((state.hueShift || 0) / 45)
     var tunT = state.tunnelTime !== undefined ? state.tunnelTime : state.t
     var driftT = state.driftTime !== undefined ? state.driftTime : state.t
@@ -2839,12 +2846,10 @@ function drawMode2GForceWaveShape(ctx, w, h, state, palette, cfg) {
     var gfZBase = Math.floor(gfTravel)
     // Render 3D logarithmic vortex funnel from deep core (zProg -> 0) out past all 4 screen borders (zProg -> 1)
     for (var layer = 0; layer < numRings; layer++) {
-        var zProg = clamp((layer + gfZFract) / numRings, 0.001, 1.15)
+        var zProg = clamp((layer + gfZFract) / numRings, 0.0, 1.15)
         var worldRing = gfZBase - layer
         var birthFade2 = smoothstep(0.0, 0.20, zProg)
         var persp = Math.pow(zProg, 1.78) * 1.28
-        var snapIdx2 = ((worldRing % Math.max(1, hist.length)) + Math.max(1, hist.length)) % Math.max(1, hist.length)
-        var snap = (hist.length > 0 && hist[snapIdx2] && hist[snapIdx2].bands) ? hist[snapIdx2].bands : state.smoothBands
         // Continuous spiral twist along worldRing — never flip sign by (layer % 2)!
         var spiralTwist = (1.0 - Math.min(1.0, zProg)) * (1.0 + state.high * 0.85) + state.phase * 0.45 + worldRing * 0.28
         var ringX = endPt.dx * 0.65 * Math.pow(1.0 - Math.min(1.0, zProg), 1.3)
@@ -2853,8 +2858,8 @@ function drawMode2GForceWaveShape(ctx, w, h, state, palette, cfg) {
         var curPts = []
         for (var i = 0; i <= steps; i++) {
             var a = (i / steps) * Math.PI * 2
-            var bIdx = (i + (worldRing & 15) * 7) & 31
-            var bv = snap[bIdx] !== undefined ? snap[bIdx] : (state.smoothBands[bIdx] || 0.1)
+            var bIdx = (i + (worldRing & 15) * 7) & 63
+            var bv = state.smoothBands[bIdx] || 0.1
             var wave = Math.sin(a * petals + state.t * 1.8 - worldRing * 0.38) * (0.16 + state.mid * 0.20)
                      + Math.cos(a * (petals * 2 - 1) - state.t * 1.4 + worldRing * 0.22) * (0.10 + bv * 0.28)
             var r = diagR * persp * (0.76 + wave + state.bass * 0.14)
@@ -2872,37 +2877,41 @@ function drawMode2GForceWaveShape(ctx, w, h, state, palette, cfg) {
 
         if (prevFunnelPts && (!isEcho || (state.echoIndex || 0) < 3)) {
             var wallFade2 = Math.min(prevFunnelFade, birthFade2)
-            ctx.fillStyle = colourWithAlpha(curtainCol, (0.06 + zProg * 0.10 + state.bass * 0.06) * wallFade2 * (isEcho ? 0.5 : 1.0))
-            ctx.beginPath()
-            for (var k = 0; k <= steps; k++) {
-                if (k === 0) ctx.moveTo(curPts[k].x, curPts[k].y)
-                else ctx.lineTo(curPts[k].x, curPts[k].y)
+            if (wallFade2 > 0.01) {
+                ctx.fillStyle = colourWithAlpha(curtainCol, (0.06 + zProg * 0.10 + state.bass * 0.06) * wallFade2 * (isEcho ? 0.5 : 1.0))
+                ctx.beginPath()
+                for (var k = 0; k <= steps; k++) {
+                    if (k === 0) ctx.moveTo(curPts[k].x, curPts[k].y)
+                    else ctx.lineTo(curPts[k].x, curPts[k].y)
+                }
+                for (var kBack = steps; kBack >= 0; kBack--) {
+                    ctx.lineTo(prevFunnelPts[kBack].x, prevFunnelPts[kBack].y)
+                }
+                ctx.closePath()
+                ctx.fill()
+
+                ctx.strokeStyle = colourWithAlpha(curtainCol, (0.22 + zProg * 0.36) * wallFade2)
+                ctx.lineWidth = (0.8 + zProg * 1.5) * wallFade2
+                ctx.beginPath()
+                for (var vr = 0; vr < steps; vr += 3) {
+                    ctx.moveTo(prevFunnelPts[vr].x, prevFunnelPts[vr].y)
+                    ctx.lineTo(curPts[vr].x, curPts[vr].y)
+                }
+                ctx.stroke()
             }
-            for (var kBack = steps; kBack >= 0; kBack--) {
-                ctx.lineTo(prevFunnelPts[kBack].x, prevFunnelPts[kBack].y)
+        }
+
+        if (birthFade2 > 0.01) {
+            ctx.strokeStyle = colourWithAlpha(crestCol, (0.42 + Math.sin(Math.min(1.0, zProg) * Math.PI) * 0.52) * birthFade2)
+            ctx.lineWidth = (1.1 + zProg * 2.7 + state.bass * 1.2) * birthFade2 * (isEcho ? 0.75 : 1.0)
+            ctx.beginPath()
+            for (var p = 0; p <= steps; p++) {
+                if (p === 0) ctx.moveTo(curPts[p].x, curPts[p].y)
+                else ctx.lineTo(curPts[p].x, curPts[p].y)
             }
             ctx.closePath()
-            ctx.fill()
-
-            ctx.strokeStyle = colourWithAlpha(curtainCol, (0.22 + zProg * 0.36) * wallFade2)
-            ctx.lineWidth = (0.8 + zProg * 1.5) * (0.35 + 0.65 * wallFade2)
-            ctx.beginPath()
-            for (var vr = 0; vr < steps; vr += 3) {
-                ctx.moveTo(prevFunnelPts[vr].x, prevFunnelPts[vr].y)
-                ctx.lineTo(curPts[vr].x, curPts[vr].y)
-            }
             ctx.stroke()
         }
-
-        ctx.strokeStyle = colourWithAlpha(crestCol, (0.42 + Math.sin(Math.min(1.0, zProg) * Math.PI) * 0.52) * birthFade2)
-        ctx.lineWidth = (1.1 + zProg * 2.7 + state.bass * 1.2) * (0.35 + 0.65 * birthFade2) * (isEcho ? 0.75 : 1.0)
-        ctx.beginPath()
-        for (var p = 0; p <= steps; p++) {
-            if (p === 0) ctx.moveTo(curPts[p].x, curPts[p].y)
-            else ctx.lineTo(curPts[p].x, curPts[p].y)
-        }
-        ctx.closePath()
-        ctx.stroke()
 
         prevFunnelPts = curPts
         prevFunnelFade = birthFade2
@@ -2920,8 +2929,6 @@ function drawMode3CthughaRave(ctx, w, h, state, palette, cfg) {
     var trCount = clamp(Math.round(Number(cfg.tracerCount) || 6), 1, 16)
     var numSlices = isEcho ? 3 : Math.max(5, Math.min(10, Math.round(4 + trCount * 0.4)))
     var ringSteps = isEcho ? 28 : 48
-    var hist = state.waveHistory
-    var histLen = hist ? hist.length : 0
     var palShift = Math.floor((state.hueShift || 0) / 45)
     var tunT = state.tunnelTime !== undefined ? state.tunnelTime : state.t
     var driftT = state.driftTime !== undefined ? state.driftTime : state.t
@@ -2937,14 +2944,12 @@ function drawMode3CthughaRave(ctx, w, h, state, palette, cfg) {
 
     // 1. Volumetric Flame & Plasma Shroud Waves expanding past all 4 screen borders
     for (var s = numSlices - 1; s >= 0; s--) {
-        var zProg = clamp((s + cthZFract) / numSlices, 0.001, 1.15)
+        var zProg = clamp((s + cthZFract) / numSlices, 0.0, 1.15)
         var worldSlice = cthZBase - s
         var birthFade3 = smoothstep(0.0, 0.20, zProg)
+        if (birthFade3 < 0.01) continue
         var persp = Math.pow(zProg, 1.68) * 1.26
         var baseR = diagR * persp * (0.78 + state.bass * 0.18)
-        var snapIdx3 = histLen > 0 ? (((worldSlice * 2) % histLen + histLen) % histLen) : 0
-        var snapEntry = (histLen > 0 && hist[snapIdx3]) ? hist[snapIdx3] : null
-        var waveSlice = (snapEntry && snapEntry.bands) ? snapEntry.bands : state.smoothBands
         var rot = state.phase * 0.42 + worldSlice * 0.28
         var colFill = palette[((worldSlice * 2 + palShift) % palette.length + palette.length) % palette.length]
         var colStroke = palette[((worldSlice * 2 + 3 + palShift) % palette.length + palette.length) % palette.length]
@@ -2953,17 +2958,17 @@ function drawMode3CthughaRave(ctx, w, h, state, palette, cfg) {
 
         ctx.fillStyle = colourWithAlpha(colFill, (0.14 + (1.0 - Math.min(1.0, zProg)) * 0.14 + state.bass * 0.06) * birthFade3 * (isEcho ? 0.52 : 1.0))
         ctx.strokeStyle = colourWithAlpha(colStroke, (0.45 + Math.sin(Math.min(1.0, zProg) * Math.PI) * 0.50) * birthFade3)
-        ctx.lineWidth = (1.0 + zProg * 2.6 + state.bass * 1.2) * (0.35 + 0.65 * birthFade3) * (isEcho ? 0.75 : 1.0)
+        ctx.lineWidth = (1.0 + zProg * 2.6 + state.bass * 1.2) * birthFade3 * (isEcho ? 0.75 : 1.0)
 
         ctx.beginPath()
         for (var i = 0; i <= ringSteps; i++) {
             var u = i / ringSteps
             var a = u * Math.PI * 2 + rot
-            var bIdx = (i + (worldSlice & 15) * 3) & 31
-            var wVal = waveSlice[bIdx] !== undefined ? waveSlice[bIdx] : state.smoothBands[bIdx]
+            var bIdx = (i + (worldSlice & 15) * 3) & 63
+            var wVal = state.smoothBands[bIdx] || 0.05
             var flame = Math.sin(u * Math.PI * 10 + state.t * 3.2 - worldSlice * 0.65) * (0.10 + state.mid * 0.18)
             var excursion = (wVal - 0.14 + flame) * diagR * persp * (0.28 + state.energy * 0.24)
-            var r = Math.max(0.5, baseR + excursion)
+            var r = Math.max(0.0, baseR + excursion)
             var px = ringX + Math.cos(a) * r
             var py = ringY + Math.sin(a) * r - Math.abs(excursion) * 0.18
             if (i === 0) ctx.moveTo(px, py)
@@ -3003,9 +3008,9 @@ function drawMode3CthughaRave(ctx, w, h, state, palette, cfg) {
     ctx.restore()
 }
 
-// Helper for Mode 4: Evaluate C64 / Llamasoft VLM shape profile for a given family index (0..4)
-function evalMinterShapeProfile(kind, a, baseFolds) {
-    var k = ((kind % 5) + 5) % 5
+// Helper for Mode 4: Evaluate C64 / Llamasoft VLM shape profile for an integer or continuous family index
+function _evalSingleMinterProfile(kindInt, a, baseFolds) {
+    var k = ((kindInt % 5) + 5) % 5
     if (k === 0) {
         // Tempest 2000 Star-Web profile
         return 0.78 + 0.32 * Math.abs(Math.cos(baseFolds * a * 0.5))
@@ -3021,6 +3026,19 @@ function evalMinterShapeProfile(kind, a, baseFolds) {
     }
     // Classic Hex / Octagon tube profile
     return 0.88 + 0.14 * Math.cos(6.0 * a)
+}
+
+function evalMinterShapeProfile(kindOrPhase, a, baseFolds) {
+    var folds = baseFolds || 6
+    var kFloor = Math.floor(kindOrPhase)
+    var kFract = kindOrPhase - kFloor
+    if (kFract <= 0.00001) {
+        return _evalSingleMinterProfile(kFloor, a, folds)
+    }
+    var smoothBlend = kFract * kFract * (3.0 - 2.0 * kFract)
+    var p0 = _evalSingleMinterProfile(kFloor, a, folds)
+    var p1 = _evalSingleMinterProfile(kFloor + 1, a, folds)
+    return lerp(p0, p1, smoothBlend)
 }
 
 // Mode 4: Commodore 64 / Jeff Minter VLM (Psychedelia / Tempest 2000) 3D Shape Tunnel!
@@ -3096,11 +3114,6 @@ function drawMode4MinterVlm(ctx, w, h, state, palette, cfg) {
         // Smoothly interpolate between consecutive C64 / Minter shape families along worldZ
         // (eliminates discrete shape-jump joints between adjacent tunnel rings!)
         var worldPhase = worldZ * 0.18
-        var kFloor = Math.floor(worldPhase)
-        var kFract = worldPhase - kFloor
-        var smoothBlend = kFract * kFract * (3.0 - 2.0 * kFract)
-        var k0 = ((kFloor % 5) + 5) % 5
-        var k1 = (k0 + 1) % 5
 
         var pts = []
         for (var s = 0; s <= facets; s++) {
@@ -3108,9 +3121,7 @@ function drawMode4MinterVlm(ctx, w, h, state, palette, cfg) {
             var a = u * Math.PI * 2
             var bIdx = ((s % facets) * 2 + (worldZ & 15) * 4) & 63
             var bVal = state.smoothBands[bIdx]
-            var prof0 = evalMinterShapeProfile(k0, a, baseFolds)
-            var prof1 = evalMinterShapeProfile(k1, a, baseFolds)
-            var shapeProfile = lerp(prof0, prof1, smoothBlend)
+            var shapeProfile = evalMinterShapeProfile(worldPhase, a, baseFolds)
             var r = rBase * shapeProfile * (1.0 + bVal * 0.18)
             var rotA = a + twist
 
@@ -3123,22 +3134,45 @@ function drawMode4MinterVlm(ctx, w, h, state, palette, cfg) {
         ringPts.push(pts)
     }
 
-    // 1. Checkered Llamasoft VLM Tunnel Wall Panels rendered back-to-front (skipping inner pinpoint bay d0=0 so no joint flickers)
+    // 1. Checkered Llamasoft VLM Tunnel Wall Panels rendered back-to-front
+    //    Inner bays (`ringFade[d0] < 0.99`) fade in smoothly by `ringFade[d0]` from 0.0 at d0=0 so zero joint pops in!
     if (!isEcho || (state.echoIndex || 0) < 3) {
+        var baseWallAlpha = isEcho ? 0.08 : (0.12 + state.bass * 0.10)
         for (var pBucket = 0; pBucket < 2; pBucket++) {
             var panelCol = palette[(pBucket * 4 + palShift) % palette.length]
-            ctx.fillStyle = colourWithAlpha(panelCol, isEcho ? 0.08 : (0.12 + state.bass * 0.10))
+            for (var d0 = 0; d0 < depthRings; d0++) {
+                var bf0 = ringFade[d0]
+                if (bf0 < 0.01) continue
+                if (bf0 < 0.99) {
+                    ctx.fillStyle = colourWithAlpha(panelCol, baseWallAlpha * bf0)
+                    ctx.beginPath()
+                    var p0 = ringPts[d0]
+                    var p1 = ringPts[d0 + 1]
+                    var wZ = ringWorld[d0]
+                    for (var s0 = 0; s0 < facets; s0++) {
+                        if (((wZ + s0) & 1) !== pBucket) continue
+                        ctx.moveTo(p0[s0].x, p0[s0].y)
+                        ctx.lineTo(p0[s0 + 1].x, p0[s0 + 1].y)
+                        ctx.lineTo(p1[s0 + 1].x, p1[s0 + 1].y)
+                        ctx.lineTo(p1[s0].x, p1[s0].y)
+                        ctx.closePath()
+                    }
+                    ctx.fill()
+                }
+            }
+            ctx.fillStyle = colourWithAlpha(panelCol, baseWallAlpha)
             ctx.beginPath()
-            for (var d0 = 1; d0 < depthRings; d0++) {
-                var p0 = ringPts[d0]
-                var p1 = ringPts[d0 + 1]
-                var wZ = ringWorld[d0]
-                for (var s0 = 0; s0 < facets; s0++) {
-                    if (((wZ + s0) & 1) !== pBucket) continue
-                    ctx.moveTo(p0[s0].x, p0[s0].y)
-                    ctx.lineTo(p0[s0 + 1].x, p0[s0 + 1].y)
-                    ctx.lineTo(p1[s0 + 1].x, p1[s0 + 1].y)
-                    ctx.lineTo(p1[s0].x, p1[s0].y)
+            for (var dOuter = 0; dOuter < depthRings; dOuter++) {
+                if (ringFade[dOuter] < 0.99) continue
+                var p0o = ringPts[dOuter]
+                var p1o = ringPts[dOuter + 1]
+                var wZo = ringWorld[dOuter]
+                for (var s0o = 0; s0o < facets; s0o++) {
+                    if (((wZo + s0o) & 1) !== pBucket) continue
+                    ctx.moveTo(p0o[s0o].x, p0o[s0o].y)
+                    ctx.lineTo(p0o[s0o + 1].x, p0o[s0o + 1].y)
+                    ctx.lineTo(p1o[s0o + 1].x, p1o[s0o + 1].y)
+                    ctx.lineTo(p1o[s0o].x, p1o[s0o].y)
                     ctx.closePath()
                 }
             }
@@ -3147,13 +3181,30 @@ function drawMode4MinterVlm(ctx, w, h, state, palette, cfg) {
     }
 
     // 2. Longitudinal Tempest Web Lane Rails radiating from diminishing endpoint past all 4 screen edges
-    ctx.strokeStyle = colourWithAlpha(palette[(1 + palShift) % palette.length], 0.68 + state.high * 0.25)
-    ctx.lineWidth = (isEcho ? 1.5 : 2.2) + state.bass * 1.4
+    //    Inner rail segments (`ringFade[dLane - 1] < 0.99`) fade in smoothly from 0 alpha & 0 width at the apex!
+    var laneCol = palette[(1 + palShift) % palette.length]
+    var baseLaneAlpha = 0.68 + state.high * 0.25
+    var baseLaneWidth = (isEcho ? 1.5 : 2.2) + state.bass * 1.4
+    for (var dLane = 1; dLane <= depthRings; dLane++) {
+        var bfLane = ringFade[dLane - 1]
+        if (bfLane < 0.01 || bfLane >= 0.99) continue
+        ctx.strokeStyle = colourWithAlpha(laneCol, baseLaneAlpha * bfLane)
+        ctx.lineWidth = baseLaneWidth * bfLane
+        ctx.beginPath()
+        for (var sLaneIn = 0; sLaneIn < facets; sLaneIn += 2) {
+            ctx.moveTo(ringPts[dLane - 1][sLaneIn].x, ringPts[dLane - 1][sLaneIn].y)
+            ctx.lineTo(ringPts[dLane][sLaneIn].x, ringPts[dLane][sLaneIn].y)
+        }
+        ctx.stroke()
+    }
+    ctx.strokeStyle = colourWithAlpha(laneCol, baseLaneAlpha)
+    ctx.lineWidth = baseLaneWidth
     ctx.beginPath()
-    for (var sLane = 0; sLane < facets; sLane += 2) {
-        ctx.moveTo(ringPts[0][sLane].x, ringPts[0][sLane].y)
-        for (var dLane = 1; dLane <= depthRings; dLane++) {
-            ctx.lineTo(ringPts[dLane][sLane].x, ringPts[dLane][sLane].y)
+    for (var dLaneOut = 1; dLaneOut <= depthRings; dLaneOut++) {
+        if (ringFade[dLaneOut - 1] < 0.99) continue
+        for (var sLaneOut = 0; sLaneOut < facets; sLaneOut += 2) {
+            ctx.moveTo(ringPts[dLaneOut - 1][sLaneOut].x, ringPts[dLaneOut - 1][sLaneOut].y)
+            ctx.lineTo(ringPts[dLaneOut][sLaneOut].x, ringPts[dLaneOut][sLaneOut].y)
         }
     }
     ctx.stroke()
@@ -3163,10 +3214,10 @@ function drawMode4MinterVlm(ctx, w, h, state, palette, cfg) {
     for (var dr = 0; dr <= depthRings; dr++) {
         var zp = ringZ[dr]
         var bf = ringFade[dr]
-        if (bf < 0.02) continue
+        if (bf < 0.01) continue
         var ptsR = ringPts[dr]
         var wIdx = ((ringWorld[dr] * 2 + palShift) % palette.length + palette.length) % palette.length
-        ctx.strokeStyle = colourWithAlpha(palette[wIdx], clamp((0.28 + zp * 0.72) * bf, 0.02, 1.0))
+        ctx.strokeStyle = colourWithAlpha(palette[wIdx], clamp((0.28 + zp * 0.72) * bf, 0.0, 1.0))
         ctx.lineWidth = (0.8 + zp * 4.2 + state.beatPulse * 1.2) * bf * (isEcho ? 0.72 : 1.0)
         ctx.beginPath()
         for (var sr = 0; sr <= facets; sr++) {
@@ -3222,7 +3273,9 @@ function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
         var octScale = baseScale * Math.pow(ratio, octProgress)
         var octWorld = zoomGen - oct
 
-        var envAlpha = Math.sin(clamp(uOct, 0.02, 0.98) * Math.PI)
+        // Smooth birth & exit fade-in/out envelope (0.0 at uOct=0 and uOct=1 so new octaves never pop in!)
+        var envAlpha = smoothstep(0.0, 0.20, uOct) * smoothstep(1.0, 0.86, uOct)
+        if (envAlpha < 0.01) continue
         var octRot = octWorld * 0.523598 + state.phase * 0.35
 
         var colPrimary = palette[((octWorld * 2) % palette.length + palette.length) % palette.length]
@@ -3230,8 +3283,8 @@ function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
         var colAccent = palette[((octWorld * 2 + 3) % palette.length + palette.length) % palette.length]
 
         ctx.fillStyle = colourWithAlpha(colPrimary, (0.14 + (1.0 - uOct) * 0.12 + state.bass * 0.06) * envAlpha * (isEcho ? 0.5 : 1.0))
-        ctx.strokeStyle = colourWithAlpha(colSecondary, (0.48 + envAlpha * 0.46) * (isEcho ? 0.65 : 1.0))
-        ctx.lineWidth = (1.2 + uOct * 2.6 + state.beatPulse * 1.0) * (isEcho ? 0.75 : 1.0)
+        ctx.strokeStyle = colourWithAlpha(colSecondary, (0.48 + envAlpha * 0.46) * envAlpha * (isEcho ? 0.65 : 1.0))
+        ctx.lineWidth = (1.2 + uOct * 2.6 + state.beatPulse * 1.0) * envAlpha * (isEcho ? 0.75 : 1.0)
 
         ctx.beginPath()
         for (var s = 0; s <= spiralSteps; s++) {
@@ -3259,8 +3312,8 @@ function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
 
         var branchSplit = 0.58 + state.mid * 0.20 + Math.sin(state.t * 0.7 + octWorld) * 0.10
         var subRatio = 0.48
-        ctx.strokeStyle = colourWithAlpha(colAccent, (0.58 + envAlpha * 0.40) * (isEcho ? 0.65 : 1.0))
-        ctx.lineWidth = (1.1 + uOct * 1.9 + state.bass * 0.8) * (isEcho ? 0.75 : 1.0)
+        ctx.strokeStyle = colourWithAlpha(colAccent, (0.58 + envAlpha * 0.40) * envAlpha * (isEcho ? 0.65 : 1.0))
+        ctx.lineWidth = (1.1 + uOct * 1.9 + state.bass * 0.8) * envAlpha * (isEcho ? 0.75 : 1.0)
         ctx.beginPath()
 
         var tipDiamonds = []

@@ -4072,13 +4072,14 @@ def cmd_visualiser_config(args) -> None:
 
 def _kill_bandarchy_processes() -> None:
     try:
-        stop_mpv()
+        mpv_stop()
     except Exception:
         pass
     for pat in (
         r"(quickshell|bandarchy) -p .*/bandarchy/App\.qml",
         r"(quickshell|bandarchy) -p .*io\.github\.layolayo\.bandarchy/App\.qml",
-        r"cava -p .*/bandarchy/cava\.conf",
+        r"cava -p .*(bandarchy|io\.github\.layolayo\.bandarchy)(/share)?/cava\.conf",
+        r"mpv .*--audio-client-name=Bandarchy",
     ):
         subprocess.run(["pkill", "-f", pat], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -4114,6 +4115,10 @@ def cmd_restart(args) -> None:
 
 
 def main() -> None:
+    if len(sys.argv) == 2 and sys.argv[1] in ("--kill", "-k", "stop", "--stop"):
+        sys.argv[1] = "kill"
+    elif len(sys.argv) == 2 and sys.argv[1] in ("--restart", "-r"):
+        sys.argv[1] = "restart"
     parser = argparse.ArgumentParser(prog="bandarchy", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 

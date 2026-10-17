@@ -399,8 +399,24 @@ FocusScope {
     onLayer1AutoRandomiseChanged: scheduleSaveVisualiserConfig()
     onLayer2AutoRandomiseChanged: scheduleSaveVisualiserConfig()
     onLayer3AutoRandomiseChanged: scheduleSaveVisualiserConfig()
+    property string _lastEmittedConfigJson: ""
+
+    function emitSaveVisualiserConfig() {
+        if (root._applyingPersistedConfig) return
+        var snap = root.buildPersistedConfigSnapshot()
+        try {
+            root._lastEmittedConfigJson = JSON.stringify(snap)
+        } catch (e) {}
+        root.requestSaveVisualiserConfig(snap)
+    }
+
     onPersistedConfigChanged: {
         if (root.persistedConfig && Object.keys(root.persistedConfig).length > 0) {
+            try {
+                if (root._lastEmittedConfigJson && JSON.stringify(root.persistedConfig) === root._lastEmittedConfigJson) {
+                    return
+                }
+            } catch (e) {}
             root.applyPersistedConfig(root.persistedConfig)
         }
     }
@@ -411,7 +427,7 @@ FocusScope {
         repeat: false
         onTriggered: {
             if (!root._applyingPersistedConfig) {
-                root.requestSaveVisualiserConfig(root.buildPersistedConfigSnapshot())
+                root.emitSaveVisualiserConfig()
             }
         }
     }
@@ -571,9 +587,9 @@ FocusScope {
         if (cfg.layer3Scale !== undefined) root.layer3Scale = Number(cfg.layer3Scale)
         if (cfg.layer3Tracers !== undefined) root.layer3Tracers = Number(cfg.layer3Tracers)
 
-        if (Array.isArray(cfg.savedL1Configs) && cfg.savedL1Configs.length > 0) root.savedL1Configs = cfg.savedL1Configs
-        if (Array.isArray(cfg.savedL2Configs) && cfg.savedL2Configs.length > 0) root.savedL2Configs = cfg.savedL2Configs
-        if (Array.isArray(cfg.savedL3Configs) && cfg.savedL3Configs.length > 0) root.savedL3Configs = cfg.savedL3Configs
+        if (Array.isArray(cfg.savedL1Configs)) root.savedL1Configs = cfg.savedL1Configs
+        if (Array.isArray(cfg.savedL2Configs)) root.savedL2Configs = cfg.savedL2Configs
+        if (Array.isArray(cfg.savedL3Configs)) root.savedL3Configs = cfg.savedL3Configs
         if (Array.isArray(cfg.collectivePresets) && cfg.collectivePresets.length > 0) root.collectivePresets = cfg.collectivePresets
 
         root._applyingPersistedConfig = false
@@ -653,7 +669,7 @@ FocusScope {
         copy.push(item)
         root.savedL1Configs = copy
         root.currentSavedL1Index = copy.length - 1
-        root.requestSaveVisualiserConfig(root.buildPersistedConfigSnapshot())
+        root.emitSaveVisualiserConfig()
         root.requestActionFeedback("Saved L1 Setting: " + item.name)
     }
 
@@ -700,7 +716,7 @@ FocusScope {
         var removed = copy.splice(idx, 1)[0]
         root.savedL1Configs = copy
         root.currentSavedL1Index = Math.max(0, Math.min(copy.length - 1, root.currentSavedL1Index))
-        root.requestSaveVisualiserConfig(root.buildPersistedConfigSnapshot())
+        root.emitSaveVisualiserConfig()
         root.requestActionFeedback("Removed Saved L1: " + (removed && removed.name ? removed.name : ""))
     }
 
@@ -711,6 +727,14 @@ FocusScope {
             name: mName + " · " + root.tracerCount + "x Tracers · " + root.symmetryFolds + "x",
             l2Mode: root.visualMode,
             symmetryIndex: root.symmetryIndex,
+            paletteIndex: root.paletteIndex,
+            gpuShaderEnabled: root.gpuShaderEnabled,
+            backdropEnabled: root.backdropEnabled,
+            backdropMode: root.backdropMode,
+            backdropSpeed: root.backdropSpeed,
+            backdropIntensity: root.backdropIntensity,
+            backdropSymmetry: root.backdropSymmetry,
+            backdropDirection: root.backdropDirection,
             sensitivity: root.sensitivity,
             l2Complexity: root.layer2Complexity,
             l2Speed: root.layer2Speed,
@@ -725,7 +749,7 @@ FocusScope {
         copy.push(item)
         root.savedL2Configs = copy
         root.currentSavedL2Index = copy.length - 1
-        root.requestSaveVisualiserConfig(root.buildPersistedConfigSnapshot())
+        root.emitSaveVisualiserConfig()
         root.requestActionFeedback("Saved L2 Setting: " + item.name)
     }
 
@@ -738,6 +762,19 @@ FocusScope {
         root.layer2Enabled = true
         if (item.l2Mode !== undefined) root.visualMode = Number(item.l2Mode) % Engine.MODE_NAMES.length
         if (item.symmetryIndex !== undefined) root.symmetryIndex = Number(item.symmetryIndex) % Engine.SYMMETRY_OPTIONS.length
+        if (item.paletteIndex !== undefined) root.paletteIndex = Number(item.paletteIndex) % Engine.PALETTE_NAMES.length
+        if (item.backdropEnabled !== undefined) {
+            root.backdropEnabled = Boolean(item.backdropEnabled)
+            root.gpuShaderEnabled = Boolean(item.backdropEnabled)
+        } else if (item.gpuShaderEnabled !== undefined) {
+            root.gpuShaderEnabled = Boolean(item.gpuShaderEnabled)
+            root.backdropEnabled = Boolean(item.gpuShaderEnabled)
+        }
+        if (item.backdropMode !== undefined) root.backdropMode = Number(item.backdropMode) % Engine.BACKDROP_MODES.length
+        if (item.backdropSpeed !== undefined) root.backdropSpeed = Number(item.backdropSpeed)
+        if (item.backdropIntensity !== undefined) root.backdropIntensity = Number(item.backdropIntensity)
+        if (item.backdropSymmetry !== undefined) root.backdropSymmetry = Number(item.backdropSymmetry)
+        if (item.backdropDirection !== undefined) root.backdropDirection = Number(item.backdropDirection)
         if (item.sensitivity !== undefined) root.sensitivity = Number(item.sensitivity)
         if (item.l2Complexity !== undefined) root.layer2Complexity = Number(item.l2Complexity)
         if (item.l2Speed !== undefined) root.layer2Speed = Number(item.l2Speed)
@@ -767,7 +804,7 @@ FocusScope {
         var removed = copy.splice(idx, 1)[0]
         root.savedL2Configs = copy
         root.currentSavedL2Index = Math.max(0, Math.min(copy.length - 1, root.currentSavedL2Index))
-        root.requestSaveVisualiserConfig(root.buildPersistedConfigSnapshot())
+        root.emitSaveVisualiserConfig()
         root.requestActionFeedback("Removed Saved L2: " + (removed && removed.name ? removed.name : ""))
     }
 
@@ -792,7 +829,7 @@ FocusScope {
         copy.push(item)
         root.savedL3Configs = copy
         root.currentSavedL3Index = copy.length - 1
-        root.requestSaveVisualiserConfig(root.buildPersistedConfigSnapshot())
+        root.emitSaveVisualiserConfig()
         root.requestActionFeedback("Saved L3 Setting: " + item.name)
     }
 
@@ -841,7 +878,7 @@ FocusScope {
         var removed = copy.splice(idx, 1)[0]
         root.savedL3Configs = copy
         root.currentSavedL3Index = Math.max(0, Math.min(copy.length - 1, root.currentSavedL3Index))
-        root.requestSaveVisualiserConfig(root.buildPersistedConfigSnapshot())
+        root.emitSaveVisualiserConfig()
         root.requestActionFeedback("Removed Saved L3: " + (removed && removed.name ? removed.name : ""))
     }
 
@@ -1023,6 +1060,15 @@ FocusScope {
         // Discrete layer states & modes switch cleanly while respecting exact preset layer flags
         root.paletteIndex = Number(p.palette || 0) % Engine.PALETTE_NAMES.length
         root.musicDrive = p.musicDrive !== undefined ? Boolean(p.musicDrive) : true
+        if (p.backdropEnabled !== undefined) {
+            root.backdropEnabled = Boolean(p.backdropEnabled)
+            root.gpuShaderEnabled = Boolean(p.backdropEnabled)
+        }
+        if (p.backdropMode !== undefined) root.backdropMode = Number(p.backdropMode) % Engine.BACKDROP_MODES.length
+        if (p.backdropSpeed !== undefined) root.backdropSpeed = Number(p.backdropSpeed)
+        if (p.backdropIntensity !== undefined) root.backdropIntensity = Number(p.backdropIntensity)
+        if (p.backdropSymmetry !== undefined) root.backdropSymmetry = Number(p.backdropSymmetry)
+        if (p.backdropDirection !== undefined) root.backdropDirection = Number(p.backdropDirection)
         root.tracerCount = p.tracerCount !== undefined ? Number(p.tracerCount) : 4
         root.tracerDirection = p.tracerDirection !== undefined ? Number(p.tracerDirection) : 1
 
@@ -1099,7 +1145,7 @@ FocusScope {
             item.selected = !item.selected
             copy[idx] = item
             root.collectivePresets = copy
-            root.requestSaveVisualiserConfig(root.buildPersistedConfigSnapshot())
+            root.emitSaveVisualiserConfig()
             root.requestActionFeedback((item.selected ? "Included in" : "Excluded from") + " preset cycle: " + item.name)
         }
     }
@@ -1115,6 +1161,12 @@ FocusScope {
             selected: true,
             palette: root.paletteIndex,
             musicDrive: root.musicDrive,
+            backdropEnabled: root.backdropEnabled,
+            backdropMode: root.backdropMode,
+            backdropSpeed: root.backdropSpeed,
+            backdropIntensity: root.backdropIntensity,
+            backdropSymmetry: root.backdropSymmetry,
+            backdropDirection: root.backdropDirection,
             tracerCount: root.tracerCount,
             tracerSpeed: root.tracerSpeed,
             tracerDrift: root.tracerDrift,
@@ -1155,7 +1207,7 @@ FocusScope {
         copy.push(newPreset)
         root.collectivePresets = copy
         root.currentPresetIndex = copy.length - 1
-        root.requestSaveVisualiserConfig(root.buildPersistedConfigSnapshot())
+        root.emitSaveVisualiserConfig()
         root.requestActionFeedback("Saved Collective Preset: " + newPreset.name)
     }
 
@@ -1691,6 +1743,17 @@ FocusScope {
         color: root.backgroundColour
     }
 
+    function hexToVec4(hexStr) {
+        if (!hexStr || typeof hexStr !== "string" || hexStr.length < 7) {
+            return Qt.vector4d(0.22, 0.74, 0.97, 1.0)
+        }
+        var s = hexStr.charAt(0) === "#" ? hexStr.slice(1) : hexStr
+        var r = parseInt(s.slice(0, 2), 16) / 255.0
+        var g = parseInt(s.slice(2, 4), 16) / 255.0
+        var b = parseInt(s.slice(4, 6), 16) / 255.0
+        return Qt.vector4d(isNaN(r) ? 0.22 : r, isNaN(g) ? 0.74 : g, isNaN(b) ? 0.97 : b, 1.0)
+    }
+
     // Frame-paced animation loop (honours root.targetFps: 30, 48, or 60 FPS)
     FrameAnimation {
         id: frameAnim
@@ -1729,20 +1792,33 @@ FocusScope {
             root._cachedFrameConfig = cfg
             Engine.stepState(root.engineState, root.bands, root.playing, cfg, dt)
 
-            // Explicitly push dynamic time and audio uniforms to gpuShaderStage every frame
+            // Explicitly push dynamic time, audio, and palette uniforms to gpuShaderStage every frame
             // (since plain JS object mutations on root.engineState do not emit QML notify signals)
             if (root.stageMode === "visualiser" && (root.backdropEnabled || (root.layer1Enabled && root.layer1FieldEnabled))) {
                 var st = root.engineState
                 var bT = st.backdropTime !== undefined ? st.backdropTime : (st.t || 0.0)
                 gpuShaderStage.uTime = bT
                 gpuShaderStage.uL1Time = st.l1Time || 0.0
-                gpuShaderStage.uZoomTime = st.zoomTime || 0.0
+                gpuShaderStage.uZoomTime = root.backdropEnabled ? (bT * 0.85) : (st.zoomTime || 0.0)
                 gpuShaderStage.uBass = st.bassSmooth || 0.0
                 gpuShaderStage.uMid = st.midSmooth || 0.0
                 gpuShaderStage.uHigh = st.highSmooth || 0.0
                 gpuShaderStage.uBeat = st.beatPulse || 0.0
                 gpuShaderStage.uDriftX = Math.sin(bT * 0.27) * 0.16 * root.tracerDrift
                 gpuShaderStage.uDriftY = Math.cos(bT * 0.21) * 0.12 * root.tracerDrift
+
+                var pal = Engine.PALETTES[root.paletteIndex % Engine.PALETTES.length]
+                if (pal && pal.length >= 3) {
+                    var rot = Math.floor((st.hueShift || 0.0) / 45.0)
+                    var pLen = pal.length
+                    gpuShaderStage.uCol0 = root.hexToVec4(pal[((rot % pLen) + pLen) % pLen])
+                    gpuShaderStage.uCol1 = root.hexToVec4(pal[(((rot + 2) % pLen) + pLen) % pLen])
+                    gpuShaderStage.uCol2 = root.hexToVec4(pal[(((rot + 4) % pLen) + pLen) % pLen])
+                } else {
+                    gpuShaderStage.uCol0 = Qt.vector4d(root.accentColour.r, root.accentColour.g, root.accentColour.b, 1.0)
+                    gpuShaderStage.uCol1 = Qt.vector4d(root.urgentColour.r, root.urgentColour.g, root.urgentColour.b, 1.0)
+                    gpuShaderStage.uCol2 = Qt.vector4d(0.22, 0.74, 0.97, 1.0)
+                }
             }
 
             // Throttle QML telemetry property updates to ~12 Hz (every 4th frame) to avoid QML binding storms
@@ -2318,10 +2394,22 @@ FocusScope {
                     pillHeight: 22
                     fontSize: 9
                     horizontalPad: 5
-                    text: "󰆓 L1 (" + (root.savedL1Configs ? root.savedL1Configs.length : 0) + ")"
+                    text: "󰆓 Save L1"
+                    active: false
+                    onClicked: root.saveCurrentL1Config()
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "󰉋 Saved L1 (" + (root.savedL1Configs ? root.savedL1Configs.length : 0) + ")"
                     active: false
                     onClicked: root.cycleSavedL1Config(1)
-                    onRightClicked: root.saveCurrentL1Config()
+                    onRightClicked: {
+                        root.activeConfigLayer = 1
+                        root.showLayerDrawer = true
+                    }
                 }
 
                 VizPillButton {
@@ -2505,10 +2593,22 @@ FocusScope {
                     pillHeight: 22
                     fontSize: 9
                     horizontalPad: 5
-                    text: "󰆓 L2 (" + (root.savedL2Configs ? root.savedL2Configs.length : 0) + ")"
+                    text: "󰆓 Save L2"
+                    active: false
+                    onClicked: root.saveCurrentL2Config()
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "󰉋 Saved L2 (" + (root.savedL2Configs ? root.savedL2Configs.length : 0) + ")"
                     active: false
                     onClicked: root.cycleSavedL2Config(1)
-                    onRightClicked: root.saveCurrentL2Config()
+                    onRightClicked: {
+                        root.activeConfigLayer = 2
+                        root.showLayerDrawer = true
+                    }
                 }
 
                 Repeater {
@@ -2607,10 +2707,22 @@ FocusScope {
                     pillHeight: 22
                     fontSize: 9
                     horizontalPad: 5
-                    text: "󰆓 L3 (" + (root.savedL3Configs ? root.savedL3Configs.length : 0) + ")"
+                    text: "󰆓 Save L3"
+                    active: false
+                    onClicked: root.saveCurrentL3Config()
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "󰉋 Saved L3 (" + (root.savedL3Configs ? root.savedL3Configs.length : 0) + ")"
                     active: false
                     onClicked: root.cycleSavedL3Config(1)
-                    onRightClicked: root.saveCurrentL3Config()
+                    onRightClicked: {
+                        root.activeConfigLayer = 3
+                        root.showLayerDrawer = true
+                    }
                 }
 
                 VizPillButton {
@@ -3475,11 +3587,26 @@ FocusScope {
                                             }
                                         }
                                     }
+
+                                    Item { Layout.fillWidth: true }
+
+                                    VizPillButton {
+                                        text: "Flow: " + (root.backdropDirection > 0 ? "Towards User" : (root.backdropDirection < 0 ? "To Endpoint" : "Breathe In/Out"))
+                                        active: root.backdropEnabled
+                                        pillHeight: 22
+                                        horizontalPad: 6
+                                        onClicked: {
+                                            root.backdropDirection = (root.backdropDirection === 1) ? -1 : ((root.backdropDirection === -1) ? 0 : 1)
+                                            vizCanvas.requestPaint()
+                                            scheduleSaveVisualiserConfig()
+                                            root.requestActionFeedback("GPU Backdrop Flow: " + (root.backdropDirection > 0 ? "Towards User" : (root.backdropDirection < 0 ? "To Endpoint" : "Breathe In/Out")))
+                                        }
+                                    }
                                 }
 
                                 GridLayout {
                                     Layout.fillWidth: true
-                                    columns: 2
+                                    columns: 3
                                     columnSpacing: 16
                                     rowSpacing: 5
 
@@ -3499,6 +3626,16 @@ FocusScope {
                                         maxValue: 2.20
                                         unitSuffix: "x"
                                         onValueEdited: v => { root.backdropIntensity = v; vizCanvas.requestPaint() }
+                                    }
+
+                                    LayerSlider {
+                                        label: "Flower Petals / Folds"
+                                        value: root.backdropSymmetry
+                                        minValue: 2
+                                        maxValue: 16
+                                        integerSteps: true
+                                        unitSuffix: "x"
+                                        onValueEdited: v => { root.backdropSymmetry = Math.round(v); vizCanvas.requestPaint() }
                                     }
                                 }
                             }

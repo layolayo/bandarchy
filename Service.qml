@@ -1184,7 +1184,7 @@ Item {
     }
 
     function launchStandalonePlayer() {
-        Quickshell.execDetached(["quickshell", "-p", root.baseDir + "/App.qml"])
+        Quickshell.execDetached([root.baseDir + "/bin/bandarchy-player"])
         root.notifyAction("Launched standalone Bandarchy window")
     }
 }

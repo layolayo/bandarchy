@@ -1061,13 +1061,25 @@ console.log('OK');
         self.assertNotIn("root.layer1Mode", l3_apply_body)
         self.assertNotIn("root.visualMode", l3_apply_body)
 
-        # Independent GPU Shader Backdrop & live uniform push in frameAnim
+        # Independent GPU Shader Backdrop & live uniform push (including palette colours uCol0..uCol2) in frameAnim
         self.assertIn("property bool backdropEnabled: true", viz_src)
         self.assertIn("property int backdropMode: 0", viz_src)
         self.assertIn("gpuShaderStage.uTime =", viz_src)
+        self.assertIn("gpuShaderStage.uCol0 =", viz_src)
+        self.assertIn("gpuShaderStage.uCol1 =", viz_src)
+        self.assertIn("gpuShaderStage.uCol2 =", viz_src)
         self.assertIn("property real uL2Mode: root.backdropMode", viz_src)
         self.assertIn("if (m == 0)", frag_src)
         self.assertIn("else if (m == 5)", frag_src)
+
+        # Verify explicit Save L1/L2/L3 + Saved L1/L2/L3 (N) buttons on HUD Rows 2A, 2B, 2C and empty-array persistence
+        self.assertIn('text: "󰆓 Save L1"', viz_src)
+        self.assertIn('text: "󰉋 Saved L1 ("', viz_src)
+        self.assertIn('text: "󰆓 Save L2"', viz_src)
+        self.assertIn('text: "󰉋 Saved L2 ("', viz_src)
+        self.assertIn('text: "󰆓 Save L3"', viz_src)
+        self.assertIn('text: "󰉋 Saved L3 ("', viz_src)
+        self.assertIn("if (Array.isArray(cfg.savedL3Configs)) root.savedL3Configs = cfg.savedL3Configs", viz_src)
 
         # Per-Layer Auto-Randomise ON/OFF toggles & Tab 4 General & Quality
         self.assertIn("property bool layer1AutoRandomise: false", viz_src)
@@ -1075,6 +1087,7 @@ console.log('OK');
         self.assertIn("property bool layer3AutoRandomise: false", viz_src)
         self.assertIn("󰒓 General & Quality", viz_src)
         self.assertIn("function saveVisualiserConfig(", svc_src)
+        self.assertIn('/bin/bandarchy-player"', svc_src)
 
         # Verify Album Row layout fix in both App.qml and Panel.qml
         for name, src in (("App.qml", app_src), ("Panel.qml", panel_src)):
@@ -1086,8 +1099,8 @@ console.log('OK');
             self.assertIn("onRequestSaveVisualiserConfig:", src, f"{name} must bind onRequestSaveVisualiserConfig on Visualiser")
 
         # 3. Verify Node.js PsychedelicEngine.js:
-        #    - BACKDROP_MODES has 7 entries
-        #    - evalMinterShapeProfile smoothly interpolates across continuous worldRing (no integer discontinuity)
+        #    - BACKDROP_MODES has 7 entries and state.backdropTime scales with backdropSpeed
+        #    - evalMinterShapeProfile(kindOrPhase, a, baseFolds) smoothly interpolates across continuous kindOrPhase (no integer discontinuity)
         #    - L1 Mode 4 (TRON / Battlezone Landscape) renders 8-edge pyramids, 12-edge cubes, 3D Battlezone tanks, and locked worldScroll
         if shutil.which("node"):
             node_script = r"""
@@ -1099,12 +1112,21 @@ if (!Array.isArray(BACKDROP_MODES) || BACKDROP_MODES.length !== 7) {
     throw new Error('Expected 7 BACKDROP_MODES, got ' + JSON.stringify(BACKDROP_MODES));
 }
 
-// Verify evalMinterShapeProfile is C0-continuous across integer ring boundaries (no sudden joint snap!)
-for (let w = 0.85; w <= 2.15; w += 0.01) {
-    const v0 = evalMinterShapeProfile(0.37, w, 1.5, 4);
-    const v1 = evalMinterShapeProfile(0.37, w + 0.001, 1.5, 4);
+// Verify state.backdropTime advances proportionally to cfg.backdropSpeed
+const stSlow = createState();
+const stFast = createState();
+stepState(stSlow, new Array(64).fill(200), true, normaliseConfig({ backdropSpeed: 0.25 }, 0, []), 0.05);
+stepState(stFast, new Array(64).fill(200), true, normaliseConfig({ backdropSpeed: 2.50 }, 0, []), 0.05);
+if (!(stFast.backdropTime > stSlow.backdropTime * 5.0)) {
+    throw new Error('Expected backdropTime to scale with backdropSpeed: slow=' + stSlow.backdropTime + ' fast=' + stFast.backdropTime);
+}
+
+// Verify evalMinterShapeProfile is C0-continuous across integer kindOrPhase boundaries (no sudden joint snap!)
+for (let w = 0.85; w <= 5.15; w += 0.01) {
+    const v0 = evalMinterShapeProfile(w, 0.37, 6);
+    const v1 = evalMinterShapeProfile(w + 0.001, 0.37, 6);
     if (Math.abs(v1 - v0) > 0.015) {
-        throw new Error('Discontinuity in evalMinterShapeProfile at w=' + w + ': dv=' + Math.abs(v1 - v0));
+        throw new Error('Discontinuity in evalMinterShapeProfile at kindOrPhase=' + w + ': dv=' + Math.abs(v1 - v0));
     }
 }
 
