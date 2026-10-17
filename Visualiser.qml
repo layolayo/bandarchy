@@ -1109,10 +1109,10 @@ FocusScope {
         }
     }
 
-    // Independent Layer #3 Auto-Randomise Timer (Cycles L3 Modes & TTE effects automatically when L3 Auto-Randomise is ON)
+    // Independent Layer #3 Auto-Randomise Timer (Cycles L3 Modes & TTE effects automatically every 45s when L3 Auto-Randomise is ON)
     Timer {
         id: l3RandomiseTimer
-        interval: 9000
+        interval: 45000
         running: root.visible && root.stageMode === "visualiser" && root.layer3Enabled && root.layer3AutoRandomise
         repeat: true
         onTriggered: {
@@ -1237,19 +1237,29 @@ FocusScope {
         fragmentShader: Qt.resolvedUrl("share/psychedelic.frag.qsb")
 
         property real uTime: root.engineState ? (root.engineState.t || 0.0) : 0.0
-        property real uAspect: height > 0 ? (width / height) : 1.777
+        property real uL1Time: root.engineState ? (root.engineState.l1Time || 0.0) : 0.0
+        property real uZoomTime: root.engineState ? (root.engineState.zoomTime || 0.0) : 0.0
         property real uBass: root.liveBass
         property real uMid: root.liveMid
         property real uHigh: root.liveHigh
         property real uBeat: root.liveBeat
-        property real uMode: (root.visualMode === 4 ? 1.0 : (root.visualMode === 5 ? 2.0 : 0.0))
+        property real uAspect: height > 0 ? (width / height) : 1.777
+        property real uL1Enabled: root.layer1Enabled && root.layer1FieldEnabled ? 1.0 : 0.0
+        property real uL1Mode: root.layer1Mode
+        property real uL1Dim: root.layer1Dim
+        property real uL2Enabled: root.layer2Enabled ? 1.0 : 0.0
+        property real uL2Mode: root.visualMode
         property real uZoom: root.layer2Zoom
-        property real uEndX: Math.sin(uTime * 0.27) * 0.18
-        property real uEndY: Math.cos(uTime * 0.21) * 0.14
+        property real uFacets: root.symmetryFolds
+        property real uComplexity: root.layer2Complexity
+        property real uTracerCount: root.tracerCount
+        property real uTracerDir: root.tracerDirection
+        property real uDriftX: Math.sin(uTime * 0.27) * 0.16 * root.tracerDrift
+        property real uDriftY: Math.cos(uTime * 0.21) * 0.12 * root.tracerDrift
+        property vector4d uBgCol: Qt.vector4d(root.backgroundColour.r, root.backgroundColour.g, root.backgroundColour.b, 1.0)
         property vector4d uCol0: Qt.vector4d(root.accentColour.r, root.accentColour.g, root.accentColour.b, 1.0)
         property vector4d uCol1: Qt.vector4d(root.urgentColour.r, root.urgentColour.g, root.urgentColour.b, 1.0)
         property vector4d uCol2: Qt.vector4d(0.22, 0.74, 0.97, 1.0)
-        property vector4d uBgCol: Qt.vector4d(root.backgroundColour.r, root.backgroundColour.g, root.backgroundColour.b, 1.0)
     }
 
     Canvas {
