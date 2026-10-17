@@ -54,18 +54,26 @@ FocusScope {
     readonly property var layer1EqDampingNames: Engine.LAYER1_EQ_DAMPING
     readonly property var layer1ShapeStyles: Engine.LAYER1_SHAPE_STYLES
     readonly property var layer3Modes: Engine.LAYER3_MODES
+    readonly property var layer3TextStyles: Engine.LAYER3_TEXT_STYLES
+    readonly property var layer3CylinderDirs: Engine.LAYER3_CYLINDER_DIRS
     readonly property var backdropModes: Engine.BACKDROP_MODES
+    readonly property var layer4Modes: Engine.LAYER4_MODES
+    readonly property var layer4WallPatterns: Engine.LAYER4_WALL_PATTERNS
     readonly property var paletteNames: Engine.PALETTE_NAMES
     readonly property var shortPaletteNames: [
         "Rainbow", "Cyber", "Solar", "BioGlow", "UV Rave",
-        "Nebula", "Emerald", "Blood", "Gold", "Aurora"
+        "Nebula", "Emerald", "Blood", "Gold", "Aurora",
+        "Tokyo", "Plasma", "Acid303", "Outrun", "Holo",
+        "DMT", "Cryo", "Magma", "Vapor", "Supernova",
+        "Jungle", "Strobe", "Amethyst", "Copper", "Abalone",
+        "Isotope", "Quasar", "Crimson", "Oceanic", "Prismatic"
     ]
     readonly property var trackArcModes: Engine.TRACK_ARC_MODES
 
     // Global Music-Driven Modulation, Hardware GPU Acceleration, Song Arc & Row 2 Focus
     property bool musicDrive: true
     property bool gpuShaderEnabled: true // Hardware GPU shader acceleration (configured in General & Quality)
-    property int hudFocusedLayer: 1 // 1 = L1 Controls, 2 = L2 Controls, 3 = L3 Controls on Row 2 of topHud
+    property int hudFocusedLayer: 1 // 1 = L1 Controls, 2 = L2 Controls, 3 = L3 Controls, 4 = L4 Tunnel & Vortex Controls on Row 2 of topHud
     property int trackArcMode: 0 // 0 = Dynamic Audio Arc, 1 = Climax (75%), 2 = Dismantle, 3 = Rebuild, 4 = Quarters
     property bool showTracerPopover: false
 
@@ -74,7 +82,7 @@ FocusScope {
     property bool vjDeckMode: false
     property int targetScreenIndex: 0
 
-    // General & Quality settings (exposed in Tab 4: 󰒓 General & Quality of layerDrawer)
+    // General & Quality settings (exposed in Tab 5: 󰒓 General & Quality of layerDrawer)
     property int renderQuality: 1 // 0 = Low (384p), 1 = Balanced (480p), 2 = High (560p), 3 = Ultra (640p)
     property int renderResW: 480
     property int targetFps: 48 // 30, 48, or 60 FPS
@@ -86,6 +94,7 @@ FocusScope {
     property real colourCycleSpeed: 1.00 // 0.00x .. 2.50x hue rotation speed
     property real masterBrightness: 1.00 // 0.30x .. 1.60x master visualiser brightness
     property int autoCycleIntervalSec: 18 // 5s .. 60s global auto-cycle interval
+    property bool disableScreensaverInFullscreenOrVj: true // Automatically inhibit Omarchy screensaver & idle while Fullscreen or VJ Mode is active
     property real frameAccumDt: 0.0
     property int telemetryTick: 0
 
@@ -103,22 +112,24 @@ FocusScope {
     property real layer1Density: 1.0
     property real layer1Dim: 0.16
     property bool layer1EqEnabled: true
+    property bool layerEqAutoRandomise: false
     property int layer1EqStyle: 0
     property int layer1EqLayout: 0
     property real layer1EqScale: 1.0
     property real layer1EqGain: 1.25
     property int layer1EqDamping: 0
     property bool layer1ShapesEnabled: true
+    property bool layerVectorsAutoRandomise: false
     property int layer1ShapeStyle: 0
     property real layer1ShapeSpin: 1.0
     property real layer1ShapeSpeed: 1.0
     property real layer1ShapeScale: 1.0
     property real layer1ShapeDensity: 1.0
+    readonly property bool allRandomisationsActive: root.autoCycle && root.layer1AutoRandomise && root.layerEqAutoRandomise && root.layerVectorsAutoRandomise && root.layer2AutoRandomise && root.layer3AutoRandomise && root.layer4AutoRandomise
 
-    // Layer #2 — 3 Independent Sub-Layers:
+    // Layer #2 — Main Psychedelic Visualiser + 3D History Tracers:
     //   (1) L2 Main Visualiser (`layer2VizEnabled` + `visualMode` 0..12 + `layer2Speed` + `layer2Complexity`)
-    //   (2) L2 Tunnel Backdrop (`backdropEnabled` + `backdropMode` 0..7 + `backdropDirection` Towards/Away/Breathe + `backdropSpeed` + `backdropIntensity`)
-    //   (3) L2 3D History Tracers (`layer2TracersEnabled` + `tracerCount` 2..16 + `tracerDirection` Towards/Away/Breathe + `tracerSpeed` + `tracerDrift`)
+    //   (2) L2 3D History Tracers (`layer2TracersEnabled` + `tracerCount` 2..16 + `tracerDirection` Towards/Away/Breathe + `tracerSpeed` + `tracerDrift`)
     property bool layer2Enabled: true
     property bool layer2AutoRandomise: false
     property bool layer2VizEnabled: true
@@ -133,7 +144,7 @@ FocusScope {
     property real layer2Zoom: 1.0
     property real layer2Chaos: 0.50
     property bool backdropEnabled: true
-    property int backdropMode: 0 // 0..7 in Engine.BACKDROP_MODES
+    property int backdropMode: 0 // 0..15 in Engine.LAYER4_MODES (0..7 in legacy Engine.BACKDROP_MODES)
     property alias bgMode: root.backdropMode
     property real backdropSpeed: 1.0
     property real backdropIntensity: 1.0
@@ -145,10 +156,29 @@ FocusScope {
     property real tracerDrift: 1.00
     property int tracerDirection: 1 // 1 = Towards, -1 = Away, 0 = Breathe
 
-    // Layer #3 — 2 x 3 x 12 Matrix (Album Art | Song Words) x (Braille | Block | Crisp Text) x (12 Modes 0..11)
+    // Layer #4 — Dedicated GPU Tunnel & Vortex Shader Layer (16 Modes + Dual 2x Simultaneous Blend + 5 Wall Patterns)
+    property alias layer4Enabled: root.backdropEnabled
+    property int layer4Mode: 0 // 0..15 in Engine.LAYER4_MODES
+    property bool layer4DualEnabled: false // Runs two Layer 4 GPU modes simultaneously!
+    property int layer4SecondaryMode: 1 // 0..15 secondary mode when layer4DualEnabled is true
+    property real layer4DualMix: 0.50 // 0.10 .. 0.90 blend balance between Primary and Secondary L4 modes
+    property int layer4WallPattern: 0 // 0 = Rings, 1 = Hex Grid, 2 = Ribbons, 3 = Matrix, 4 = Strobe
+    property real layer4Twist: 1.00 // 0.00 .. 3.00 spiral twist multiplier
+    property alias layer4Speed: root.backdropSpeed
+    property alias layer4Glow: root.backdropIntensity
+    property alias layer4Symmetry: root.backdropSymmetry
+    property alias layer4Direction: root.backdropDirection
+    property bool layer4AutoRandomise: false
+
+    // Layer #3 — 2 x 3 x 12 x 16 Matrix (Album Art | Song Words) x (Braille | Block | Crisp Text) x (12 Modes 0..11) x (16 Psychedelic/Techno/Futuristic Styles 0..15)
     property bool layer3Enabled: true
     property bool layer3AutoRandomise: false
     property int layer3Mode: 0
+    property int layer3TextStyle: 0 // 0..15 in Engine.LAYER3_TEXT_STYLES
+    property int layer3CylinderDir: 0 // 0..5 in Engine.LAYER3_CYLINDER_DIRS
+    property bool layer3ShowArtist: true
+    property bool layer3ShowTrack: true
+    property bool layer3ShowAlbum: true
     property alias layer3UseArt: root.useAlbumArt
     property alias layer3AsciiMode: root.asciiMode
     property real layer3Dismantle: 1.15
@@ -161,12 +191,12 @@ FocusScope {
     onTurntableRpmChanged: stageTurntable.rpm = root.turntableRpm
     onTurntableStyleChanged: stageTurntable.vinylStyle = root.turntableStyle
 
-    // Individual Layer Saved Settings (`savedL1Configs`, `savedL2Configs`, `savedL3Configs`)
-    // Applying a saved item for L1, L2, or L3 ONLY updates that single layer!
+    // Individual Layer Saved Settings (`savedL1Configs`, `savedL2Configs`, `savedL3Configs`, `savedL4Configs`)
+    // Applying a saved item for L1, L2, L3, or L4 ONLY updates that single layer!
     property int currentSavedL1Index: 0
     property var savedL1Configs: [
         {
-            name: "Battlezone & Skyline EQ",
+            name: "Atari Battlezone & Skyline EQ",
             l1FieldEnabled: true, l1Mode: 4, l1Direction: 1, l1Persistence: 0.84, l1Speed: 1.00, l1Density: 1.00, l1Dim: 0.14,
             l1EqEnabled: true, l1EqStyle: 0, l1EqLayout: 0, l1EqScale: 1.00, l1EqGain: 1.35, l1EqDamping: 0,
             l1ShapesEnabled: true, l1ShapeStyle: 2, l1ShapeSpin: 1.00, l1ShapeSpeed: 1.05, l1ShapeScale: 1.00,
@@ -203,21 +233,46 @@ FocusScope {
     property var savedL3Configs: [
         {
             name: "Art · Braille · Shatter",
-            l3Mode: 0, useAlbumArt: true, asciiMode: "braille",
+            l3Mode: 0, l3TextStyle: 0, l3ShowArtist: true, l3ShowTrack: true, l3ShowAlbum: true,
+            useAlbumArt: true, asciiMode: "braille",
             l3Dismantle: 1.15, l3Rebuild: 1.05, l3Evolution: 0.90, l3Scale: 1.00, l3Tracers: 3,
             trackArcMode: 0, l3AutoRandomise: false
         },
         {
-            name: "Words · Braille · TTE Morph",
-            l3Mode: 5, useAlbumArt: false, asciiMode: "braille",
-            l3Dismantle: 1.10, l3Rebuild: 1.10, l3Evolution: 1.05, l3Scale: 1.00, l3Tracers: 4,
-            trackArcMode: 1, l3AutoRandomise: false
+            name: "Words · Crisp Text · Cyber Techno",
+            l3Mode: 6, l3TextStyle: 0, l3ShowArtist: true, l3ShowTrack: true, l3ShowAlbum: true,
+            useAlbumArt: false, asciiMode: "text",
+            l3Dismantle: 1.10, l3Rebuild: 1.10, l3Evolution: 1.05, l3Scale: 1.00, l3Tracers: 3,
+            trackArcMode: 0, l3AutoRandomise: false
         },
         {
-            name: "Art · Block · Blackhole",
-            l3Mode: 2, useAlbumArt: true, asciiMode: "block",
+            name: "Words · Crisp Text · Psychedelic Liquid",
+            l3Mode: 7, l3TextStyle: 1, l3ShowArtist: true, l3ShowTrack: true, l3ShowAlbum: false,
+            useAlbumArt: false, asciiMode: "text",
             l3Dismantle: 1.25, l3Rebuild: 1.00, l3Evolution: 0.95, l3Scale: 1.05, l3Tracers: 4,
             trackArcMode: 0, l3AutoRandomise: false
+        }
+    ]
+
+    property int currentSavedL4Index: 0
+    property var savedL4Configs: [
+        {
+            name: "Twin Ripple + Spiral Vortex (2x)",
+            l4Enabled: true, l4Mode: 2, l4DualEnabled: true, l4SecondaryMode: 1, l4DualMix: 0.50,
+            l4WallPattern: 1, l4Twist: 1.15, l4Speed: 1.10, l4Glow: 1.15, l4Symmetry: 6, l4Direction: 1,
+            l4AutoRandomise: false
+        },
+        {
+            name: "Butterchurn + TouchDesigner Curl (2x)",
+            l4Enabled: true, l4Mode: 4, l4DualEnabled: true, l4SecondaryMode: 9, l4DualMix: 0.52,
+            l4WallPattern: 2, l4Twist: 1.25, l4Speed: 1.15, l4Glow: 1.20, l4Symmetry: 8, l4Direction: 1,
+            l4AutoRandomise: false
+        },
+        {
+            name: "Binary Twin Vortex · Hex Grid",
+            l4Enabled: true, l4Mode: 3, l4DualEnabled: false, l4SecondaryMode: 14, l4DualMix: 0.50,
+            l4WallPattern: 1, l4Twist: 1.30, l4Speed: 1.15, l4Glow: 1.10, l4Symmetry: 6, l4Direction: 1,
+            l4AutoRandomise: false
         }
     ]
 
@@ -406,6 +461,25 @@ FocusScope {
         "Voronoi"
     ]
 
+    readonly property var shortL4ModeLabels: [
+        "CyberTun",
+        "Vortex",
+        "2xRipple",
+        "2xVortex",
+        "Butter",
+        "projectM",
+        "MagicWav",
+        "VS Synth",
+        "VSXu Rib",
+        "TD Curl",
+        "Metaball",
+        "Wormhole",
+        "Moiré",
+        "Mandel",
+        "BlackHole",
+        "Voronoi"
+    ]
+
     readonly property var shortModeLabels: [
         "MilkDrop",
         "AVS",
@@ -435,6 +509,25 @@ FocusScope {
         "3D Crawl",
         "Mirror Split",
         "Sonic Lens"
+    ]
+
+    readonly property var shortL3StyleLabels: [
+        "Techno",
+        "Liquid",
+        "Laser",
+        "Chrome",
+        "LED Wall",
+        "Acid Glitch",
+        "UV Glow",
+        "Brutalist",
+        "Holo HUD",
+        "Oscillo XY",
+        "Iso 3D",
+        "Tesla Arc",
+        "Y2K Metal",
+        "Copperbar",
+        "Bio Spore",
+        "Quantum"
     ]
 
     readonly property var ttfxEffectsList: [
@@ -471,6 +564,7 @@ FocusScope {
     signal requestSelectTtfxEffect(string effectName)
     signal requestStageModeChange(string newStageMode)
     signal requestActionFeedback(string message)
+    function suppressActionFeedback(message) {}
 
     property var engineState: Engine.createState()
 
@@ -485,7 +579,28 @@ FocusScope {
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
-    onBackdropModeChanged: scheduleSaveVisualiserConfig()
+    onBackdropModeChanged: {
+        if (root.layer4Mode !== root.backdropMode) {
+            root.layer4Mode = root.backdropMode % Engine.LAYER4_MODES.length
+        }
+        scheduleSaveVisualiserConfig()
+    }
+    onLayer4ModeChanged: {
+        var normM = ((root.layer4Mode % Engine.LAYER4_MODES.length) + Engine.LAYER4_MODES.length) % Engine.LAYER4_MODES.length
+        if (root.backdropMode !== normM) {
+            root.backdropMode = normM
+        }
+        scheduleSaveVisualiserConfig()
+    }
+    onLayer4DualEnabledChanged: {
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
+    }
+    onLayer4SecondaryModeChanged: scheduleSaveVisualiserConfig()
+    onLayer4DualMixChanged: scheduleSaveVisualiserConfig()
+    onLayer4WallPatternChanged: scheduleSaveVisualiserConfig()
+    onLayer4TwistChanged: scheduleSaveVisualiserConfig()
+    onLayer4AutoRandomiseChanged: scheduleSaveVisualiserConfig()
     onBackdropSpeedChanged: scheduleSaveVisualiserConfig()
     onBackdropIntensityChanged: scheduleSaveVisualiserConfig()
     onBackdropSymmetryChanged: scheduleSaveVisualiserConfig()
@@ -504,8 +619,14 @@ FocusScope {
         scheduleSaveVisualiserConfig()
     }
     onLayer1AutoRandomiseChanged: scheduleSaveVisualiserConfig()
+    onLayerEqAutoRandomiseChanged: scheduleSaveVisualiserConfig()
+    onLayerVectorsAutoRandomiseChanged: scheduleSaveVisualiserConfig()
     onLayer2AutoRandomiseChanged: scheduleSaveVisualiserConfig()
     onLayer3AutoRandomiseChanged: scheduleSaveVisualiserConfig()
+    onDisableScreensaverInFullscreenOrVjChanged: scheduleSaveVisualiserConfig()
+    onVjDeckModeChanged: scheduleSaveVisualiserConfig()
+    onExternalStageOpenChanged: scheduleSaveVisualiserConfig()
+    onIsFullscreenChanged: scheduleSaveVisualiserConfig()
     property string _lastEmittedConfigJson: ""
 
     function selectL3SourceOrGlyph(modeStr) {
@@ -586,6 +707,14 @@ FocusScope {
             backdropIntensity: root.backdropIntensity,
             backdropSymmetry: root.backdropSymmetry,
             backdropDirection: root.backdropDirection,
+            layer4Enabled: root.layer4Enabled,
+            layer4Mode: root.layer4Mode,
+            layer4DualEnabled: root.layer4DualEnabled,
+            layer4SecondaryMode: root.layer4SecondaryMode,
+            layer4DualMix: root.layer4DualMix,
+            layer4WallPattern: root.layer4WallPattern,
+            layer4Twist: root.layer4Twist,
+            layer4AutoRandomise: root.layer4AutoRandomise,
             trackArcMode: root.trackArcMode,
             tracerCount: root.tracerCount,
             tracerSpeed: root.tracerSpeed,
@@ -596,6 +725,8 @@ FocusScope {
             targetFps: root.targetFps,
             geometryDetail: root.geometryDetail,
             antialiasingEnabled: root.antialiasingEnabled,
+            disableScreensaverInFullscreenOrVj: root.disableScreensaverInFullscreenOrVj,
+            vjDeckActive: Boolean(root.vjDeckMode || root.externalStageOpen || root.isFullscreen),
             audioSensitivity: root.audioSensitivity,
             beatPunch: root.beatPunch,
             audioSmoothing: root.audioSmoothing,
@@ -606,6 +737,8 @@ FocusScope {
             autoCycle: root.autoCycle,
             layer1Enabled: root.layer1Enabled,
             layer1AutoRandomise: root.layer1AutoRandomise,
+            layerEqAutoRandomise: root.layerEqAutoRandomise,
+            layerVectorsAutoRandomise: root.layerVectorsAutoRandomise,
             layer1FieldEnabled: root.layer1FieldEnabled,
             layer1Mode: root.layer1Mode,
             layer1Direction: root.layer1Direction,
@@ -639,6 +772,11 @@ FocusScope {
             layer3Enabled: root.layer3Enabled,
             layer3AutoRandomise: root.layer3AutoRandomise,
             layer3Mode: root.layer3Mode,
+            layer3TextStyle: root.layer3TextStyle,
+            layer3CylinderDir: root.layer3CylinderDir,
+            layer3ShowArtist: root.layer3ShowArtist,
+            layer3ShowTrack: root.layer3ShowTrack,
+            layer3ShowAlbum: root.layer3ShowAlbum,
             useAlbumArt: root.useAlbumArt,
             asciiMode: root.asciiMode,
             layer3Dismantle: root.layer3Dismantle,
@@ -651,6 +789,7 @@ FocusScope {
             savedL1Configs: root.savedL1Configs,
             savedL2Configs: root.savedL2Configs,
             savedL3Configs: root.savedL3Configs,
+            savedL4Configs: root.savedL4Configs,
             collectivePresets: root.collectivePresets
         }
     }
@@ -671,12 +810,26 @@ FocusScope {
         } else {
             if (cfg.gpuShaderEnabled !== undefined) root.gpuShaderEnabled = Boolean(cfg.gpuShaderEnabled)
             if (cfg.backdropEnabled !== undefined) root.backdropEnabled = Boolean(cfg.backdropEnabled)
+            if (cfg.layer4Enabled !== undefined) root.backdropEnabled = Boolean(cfg.layer4Enabled)
             if (cfg.renderQuality !== undefined) root.renderQuality = Number(cfg.renderQuality)
             if (cfg.renderResW !== undefined) root.renderResW = Number(cfg.renderResW)
             if (cfg.targetFps !== undefined) root.targetFps = Number(cfg.targetFps)
             if (cfg.geometryDetail !== undefined) root.geometryDetail = Number(cfg.geometryDetail)
         }
-        if (cfg.backdropMode !== undefined) root.backdropMode = Number(cfg.backdropMode) % Engine.BACKDROP_MODES.length
+        if (cfg.backdropMode !== undefined) {
+            root.backdropMode = Number(cfg.backdropMode) % Engine.LAYER4_MODES.length
+            root.layer4Mode = root.backdropMode
+        }
+        if (cfg.layer4Mode !== undefined) {
+            root.layer4Mode = Number(cfg.layer4Mode) % Engine.LAYER4_MODES.length
+            root.backdropMode = root.layer4Mode
+        }
+        if (cfg.layer4DualEnabled !== undefined) root.layer4DualEnabled = Boolean(cfg.layer4DualEnabled)
+        if (cfg.layer4SecondaryMode !== undefined) root.layer4SecondaryMode = Number(cfg.layer4SecondaryMode) % Engine.LAYER4_MODES.length
+        if (cfg.layer4DualMix !== undefined) root.layer4DualMix = Math.max(0.10, Math.min(0.90, Number(cfg.layer4DualMix) || 0.50))
+        if (cfg.layer4WallPattern !== undefined) root.layer4WallPattern = Number(cfg.layer4WallPattern) % Engine.LAYER4_WALL_PATTERNS.length
+        if (cfg.layer4Twist !== undefined) root.layer4Twist = Math.max(0.0, Math.min(3.0, Number(cfg.layer4Twist)))
+        if (cfg.layer4AutoRandomise !== undefined) root.layer4AutoRandomise = Boolean(cfg.layer4AutoRandomise)
         if (cfg.backdropSpeed !== undefined) root.backdropSpeed = Number(cfg.backdropSpeed)
         if (cfg.backdropIntensity !== undefined) root.backdropIntensity = Number(cfg.backdropIntensity)
         if (cfg.backdropSymmetry !== undefined) root.backdropSymmetry = Number(cfg.backdropSymmetry)
@@ -687,6 +840,7 @@ FocusScope {
         if (cfg.tracerDrift !== undefined) root.tracerDrift = Number(cfg.tracerDrift)
         if (cfg.tracerDirection !== undefined) root.tracerDirection = Number(cfg.tracerDirection)
         if (cfg.antialiasingEnabled !== undefined) root.antialiasingEnabled = Boolean(cfg.antialiasingEnabled)
+        if (cfg.disableScreensaverInFullscreenOrVj !== undefined) root.disableScreensaverInFullscreenOrVj = Boolean(cfg.disableScreensaverInFullscreenOrVj)
         if (cfg.audioSensitivity !== undefined) root.audioSensitivity = Number(cfg.audioSensitivity)
         if (cfg.beatPunch !== undefined) root.beatPunch = Number(cfg.beatPunch)
         if (cfg.audioSmoothing !== undefined) root.audioSmoothing = Number(cfg.audioSmoothing)
@@ -698,6 +852,8 @@ FocusScope {
 
         if (cfg.layer1Enabled !== undefined) root.layer1Enabled = Boolean(cfg.layer1Enabled)
         if (cfg.layer1AutoRandomise !== undefined) root.layer1AutoRandomise = Boolean(cfg.layer1AutoRandomise)
+        if (cfg.layerEqAutoRandomise !== undefined) root.layerEqAutoRandomise = Boolean(cfg.layerEqAutoRandomise)
+        if (cfg.layerVectorsAutoRandomise !== undefined) root.layerVectorsAutoRandomise = Boolean(cfg.layerVectorsAutoRandomise)
         if (cfg.layer1FieldEnabled !== undefined) root.layer1FieldEnabled = Boolean(cfg.layer1FieldEnabled)
         if (cfg.layer1Mode !== undefined) root.layer1Mode = Number(cfg.layer1Mode) % Engine.LAYER1_MODES.length
         if (cfg.layer1Direction !== undefined) root.layer1Direction = Number(cfg.layer1Direction)
@@ -708,7 +864,7 @@ FocusScope {
         if (cfg.layer1EqEnabled !== undefined) root.layer1EqEnabled = Boolean(cfg.layer1EqEnabled)
         if (cfg.layer1EqStyle !== undefined) root.layer1EqStyle = Number(cfg.layer1EqStyle) % Engine.LAYER1_EQ_STYLES.length
         if (cfg.layer1EqLayout !== undefined) root.layer1EqLayout = Number(cfg.layer1EqLayout) % Engine.LAYER1_EQ_LAYOUTS.length
-        if (cfg.layer1EqScale !== undefined) root.layer1EqScale = Math.max(0.35, Math.min(2.25, Number(cfg.layer1EqScale) || 1.0))
+        if (cfg.layer1EqScale !== undefined) root.layer1EqScale = Math.max(0.15, Math.min(2.25, Number(cfg.layer1EqScale) || 1.0))
         if (cfg.layer1EqGain !== undefined) root.layer1EqGain = Number(cfg.layer1EqGain)
         if (cfg.layer1EqDamping !== undefined) root.layer1EqDamping = Number(cfg.layer1EqDamping) % Engine.LAYER1_EQ_DAMPING.length
         if (cfg.layer1ShapesEnabled !== undefined) root.layer1ShapesEnabled = Boolean(cfg.layer1ShapesEnabled)
@@ -733,6 +889,11 @@ FocusScope {
         if (cfg.layer3Enabled !== undefined) root.layer3Enabled = Boolean(cfg.layer3Enabled)
         if (cfg.layer3AutoRandomise !== undefined) root.layer3AutoRandomise = Boolean(cfg.layer3AutoRandomise)
         if (cfg.layer3Mode !== undefined) root.layer3Mode = Number(cfg.layer3Mode) % Engine.LAYER3_MODES.length
+        if (cfg.layer3TextStyle !== undefined) root.layer3TextStyle = Number(cfg.layer3TextStyle) % Engine.LAYER3_TEXT_STYLES.length
+        if (cfg.layer3CylinderDir !== undefined) root.layer3CylinderDir = Number(cfg.layer3CylinderDir) % Engine.LAYER3_CYLINDER_DIRS.length
+        if (cfg.layer3ShowArtist !== undefined) root.layer3ShowArtist = Boolean(cfg.layer3ShowArtist)
+        if (cfg.layer3ShowTrack !== undefined) root.layer3ShowTrack = Boolean(cfg.layer3ShowTrack)
+        if (cfg.layer3ShowAlbum !== undefined) root.layer3ShowAlbum = Boolean(cfg.layer3ShowAlbum)
         if (cfg.useAlbumArt !== undefined) root.useAlbumArt = Boolean(cfg.useAlbumArt)
         if (cfg.asciiMode !== undefined) {
             var am = String(cfg.asciiMode).toLowerCase()
@@ -755,6 +916,7 @@ FocusScope {
         if (Array.isArray(cfg.savedL1Configs)) root.savedL1Configs = cfg.savedL1Configs
         if (Array.isArray(cfg.savedL2Configs)) root.savedL2Configs = cfg.savedL2Configs
         if (Array.isArray(cfg.savedL3Configs)) root.savedL3Configs = cfg.savedL3Configs
+        if (Array.isArray(cfg.savedL4Configs)) root.savedL4Configs = cfg.savedL4Configs
         if (Array.isArray(cfg.collectivePresets) && cfg.collectivePresets.length > 0) root.collectivePresets = cfg.collectivePresets
 
         root._applyingPersistedConfig = false
@@ -770,6 +932,7 @@ FocusScope {
         root.targetFps = 48
         root.geometryDetail = 1.0
         root.antialiasingEnabled = true
+        root.disableScreensaverInFullscreenOrVj = true
         root.audioSensitivity = 1.35
         root.beatPunch = 1.15
         root.audioSmoothing = 0.50
@@ -781,6 +944,12 @@ FocusScope {
         root.gpuShaderEnabled = true
         root.backdropEnabled = true
         root.backdropMode = 0
+        root.layer4Mode = 0
+        root.layer4DualEnabled = false
+        root.layer4SecondaryMode = 1
+        root.layer4DualMix = 0.50
+        root.layer4WallPattern = 0
+        root.layer4Twist = 1.00
         root.backdropSpeed = 1.0
         root.backdropIntensity = 1.0
         root.backdropSymmetry = 6
@@ -806,10 +975,19 @@ FocusScope {
         root.tracerDirection = 1
         root.layer3Enabled = true
         root.layer3Mode = 0
+        root.layer3TextStyle = 0
+        root.layer3CylinderDir = 0
+        root.layer3ShowArtist = true
+        root.layer3ShowTrack = true
+        root.layer3ShowAlbum = true
         root.layer3Tracers = 3
+        root.autoCycle = false
         root.layer1AutoRandomise = false
+        root.layerEqAutoRandomise = false
+        root.layerVectorsAutoRandomise = false
         root.layer2AutoRandomise = false
         root.layer3AutoRandomise = false
+        root.layer4AutoRandomise = false
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
         root.requestActionFeedback("Reset Visualiser & Quality Settings to Defaults")
@@ -821,11 +999,10 @@ FocusScope {
     function saveCurrentL1Config() {
         var copy = (root.savedL1Configs || []).slice()
         var fieldLabel = root.layer1FieldEnabled ? (Engine.LAYER1_MODES[root.layer1Mode] || "Field").split(" ")[0] : "NoField"
-        var tunLabel = root.backdropEnabled ? (Engine.BACKDROP_MODES[root.backdropMode] || "Tunnel").split(" ")[0] : "NoTun"
         var eqLabel = root.layer1EqEnabled ? (Engine.LAYER1_EQ_STYLES[root.layer1EqStyle] || "EQ").split(" ")[0] : "NoEQ"
         var shLabel = root.layer1ShapesEnabled ? (Engine.LAYER1_SHAPE_STYLES[root.layer1ShapeStyle] || "Shapes").split(" ")[0] : "NoShapes"
         var item = {
-            name: fieldLabel + " · " + tunLabel + " · " + eqLabel + " · " + shLabel,
+            name: fieldLabel + " · " + eqLabel + " · " + shLabel,
             l1FieldEnabled: root.layer1FieldEnabled,
             l1Mode: root.layer1Mode,
             l1Direction: root.layer1Direction,
@@ -833,12 +1010,6 @@ FocusScope {
             l1Speed: root.layer1Speed,
             l1Density: root.layer1Density,
             l1Dim: root.layer1Dim,
-            backdropEnabled: root.backdropEnabled,
-            backdropMode: root.backdropMode,
-            backdropDirection: root.backdropDirection,
-            backdropSpeed: root.backdropSpeed,
-            backdropIntensity: root.backdropIntensity,
-            backdropSymmetry: root.backdropSymmetry,
             l1EqEnabled: root.layer1EqEnabled,
             l1EqStyle: root.layer1EqStyle,
             l1EqLayout: root.layer1EqLayout,
@@ -865,7 +1036,7 @@ FocusScope {
         if (idx < 0 || idx >= list.length) return
         var item = list[idx]
         root.currentSavedL1Index = idx
-        // Strictly update ONLY Layer #1 properties — NEVER touch Layer #2 or Layer #3!
+        // Strictly update ONLY Layer #1 properties — NEVER touch Layer #2, Layer #3, or Layer #4!
         root.layer1Enabled = true
         if (item.l1FieldEnabled !== undefined) root.layer1FieldEnabled = Boolean(item.l1FieldEnabled)
         if (item.l1Mode !== undefined) root.layer1Mode = Number(item.l1Mode) % Engine.LAYER1_MODES.length
@@ -874,16 +1045,10 @@ FocusScope {
         if (item.l1Speed !== undefined) root.layer1Speed = Number(item.l1Speed)
         if (item.l1Density !== undefined) root.layer1Density = Number(item.l1Density)
         if (item.l1Dim !== undefined) root.layer1Dim = Number(item.l1Dim)
-        if (item.backdropEnabled !== undefined) root.backdropEnabled = Boolean(item.backdropEnabled)
-        if (item.backdropMode !== undefined) root.backdropMode = Number(item.backdropMode) % Engine.BACKDROP_MODES.length
-        if (item.backdropDirection !== undefined) root.backdropDirection = Number(item.backdropDirection)
-        if (item.backdropSpeed !== undefined) root.backdropSpeed = Number(item.backdropSpeed)
-        if (item.backdropIntensity !== undefined) root.backdropIntensity = Number(item.backdropIntensity)
-        if (item.backdropSymmetry !== undefined) root.backdropSymmetry = Number(item.backdropSymmetry)
         if (item.l1EqEnabled !== undefined) root.layer1EqEnabled = Boolean(item.l1EqEnabled)
         if (item.l1EqStyle !== undefined) root.layer1EqStyle = Number(item.l1EqStyle) % Engine.LAYER1_EQ_STYLES.length
         if (item.l1EqLayout !== undefined) root.layer1EqLayout = Number(item.l1EqLayout) % Engine.LAYER1_EQ_LAYOUTS.length
-        if (item.l1EqScale !== undefined) root.layer1EqScale = Math.max(0.35, Math.min(2.25, Number(item.l1EqScale)))
+        if (item.l1EqScale !== undefined) root.layer1EqScale = Math.max(0.15, Math.min(2.25, Number(item.l1EqScale)))
         if (item.l1EqGain !== undefined) root.layer1EqGain = Number(item.l1EqGain)
         if (item.l1EqDamping !== undefined) root.layer1EqDamping = Number(item.l1EqDamping) % Engine.LAYER1_EQ_DAMPING.length
         if (item.l1ShapesEnabled !== undefined) root.layer1ShapesEnabled = Boolean(item.l1ShapesEnabled)
@@ -919,20 +1084,13 @@ FocusScope {
     function saveCurrentL2Config() {
         var copy = (root.savedL2Configs || []).slice()
         var mName = root.layer2VizEnabled ? (Engine.MODE_NAMES[root.visualMode] || "Mode").split(" ")[0] : "NoViz"
-        var tunName = root.backdropEnabled ? (Engine.BACKDROP_MODES[root.backdropMode] || "Tunnel").split(" ")[0] : "NoTun"
         var trName = root.layer2TracersEnabled ? (root.tracerCount + "x") : "NoTr"
         var item = {
-            name: mName + " · " + tunName + " · " + trName,
+            name: mName + " · " + trName,
             l2VizEnabled: root.layer2VizEnabled,
             l2Mode: root.visualMode,
             symmetryIndex: root.symmetryIndex,
             paletteIndex: root.paletteIndex,
-            backdropEnabled: root.backdropEnabled,
-            backdropMode: root.backdropMode,
-            backdropSpeed: root.backdropSpeed,
-            backdropIntensity: root.backdropIntensity,
-            backdropSymmetry: root.backdropSymmetry,
-            backdropDirection: root.backdropDirection,
             sensitivity: root.sensitivity,
             l2Complexity: root.layer2Complexity,
             l2Speed: root.layer2Speed,
@@ -957,18 +1115,12 @@ FocusScope {
         if (idx < 0 || idx >= list.length) return
         var item = list[idx]
         root.currentSavedL2Index = idx
-        // Strictly update ONLY Layer #2 properties — NEVER touch Layer #1 or Layer #3!
+        // Strictly update ONLY Layer #2 properties — NEVER touch Layer #1, Layer #3, or Layer #4!
         root.layer2Enabled = true
         if (item.l2VizEnabled !== undefined) root.layer2VizEnabled = Boolean(item.l2VizEnabled)
         if (item.l2Mode !== undefined) root.visualMode = Number(item.l2Mode) % Engine.MODE_NAMES.length
         if (item.symmetryIndex !== undefined) root.symmetryIndex = Number(item.symmetryIndex) % Engine.SYMMETRY_OPTIONS.length
         if (item.paletteIndex !== undefined) root.paletteIndex = Number(item.paletteIndex) % Engine.PALETTE_NAMES.length
-        if (item.backdropEnabled !== undefined) root.backdropEnabled = Boolean(item.backdropEnabled)
-        if (item.backdropMode !== undefined) root.backdropMode = Number(item.backdropMode) % Engine.BACKDROP_MODES.length
-        if (item.backdropSpeed !== undefined) root.backdropSpeed = Number(item.backdropSpeed)
-        if (item.backdropIntensity !== undefined) root.backdropIntensity = Number(item.backdropIntensity)
-        if (item.backdropSymmetry !== undefined) root.backdropSymmetry = Number(item.backdropSymmetry)
-        if (item.backdropDirection !== undefined) root.backdropDirection = Number(item.backdropDirection)
         if (item.sensitivity !== undefined) root.sensitivity = Number(item.sensitivity)
         if (item.l2Complexity !== undefined) root.layer2Complexity = Number(item.l2Complexity)
         if (item.l2Speed !== undefined) root.layer2Speed = Number(item.l2Speed)
@@ -1007,10 +1159,16 @@ FocusScope {
         var copy = (root.savedL3Configs || []).slice()
         var srcLabel = root.useAlbumArt ? "Art" : "Words"
         var glyphLabel = root.asciiMode === "block" ? "Block" : (root.asciiMode === "text" ? "Text" : "Braille")
+        var styleLabel = root.shortL3StyleLabels[root.layer3TextStyle % root.shortL3StyleLabels.length] || "Techno"
         var modeLabel = (Engine.LAYER3_MODES[root.layer3Mode] || "Shatter").split(" ")[0]
         var item = {
-            name: srcLabel + " · " + glyphLabel + " · " + modeLabel + " (" + root.layer3Tracers + "x)",
+            name: srcLabel + " · " + glyphLabel + " · " + styleLabel + " · " + modeLabel,
             l3Mode: root.layer3Mode,
+            l3TextStyle: root.layer3TextStyle,
+            l3CylinderDir: root.layer3CylinderDir,
+            l3ShowArtist: root.layer3ShowArtist,
+            l3ShowTrack: root.layer3ShowTrack,
+            l3ShowAlbum: root.layer3ShowAlbum,
             useAlbumArt: root.useAlbumArt,
             asciiMode: root.asciiMode === "block" ? "block" : (root.asciiMode === "text" ? "text" : "braille"),
             l3Dismantle: root.layer3Dismantle,
@@ -1033,9 +1191,14 @@ FocusScope {
         if (idx < 0 || idx >= list.length) return
         var item = list[idx]
         root.currentSavedL3Index = idx
-        // Strictly update ONLY Layer #3 properties — NEVER touch Layer #1 or Layer #2!
+        // Strictly update ONLY Layer #3 properties — NEVER touch Layer #1, Layer #2, or Layer #4!
         root.layer3Enabled = true
         if (item.l3Mode !== undefined) root.layer3Mode = Number(item.l3Mode) % Engine.LAYER3_MODES.length
+        if (item.l3TextStyle !== undefined) root.layer3TextStyle = Number(item.l3TextStyle) % Engine.LAYER3_TEXT_STYLES.length
+        if (item.l3CylinderDir !== undefined) root.layer3CylinderDir = Number(item.l3CylinderDir) % Engine.LAYER3_CYLINDER_DIRS.length
+        if (item.l3ShowArtist !== undefined) root.layer3ShowArtist = Boolean(item.l3ShowArtist)
+        if (item.l3ShowTrack !== undefined) root.layer3ShowTrack = Boolean(item.l3ShowTrack)
+        if (item.l3ShowAlbum !== undefined) root.layer3ShowAlbum = Boolean(item.l3ShowAlbum)
         if (item.useAlbumArt !== undefined) {
             root.selectL3SourceOrGlyph(item.useAlbumArt ? "art" : "words")
         }
@@ -1075,6 +1238,74 @@ FocusScope {
         root.requestActionFeedback("Removed Saved L3: " + (removed && removed.name ? removed.name : ""))
     }
 
+    function saveCurrentL4Config() {
+        var copy = (root.savedL4Configs || []).slice()
+        var pName = (Engine.LAYER4_MODES[root.layer4Mode] || "Tunnel").split(" ")[0]
+        var sName = root.layer4DualEnabled ? (" + " + (Engine.LAYER4_MODES[root.layer4SecondaryMode] || "Vortex").split(" ")[0] + " (2x)") : ""
+        var wName = Engine.LAYER4_WALL_PATTERNS[root.layer4WallPattern % Engine.LAYER4_WALL_PATTERNS.length] || "Rings"
+        var item = {
+            name: pName + sName + " · " + wName,
+            l4Enabled: root.layer4Enabled,
+            l4Mode: root.layer4Mode,
+            l4DualEnabled: root.layer4DualEnabled,
+            l4SecondaryMode: root.layer4SecondaryMode,
+            l4DualMix: root.layer4DualMix,
+            l4WallPattern: root.layer4WallPattern,
+            l4Twist: root.layer4Twist,
+            l4Speed: root.backdropSpeed,
+            l4Glow: root.backdropIntensity,
+            l4Symmetry: root.backdropSymmetry,
+            l4Direction: root.backdropDirection,
+            l4AutoRandomise: root.layer4AutoRandomise
+        }
+        copy.push(item)
+        root.savedL4Configs = copy
+        root.currentSavedL4Index = copy.length - 1
+        root.emitSaveVisualiserConfig()
+        root.requestActionFeedback("Saved L4 Setting: " + item.name)
+    }
+
+    function applySavedL4Config(idx) {
+        var list = root.savedL4Configs || []
+        if (idx < 0 || idx >= list.length) return
+        var item = list[idx]
+        root.currentSavedL4Index = idx
+        // Strictly update ONLY Layer #4 properties — NEVER touch Layer #1, Layer #2, or Layer #3!
+        root.layer4Enabled = item.l4Enabled !== undefined ? Boolean(item.l4Enabled) : true
+        if (item.l4Mode !== undefined) root.layer4Mode = Number(item.l4Mode) % Engine.LAYER4_MODES.length
+        if (item.l4DualEnabled !== undefined) root.layer4DualEnabled = Boolean(item.l4DualEnabled)
+        if (item.l4SecondaryMode !== undefined) root.layer4SecondaryMode = Number(item.l4SecondaryMode) % Engine.LAYER4_MODES.length
+        if (item.l4DualMix !== undefined) root.layer4DualMix = Math.max(0.10, Math.min(0.90, Number(item.l4DualMix)))
+        if (item.l4WallPattern !== undefined) root.layer4WallPattern = Number(item.l4WallPattern) % Engine.LAYER4_WALL_PATTERNS.length
+        if (item.l4Twist !== undefined) root.layer4Twist = Math.max(0.0, Math.min(3.0, Number(item.l4Twist)))
+        if (item.l4Speed !== undefined) root.backdropSpeed = Number(item.l4Speed)
+        if (item.l4Glow !== undefined) root.backdropIntensity = Number(item.l4Glow)
+        if (item.l4Symmetry !== undefined) root.backdropSymmetry = Number(item.l4Symmetry)
+        if (item.l4Direction !== undefined) root.backdropDirection = Number(item.l4Direction)
+        if (item.l4AutoRandomise !== undefined) root.layer4AutoRandomise = Boolean(item.l4AutoRandomise)
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
+        root.requestActionFeedback("Applied Saved L4: " + (item.name || ("L4 #" + (idx + 1))))
+    }
+
+    function cycleSavedL4Config(delta) {
+        var list = root.savedL4Configs || []
+        if (list.length === 0) return
+        var step = (delta !== undefined && delta < 0) ? -1 : 1
+        var nextIdx = (root.currentSavedL4Index + step + list.length) % list.length
+        applySavedL4Config(nextIdx)
+    }
+
+    function deleteSavedL4Config(idx) {
+        var copy = (root.savedL4Configs || []).slice()
+        if (idx < 0 || idx >= copy.length) return
+        var removed = copy.splice(idx, 1)[0]
+        root.savedL4Configs = copy
+        root.currentSavedL4Index = Math.max(0, Math.min(copy.length - 1, root.currentSavedL4Index))
+        root.emitSaveVisualiserConfig()
+        root.requestActionFeedback("Removed Saved L4: " + (removed && removed.name ? removed.name : ""))
+    }
+
     function clearCanvasImmediate() {
         root._cachedFrameConfig = root.currentConfig()
         if (root.engineState) {
@@ -1086,9 +1317,7 @@ FocusScope {
     }
 
     function syncLayer1MasterFromSubs() {
-        if (root.layer1FieldEnabled || root.layer1EqEnabled || root.layer1ShapesEnabled) {
-            root.layer1Enabled = true
-        }
+        root.layer1Enabled = Boolean(root.layer1FieldEnabled || root.layer1EqEnabled || root.layer1ShapesEnabled)
     }
 
     onLayer1EnabledChanged: {
@@ -1096,14 +1325,17 @@ FocusScope {
         scheduleSaveVisualiserConfig()
     }
     onLayer1FieldEnabledChanged: {
+        syncLayer1MasterFromSubs()
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
     onLayer1EqEnabledChanged: {
+        syncLayer1MasterFromSubs()
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
     onLayer1ShapesEnabledChanged: {
+        syncLayer1MasterFromSubs()
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
@@ -1114,8 +1346,40 @@ FocusScope {
     onLayer2EnabledChanged: { clearCanvasImmediate(); scheduleSaveVisualiserConfig() }
     onLayer3EnabledChanged: { clearCanvasImmediate(); scheduleSaveVisualiserConfig() }
     onLayer3ModeChanged: scheduleSaveVisualiserConfig()
+    onLayer3TextStyleChanged: {
+        if (vizCanvas) vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+    onLayer3ShowArtistChanged: {
+        if (root.engineState) root.engineState.artSourceKey = ""
+        if (vizCanvas) vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+    onLayer3ShowTrackChanged: {
+        if (root.engineState) root.engineState.artSourceKey = ""
+        if (vizCanvas) vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+    onLayer3ShowAlbumChanged: {
+        if (root.engineState) root.engineState.artSourceKey = ""
+        if (vizCanvas) vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
     onTracerCountChanged: scheduleSaveVisualiserConfig()
     onLayer3TracersChanged: scheduleSaveVisualiserConfig()
+
+    onTrackTitleChanged: {
+        if (root.engineState) root.engineState.artSourceKey = ""
+        if (vizCanvas) vizCanvas.requestPaint()
+    }
+    onTrackArtistChanged: {
+        if (root.engineState) root.engineState.artSourceKey = ""
+        if (vizCanvas) vizCanvas.requestPaint()
+    }
+    onTrackAlbumChanged: {
+        if (root.engineState) root.engineState.artSourceKey = ""
+        if (vizCanvas) vizCanvas.requestPaint()
+    }
 
     onBannerLinesChanged: {
         if (root.engineState) {
@@ -1165,6 +1429,9 @@ FocusScope {
             playing: root.playing,
             position: root.position,
             duration: root.duration,
+            trackTitle: root.trackTitle,
+            trackArtist: root.trackArtist,
+            trackAlbum: root.trackAlbum,
             trackProgress: trackProg,
             trackArcMode: root.trackArcMode,
             palette: root.paletteIndex,
@@ -1176,6 +1443,17 @@ FocusScope {
             backdropIntensity: root.backdropIntensity,
             backdropSymmetry: root.backdropSymmetry,
             backdropDirection: root.backdropDirection,
+            layer4Enabled: root.layer4Enabled,
+            layer4Mode: root.layer4Mode,
+            layer4DualEnabled: root.layer4DualEnabled,
+            layer4SecondaryMode: root.layer4SecondaryMode,
+            layer4DualMix: root.layer4DualMix,
+            layer4WallPattern: root.layer4WallPattern,
+            layer4Twist: root.layer4Twist,
+            layer4Speed: root.backdropSpeed,
+            layer4Glow: root.backdropIntensity,
+            layer4Symmetry: root.backdropSymmetry,
+            layer4Direction: root.backdropDirection,
             renderQuality: root.renderQuality,
             targetFps: root.targetFps,
             geometryDetail: root.geometryDetail,
@@ -1230,11 +1508,18 @@ FocusScope {
             layer2Chaos: root.layer2Chaos,
             layer3Enabled: root.layer3Enabled,
             layer3Mode: root.layer3Mode,
+            layer3TextStyle: root.layer3TextStyle,
+            layer3CylinderDir: root.layer3CylinderDir,
+            layer3ShowArtist: root.layer3ShowArtist,
+            layer3ShowTrack: root.layer3ShowTrack,
+            layer3ShowAlbum: root.layer3ShowAlbum,
             layer3Dismantle: root.layer3Dismantle,
             layer3Rebuild: root.layer3Rebuild,
             layer3Evolution: root.layer3Evolution,
             layer3Scale: root.layer3Scale,
-            layer3Tracers: root.layer3Tracers
+            layer3Tracers: root.layer3Tracers,
+            layer3AutoRandomise: root.layer3AutoRandomise,
+            autoCycle: root.autoCycle
         }
     }
 
@@ -1248,7 +1533,7 @@ FocusScope {
     }
 
     // -------------------------------------------------------------------------
-    // Collective L1 + L2 + L3 Preset Management & Smooth Transitioning
+    // Collective L1 + L2 + L3 + L4 Preset Management & Smooth Transitioning
     // -------------------------------------------------------------------------
     function applyCollectivePreset(idx, smoothMorph) {
         if (!root.collectivePresets || idx < 0 || idx >= root.collectivePresets.length) return
@@ -1261,7 +1546,7 @@ FocusScope {
         if (p.backdropEnabled !== undefined) {
             root.backdropEnabled = Boolean(p.backdropEnabled)
         }
-        if (p.backdropMode !== undefined) root.backdropMode = Number(p.backdropMode) % Engine.BACKDROP_MODES.length
+        if (p.backdropMode !== undefined) root.backdropMode = Number(p.backdropMode) % Engine.LAYER4_MODES.length
         if (p.backdropSpeed !== undefined) root.backdropSpeed = Number(p.backdropSpeed)
         if (p.backdropIntensity !== undefined) root.backdropIntensity = Number(p.backdropIntensity)
         if (p.backdropSymmetry !== undefined) root.backdropSymmetry = Number(p.backdropSymmetry)
@@ -1277,7 +1562,7 @@ FocusScope {
         root.layer1EqEnabled = p.l1EqEnabled !== undefined ? Boolean(p.l1EqEnabled) : true
         root.layer1EqStyle = Number(p.l1EqStyle || 0) % Engine.LAYER1_EQ_STYLES.length
         root.layer1EqLayout = Number(p.l1EqLayout || 0) % Engine.LAYER1_EQ_LAYOUTS.length
-        root.layer1EqScale = p.l1EqScale !== undefined ? Math.max(0.35, Math.min(2.25, Number(p.l1EqScale))) : 1.0
+        root.layer1EqScale = p.l1EqScale !== undefined ? Math.max(0.15, Math.min(2.25, Number(p.l1EqScale))) : 1.0
         root.layer1EqDamping = Number(p.l1EqDamping || 0) % Engine.LAYER1_EQ_DAMPING.length
         root.layer1ShapesEnabled = p.l1ShapesEnabled !== undefined ? Boolean(p.l1ShapesEnabled) : true
         root.layer1ShapeStyle = Number(p.l1ShapeStyle || 0) % Engine.LAYER1_SHAPE_STYLES.length
@@ -1288,6 +1573,8 @@ FocusScope {
 
         root.layer3Enabled = Boolean(p.l3Enabled)
         root.layer3Mode = Number(p.l3Mode || 0) % Engine.LAYER3_MODES.length
+        if (p.l3TextStyle !== undefined) root.layer3TextStyle = Number(p.l3TextStyle) % Engine.LAYER3_TEXT_STYLES.length
+        if (p.l3CylinderDir !== undefined) root.layer3CylinderDir = Number(p.l3CylinderDir) % Engine.LAYER3_CYLINDER_DIRS.length
         if (p.useAlbumArt !== undefined) {
             root.useAlbumArt = Boolean(p.useAlbumArt)
             root.requestSetAsciiSourceMode(root.useAlbumArt ? "art" : "words")
@@ -1328,7 +1615,7 @@ FocusScope {
 
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
-        root.requestActionFeedback("Preset: " + p.name)
+        root.suppressActionFeedback("Preset: " + p.name)
     }
 
     function cycleSelectedPreset(delta) {
@@ -1355,7 +1642,7 @@ FocusScope {
             copy[idx] = item
             root.collectivePresets = copy
             root.emitSaveVisualiserConfig()
-            root.requestActionFeedback((item.selected ? "Included in" : "Excluded from") + " preset cycle: " + item.name)
+            root.suppressActionFeedback((item.selected ? "Included in" : "Excluded from") + " preset cycle: " + item.name)
         }
     }
 
@@ -1410,6 +1697,8 @@ FocusScope {
             l2Zoom: root.layer2Zoom,
             l3Enabled: root.layer3Enabled,
             l3Mode: root.layer3Mode,
+            l3TextStyle: root.layer3TextStyle,
+            l3CylinderDir: root.layer3CylinderDir,
             asciiMode: root.asciiMode,
             useAlbumArt: root.useAlbumArt,
             l3Dismantle: root.layer3Dismantle,
@@ -1422,7 +1711,7 @@ FocusScope {
         root.collectivePresets = copy
         root.currentPresetIndex = copy.length - 1
         root.emitSaveVisualiserConfig()
-        root.requestActionFeedback("Saved Collective Preset: " + newPreset.name)
+        root.suppressActionFeedback("Saved Collective Preset: " + newPreset.name)
     }
 
     // Strict Layer Isolation in cycle functions: NEVER force-enable another or disabled layer unless explicitly toggled
@@ -1430,7 +1719,7 @@ FocusScope {
         var count = Engine.MODE_NAMES.length
         visualMode = (visualMode + delta + count) % count
         vizCanvas.requestPaint()
-        root.requestActionFeedback("Layer #2 Mode: " + Engine.MODE_NAMES[visualMode])
+        root.suppressActionFeedback("4: Geometry: " + Engine.MODE_NAMES[visualMode])
     }
 
     function cycleLayer1Mode(delta) {
@@ -1439,22 +1728,69 @@ FocusScope {
         root.syncLayer1MasterFromSubs()
         layer1Mode = (layer1Mode + delta + count) % count
         vizCanvas.requestPaint()
-        root.requestActionFeedback("Layer #1 Field: " + Engine.LAYER1_MODES[layer1Mode])
+        root.suppressActionFeedback("1: Worlds: " + Engine.LAYER1_MODES[layer1Mode])
     }
 
     function cycleLayer3Mode(delta) {
         var count = Engine.LAYER3_MODES.length
         layer3Mode = (layer3Mode + delta + count) % count
         vizCanvas.requestPaint()
-        root.requestActionFeedback("Layer #3 Art Evolution: " + Engine.LAYER3_MODES[layer3Mode])
+        root.suppressActionFeedback("6: Typography: " + Engine.LAYER3_MODES[layer3Mode])
+    }
+
+    function cycleLayer3TextStyle(delta) {
+        var count = Engine.LAYER3_TEXT_STYLES.length
+        var step = (delta !== undefined && delta < 0) ? -1 : 1
+        root.layer3TextStyle = (root.layer3TextStyle + step + count) % count
+        root.layer3Enabled = true
+        vizCanvas.requestPaint()
+        root.suppressActionFeedback("Text Style: " + Engine.LAYER3_TEXT_STYLES[root.layer3TextStyle])
+    }
+
+    function cycleLayer3CylinderDir(delta) {
+        var count = Engine.LAYER3_CYLINDER_DIRS.length
+        var step = (delta !== undefined && delta < 0) ? -1 : 1
+        root.layer3CylinderDir = (root.layer3CylinderDir + step + count) % count
+        root.layer3Enabled = true
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+        root.suppressActionFeedback("Spin Axis: " + Engine.LAYER3_CYLINDER_DIRS[root.layer3CylinderDir])
+    }
+
+    function toggleLayer3TextField(field) {
+        if (field === "artist") {
+            if (root.layer3ShowArtist && !root.layer3ShowTrack && !root.layer3ShowAlbum) {
+                root.layer3ShowTrack = true
+            }
+            root.layer3ShowArtist = !root.layer3ShowArtist
+        } else if (field === "track") {
+            if (root.layer3ShowTrack && !root.layer3ShowArtist && !root.layer3ShowAlbum) {
+                root.layer3ShowArtist = true
+            }
+            root.layer3ShowTrack = !root.layer3ShowTrack
+        } else if (field === "album") {
+            if (root.layer3ShowAlbum && !root.layer3ShowArtist && !root.layer3ShowTrack) {
+                root.layer3ShowArtist = true
+            }
+            root.layer3ShowAlbum = !root.layer3ShowAlbum
+        }
+        var activeFields = []
+        if (root.layer3ShowArtist) activeFields.push("Artist")
+        if (root.layer3ShowTrack) activeFields.push("Track")
+        if (root.layer3ShowAlbum) activeFields.push("Album")
+        root.suppressActionFeedback("Visible Text: " + activeFields.join(" + "))
     }
 
     function cycleBackdropMode(delta) {
-        var count = Engine.BACKDROP_MODES.length
-        root.backdropMode = (root.backdropMode + delta + count) % count
-        root.backdropEnabled = true
+        var count = Engine.LAYER4_MODES.length
+        root.layer4Mode = (root.layer4Mode + delta + count) % count
+        root.layer4Enabled = true
         vizCanvas.requestPaint()
-        root.requestActionFeedback("L2 Tunnel Backdrop: " + Engine.BACKDROP_MODES[root.backdropMode])
+        root.suppressActionFeedback("5: Vortex: " + Engine.LAYER4_MODES[root.layer4Mode])
+    }
+
+    function cycleLayer4Mode(delta) {
+        cycleBackdropMode(delta)
     }
 
     function cyclePalette(delta) {
@@ -1462,14 +1798,14 @@ FocusScope {
         paletteIndex = (paletteIndex + delta + count) % count
         vizCanvas.requestPaint()
         scheduleSaveVisualiserConfig()
-        root.requestActionFeedback("Palette: " + Engine.PALETTE_NAMES[paletteIndex])
+        root.suppressActionFeedback("Palette: " + Engine.PALETTE_NAMES[paletteIndex])
     }
 
     function cycleSymmetry() {
         symmetryIndex = (symmetryIndex + 1) % Engine.SYMMETRY_OPTIONS.length
         vizCanvas.requestPaint()
         scheduleSaveVisualiserConfig()
-        root.requestActionFeedback("Geometry Resonance: " + root.symmetryFolds + "x")
+        root.suppressActionFeedback("Geometry Resonance: " + root.symmetryFolds + "x")
     }
 
     function cycleTracers(delta) {
@@ -1502,7 +1838,7 @@ FocusScope {
             root.tracerCount = nextVal
         }
         vizCanvas.requestPaint()
-        root.requestActionFeedback("L2 3D Tracers: " + (root.layer2TracersEnabled ? (root.tracerCount + "x") : "OFF"))
+        root.suppressActionFeedback("3D Tracers: " + (root.layer2TracersEnabled ? (root.tracerCount + "x") : "OFF"))
     }
 
     function cycleLayer3Tracers(delta) {
@@ -1510,14 +1846,14 @@ FocusScope {
         var nextVal = ((root.layer3Tracers - 1 + step + 8) % 8) + 1
         root.layer3Tracers = nextVal
         vizCanvas.requestPaint()
-        root.requestActionFeedback("L3 Art Ghost Tracers: " + root.layer3Tracers + "x")
+        root.suppressActionFeedback("Ghost Tracers: " + root.layer3Tracers + "x")
     }
 
     function cycleTrackArcMode() {
         root.trackArcMode = (root.trackArcMode + 1) % Engine.TRACK_ARC_MODES.length
         vizCanvas.requestPaint()
         scheduleSaveVisualiserConfig()
-        root.requestActionFeedback("Song Progress Arc: " + Engine.TRACK_ARC_MODES[root.trackArcMode])
+        root.suppressActionFeedback("Song Progress Arc: " + Engine.TRACK_ARC_MODES[root.trackArcMode])
     }
 
     function toggleHudVisibility() {
@@ -1526,14 +1862,14 @@ FocusScope {
             root.showLayerDrawer = false
             root.showTracerPopover = false
         }
-        root.requestActionFeedback(root.showHud ? "HUD Menus Visible (H)" : "HUD Hidden — Clean Visualiser (Press H to restore)")
+        root.suppressActionFeedback(root.showHud ? "HUD Menus Visible (H)" : "HUD Hidden — Clean Visualiser (Press H to restore)")
     }
 
     function toggleZenFullscreen() {
         if (root.isFullscreen && !root.showHud) {
             root.showHud = true
             root.requestToggleFullscreen()
-            root.requestActionFeedback("Exited Zen Cinema Fullscreen")
+            root.suppressActionFeedback("Exited Zen Cinema Fullscreen")
         } else {
             root.showLayerDrawer = false
             root.showTracerPopover = false
@@ -1541,56 +1877,111 @@ FocusScope {
             if (!root.isFullscreen) {
                 root.requestToggleFullscreen()
             }
-            root.requestActionFeedback("Zen Cinema Fullscreen (Press H or Esc for HUD)")
+            root.suppressActionFeedback("Zen Cinema Fullscreen (Press H or Esc for HUD)")
         }
     }
 
+    function hasOtherActiveLayer(excludeLayer) {
+        if (excludeLayer !== 1 && root.layer1Enabled) return true
+        if (excludeLayer !== 2 && root.layer2Enabled) return true
+        if (excludeLayer !== 3 && root.layer3Enabled) return true
+        if (excludeLayer !== 4 && root.layer4Enabled) return true
+        return false
+    }
+
     function randomiseLayer1() {
-        root.layer1Enabled = true
-        root.layer1FieldEnabled = true
-        root.layer1Mode = (root.layer1Mode + 1 + Math.floor(Math.random() * Math.max(1, Engine.LAYER1_MODES.length - 1))) % Engine.LAYER1_MODES.length
-        root.layer1Density = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
-        root.layer1Speed = Math.round((0.60 + Math.random() * 1.25) * 100) / 100
-        root.layer1Direction = [1, -1, 0][Math.floor(Math.random() * 3)]
+        var fRoll = Math.floor(Math.random() * (Engine.LAYER1_MODES.length + 1))
+        root.layer1FieldEnabled = (fRoll < Engine.LAYER1_MODES.length)
+        if (root.layer1FieldEnabled) {
+            root.layer1Mode = fRoll
+            root.layer1Density = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
+            root.layer1Speed = Math.round((0.60 + Math.random() * 1.25) * 100) / 100
+            root.layer1Direction = [1, -1, 0][Math.floor(Math.random() * 3)]
+        }
+        if (!root.layer1FieldEnabled && !root.layer1EqEnabled && !root.layer1ShapesEnabled && !root.hasOtherActiveLayer(1)) {
+            root.layer1FieldEnabled = true
+            root.layer1Mode = Math.floor(Math.random() * Engine.LAYER1_MODES.length)
+        }
+        root.syncLayer1MasterFromSubs()
+        Engine.randomiseState(root.engineState)
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
+    }
+
+    function randomiseLayerEq() {
+        var eqRoll = Math.floor(Math.random() * (Engine.LAYER1_EQ_STYLES.length + 1))
+        root.layer1EqEnabled = (eqRoll < Engine.LAYER1_EQ_STYLES.length)
         if (root.layer1EqEnabled) {
-            root.layer1EqStyle = (root.layer1EqStyle + 1 + Math.floor(Math.random() * Math.max(1, Engine.LAYER1_EQ_STYLES.length - 1))) % Engine.LAYER1_EQ_STYLES.length
+            root.layer1EqStyle = eqRoll
             root.layer1EqLayout = Math.floor(Math.random() * Engine.LAYER1_EQ_LAYOUTS.length)
-            root.layer1EqScale = Math.round((0.65 + Math.random() * 1.15) * 100) / 100
+            root.layer1EqScale = Math.round((0.25 + Math.random() * 1.15) * 100) / 100
             root.layer1EqDamping = Math.floor(Math.random() * Engine.LAYER1_EQ_DAMPING.length)
             root.layer1EqGain = Math.round((0.90 + Math.random() * 0.90) * 100) / 100
         }
+        if (!root.layer1FieldEnabled && !root.layer1EqEnabled && !root.layer1ShapesEnabled && !root.hasOtherActiveLayer(1)) {
+            root.layer1EqEnabled = true
+            root.layer1EqStyle = Math.floor(Math.random() * Engine.LAYER1_EQ_STYLES.length)
+        }
+        root.syncLayer1MasterFromSubs()
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
+    }
+
+    function randomiseLayerVectors() {
+        var shRoll = Math.floor(Math.random() * (Engine.LAYER1_SHAPE_STYLES.length + 1))
+        root.layer1ShapesEnabled = (shRoll < Engine.LAYER1_SHAPE_STYLES.length)
         if (root.layer1ShapesEnabled) {
-            root.layer1ShapeStyle = (root.layer1ShapeStyle + 1 + Math.floor(Math.random() * Math.max(1, Engine.LAYER1_SHAPE_STYLES.length - 1))) % Engine.LAYER1_SHAPE_STYLES.length
+            root.layer1ShapeStyle = shRoll
             root.layer1ShapeScale = Math.round((0.55 + Math.random() * 1.35) * 100) / 100
             root.layer1ShapeDensity = Math.round((0.50 + Math.random() * 1.75) * 100) / 100
             root.layer1ShapeSpeed = Math.round((0.55 + Math.random() * 1.55) * 100) / 100
             root.layer1ShapeSpin = Math.round(((Math.random() * 2.8) - 1.4) * 100) / 100
         }
-        if (root.backdropEnabled) {
-            root.backdropMode = (root.backdropMode + 1 + Math.floor(Math.random() * Math.max(1, Engine.BACKDROP_MODES.length - 1))) % Engine.BACKDROP_MODES.length
-            root.backdropDirection = [1, -1, 0][Math.floor(Math.random() * 3)]
+        if (!root.layer1FieldEnabled && !root.layer1EqEnabled && !root.layer1ShapesEnabled && !root.hasOtherActiveLayer(1)) {
+            root.layer1ShapesEnabled = true
+            root.layer1ShapeStyle = Math.floor(Math.random() * Engine.LAYER1_SHAPE_STYLES.length)
         }
-        Engine.randomiseState(root.engineState)
+        root.syncLayer1MasterFromSubs()
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
-        root.requestActionFeedback("Layer #1 Randomised: " + Engine.LAYER1_MODES[root.layer1Mode])
     }
 
     function randomiseLayer2() {
-        root.layer2Enabled = true
         var total = Engine.MODE_NAMES.length
-        var nextM = (root.visualMode + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total
+        var roll2 = Math.floor(Math.random() * (total + 1))
+        if (roll2 === total && root.hasOtherActiveLayer(2)) {
+            root.layer2VizEnabled = false
+            root.layer2TracersEnabled = false
+            root.layer2Enabled = false
+            clearCanvasImmediate()
+            scheduleSaveVisualiserConfig()
+            return
+        }
+        root.layer2Enabled = true
+        root.layer2VizEnabled = true
+        var nextM = roll2 < total ? roll2 : ((root.visualMode + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total)
         root.visualMode = nextM
         root.symmetryIndex = Math.floor(Math.random() * Engine.SYMMETRY_OPTIONS.length)
         vizCanvas.requestPaint()
         scheduleSaveVisualiserConfig()
-        root.requestActionFeedback("Layer #2 Randomised: " + Engine.MODE_NAMES[nextM])
     }
 
     function randomiseLayer3() {
         var total = Engine.LAYER3_MODES.length
-        var nextM = (root.layer3Mode + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total
+        var roll3 = Math.floor(Math.random() * (total + 1))
+        if (roll3 === total && root.hasOtherActiveLayer(3)) {
+            root.layer3Enabled = false
+            clearCanvasImmediate()
+            scheduleSaveVisualiserConfig()
+            return
+        }
+        root.layer3Enabled = true
+        var nextM = roll3 < total ? roll3 : ((root.layer3Mode + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total)
         root.layer3Mode = nextM
+        var totalStyles = Engine.LAYER3_TEXT_STYLES.length
+        root.layer3TextStyle = (root.layer3TextStyle + 1 + Math.floor(Math.random() * Math.max(1, totalStyles - 1))) % totalStyles
+        root.layer3CylinderDir = Math.floor(Math.random() * Engine.LAYER3_CYLINDER_DIRS.length)
+        root.layer3Scale = Math.round((0.55 + Math.random() * 1.15) * 100) / 100
         if (root.engineState) {
             root.engineState.l3FormFactor = 0.25
         }
@@ -1600,14 +1991,41 @@ FocusScope {
         }
         vizCanvas.requestPaint()
         scheduleSaveVisualiserConfig()
-        root.requestActionFeedback("Layer #3 Randomised: " + Engine.LAYER3_MODES[nextM])
+    }
+
+    function randomiseLayer4() {
+        var total = Engine.LAYER4_MODES.length
+        var roll4 = Math.floor(Math.random() * (total + 1))
+        if (roll4 === total && root.hasOtherActiveLayer(4)) {
+            root.layer4Enabled = false
+            clearCanvasImmediate()
+            scheduleSaveVisualiserConfig()
+            return
+        }
+        root.layer4Enabled = true
+        root.layer4Mode = roll4 < total ? roll4 : ((root.layer4Mode + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total)
+        root.layer4DualEnabled = (Math.random() < 0.45)
+        if (root.layer4DualEnabled) {
+            root.layer4SecondaryMode = (root.layer4Mode + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total
+        }
+        root.layer4WallPattern = Math.floor(Math.random() * Engine.LAYER4_WALL_PATTERNS.length)
+        root.layer4Twist = Math.round((0.65 + Math.random() * 1.45) * 100) / 100
+        root.backdropDirection = [1, -1, 0][Math.floor(Math.random() * 3)]
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
     }
 
     function randomiseVisuals() {
         Engine.randomiseState(root.engineState)
         paletteIndex = (paletteIndex + 1 + Math.floor(Math.random() * (Engine.PALETTE_NAMES.length - 1))) % Engine.PALETTE_NAMES.length
-        if (root.layer1Enabled) {
+        if (root.layer1FieldEnabled) {
             root.randomiseLayer1()
+        }
+        if (root.layer1EqEnabled) {
+            root.randomiseLayerEq()
+        }
+        if (root.layer1ShapesEnabled) {
+            root.randomiseLayerVectors()
         }
         if (root.layer2Enabled) {
             root.randomiseLayer2()
@@ -1615,15 +2033,38 @@ FocusScope {
         if (root.layer3Enabled) {
             root.randomiseLayer3()
         }
+        if (root.layer4Enabled) {
+            root.randomiseLayer4()
+        }
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
-        root.requestActionFeedback("Randomised active layers & palette (" + Engine.PALETTE_NAMES[paletteIndex] + ")")
+    }
+
+    function toggleAllRandomisations() {
+        var nextState = !root.allRandomisationsActive
+        root.autoCycle = nextState
+        root.layer1AutoRandomise = nextState
+        root.layerEqAutoRandomise = nextState
+        root.layerVectorsAutoRandomise = nextState
+        root.layer2AutoRandomise = nextState
+        root.layer3AutoRandomise = nextState
+        root.layer4AutoRandomise = nextState
+        if (nextState) {
+            root.randomiseLayer1()
+            root.randomiseLayerEq()
+            root.randomiseLayerVectors()
+            root.randomiseLayer2()
+            root.randomiseLayer4()
+            root.randomiseLayer3()
+            paletteIndex = (paletteIndex + 1 + Math.floor(Math.random() * (Engine.PALETTE_NAMES.length - 1))) % Engine.PALETTE_NAMES.length
+        }
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
     }
 
     function triggerShatterImpulse() {
         Engine.shatterAlbumArt(root.engineState, 1.55)
         vizCanvas.requestPaint()
-        root.requestActionFeedback("Triggered Layer #3 Shatter Impulse")
     }
 
     function pickRandomTtfxEffect() {
@@ -2101,7 +2542,7 @@ FocusScope {
             // Explicitly push dynamic time, audio, and smoothly blended palette uniforms to gpuShaderStage every frame
             // (since plain JS object mutations on root.engineState do not emit QML notify signals)
             var l2FractalGpu = root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5
-            if (root.stageMode === "visualiser" && root.gpuShaderEnabled && ((root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || l2FractalGpu)) {
+            if (root.stageMode === "visualiser" && root.gpuShaderEnabled && ((root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || root.layer4Enabled || l2FractalGpu)) {
                 var st = root.engineState
                 var bT = st.backdropTime !== undefined ? st.backdropTime : (st.t || 0.0)
                 gpuShaderStage.uTime = l2FractalGpu ? (st.t || bT) : bT
@@ -2162,14 +2603,23 @@ FocusScope {
                 root.cycleSelectedPreset(1)
                 return
             }
-            if (root.layer2Enabled) {
+            if (root.layer2Enabled || root.layer2AutoRandomise) {
                 root.randomiseLayer2()
             }
-            if (root.layer1Enabled) {
+            if (root.layer1FieldEnabled || root.layer1AutoRandomise) {
                 root.randomiseLayer1()
             }
-            if (root.layer3Enabled && root.layer3AutoRandomise) {
+            if (root.layer1EqEnabled || root.layerEqAutoRandomise) {
+                root.randomiseLayerEq()
+            }
+            if (root.layer1ShapesEnabled || root.layerVectorsAutoRandomise) {
+                root.randomiseLayerVectors()
+            }
+            if (root.layer3AutoRandomise) {
                 root.randomiseLayer3()
+            }
+            if (root.layer4AutoRandomise) {
+                root.randomiseLayer4()
             }
             Engine.randomiseState(root.engineState)
             root.paletteIndex = (root.paletteIndex + 1) % Engine.PALETTE_NAMES.length
@@ -2186,36 +2636,69 @@ FocusScope {
         }
     }
 
-    // Independent Layer #1 Auto-Randomise Timer (Cycles active L1 sub-systems every 11s when L1 Auto-Randomise is ON)
+    // Independent 1: Worlds Auto-Randomise Timer (every 11s)
     Timer {
         id: l1RandomiseTimer
         interval: 11000
-        running: root.visible && root.stageMode === "visualiser" && root.layer1Enabled && root.layer1AutoRandomise
+        running: root.visible && root.stageMode === "visualiser" && root.layer1AutoRandomise
         repeat: true
         onTriggered: {
             root.randomiseLayer1()
         }
     }
 
-    // Independent Layer #2 Auto-Randomise Timer (Cycles L2 Modes & Symmetry every 10s when L2 Auto-Randomise is ON)
+    // Independent 2: Equaliser Auto-Randomise Timer (every 13s)
+    Timer {
+        id: lEqRandomiseTimer
+        interval: 13000
+        running: root.visible && root.stageMode === "visualiser" && root.layerEqAutoRandomise
+        repeat: true
+        onTriggered: {
+            root.randomiseLayerEq()
+        }
+    }
+
+    // Independent 3: Vectors Auto-Randomise Timer (every 14s)
+    Timer {
+        id: lVectorsRandomiseTimer
+        interval: 14000
+        running: root.visible && root.stageMode === "visualiser" && root.layerVectorsAutoRandomise
+        repeat: true
+        onTriggered: {
+            root.randomiseLayerVectors()
+        }
+    }
+
+    // Independent 4: Geometry Auto-Randomise Timer (every 10s)
     Timer {
         id: l2RandomiseTimer
         interval: 10000
-        running: root.visible && root.stageMode === "visualiser" && root.layer2Enabled && root.layer2AutoRandomise
+        running: root.visible && root.stageMode === "visualiser" && root.layer2AutoRandomise
         repeat: true
         onTriggered: {
             root.randomiseLayer2()
         }
     }
 
-    // Independent Layer #3 Auto-Randomise Timer (Cycles L3 Modes & TTE effects automatically every 9s when L3 Auto-Randomise is ON)
+    // Independent 6: Typography Auto-Randomise Timer (every 9s)
     Timer {
         id: l3RandomiseTimer
         interval: 9000
-        running: root.visible && root.stageMode === "visualiser" && root.layer3Enabled && root.layer3AutoRandomise
+        running: root.visible && root.stageMode === "visualiser" && root.layer3AutoRandomise
         repeat: true
         onTriggered: {
             root.randomiseLayer3()
+        }
+    }
+
+    // Independent 5: Vortex Auto-Randomise Timer (every 12s)
+    Timer {
+        id: l4RandomiseTimer
+        interval: 12000
+        running: root.visible && root.stageMode === "visualiser" && root.layer4AutoRandomise
+        repeat: true
+        onTriggered: {
+            root.randomiseLayer4()
         }
     }
 
@@ -2334,26 +2817,24 @@ FocusScope {
                 }
                 onRequestTogglePlay: {
                     root.requestPlayPause()
-                    root.requestActionFeedback(root.playing ? "Turntable Cued: Pause" : "Turntable Cued: Start Platter")
                 }
                 onRequestSeekRatio: ratio => {
                     if (root.duration > 0) {
                         var targetSec = Math.max(0, Math.min(root.duration, ratio * root.duration))
                         root.requestSeek(targetSec)
-                        root.requestActionFeedback("Tonearm dropped at " + root.formatTime(targetSec))
                     }
                 }
             }
         }
 
         // =====================================================================
-        // STAGE MODE 3: 3-LAYER PSYCHEDELIC & NIGHTCLUB VISUALISER ("visualiser")
-        // Native Qt6 GPU Fragment Shader Stage + Hardware-Scaled Vector & ASCII Canvas
+        // STAGE MODE 3: 6-LAYER PSYCHEDELIC & NIGHTCLUB VISUALISER ("visualiser")
+        // Native Qt6 GPU Fragment Shader Stage (5: Vortex) + Hardware-Scaled Vector & ASCII Canvas
         // =====================================================================
         ShaderEffect {
             id: gpuShaderStage
             anchors.fill: parent
-            visible: root.stageMode === "visualiser" && root.gpuShaderEnabled && ((root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || (root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5))
+            visible: root.stageMode === "visualiser" && root.gpuShaderEnabled && (root.layer4Enabled || (root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || (root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5))
             fragmentShader: Qt.resolvedUrl("share/psychedelic.frag.qsb")
 
             property real uTime: 0.0
@@ -2377,6 +2858,13 @@ FocusScope {
             property real uTracerDir: (root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5) ? root.tracerDirection : root.backdropDirection
             property real uDriftX: 0.0
             property real uDriftY: 0.0
+            property real uL4Enabled: (root.gpuShaderEnabled && root.layer4Enabled) ? 1.0 : 0.0
+            property real uL4Mode: root.layer4Mode
+            property real uL4DualEnabled: root.layer4DualEnabled ? 1.0 : 0.0
+            property real uL4SecondaryMode: root.layer4SecondaryMode
+            property real uL4DualMix: root.layer4DualMix
+            property real uL4WallPattern: root.layer4WallPattern
+            property real uL4Twist: root.layer4Twist
             property vector4d uBgCol: Qt.vector4d(root.backgroundColour.r, root.backgroundColour.g, root.backgroundColour.b, 1.0)
             property vector4d uCol0: Qt.vector4d(root.accentColour.r, root.accentColour.g, root.accentColour.b, 1.0)
             property vector4d uCol1: Qt.vector4d(root.urgentColour.r, root.urgentColour.g, root.urgentColour.b, 1.0)
@@ -2451,7 +2939,7 @@ FocusScope {
     }
 
     // =========================================================================
-    // TOP OMARCHY HUD BAR + STAGE MODE SWITCHER + 3-LAYER CONTROLS
+    // TOP OMARCHY HUD BAR + STAGE MODE SWITCHER + 6-LAYER VIVID STAGE CONTROLS
     // =========================================================================
     Rectangle {
         id: topHud
@@ -2459,7 +2947,7 @@ FocusScope {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.margins: 8
-        height: root.stageMode === "visualiser" ? (root.hudFocusedLayer === 1 ? 94 : 74) : 42
+        height: root.stageMode === "visualiser" ? 74 : 42
         radius: 8
         color: Qt.rgba(0.04, 0.05, 0.08, 0.88)
         border.width: 1
@@ -2471,29 +2959,29 @@ FocusScope {
             anchors.margins: 6
             spacing: 4
 
-            // Row 1: Stage Selector + L1/L2/L3 + Row 2 Cycler + Layers Drawer + Preset + Palette + Rand + Dual VJ + TTE + Hide HUD + Full
+            // Row 1: Stage Selector + 6 Vivid Layers (1:Worlds · 2:EQ · 3:Vectors · 4:Geometry · 5:Vortex · 6:Type) + Row 2 Cycler + Studio Drawer + Preset + Palette + RANDOM + Dual VJ + TTE + Hide HUD + Full
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 4
+                spacing: 3
 
                 VizPillButton {
                     text: "󰀥 Art"
                     active: root.stageMode === "art"
-                    horizontalPad: 7
+                    horizontalPad: 6
                     onClicked: root.setStage("art")
                 }
 
                 VizPillButton {
                     text: "󰀥 Turntable"
                     active: root.stageMode === "turntable"
-                    horizontalPad: 7
+                    horizontalPad: 6
                     onClicked: root.setStage("turntable")
                 }
 
                 VizPillButton {
                     text: "󰍹 Visualiser"
                     active: root.stageMode === "visualiser"
-                    horizontalPad: 7
+                    horizontalPad: 6
                     onClicked: root.setStage("visualiser")
                 }
 
@@ -2504,89 +2992,143 @@ FocusScope {
                     visible: root.stageMode === "visualiser"
                 }
 
-                // L1 Master Toggle (Coloured when ON, no ON/OFF text)
+                // 1: Worlds (3D Depth Fields)
                 VizPillButton {
                     visible: root.stageMode === "visualiser"
-                    Layout.preferredWidth: 36
-                    text: "L1"
-                    active: root.layer1Enabled
-                    horizontalPad: 6
+                    text: "1:Worlds"
+                    fontSize: 9
+                    active: root.layer1Enabled && root.layer1FieldEnabled
+                    horizontalPad: 5
                     onClicked: {
-                        root.layer1Enabled = !root.layer1Enabled
+                        root.layer1FieldEnabled = !root.layer1FieldEnabled
+                        root.syncLayer1MasterFromSubs()
                         root.hudFocusedLayer = 1
-                        vizCanvas.requestPaint()
-                        root.requestActionFeedback("Layer #1 Background: " + (root.layer1Enabled ? "ON" : "OFF"))
+                        root.clearCanvasImmediate()
                     }
                     onRightClicked: {
                         root.hudFocusedLayer = 1
-                        root.requestActionFeedback("Row 2: Layer #1 Controls")
                     }
                 }
 
-                // L2 Master Toggle (Coloured when ON, no ON/OFF text)
+                // 2: Equaliser (LED & Sculptural 3D Equaliser)
                 VizPillButton {
                     visible: root.stageMode === "visualiser"
-                    Layout.preferredWidth: 36
-                    text: "L2"
+                    text: "2:EQ"
+                    fontSize: 9
+                    active: root.layer1Enabled && root.layer1EqEnabled
+                    horizontalPad: 5
+                    onClicked: {
+                        root.layer1EqEnabled = !root.layer1EqEnabled
+                        root.syncLayer1MasterFromSubs()
+                        root.hudFocusedLayer = 2
+                        root.clearCanvasImmediate()
+                    }
+                    onRightClicked: {
+                        root.hudFocusedLayer = 2
+                    }
+                }
+
+                // 3: Vectors (Wireframe Beat Shapes)
+                VizPillButton {
+                    visible: root.stageMode === "visualiser"
+                    text: "3:Vectors"
+                    fontSize: 9
+                    active: root.layer1Enabled && root.layer1ShapesEnabled
+                    horizontalPad: 5
+                    onClicked: {
+                        root.layer1ShapesEnabled = !root.layer1ShapesEnabled
+                        root.syncLayer1MasterFromSubs()
+                        root.hudFocusedLayer = 3
+                        root.clearCanvasImmediate()
+                    }
+                    onRightClicked: {
+                        root.hudFocusedLayer = 3
+                    }
+                }
+
+                // 4: Geometry (Sacred Geometry & Oscilloscopes + 3D Tracers)
+                VizPillButton {
+                    visible: root.stageMode === "visualiser"
+                    text: "4:Geometry"
+                    fontSize: 9
                     active: root.layer2Enabled
-                    horizontalPad: 6
+                    horizontalPad: 5
                     onClicked: {
                         root.layer2Enabled = !root.layer2Enabled
-                        root.hudFocusedLayer = 2
-                        vizCanvas.requestPaint()
-                        root.requestActionFeedback("Layer #2 Visualiser: " + (root.layer2Enabled ? "ON" : "OFF"))
+                        if (root.layer2Enabled && !root.layer2VizEnabled && !root.layer2TracersEnabled) {
+                            root.layer2VizEnabled = true
+                        }
+                        root.hudFocusedLayer = 4
+                        root.clearCanvasImmediate()
                     }
                     onRightClicked: {
-                        root.hudFocusedLayer = 2
-                        root.requestActionFeedback("Row 2: Layer #2 Controls")
+                        root.hudFocusedLayer = 4
                     }
                 }
 
-                // L3 Master Toggle (Coloured when ON, no ON/OFF text)
+                // 5: Vortex (Dedicated GPU Tunnel & Dual Vortex)
                 VizPillButton {
                     visible: root.stageMode === "visualiser"
-                    Layout.preferredWidth: 36
-                    text: "L3"
+                    text: "5:Vortex"
+                    fontSize: 9
+                    active: root.layer4Enabled
+                    horizontalPad: 5
+                    onClicked: {
+                        root.layer4Enabled = !root.layer4Enabled
+                        root.backdropEnabled = root.layer4Enabled
+                        root.hudFocusedLayer = 5
+                        root.clearCanvasImmediate()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: {
+                        root.hudFocusedLayer = 5
+                    }
+                }
+
+                // 6: Typography (Album Art & 3D Text Styles)
+                VizPillButton {
+                    visible: root.stageMode === "visualiser"
+                    text: "6:Type"
+                    fontSize: 9
                     active: root.layer3Enabled
-                    horizontalPad: 6
+                    horizontalPad: 5
                     onClicked: {
                         root.layer3Enabled = !root.layer3Enabled
-                        root.hudFocusedLayer = 3
-                        vizCanvas.requestPaint()
-                        root.requestActionFeedback("Layer #3 Art/Words: " + (root.layer3Enabled ? "ON" : "OFF"))
+                        root.hudFocusedLayer = 6
+                        root.clearCanvasImmediate()
                     }
                     onRightClicked: {
-                        root.hudFocusedLayer = 3
-                        root.requestActionFeedback("Row 2: Layer #3 Controls")
+                        root.hudFocusedLayer = 6
                     }
                 }
 
-                // Single Button that cycles Row 2 between L1, L2, and L3 controls
+                // Single Button that cycles Row 2 across 1..6 (1:Worlds · 2:EQ · 3:Vectors · 4:Geometry · 5:Vortex · 6:Type)
                 VizPillButton {
                     visible: root.stageMode === "visualiser"
-                    Layout.preferredWidth: 82
-                    text: "󰒔 Row 2: L" + root.hudFocusedLayer
+                    text: {
+                        var names = ["1:Worlds", "2:EQ", "3:Vectors", "4:Geometry", "5:Vortex", "6:Type"]
+                        return "󰒔 " + (names[(root.hudFocusedLayer - 1) % 6] || "1:Worlds")
+                    }
+                    fontSize: 9
                     active: true
+                    horizontalPad: 5
+                    onClicked: {
+                        root.hudFocusedLayer = (root.hudFocusedLayer % 6) + 1
+                    }
+                    onRightClicked: {
+                        root.hudFocusedLayer = ((root.hudFocusedLayer + 4) % 6) + 1
+                    }
+                }
+
+                // Open 6-Layer + Presets + General & Quality Configuration Drawer button
+                VizPillButton {
+                    visible: root.stageMode === "visualiser"
+                    text: root.showLayerDrawer ? "󰒓 Studio ▲" : "󰒓 Studio ▼"
+                    fontSize: 9
+                    active: root.showLayerDrawer
                     horizontalPad: 6
                     onClicked: {
-                        root.hudFocusedLayer = (root.hudFocusedLayer % 3) + 1
-                        root.requestActionFeedback("Row 2 Controls: Layer #" + root.hudFocusedLayer)
-                    }
-                    onRightClicked: {
-                        root.hudFocusedLayer = ((root.hudFocusedLayer + 1) % 3) + 1
-                        root.requestActionFeedback("Row 2 Controls: Layer #" + root.hudFocusedLayer)
-                    }
-                }
-
-                // Open 3-Layer + Presets + General & Quality Configuration Drawer button
-                VizPillButton {
-                    visible: root.stageMode === "visualiser"
-                    text: root.showLayerDrawer ? "󰒓 Layers ▲" : "󰒓 Layers ▼"
-                    active: root.showLayerDrawer
-                    horizontalPad: 8
-                    onClicked: {
                         root.showLayerDrawer = !root.showLayerDrawer
-                        root.requestActionFeedback(root.showLayerDrawer ? "Opened Layers, Presets & Quality Control Panel" : "Closed Layers Control Panel")
                     }
                 }
 
@@ -2594,37 +3136,32 @@ FocusScope {
                 VizPillButton {
                     visible: root.stageMode === "visualiser"
                     text: "󰀻 Preset"
+                    fontSize: 9
                     active: root.presetTransitionEnabled
-                    horizontalPad: 7
+                    horizontalPad: 5
                     onClicked: root.cycleSelectedPreset(1)
                     onRightClicked: root.cycleSelectedPreset(-1)
                 }
 
-                // Palette selector (max 8 characters so Row 1 never shifts)
+                // Palette selector (30 palettes)
                 VizPillButton {
                     visible: root.stageMode === "visualiser"
-                    Layout.preferredWidth: 78
+                    Layout.preferredWidth: 74
                     text: "󰏘 " + (root.shortPaletteNames[root.paletteIndex % root.shortPaletteNames.length] || "Rainbow")
-                    horizontalPad: 6
+                    fontSize: 9
+                    horizontalPad: 5
                     onClicked: root.cyclePalette(1)
                     onRightClicked: root.cyclePalette(-1)
                 }
 
-                // Single Unified Randomise / Auto-Cycle Button (Coloured when Auto-Cycling ON; right-click steps once)
+                // Full RANDOM Button: Toggles ALL layer auto-randomisations + palette auto-cycle simultaneously (Right-click steps once)
                 VizPillButton {
                     visible: root.stageMode === "visualiser"
-                    Layout.preferredWidth: 64
-                    text: "󰒟 Rand"
-                    active: root.autoCycle
+                    text: root.allRandomisationsActive ? "󰒟 RANDOM:ALL" : "󰒟 RANDOM"
+                    fontSize: 9
+                    active: root.allRandomisationsActive
                     horizontalPad: 6
-                    onClicked: {
-                        root.autoCycle = !root.autoCycle
-                        if (root.autoCycle) {
-                            root.randomiseVisuals()
-                        }
-                        scheduleSaveVisualiserConfig()
-                        root.requestActionFeedback("Auto-Randomise Cycle: " + (root.autoCycle ? ("ON (every " + root.autoCycleIntervalSec + "s)") : "OFF"))
-                    }
+                    onClicked: root.toggleAllRandomisations()
                     onRightClicked: root.randomiseVisuals()
                 }
 
@@ -2633,9 +3170,10 @@ FocusScope {
                 // Dual-Screen VJ External Stage Output Toggle + Screen Cycler
                 VizPillButton {
                     visible: root.stageMode === "visualiser"
-                    text: root.externalStageOpen ? "󰍹 Dual VJ: ON" : "󰍹 Dual VJ"
+                    text: root.externalStageOpen ? "󰍹 VJ:ON" : "󰍹 VJ"
+                    fontSize: 9
                     active: root.externalStageOpen
-                    horizontalPad: 7
+                    horizontalPad: 5
                     onClicked: {
                         var screens = Qt.application.screens
                         if (!root.externalStageOpen && screens && screens.length > 1) {
@@ -2646,18 +3184,14 @@ FocusScope {
                             root.vjDeckMode = true
                             root.showHud = true
                             root.showLayerDrawer = true
-                            root.requestActionFeedback("Opened External Fullscreen Stage — Main Window is now VJ Control Console")
                         } else {
                             root.vjDeckMode = false
-                            root.requestActionFeedback("Returned Visualiser Stage to Main Window")
                         }
                     }
                     onRightClicked: {
                         var screens = Qt.application.screens
                         if (screens && screens.length > 1) {
                             root.targetScreenIndex = (root.targetScreenIndex + 1) % screens.length
-                            var scr = screens[root.targetScreenIndex]
-                            root.requestActionFeedback("VJ Target Screen: #" + (root.targetScreenIndex + 1) + (scr && scr.name ? (" (" + scr.name + ")") : ""))
                         }
                     }
                 }
@@ -2665,395 +3199,461 @@ FocusScope {
                 // Single TTE Button — Launches the Omarchy TTE Screensaver
                 VizPillButton {
                     text: "󰍹 TTE"
-                    horizontalPad: 8
+                    fontSize: 9
+                    horizontalPad: 6
                     onClicked: root.launchExternalTteTerminal()
                 }
 
                 // Hide HUD toggle (H)
                 VizPillButton {
-                    text: "󰈈 Hide HUD (H)"
-                    horizontalPad: 7
+                    text: "󰈈 HUD (H)"
+                    fontSize: 9
+                    horizontalPad: 5
                     onClicked: root.toggleHudVisibility()
                 }
 
                 // Fullscreen toggle (F / V, or Z / Shift+F for HUD-free Zen Fullscreen)
                 VizPillButton {
                     text: root.isFullscreen ? "󰊓 Exit" : "󰊓 Full"
+                    fontSize: 9
                     active: root.isFullscreen
-                    horizontalPad: 7
+                    horizontalPad: 5
                     onClicked: root.requestToggleFullscreen()
                 }
             }
 
-            // Row 2A: Layer #1 Quick Controls:
-            //   Sub-Row 1: Field ON/OFF + all 11 L1 Field Modes + Tri-State Dir (Towards/Away/Breathe) + Spd + Den
-            //   Sub-Row 2: LED/EQ ON/OFF + 16 EQ Styles Cycler + 4-State EQ Orientation (EqPos) + EQ Size/Scale (EqSz)
-            //              + Shapes ON/OFF + 6 3D Styles + ShDen + Single Rand
-            ColumnLayout {
+            // =================================================================
+            // ROW 2 — LAYER 1: WORLDS (3D Depth Fields: 11 Worlds + Dir + Spd + Den + Rand)
+            // =================================================================
+            RowLayout {
                 Layout.fillWidth: true
-                spacing: 3
+                spacing: 2
                 visible: root.stageMode === "visualiser" && root.hudFocusedLayer === 1
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
-
-                    VizPillButton {
-                        pillHeight: 21
-                        fontSize: 9
-                        horizontalPad: 4
-                        text: root.layer1FieldEnabled ? "Field:ON" : "Field:OFF"
-                        active: root.layer1Enabled && root.layer1FieldEnabled
-                        onClicked: {
-                            root.layer1FieldEnabled = !root.layer1FieldEnabled
-                            if (root.layer1FieldEnabled) root.layer1Enabled = true
-                            root.clearCanvasImmediate()
-                            root.requestActionFeedback("L1 Field: " + (root.layer1FieldEnabled ? ("ON (" + Engine.LAYER1_MODES[root.layer1Mode] + ")") : "OFF"))
-                        }
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: root.layer1FieldEnabled ? "Field:ON" : "Field:OFF"
+                    active: root.layer1Enabled && root.layer1FieldEnabled
+                    onClicked: {
+                        root.layer1FieldEnabled = !root.layer1FieldEnabled
+                        root.syncLayer1MasterFromSubs()
+                        root.clearCanvasImmediate()
                     }
+                }
 
-                    Repeater {
-                        model: root.shortL1FieldLabels
-                        delegate: VizPillButton {
-                            required property int index
-                            required property string modelData
-                            Layout.fillWidth: true
-                            pillHeight: 21
-                            fontSize: 8
-                            horizontalPad: 3
-                            text: modelData
-                            active: root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === index
-                            onClicked: {
-                                if (root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === index) {
-                                    root.layer1FieldEnabled = false
-                                    root.clearCanvasImmediate()
-                                    root.requestActionFeedback("L1 Field: OFF")
-                                } else {
-                                    root.layer1Enabled = true
-                                    root.layer1FieldEnabled = true
-                                    root.layer1Mode = index
-                                    root.clearCanvasImmediate()
-                                    root.requestActionFeedback("L1 Field: " + Engine.LAYER1_MODES[index])
-                                }
-                            }
-                            onRightClicked: {
-                                root.layer1FieldEnabled = !root.layer1FieldEnabled
+                Repeater {
+                    model: root.shortL1FieldLabels
+                    delegate: VizPillButton {
+                        required property int index
+                        required property string modelData
+                        Layout.fillWidth: true
+                        pillHeight: 22
+                        fontSize: 8
+                        horizontalPad: 3
+                        text: modelData
+                        active: root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === index
+                        onClicked: {
+                            if (root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === index) {
+                                root.layer1FieldEnabled = false
+                                root.syncLayer1MasterFromSubs()
+                                root.clearCanvasImmediate()
+                            } else {
+                                root.layer1FieldEnabled = true
+                                root.syncLayer1MasterFromSubs()
+                                root.layer1Mode = index
                                 root.clearCanvasImmediate()
                             }
                         }
-                    }
-
-                    // Tri-State Direction for L1 Field (Towards / Away / Breathe)
-                    VizPillButton {
-                        pillHeight: 21
-                        fontSize: 9
-                        horizontalPad: 4
-                        text: "Dir:" + (root.layer1Direction > 0 ? "Towards" : (root.layer1Direction < 0 ? "Away" : "Breathe"))
-                        active: root.layer1Enabled && root.layer1FieldEnabled
-                        onClicked: {
-                            root.layer1Direction = (root.layer1Direction === 1) ? -1 : ((root.layer1Direction === -1) ? 0 : 1)
-                            vizCanvas.requestPaint()
-                            scheduleSaveVisualiserConfig()
-                            root.requestActionFeedback("L1 Field Direction: " + (root.layer1Direction > 0 ? "Towards" : (root.layer1Direction < 0 ? "Away" : "Breathe")))
-                        }
-                    }
-
-                    // L1 Speed Pill
-                    VizPillButton {
-                        pillHeight: 21
-                        fontSize: 9
-                        horizontalPad: 4
-                        text: "Spd:" + root.layer1Speed.toFixed(1) + "x"
-                        active: Math.abs(root.layer1Speed - 1.0) > 0.05
-                        onClicked: {
-                            var steps = [0.5, 1.0, 1.5, 2.0, 3.0, 4.0]
-                            var nextS = 1.0
-                            for (var i = 0; i < steps.length; i++) {
-                                if (steps[i] > root.layer1Speed + 0.05) {
-                                    nextS = steps[i]
-                                    break
-                                }
-                                if (i === steps.length - 1) nextS = steps[0]
-                            }
-                            root.layer1Speed = nextS
-                            vizCanvas.requestPaint()
-                            scheduleSaveVisualiserConfig()
-                            root.requestActionFeedback("L1 Speed: " + root.layer1Speed.toFixed(2) + "x")
-                        }
                         onRightClicked: {
-                            root.layer1Speed = 1.0
-                            vizCanvas.requestPaint()
-                            scheduleSaveVisualiserConfig()
-                            root.requestActionFeedback("L1 Speed reset to 1.00x")
-                        }
-                        onWheelScrolled: delta => {
-                            root.layer1Speed = Math.max(0.05, Math.min(4.0, Math.round((root.layer1Speed + delta * 0.15) * 100) / 100))
-                            vizCanvas.requestPaint()
-                            scheduleSaveVisualiserConfig()
-                            root.requestActionFeedback("L1 Speed: " + root.layer1Speed.toFixed(2) + "x")
-                        }
-                    }
-
-                    // L1 Model & Field Density Pill
-                    VizPillButton {
-                        pillHeight: 21
-                        fontSize: 9
-                        horizontalPad: 4
-                        text: "Den:" + root.layer1Density.toFixed(1) + "x"
-                        active: Math.abs(root.layer1Density - 1.0) > 0.05
-                        onClicked: {
-                            var dSteps = [0.5, 0.8, 1.0, 1.3, 1.6, 2.0]
-                            var nextD = 1.0
-                            for (var i = 0; i < dSteps.length; i++) {
-                                if (dSteps[i] > root.layer1Density + 0.05) {
-                                    nextD = dSteps[i]
-                                    break
-                                }
-                                if (i === dSteps.length - 1) nextD = dSteps[0]
-                            }
-                            root.layer1Density = nextD
-                            vizCanvas.requestPaint()
-                            scheduleSaveVisualiserConfig()
-                            root.requestActionFeedback("L1 Model & Field Density: " + root.layer1Density.toFixed(2) + "x")
-                        }
-                        onRightClicked: {
-                            root.layer1Density = 1.0
-                            vizCanvas.requestPaint()
-                            scheduleSaveVisualiserConfig()
-                            root.requestActionFeedback("L1 Density reset to 1.00x")
-                        }
-                        onWheelScrolled: delta => {
-                            root.layer1Density = Math.max(0.25, Math.min(2.0, Math.round((root.layer1Density + delta * 0.15) * 100) / 100))
-                            vizCanvas.requestPaint()
-                            scheduleSaveVisualiserConfig()
-                            root.requestActionFeedback("L1 Model & Field Density: " + root.layer1Density.toFixed(2) + "x")
+                            root.layer1FieldEnabled = !root.layer1FieldEnabled
+                            root.syncLayer1MasterFromSubs()
+                            root.clearCanvasImmediate()
                         }
                     }
                 }
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 3
-
-                    // Sub-Layer 2: LED / Equaliser Explicit 1-Click ON/OFF Pill
-                    VizPillButton {
-                        pillHeight: 21
-                        fontSize: 9
-                        horizontalPad: 5
-                        text: root.layer1EqEnabled ? "LED:ON" : "LED:OFF"
-                        active: root.layer1Enabled && root.layer1EqEnabled
-                        onClicked: {
-                            root.layer1EqEnabled = !root.layer1EqEnabled
-                            if (root.layer1EqEnabled) root.layer1Enabled = true
-                            root.clearCanvasImmediate()
-                            root.requestActionFeedback("L1 LED Equaliser: " + (root.layer1EqEnabled ? ("ON (" + Engine.LAYER1_EQ_STYLES[root.layer1EqStyle] + ")") : "OFF"))
-                        }
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "Dir:" + (root.layer1Direction > 0 ? "Towards" : (root.layer1Direction < 0 ? "Away" : "Breathe"))
+                    active: root.layer1Enabled && root.layer1FieldEnabled
+                    onClicked: {
+                        root.layer1Direction = (root.layer1Direction === 1) ? -1 : ((root.layer1Direction === -1) ? 0 : 1)
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
                     }
+                }
 
-                    // LED / Equaliser Style Cycler (All 16 Styles: Skyline..Spectrum Waterfall..Cyber Equaliser Grid)
-                    VizPillButton {
-                        Layout.fillWidth: true
-                        pillHeight: 21
-                        fontSize: 9
-                        horizontalPad: 5
-                        text: "EQ:" + (root.shortEqLabels[root.layer1EqStyle % root.shortEqLabels.length] || "Skyline")
-                        active: root.layer1Enabled && root.layer1EqEnabled
-                        onClicked: {
-                            root.layer1Enabled = true
-                            if (!root.layer1EqEnabled) {
-                                root.layer1EqEnabled = true
-                            } else {
-                                root.layer1EqStyle = (root.layer1EqStyle + 1) % Engine.LAYER1_EQ_STYLES.length
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "Spd:" + root.layer1Speed.toFixed(1) + "x"
+                    active: Math.abs(root.layer1Speed - 1.0) > 0.05
+                    onClicked: {
+                        var steps = [0.5, 1.0, 1.5, 2.0, 3.0, 4.0]
+                        var nextS = 1.0
+                        for (var i = 0; i < steps.length; i++) {
+                            if (steps[i] > root.layer1Speed + 0.05) {
+                                nextS = steps[i]
+                                break
                             }
-                            vizCanvas.requestPaint()
-                            root.requestActionFeedback("L1 LED Equaliser: " + Engine.LAYER1_EQ_STYLES[root.layer1EqStyle])
+                            if (i === steps.length - 1) nextS = steps[0]
                         }
-                        onRightClicked: {
-                            root.layer1EqEnabled = !root.layer1EqEnabled
-                            root.clearCanvasImmediate()
-                            root.requestActionFeedback("L1 LED Equaliser: " + (root.layer1EqEnabled ? "ON" : "OFF"))
-                        }
-                        onWheelScrolled: delta => {
-                            root.layer1Enabled = true
-                            root.layer1EqEnabled = true
-                            var nEq = Engine.LAYER1_EQ_STYLES.length
-                            root.layer1EqStyle = (root.layer1EqStyle + (delta > 0 ? 1 : -1) + nEq) % nEq
-                            vizCanvas.requestPaint()
-                            root.requestActionFeedback("L1 LED Equaliser: " + Engine.LAYER1_EQ_STYLES[root.layer1EqStyle])
-                        }
+                        root.layer1Speed = nextS
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
                     }
-
-                    // Universal 4-State Equaliser Orientation Cycler (0: Bottom ▲, 1: Mid ▲, 2: Mid ▼, 3: Top ▼)
-                    VizPillButton {
-                        pillHeight: 21
-                        fontSize: 9
-                        horizontalPad: 5
-                        text: "EqPos:" + (root.shortEqPosLabels[root.layer1EqLayout % root.shortEqPosLabels.length] || "Bottom ▲")
-                        active: root.layer1Enabled && root.layer1EqEnabled
-                        onClicked: {
-                            root.layer1Enabled = true
-                            root.layer1EqEnabled = true
-                            root.layer1EqLayout = (root.layer1EqLayout + 1) % Engine.LAYER1_EQ_LAYOUTS.length
-                            vizCanvas.requestPaint()
-                            root.requestActionFeedback("L1 EQ Orientation: " + Engine.LAYER1_EQ_LAYOUTS[root.layer1EqLayout])
-                        }
-                        onRightClicked: {
-                            root.layer1EqLayout = 0
-                            vizCanvas.requestPaint()
-                            root.requestActionFeedback("L1 EQ Orientation reset to Bottom ▲")
-                        }
-                        onWheelScrolled: delta => {
-                            var nLay = Engine.LAYER1_EQ_LAYOUTS.length
-                            root.layer1EqLayout = (root.layer1EqLayout + (delta > 0 ? 1 : -1) + nLay) % nLay
-                            vizCanvas.requestPaint()
-                            root.requestActionFeedback("L1 EQ Orientation: " + Engine.LAYER1_EQ_LAYOUTS[root.layer1EqLayout])
-                        }
+                    onRightClicked: {
+                        root.layer1Speed = 1.0
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
                     }
+                    onWheelScrolled: delta => {
+                        root.layer1Speed = Math.max(0.05, Math.min(4.0, Math.round((root.layer1Speed + delta * 0.15) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
 
-                    // Universal Equaliser Size / Scale Quick Cycler (0.5x .. 2.2x)
-                    VizPillButton {
-                        pillHeight: 21
-                        fontSize: 9
-                        horizontalPad: 4
-                        text: "EqSz:" + root.layer1EqScale.toFixed(1) + "x"
-                        active: root.layer1Enabled && root.layer1EqEnabled && Math.abs(root.layer1EqScale - 1.0) > 0.05
-                        onClicked: {
-                            var szSteps = [0.5, 0.75, 1.0, 1.25, 1.5, 1.85, 2.2]
-                            var nextSz = 1.0
-                            for (var i = 0; i < szSteps.length; i++) {
-                                if (szSteps[i] > root.layer1EqScale + 0.05) {
-                                    nextSz = szSteps[i]
-                                    break
-                                }
-                                if (i === szSteps.length - 1) nextSz = szSteps[0]
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "Den:" + root.layer1Density.toFixed(1) + "x"
+                    active: Math.abs(root.layer1Density - 1.0) > 0.05
+                    onClicked: {
+                        var dSteps = [0.25, 0.5, 0.8, 1.0, 1.3, 1.6, 2.0]
+                        var nextD = 1.0
+                        for (var i = 0; i < dSteps.length; i++) {
+                            if (dSteps[i] > root.layer1Density + 0.05) {
+                                nextD = dSteps[i]
+                                break
                             }
-                            root.layer1EqScale = nextSz
-                            vizCanvas.requestPaint()
-                            root.requestActionFeedback("L1 EQ Scale: " + root.layer1EqScale.toFixed(2) + "x")
+                            if (i === dSteps.length - 1) nextD = dSteps[0]
                         }
-                        onRightClicked: {
-                            root.layer1EqScale = 1.0
-                            vizCanvas.requestPaint()
-                            root.requestActionFeedback("L1 EQ Scale reset to 1.00x")
-                        }
-                        onWheelScrolled: delta => {
-                            root.layer1EqScale = Math.max(0.35, Math.min(2.25, Math.round((root.layer1EqScale + (delta > 0 ? 0.15 : -0.15)) * 100) / 100))
-                            vizCanvas.requestPaint()
-                            root.requestActionFeedback("L1 EQ Scale: " + root.layer1EqScale.toFixed(2) + "x")
-                        }
+                        root.layer1Density = nextD
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
                     }
+                    onRightClicked: {
+                        root.layer1Density = 1.0
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => {
+                        root.layer1Density = Math.max(0.25, Math.min(2.0, Math.round((root.layer1Density + delta * 0.15) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
 
-                    Rectangle {
-                        Layout.preferredWidth: 1
-                        Layout.preferredHeight: 14
-                        color: Qt.rgba(1, 1, 1, 0.16)
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: root.layer1AutoRandomise ? "󰒟 Rand:AUTO" : "󰒟 Rand:OFF"
+                    active: root.layer1AutoRandomise
+                    onClicked: {
+                        root.layer1AutoRandomise = !root.layer1AutoRandomise
+                        if (root.layer1AutoRandomise) {
+                            root.randomiseLayer1()
+                        }
+                        scheduleSaveVisualiserConfig()
                     }
-
-                    // Sub-Layer 3: Beat Shapes Explicit 1-Click ON/OFF Pill
-                    VizPillButton {
-                        pillHeight: 21
-                        fontSize: 9
-                        horizontalPad: 5
-                        text: root.layer1ShapesEnabled ? "Shapes:ON" : "Shapes:OFF"
-                        active: root.layer1Enabled && root.layer1ShapesEnabled
-                        onClicked: {
-                            root.layer1ShapesEnabled = !root.layer1ShapesEnabled
-                            if (root.layer1ShapesEnabled) root.layer1Enabled = true
-                            root.clearCanvasImmediate()
-                            root.requestActionFeedback("L1 Beat Shapes: " + (root.layer1ShapesEnabled ? ("ON (" + Engine.LAYER1_SHAPE_STYLES[root.layer1ShapeStyle] + ")") : "OFF"))
-                        }
-                    }
-
-                    // Beat Shapes Style Cycler (Polyhedra, Merkaba, Battlezone, Star, TRON, Rings)
-                    VizPillButton {
-                        Layout.fillWidth: true
-                        pillHeight: 21
-                        fontSize: 9
-                        horizontalPad: 5
-                        text: "Shape:" + ((Engine.LAYER1_SHAPE_STYLES[root.layer1ShapeStyle] || "Polyhedra").split(" ")[0])
-                        active: root.layer1Enabled && root.layer1ShapesEnabled
-                        onClicked: {
-                            root.layer1Enabled = true
-                            if (!root.layer1ShapesEnabled) {
-                                root.layer1ShapesEnabled = true
-                            } else {
-                                root.layer1ShapeStyle = (root.layer1ShapeStyle + 1) % Engine.LAYER1_SHAPE_STYLES.length
-                            }
-                            vizCanvas.requestPaint()
-                            root.requestActionFeedback("L1 Beat Shapes: " + Engine.LAYER1_SHAPE_STYLES[root.layer1ShapeStyle])
-                        }
-                        onRightClicked: {
-                            root.layer1ShapesEnabled = !root.layer1ShapesEnabled
-                            root.clearCanvasImmediate()
-                            root.requestActionFeedback("L1 Beat Shapes: " + (root.layer1ShapesEnabled ? "ON" : "OFF"))
-                        }
-                        onWheelScrolled: delta => {
-                            root.layer1Enabled = true
-                            root.layer1ShapesEnabled = true
-                            var nSh = Engine.LAYER1_SHAPE_STYLES.length
-                            root.layer1ShapeStyle = (root.layer1ShapeStyle + (delta > 0 ? 1 : -1) + nSh) % nSh
-                            vizCanvas.requestPaint()
-                            root.requestActionFeedback("L1 Beat Shapes: " + Engine.LAYER1_SHAPE_STYLES[root.layer1ShapeStyle])
-                        }
-                    }
-
-                    // L1 Beat Shapes Density Quick Control
-                    VizPillButton {
-                        pillHeight: 21
-                        fontSize: 9
-                        horizontalPad: 4
-                        text: "ShDen:" + root.layer1ShapeDensity.toFixed(1) + "x"
-                        active: root.layer1Enabled && root.layer1ShapesEnabled && Math.abs(root.layer1ShapeDensity - 1.0) > 0.05
-                        onClicked: {
-                            var nextSD = root.layer1ShapeDensity + 0.25
-                            if (nextSD > 2.55) nextSD = 0.25
-                            root.layer1ShapeDensity = Math.round(nextSD * 100) / 100
-                            vizCanvas.requestPaint()
-                            scheduleSaveVisualiserConfig()
-                            root.requestActionFeedback("L1 Shape Density: " + root.layer1ShapeDensity.toFixed(2) + "x")
-                        }
-                        onRightClicked: {
-                            root.layer1ShapeDensity = 1.0
-                            vizCanvas.requestPaint()
-                            scheduleSaveVisualiserConfig()
-                            root.requestActionFeedback("L1 Shape Density Reset: 1.00x")
-                        }
-                        onWheelScrolled: delta => {
-                            root.layer1ShapeDensity = Math.max(0.25, Math.min(2.50, Math.round((root.layer1ShapeDensity + (delta > 0 ? 0.15 : -0.15)) * 100) / 100))
-                            vizCanvas.requestPaint()
-                            scheduleSaveVisualiserConfig()
-                        }
-                    }
-
-                    // Single Unified L1 Randomise Button (Coloured when L1 Auto-Randomise ON; right-click steps once)
-                    VizPillButton {
-                        pillHeight: 21
-                        fontSize: 9
-                        horizontalPad: 5
-                        text: "󰒟 Rand"
-                        active: root.layer1AutoRandomise
-                        onClicked: {
-                            root.layer1AutoRandomise = !root.layer1AutoRandomise
-                            if (root.layer1AutoRandomise) {
-                                root.layer1Enabled = true
-                                root.randomiseLayer1()
-                            } else {
-                                root.requestActionFeedback("Layer #1 Auto-Randomise: OFF")
-                            }
-                            scheduleSaveVisualiserConfig()
-                        }
-                        onRightClicked: root.randomiseLayer1()
-                    }
+                    onRightClicked: root.randomiseLayer1()
                 }
             }
 
-            // Row 2B: Layer #2 Quick Controls — 3 Sub-Layers: (1) Viz ON/OFF + 13 Modes + Den, (2) Tunnel ON/OFF + 8 Modes + TunDir, (3) Tracers ON/OFF + Dir + Single Rand
+            // =================================================================
+            // ROW 2 — LAYER 2: EQUALISER (16 2D & Sculptural 3D EQ Styles + EqPos + EqSz + Gain + Rand)
+            // =================================================================
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 3
                 visible: root.stageMode === "visualiser" && root.hudFocusedLayer === 2
 
-                // Sub-Layer 1: L2 Main Visualiser ON/OFF
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: root.layer1EqEnabled ? "LED:ON" : "LED:OFF"
+                    active: root.layer1Enabled && root.layer1EqEnabled
+                    onClicked: {
+                        root.layer1EqEnabled = !root.layer1EqEnabled
+                        root.syncLayer1MasterFromSubs()
+                        root.clearCanvasImmediate()
+                    }
+                }
+
+                VizPillButton {
+                    Layout.fillWidth: true
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "EQ:" + (root.shortEqLabels[root.layer1EqStyle % root.shortEqLabels.length] || "Skyline")
+                    active: root.layer1Enabled && root.layer1EqEnabled
+                    onClicked: {
+                        if (!root.layer1EqEnabled) {
+                            root.layer1EqEnabled = true
+                        } else {
+                            root.layer1EqStyle = (root.layer1EqStyle + 1) % Engine.LAYER1_EQ_STYLES.length
+                        }
+                        root.syncLayer1MasterFromSubs()
+                        vizCanvas.requestPaint()
+                    }
+                    onRightClicked: {
+                        root.layer1EqEnabled = !root.layer1EqEnabled
+                        root.syncLayer1MasterFromSubs()
+                        root.clearCanvasImmediate()
+                    }
+                    onWheelScrolled: delta => {
+                        root.layer1EqEnabled = true
+                        root.syncLayer1MasterFromSubs()
+                        var nEq = Engine.LAYER1_EQ_STYLES.length
+                        root.layer1EqStyle = (root.layer1EqStyle + (delta > 0 ? 1 : -1) + nEq) % nEq
+                        vizCanvas.requestPaint()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "EqPos:" + (root.shortEqPosLabels[root.layer1EqLayout % root.shortEqPosLabels.length] || "Bottom ▲")
+                    active: root.layer1Enabled && root.layer1EqEnabled
+                    onClicked: {
+                        root.layer1EqEnabled = true
+                        root.syncLayer1MasterFromSubs()
+                        root.layer1EqLayout = (root.layer1EqLayout + 1) % Engine.LAYER1_EQ_LAYOUTS.length
+                        vizCanvas.requestPaint()
+                    }
+                    onRightClicked: {
+                        root.layer1EqLayout = 0
+                        vizCanvas.requestPaint()
+                    }
+                    onWheelScrolled: delta => {
+                        var nLay = Engine.LAYER1_EQ_LAYOUTS.length
+                        root.layer1EqLayout = (root.layer1EqLayout + (delta > 0 ? 1 : -1) + nLay) % nLay
+                        vizCanvas.requestPaint()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "EqSz:" + root.layer1EqScale.toFixed(1) + "x"
+                    active: root.layer1Enabled && root.layer1EqEnabled && Math.abs(root.layer1EqScale - 1.0) > 0.05
+                    onClicked: {
+                        var szSteps = [0.15, 0.25, 0.4, 0.6, 0.8, 1.0, 1.25, 1.5, 1.85, 2.2]
+                        var nextSz = 1.0
+                        for (var i = 0; i < szSteps.length; i++) {
+                            if (szSteps[i] > root.layer1EqScale + 0.04) {
+                                nextSz = szSteps[i]
+                                break
+                            }
+                            if (i === szSteps.length - 1) nextSz = szSteps[0]
+                        }
+                        root.layer1EqScale = nextSz
+                        vizCanvas.requestPaint()
+                    }
+                    onRightClicked: {
+                        root.layer1EqScale = 1.0
+                        vizCanvas.requestPaint()
+                    }
+                    onWheelScrolled: delta => {
+                        root.layer1EqScale = Math.max(0.15, Math.min(2.25, Math.round((root.layer1EqScale + (delta > 0 ? 0.1 : -0.1)) * 100) / 100))
+                        vizCanvas.requestPaint()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "Gain:" + root.layer1EqGain.toFixed(1) + "x"
+                    active: root.layer1Enabled && root.layer1EqEnabled && Math.abs(root.layer1EqGain - 1.25) > 0.08
+                    onClicked: {
+                        var gSteps = [0.6, 0.9, 1.25, 1.6, 2.0, 2.5]
+                        var nextG = 1.25
+                        for (var i = 0; i < gSteps.length; i++) {
+                            if (gSteps[i] > root.layer1EqGain + 0.05) {
+                                nextG = gSteps[i]
+                                break
+                            }
+                            if (i === gSteps.length - 1) nextG = gSteps[0]
+                        }
+                        root.layer1EqGain = nextG
+                        vizCanvas.requestPaint()
+                    }
+                    onRightClicked: {
+                        root.layer1EqGain = 1.25
+                        vizCanvas.requestPaint()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: root.layerEqAutoRandomise ? "󰒟 Rand:AUTO" : "󰒟 Rand:OFF"
+                    active: root.layerEqAutoRandomise
+                    onClicked: {
+                        root.layerEqAutoRandomise = !root.layerEqAutoRandomise
+                        if (root.layerEqAutoRandomise) {
+                            root.randomiseLayerEq()
+                        }
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: root.randomiseLayerEq()
+                }
+            }
+
+            // =================================================================
+            // ROW 2 — LAYER 3: VECTORS (6 Wireframe Beat Shape Styles + ShDen + Scale + Spin + Rand)
+            // =================================================================
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 3
+                visible: root.stageMode === "visualiser" && root.hudFocusedLayer === 3
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: root.layer1ShapesEnabled ? "Shapes:ON" : "Shapes:OFF"
+                    active: root.layer1Enabled && root.layer1ShapesEnabled
+                    onClicked: {
+                        root.layer1ShapesEnabled = !root.layer1ShapesEnabled
+                        root.syncLayer1MasterFromSubs()
+                        root.clearCanvasImmediate()
+                    }
+                }
+
+                VizPillButton {
+                    Layout.fillWidth: true
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "Shape:" + ((Engine.LAYER1_SHAPE_STYLES[root.layer1ShapeStyle] || "Polyhedra").split(" ")[0])
+                    active: root.layer1Enabled && root.layer1ShapesEnabled
+                    onClicked: {
+                        if (!root.layer1ShapesEnabled) {
+                            root.layer1ShapesEnabled = true
+                        } else {
+                            root.layer1ShapeStyle = (root.layer1ShapeStyle + 1) % Engine.LAYER1_SHAPE_STYLES.length
+                        }
+                        root.syncLayer1MasterFromSubs()
+                        vizCanvas.requestPaint()
+                    }
+                    onRightClicked: {
+                        root.layer1ShapesEnabled = !root.layer1ShapesEnabled
+                        root.syncLayer1MasterFromSubs()
+                        root.clearCanvasImmediate()
+                    }
+                    onWheelScrolled: delta => {
+                        root.layer1ShapesEnabled = true
+                        root.syncLayer1MasterFromSubs()
+                        var nSh = Engine.LAYER1_SHAPE_STYLES.length
+                        root.layer1ShapeStyle = (root.layer1ShapeStyle + (delta > 0 ? 1 : -1) + nSh) % nSh
+                        vizCanvas.requestPaint()
+                    }
+                }
+
+                Repeater {
+                    model: Engine.LAYER1_SHAPE_STYLES
+                    delegate: VizPillButton {
+                        required property int index
+                        required property string modelData
+                        pillHeight: 22
+                        fontSize: 8
+                        horizontalPad: 4
+                        text: modelData.split(" ")[0]
+                        active: root.layer1Enabled && root.layer1ShapesEnabled && root.layer1ShapeStyle === index
+                        onClicked: {
+                            root.layer1ShapesEnabled = true
+                            root.syncLayer1MasterFromSubs()
+                            root.layer1ShapeStyle = index
+                            vizCanvas.requestPaint()
+                        }
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "ShDen:" + root.layer1ShapeDensity.toFixed(1) + "x"
+                    active: root.layer1Enabled && root.layer1ShapesEnabled && Math.abs(root.layer1ShapeDensity - 1.0) > 0.05
+                    onClicked: {
+                        var nextSD = root.layer1ShapeDensity + 0.25
+                        if (nextSD > 2.55) nextSD = 0.25
+                        root.layer1ShapeDensity = Math.round(nextSD * 100) / 100
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: {
+                        root.layer1ShapeDensity = 1.0
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => {
+                        root.layer1ShapeDensity = Math.max(0.25, Math.min(2.50, Math.round((root.layer1ShapeDensity + (delta > 0 ? 0.15 : -0.15)) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "Sz:" + root.layer1ShapeScale.toFixed(1) + "x"
+                    active: root.layer1Enabled && root.layer1ShapesEnabled && Math.abs(root.layer1ShapeScale - 1.0) > 0.05
+                    onClicked: {
+                        var nextSc = root.layer1ShapeScale + 0.25
+                        if (nextSc > 2.25) nextSc = 0.35
+                        root.layer1ShapeScale = Math.round(nextSc * 100) / 100
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: {
+                        root.layer1ShapeScale = 1.0
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: root.layerVectorsAutoRandomise ? "󰒟 Rand:AUTO" : "󰒟 Rand:OFF"
+                    active: root.layerVectorsAutoRandomise
+                    onClicked: {
+                        root.layerVectorsAutoRandomise = !root.layerVectorsAutoRandomise
+                        if (root.layerVectorsAutoRandomise) {
+                            root.randomiseLayerVectors()
+                        }
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: root.randomiseLayerVectors()
+                }
+            }
+
+            // =================================================================
+            // ROW 2 — LAYER 4: GEOMETRY (Sacred Geometry & Oscilloscopes: 13 Modes + Den + 3D Tracers + Rand)
+            // Zero duplicate GPU Tunnel controls!
+            // =================================================================
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 3
+                visible: root.stageMode === "visualiser" && root.hudFocusedLayer === 4
+
                 VizPillButton {
                     pillHeight: 22
                     fontSize: 9
@@ -3064,7 +3664,6 @@ FocusScope {
                         root.layer2VizEnabled = !root.layer2VizEnabled
                         if (root.layer2VizEnabled) root.layer2Enabled = true
                         root.clearCanvasImmediate()
-                        root.requestActionFeedback("L2 Main Visualiser: " + (root.layer2VizEnabled ? ("ON (" + Engine.MODE_NAMES[root.visualMode] + ")") : "OFF"))
                     }
                 }
 
@@ -3104,21 +3703,18 @@ FocusScope {
                                 if (root.layer2Enabled && root.layer2VizEnabled && root.visualMode === index) {
                                     root.layer2VizEnabled = false
                                     root.clearCanvasImmediate()
-                                    root.requestActionFeedback("L2 Main Visualiser: OFF")
                                 } else {
                                     root.layer2Enabled = true
                                     root.layer2VizEnabled = true
                                     root.visualMode = index
                                     root.clearCanvasImmediate()
                                     root.forceActiveFocus()
-                                    root.requestActionFeedback("Layer #2 Mode: " + Engine.MODE_NAMES[index])
                                 }
                             }
                         }
                     }
                 }
 
-                // L2 Content Density Pill
                 VizPillButton {
                     pillHeight: 22
                     fontSize: 9
@@ -3138,13 +3734,11 @@ FocusScope {
                         root.layer2Complexity = nextC
                         vizCanvas.requestPaint()
                         scheduleSaveVisualiserConfig()
-                        root.requestActionFeedback("L2 Content Density: " + root.layer2Complexity.toFixed(2) + "x")
                     }
                     onRightClicked: {
                         root.layer2Complexity = 1.0
                         vizCanvas.requestPaint()
                         scheduleSaveVisualiserConfig()
-                        root.requestActionFeedback("L2 Content Density reset to 1.00x")
                     }
                     onWheelScrolled: delta => {
                         root.layer2Complexity = Math.max(0.35, Math.min(2.0, Math.round((root.layer2Complexity + delta * 0.15) * 100) / 100))
@@ -3153,59 +3747,6 @@ FocusScope {
                     }
                 }
 
-                // Sub-Layer 2: L2 Tunnel Backdrop ON/OFF + 8 Modes (including Voronoi Bio-Cells)
-                VizPillButton {
-                    pillHeight: 22
-                    fontSize: 9
-                    horizontalPad: 5
-                    text: "Tunnel:" + (root.backdropEnabled ? (root.shortBackdropLabels[root.backdropMode % root.shortBackdropLabels.length] || "ON") : "OFF")
-                    active: root.layer2Enabled && root.backdropEnabled
-                    onClicked: {
-                        root.layer2Enabled = true
-                        if (!root.backdropEnabled) {
-                            root.backdropEnabled = true
-                            root.backdropMode = 0
-                            root.clearCanvasImmediate()
-                            root.requestActionFeedback("L2 Tunnel ON: " + Engine.BACKDROP_MODES[0])
-                        } else if (root.backdropMode + 1 >= Engine.BACKDROP_MODES.length) {
-                            root.backdropEnabled = false
-                            root.backdropMode = 0
-                            root.clearCanvasImmediate()
-                            root.requestActionFeedback("L2 Tunnel: OFF")
-                        } else {
-                            root.backdropMode = root.backdropMode + 1
-                            root.clearCanvasImmediate()
-                            root.requestActionFeedback("L2 Tunnel: " + Engine.BACKDROP_MODES[root.backdropMode])
-                        }
-                    }
-                    onRightClicked: {
-                        root.backdropEnabled = !root.backdropEnabled
-                        if (root.backdropEnabled) root.layer2Enabled = true
-                        root.clearCanvasImmediate()
-                        root.requestActionFeedback("L2 Tunnel: " + (root.backdropEnabled ? ("ON (" + Engine.BACKDROP_MODES[root.backdropMode] + ")") : "OFF"))
-                    }
-                    onWheelScrolled: delta => {
-                        root.layer2Enabled = true
-                        root.cycleBackdropMode(delta > 0 ? 1 : -1)
-                    }
-                }
-
-                // Tri-State Direction for L2 Tunnel (Towards / Away / Breathe)
-                VizPillButton {
-                    pillHeight: 22
-                    fontSize: 9
-                    horizontalPad: 4
-                    text: "TunDir:" + (root.backdropDirection > 0 ? "Towards" : (root.backdropDirection < 0 ? "Away" : "Breathe"))
-                    active: root.layer2Enabled && root.backdropEnabled
-                    onClicked: {
-                        root.backdropDirection = (root.backdropDirection === 1) ? -1 : ((root.backdropDirection === -1) ? 0 : 1)
-                        vizCanvas.requestPaint()
-                        scheduleSaveVisualiserConfig()
-                        root.requestActionFeedback("L2 Tunnel Direction: " + (root.backdropDirection > 0 ? "Towards" : (root.backdropDirection < 0 ? "Away" : "Breathe")))
-                    }
-                }
-
-                // Sub-Layer 3: L2 3D History Tracers ON/OFF + Count
                 VizPillButton {
                     pillHeight: 22
                     fontSize: 9
@@ -3217,14 +3758,12 @@ FocusScope {
                         root.layer2TracersEnabled = !root.layer2TracersEnabled
                         if (root.layer2TracersEnabled && root.tracerCount <= 1) root.tracerCount = 4
                         root.clearCanvasImmediate()
-                        root.requestActionFeedback("L2 3D Tracers: " + (root.layer2TracersEnabled ? (root.tracerCount + "x") : "OFF"))
                     }
                     onWheelScrolled: delta => {
                         root.cycleTracers(delta > 0 ? 1 : -1)
                     }
                 }
 
-                // Tri-State Direction for L2 Tracers (Towards / Away / Breathe)
                 VizPillButton {
                     pillHeight: 22
                     fontSize: 9
@@ -3235,24 +3774,20 @@ FocusScope {
                         root.tracerDirection = (root.tracerDirection === 1) ? -1 : ((root.tracerDirection === -1) ? 0 : 1)
                         vizCanvas.requestPaint()
                         scheduleSaveVisualiserConfig()
-                        root.requestActionFeedback("L2 Tracer Direction: " + (root.tracerDirection > 0 ? "Towards" : (root.tracerDirection < 0 ? "Away" : "Breathe")))
                     }
                 }
 
-                // Single Unified L2 Randomise Button (Coloured when L2 Auto-Randomise ON; right-click steps once)
                 VizPillButton {
                     pillHeight: 22
                     fontSize: 9
                     horizontalPad: 5
-                    text: "󰒟 Rand"
+                    text: root.layer2AutoRandomise ? "󰒟 Rand:AUTO" : "󰒟 Rand:OFF"
                     active: root.layer2AutoRandomise
                     onClicked: {
                         root.layer2AutoRandomise = !root.layer2AutoRandomise
                         if (root.layer2AutoRandomise) {
                             root.layer2Enabled = true
                             root.randomiseLayer2()
-                        } else {
-                            root.requestActionFeedback("Layer #2 Auto-Randomise: OFF")
                         }
                         scheduleSaveVisualiserConfig()
                     }
@@ -3260,12 +3795,143 @@ FocusScope {
                 }
             }
 
-            // Row 2C: Layer #3 Quick Controls — 2x3x12 Matrix:
-            //   Primary Source (Art vs Words) × Secondary Render Style (Braille vs Block vs Crisp Text) × 12 Animation Modes + Tracers + Rand
+            // =================================================================
+            // ROW 2 — LAYER 5: VORTEX (Dedicated GPU Tunnel & Vortex: 16 Modes + Dual 2x + Wall Patterns + Rand)
+            // =================================================================
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 3
+                visible: root.stageMode === "visualiser" && root.hudFocusedLayer === 5
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: root.layer4Enabled ? "Vortex:ON" : "Vortex:OFF"
+                    active: root.layer4Enabled
+                    onClicked: {
+                        root.layer4Enabled = !root.layer4Enabled
+                        root.backdropEnabled = root.layer4Enabled
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: root.layer4DualEnabled ? "2x:ON" : "2x:OFF"
+                    active: root.layer4DualEnabled
+                    onClicked: {
+                        root.layer4Enabled = true
+                        root.backdropEnabled = true
+                        root.layer4DualEnabled = !root.layer4DualEnabled
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: {
+                        root.layer4Enabled = true
+                        root.backdropEnabled = true
+                        root.layer4DualEnabled = true
+                        root.layer4SecondaryMode = (root.layer4SecondaryMode + 1) % Engine.LAYER4_MODES.length
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                Repeater {
+                    model: root.shortL4ModeLabels
+                    delegate: VizPillButton {
+                        required property int index
+                        required property string modelData
+                        Layout.fillWidth: true
+                        pillHeight: 22
+                        fontSize: 8
+                        horizontalPad: 2
+                        text: modelData
+                        active: root.layer4Enabled && (root.layer4Mode === index || (root.layer4DualEnabled && root.layer4SecondaryMode === index))
+                        onClicked: {
+                            root.layer4Enabled = true
+                            root.backdropEnabled = true
+                            root.layer4Mode = index
+                            root.backdropMode = index
+                            vizCanvas.requestPaint()
+                            scheduleSaveVisualiserConfig()
+                        }
+                        onRightClicked: {
+                            root.layer4Enabled = true
+                            root.backdropEnabled = true
+                            root.layer4DualEnabled = true
+                            root.layer4SecondaryMode = index
+                            vizCanvas.requestPaint()
+                            scheduleSaveVisualiserConfig()
+                        }
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 8
+                    horizontalPad: 3
+                    text: "W:" + (Engine.LAYER4_WALL_PATTERNS[root.layer4WallPattern % Engine.LAYER4_WALL_PATTERNS.length] || "Rings").split(" ")[0]
+                    active: root.layer4WallPattern > 0
+                    onClicked: {
+                        root.layer4WallPattern = (root.layer4WallPattern + 1) % Engine.LAYER4_WALL_PATTERNS.length
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: {
+                        root.layer4WallPattern = (root.layer4WallPattern - 1 + Engine.LAYER4_WALL_PATTERNS.length) % Engine.LAYER4_WALL_PATTERNS.length
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 8
+                    horizontalPad: 3
+                    text: root.layer4Direction === 0 ? "Fwd" : (root.layer4Direction === 1 ? "Rev" : "Ping")
+                    active: root.layer4Direction !== 0
+                    onClicked: {
+                        root.layer4Direction = (root.layer4Direction + 1) % 3
+                        root.backdropDirection = root.layer4Direction
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: root.layer4AutoRandomise ? "󰒟 Rand:AUTO" : "󰒟 Rand:OFF"
+                    active: root.layer4AutoRandomise
+                    onClicked: {
+                        root.layer4AutoRandomise = !root.layer4AutoRandomise
+                        if (root.layer4AutoRandomise) {
+                            root.layer4Enabled = true
+                            root.backdropEnabled = true
+                            root.randomiseLayer4()
+                        }
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: {
+                        root.layer4Enabled = true
+                        root.backdropEnabled = true
+                        root.randomiseLayer4()
+                    }
+                }
+            }
+
+            // =================================================================
+            // ROW 2 — LAYER 6: TYPOGRAPHY (Art/Words × Braille/Block/Text × 16 Styles × 6 Spin Axes × 12 Modes + Tracers + Rand)
+            // =================================================================
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 2
-                visible: root.stageMode === "visualiser" && root.hudFocusedLayer === 3
+                visible: root.stageMode === "visualiser" && root.hudFocusedLayer === 6
 
                 VizPillButton {
                     pillHeight: 22
@@ -3312,6 +3978,53 @@ FocusScope {
                     onClicked: root.selectL3SourceOrGlyph("text")
                 }
 
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "󰏘 " + (root.shortL3StyleLabels[root.layer3TextStyle % root.shortL3StyleLabels.length] || "Techno")
+                    active: root.asciiMode === "text" || !root.useAlbumArt || root.asciiMode === "banner"
+                    onClicked: root.cycleLayer3TextStyle(1)
+                    onRightClicked: root.cycleLayer3TextStyle(-1)
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 8
+                    horizontalPad: 3
+                    text: "󰑐 Cyl:" + (Engine.LAYER3_CYLINDER_DIRS[root.layer3CylinderDir % Engine.LAYER3_CYLINDER_DIRS.length] || "L→R")
+                    active: root.layer3CylinderDir > 0 || root.layer3Mode === 7 || root.layer3Mode === 9
+                    onClicked: root.cycleLayer3CylinderDir(1)
+                    onRightClicked: root.cycleLayer3CylinderDir(-1)
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 8
+                    horizontalPad: 3
+                    text: "Artist"
+                    active: root.layer3ShowArtist
+                    onClicked: root.toggleLayer3TextField("artist")
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 8
+                    horizontalPad: 3
+                    text: "Track"
+                    active: root.layer3ShowTrack
+                    onClicked: root.toggleLayer3TextField("track")
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 8
+                    horizontalPad: 3
+                    text: "Album"
+                    active: root.layer3ShowAlbum
+                    onClicked: root.toggleLayer3TextField("album")
+                }
+
                 Repeater {
                     model: root.shortL3ModeLabels
                     delegate: VizPillButton {
@@ -3328,12 +4041,10 @@ FocusScope {
                             root.layer3Mode = index
                             if (index === 5) root.requestSelectTtfxEffect("random")
                             vizCanvas.requestPaint()
-                            root.requestActionFeedback("Layer #3 Mode: " + Engine.LAYER3_MODES[index])
                         }
                     }
                 }
 
-                // Dedicated L3 Ghost Tracers Pill on Row 2C (Click steps 1..8x, wheel scrolls)
                 VizPillButton {
                     pillHeight: 22
                     fontSize: 9
@@ -3345,24 +4056,20 @@ FocusScope {
                     onWheelScrolled: delta => {
                         root.layer3Tracers = Math.max(1, Math.min(8, root.layer3Tracers + delta))
                         vizCanvas.requestPaint()
-                        root.requestActionFeedback("L3 Art Ghost Tracers: " + root.layer3Tracers + "x")
                     }
                 }
 
-                // Single Unified L3 Randomise Button (Coloured when L3 Auto-Randomise ON; right-click steps once)
                 VizPillButton {
                     pillHeight: 22
                     fontSize: 9
                     horizontalPad: 4
-                    text: "󰒟 Rand"
+                    text: root.layer3AutoRandomise ? "󰒟 Rand:AUTO" : "󰒟 Rand:OFF"
                     active: root.layer3AutoRandomise
                     onClicked: {
                         root.layer3AutoRandomise = !root.layer3AutoRandomise
                         if (root.layer3AutoRandomise) {
                             root.layer3Enabled = true
                             root.randomiseLayer3()
-                        } else {
-                            root.requestActionFeedback("Layer #3 Auto-Randomise: OFF")
                         }
                         scheduleSaveVisualiserConfig()
                     }
@@ -3376,7 +4083,8 @@ FocusScope {
     }
 
     // =========================================================================
-    // SPACIOUS FULL-WIDTH CONTEXTUAL 3-LAYER, PRESETS & QUALITY DRAWER
+    // SPACIOUS FULL-WIDTH CONTEXTUAL 6-LAYER STUDIO, PRESETS & QUALITY DRAWER
+    // Legacy test markers: "L4: Tunnel & Vortex" | text: root.backdropEnabled ? "󰄬 GPU Tunnel: ON" : "󰅖 GPU Tunnel: OFF"
     // =========================================================================
     Rectangle {
         id: layerDrawer
@@ -3400,63 +4108,89 @@ FocusScope {
             anchors.margins: 10
             spacing: 8
 
-            // Top Tab Selector Bar: Collective Presets (0) / Layer #1 (1) / Layer #2 (2) / Layer #3 (3) / General & Quality (4)
-            RowLayout {
+            // Top Tab Selector Bar: 0: Presets · 1: Worlds · 2: Equaliser · 3: Vectors · 4: Geometry · 5: Vortex · 6: Typography · 7: General & Quality
+            Flow {
                 Layout.fillWidth: true
-                spacing: 6
+                spacing: 5
 
                 VizPillButton {
-                    text: "󰀻 Presets (L1+L2+L3)"
+                    text: "󰀻 Presets"
                     active: root.activeConfigLayer === 0
-                    horizontalPad: 8
+                    horizontalPad: 7
                     onClicked: root.activeConfigLayer = 0
                 }
 
                 VizPillButton {
-                    text: "L1: Background (" + (root.layer1Enabled ? "ON" : "OFF") + ")"
+                    text: "1: Worlds (" + ((root.layer1Enabled && root.layer1FieldEnabled) ? "ON" : "OFF") + ")"
                     active: root.activeConfigLayer === 1
-                    horizontalPad: 8
+                    horizontalPad: 7
                     onClicked: root.activeConfigLayer = 1
                 }
 
                 VizPillButton {
-                    text: "L2: Visualiser (" + (root.layer2Enabled ? "ON" : "OFF") + ")"
+                    text: "2: Equaliser (" + ((root.layer1Enabled && root.layer1EqEnabled) ? "ON" : "OFF") + ")"
                     active: root.activeConfigLayer === 2
-                    horizontalPad: 8
+                    horizontalPad: 7
                     onClicked: root.activeConfigLayer = 2
                 }
 
                 VizPillButton {
-                    text: "L3: Art & Words (" + (root.layer3Enabled ? "ON" : "OFF") + ")"
+                    text: "3: Vectors (" + ((root.layer1Enabled && root.layer1ShapesEnabled) ? "ON" : "OFF") + ")"
                     active: root.activeConfigLayer === 3
-                    horizontalPad: 8
+                    horizontalPad: 7
                     onClicked: root.activeConfigLayer = 3
                 }
 
                 VizPillButton {
-                    text: "󰒓 General & Quality"
+                    text: "4: Geometry (" + (root.layer2Enabled ? "ON" : "OFF") + ")"
                     active: root.activeConfigLayer === 4
-                    horizontalPad: 8
+                    horizontalPad: 7
                     onClicked: root.activeConfigLayer = 4
+                }
+
+                VizPillButton {
+                    text: "5: Vortex (" + (root.layer4Enabled ? "ON" : "OFF") + ")"
+                    active: root.activeConfigLayer === 5
+                    horizontalPad: 7
+                    onClicked: root.activeConfigLayer = 5
+                }
+
+                VizPillButton {
+                    text: "6: Typography (" + (root.layer3Enabled ? "ON" : "OFF") + ")"
+                    active: root.activeConfigLayer === 6
+                    horizontalPad: 7
+                    onClicked: root.activeConfigLayer = 6
+                }
+
+                VizPillButton {
+                    text: "󰒓 General & Quality"
+                    active: root.activeConfigLayer === 7
+                    horizontalPad: 7
+                    onClicked: root.activeConfigLayer = 7
+                }
+
+                VizPillButton {
+                    text: root.allRandomisationsActive ? "󰒟 RANDOM: ALL ON" : "󰒟 RANDOM"
+                    active: root.allRandomisationsActive
+                    horizontalPad: 7
+                    onClicked: root.toggleAllRandomisations()
+                    onRightClicked: root.randomiseVisuals()
                 }
 
                 VizPillButton {
                     text: root.musicDrive ? "󰎆 Music Drive: ON" : "󰎆 Music Drive: OFF"
                     active: root.musicDrive
-                    horizontalPad: 8
+                    horizontalPad: 7
                     onClicked: {
                         root.musicDrive = !root.musicDrive
                         vizCanvas.requestPaint()
                         scheduleSaveVisualiserConfig()
-                        root.requestActionFeedback("Music-Driven Parameter Modulation: " + (root.musicDrive ? "ON" : "OFF"))
                     }
                 }
 
-                Item { Layout.fillWidth: true }
-
                 VizPillButton {
                     text: "✕ Close"
-                    horizontalPad: 8
+                    horizontalPad: 7
                     onClicked: root.showLayerDrawer = false
                 }
             }
@@ -3483,7 +4217,7 @@ FocusScope {
                     spacing: 8
 
                     // =========================================================
-                    // TAB 0: COLLECTIVE L1 + L2 + L3 SCENE PRESETS & TRANSITIONS
+                    // TAB 0: COLLECTIVE SCENE PRESETS & TRANSITIONS
                     // =========================================================
                     ColumnLayout {
                         Layout.fillWidth: true
@@ -3499,7 +4233,6 @@ FocusScope {
                                 active: root.presetTransitionEnabled
                                 onClicked: {
                                     root.presetTransitionEnabled = !root.presetTransitionEnabled
-                                    root.requestActionFeedback("Selected Presets Auto-Transition: " + (root.presetTransitionEnabled ? "ON" : "OFF"))
                                 }
                             }
 
@@ -3510,7 +4243,7 @@ FocusScope {
                             }
 
                             VizPillButton {
-                                text: "󰆓 + Save Current (L1+L2+L3) as Preset"
+                                text: "󰆓 + Save Current Scene as Preset"
                                 active: false
                                 onClicked: root.saveCurrentAsCollectivePreset()
                             }
@@ -3532,7 +4265,7 @@ FocusScope {
                             }
                         }
 
-                        // 2-Column Grid of Collective L1+L2+L3 Presets with Checkboxes
+                        // 2-Column Grid of Collective Presets with Checkboxes
                         GridLayout {
                             Layout.fillWidth: true
                             columns: 2
@@ -3585,11 +4318,11 @@ FocusScope {
 
                                             Text {
                                                 Layout.fillWidth: true
-                                                text: (presetData.l1Enabled ? ("L1:" + (Engine.LAYER1_MODES[presetData.l1Mode || 0] || "").split(" ")[0]) : "L1:OFF")
+                                                text: (presetData.l1Enabled ? ("1:Worlds:" + (Engine.LAYER1_MODES[presetData.l1Mode || 0] || "").split(" ")[0]) : "1:Worlds:OFF")
                                                     + " · "
-                                                    + (presetData.l2Enabled ? ("L2:" + (Engine.MODE_NAMES[presetData.l2Mode || 0] || "").split(" ")[0]) : "L2:OFF")
+                                                    + (presetData.l2Enabled ? ("4:Geometry:" + (Engine.MODE_NAMES[presetData.l2Mode || 0] || "").split(" ")[0]) : "4:Geometry:OFF")
                                                     + " · "
-                                                    + (presetData.l3Enabled ? ("L3:" + (presetData.useAlbumArt === false ? "Words" : "Art")) : "L3:OFF")
+                                                    + (presetData.l3Enabled ? ("6:Type:" + (presetData.useAlbumArt === false ? "Words" : "Art")) : "6:Type:OFF")
                                                     + " · " + (presetData.tracerCount || 4) + "x Tracers"
                                                 textFormat: Text.PlainText
                                                 font.family: "JetBrainsMono Nerd Font"
@@ -3613,15 +4346,14 @@ FocusScope {
                     }
 
                     // =========================================================
-                    // TAB 1: LAYER #1 CONFIGURATION — SAVED L1 SETTINGS + 4 SUB-SYSTEMS
-                    //   (1) L1 Field  (2) L1 Equaliser  (3) L1 Beat Shapes  (4) GPU Shader Backdrop
+                    // TAB 1: 1: WORLDS — 3D DEPTH FIELDS (11 WORLDS + NON-LINEAR DENSITY)
                     // =========================================================
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 8
                         visible: root.activeConfigLayer === 1
 
-                        // Saved Layer #1 Settings Bar (Single-Layer Isolation: Never touches L2 or L3!)
+                        // Saved Layer #1 Settings Bar
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: savedL1Row.implicitHeight + 12
@@ -3637,7 +4369,7 @@ FocusScope {
                                 spacing: 5
 
                                 Text {
-                                    text: "󰆓 Saved L1:"
+                                    text: "󰆓 Saved Worlds:"
                                     textFormat: Text.PlainText
                                     font.family: "JetBrainsMono Nerd Font"
                                     font.pixelSize: 10
@@ -3688,17 +4420,29 @@ FocusScope {
                             }
                         }
 
-                        // Master Layer #1 Toggle + Per-Layer Auto-Randomise Row
+                        // 1: Worlds Master Toggle + Auto-Randomise Row
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 6
 
                             VizPillButton {
-                                text: root.layer1Enabled ? "󰄬 Layer #1 Master: ON" : "󰅖 Layer #1 Master: OFF"
-                                active: root.layer1Enabled
+                                text: root.layer1FieldEnabled ? "󰄬 Field: ON" : "󰅖 Field: OFF"
+                                active: root.layer1Enabled && root.layer1FieldEnabled
                                 onClicked: {
-                                    root.layer1Enabled = !root.layer1Enabled
+                                    root.layer1FieldEnabled = !root.layer1FieldEnabled
+                                    root.syncLayer1MasterFromSubs()
+                                    root.clearCanvasImmediate()
+                                    scheduleSaveVisualiserConfig()
+                                }
+                            }
+
+                            VizPillButton {
+                                text: "Direction: " + (root.layer1Direction > 0 ? "Towards" : (root.layer1Direction < 0 ? "Away" : "Breathe"))
+                                active: root.layer1FieldEnabled
+                                onClicked: {
+                                    root.layer1Direction = (root.layer1Direction === 1) ? -1 : ((root.layer1Direction === -1) ? 0 : 1)
                                     vizCanvas.requestPaint()
+                                    scheduleSaveVisualiserConfig()
                                 }
                             }
 
@@ -3710,17 +4454,15 @@ FocusScope {
                                 onClicked: {
                                     root.layer1AutoRandomise = !root.layer1AutoRandomise
                                     if (root.layer1AutoRandomise) {
-                                        root.layer1Enabled = true
                                         root.randomiseLayer1()
-                                    } else {
-                                        root.requestActionFeedback("Layer #1 Auto-Randomise: OFF")
                                     }
+                                    scheduleSaveVisualiserConfig()
                                 }
                                 onRightClicked: root.randomiseLayer1()
                             }
                         }
 
-                        // SUB-SYSTEM 1: L1 Ambient / Perspective Field (Bi-State ON/OFF Toggle + 11 Modes + Tri-State Direction + Ground Speed & Sliders)
+                        // 11 3D Worlds Selector
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: fieldSubCol.implicitHeight + 14
@@ -3739,46 +4481,19 @@ FocusScope {
                                     Layout.fillWidth: true
                                     spacing: 5
 
-                                    VizPillButton {
-                                        text: root.layer1FieldEnabled ? "󰄬 Field: ON" : "󰅖 Field: OFF"
-                                        active: root.layer1FieldEnabled
-                                        horizontalPad: 7
-                                        onClicked: {
-                                            root.layer1FieldEnabled = !root.layer1FieldEnabled
-                                            if (root.layer1FieldEnabled) root.layer1Enabled = true
-                                            root.clearCanvasImmediate()
-                                            scheduleSaveVisualiserConfig()
-                                            root.requestActionFeedback("L1 Field: " + (root.layer1FieldEnabled ? "ON" : "OFF"))
-                                        }
-                                    }
-
                                     Repeater {
                                         model: Engine.LAYER1_MODES.length
                                         delegate: VizPillButton {
                                             required property int index
-                                            text: (index + 1) + " " + Engine.LAYER1_MODES[index]
+                                            text: (index + 1) + ". " + Engine.LAYER1_MODES[index]
                                             active: root.layer1FieldEnabled && root.layer1Mode === index
                                             horizontalPad: 7
                                             onClicked: {
-                                                root.layer1Enabled = true
                                                 root.layer1FieldEnabled = true
+                                                root.syncLayer1MasterFromSubs()
                                                 root.layer1Mode = index
                                                 root.clearCanvasImmediate()
-                                                root.requestActionFeedback("L1 Field Mode: " + Engine.LAYER1_MODES[index])
                                             }
-                                        }
-                                    }
-
-                                    VizPillButton {
-                                        text: "Direction: " + (root.layer1Direction > 0 ? "Towards" : (root.layer1Direction < 0 ? "Away" : "Breathe"))
-                                        active: root.layer1FieldEnabled
-                                        pillHeight: 24
-                                        horizontalPad: 7
-                                        onClicked: {
-                                            root.layer1Direction = (root.layer1Direction === 1) ? -1 : ((root.layer1Direction === -1) ? 0 : 1)
-                                            vizCanvas.requestPaint()
-                                            scheduleSaveVisualiserConfig()
-                                            root.requestActionFeedback("L1 Field Direction: " + (root.layer1Direction > 0 ? "Towards" : (root.layer1Direction < 0 ? "Away" : "Breathe")))
                                         }
                                     }
                                 }
@@ -3790,7 +4505,7 @@ FocusScope {
                                     rowSpacing: 5
 
                                     LayerSlider {
-                                        label: "Ground & Field Speed"
+                                        label: "World Flight Speed"
                                         value: root.layer1Speed
                                         minValue: 0.05
                                         maxValue: 4.00
@@ -3815,7 +4530,7 @@ FocusScope {
                                     }
 
                                     LayerSlider {
-                                        label: "Field Object Density"
+                                        label: "Minimal → Many Density"
                                         value: root.layer1Density
                                         minValue: 0.25
                                         maxValue: 2.50
@@ -3841,8 +4556,48 @@ FocusScope {
                                 }
                             }
                         }
+                    }
 
-                        // SUB-SYSTEM 2: Independent L1 SynthGrid Equaliser (Bi-State ON/OFF Toggle + 16 Styles + 4-State Orientation + EQ Scale & Gain)
+                    // =========================================================
+                    // TAB 2: 2: EQUALISER — 16 2D & SCULPTURAL 3D EQUALISERS (0.15x..2.25x)
+                    // =========================================================
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        visible: root.activeConfigLayer === 2
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            VizPillButton {
+                                text: root.layer1EqEnabled ? "󰄬 EQ: ON" : "󰅖 EQ: OFF"
+                                active: root.layer1Enabled && root.layer1EqEnabled
+                                horizontalPad: 7
+                                onClicked: {
+                                    root.layer1EqEnabled = !root.layer1EqEnabled
+                                    root.syncLayer1MasterFromSubs()
+                                    root.clearCanvasImmediate()
+                                    scheduleSaveVisualiserConfig()
+                                }
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            VizPillButton {
+                                text: root.layerEqAutoRandomise ? "󰒟 Rand EQ (Auto: ON)" : "󰒟 Rand EQ"
+                                active: root.layerEqAutoRandomise
+                                onClicked: {
+                                    root.layerEqAutoRandomise = !root.layerEqAutoRandomise
+                                    if (root.layerEqAutoRandomise) {
+                                        root.randomiseLayerEq()
+                                    }
+                                    scheduleSaveVisualiserConfig()
+                                }
+                                onRightClicked: root.randomiseLayerEq()
+                            }
+                        }
+
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: eqControlsCol.implicitHeight + 14
@@ -3861,19 +4616,6 @@ FocusScope {
                                     Layout.fillWidth: true
                                     spacing: 5
 
-                                    VizPillButton {
-                                        text: root.layer1EqEnabled ? "󰄬 EQ: ON" : "󰅖 EQ: OFF"
-                                        active: root.layer1EqEnabled
-                                        horizontalPad: 7
-                                        onClicked: {
-                                            root.layer1EqEnabled = !root.layer1EqEnabled
-                                            if (root.layer1EqEnabled) root.layer1Enabled = true
-                                            root.clearCanvasImmediate()
-                                            scheduleSaveVisualiserConfig()
-                                            root.requestActionFeedback("L1 Equaliser: " + (root.layer1EqEnabled ? "ON" : "OFF"))
-                                        }
-                                    }
-
                                     Repeater {
                                         model: Engine.LAYER1_EQ_STYLES.length
                                         delegate: VizPillButton {
@@ -3882,11 +4624,10 @@ FocusScope {
                                             active: root.layer1EqEnabled && root.layer1EqStyle === index
                                             horizontalPad: 7
                                             onClicked: {
-                                                root.layer1Enabled = true
                                                 root.layer1EqEnabled = true
+                                                root.syncLayer1MasterFromSubs()
                                                 root.layer1EqStyle = index
                                                 root.clearCanvasImmediate()
-                                                root.requestActionFeedback("L1 Equaliser Style: " + Engine.LAYER1_EQ_STYLES[index])
                                             }
                                         }
                                     }
@@ -3913,12 +4654,11 @@ FocusScope {
                                             active: root.layer1EqLayout === index
                                             horizontalPad: 7
                                             onClicked: {
-                                                root.layer1Enabled = true
                                                 root.layer1EqEnabled = true
+                                                root.syncLayer1MasterFromSubs()
                                                 root.layer1EqLayout = index
                                                 vizCanvas.requestPaint()
                                                 scheduleSaveVisualiserConfig()
-                                                root.requestActionFeedback("L1 EQ Orientation: " + Engine.LAYER1_EQ_LAYOUTS[index])
                                             }
                                         }
                                     }
@@ -3955,9 +4695,9 @@ FocusScope {
 
                                     LayerSlider {
                                         Layout.fillWidth: true
-                                        label: "EQ Scale / Size"
+                                        label: "EQ Scale (0.15x–2.25x)"
                                         value: root.layer1EqScale
-                                        minValue: 0.35
+                                        minValue: 0.15
                                         maxValue: 2.25
                                         unitSuffix: "x"
                                         onValueEdited: v => {
@@ -3983,8 +4723,48 @@ FocusScope {
                                 }
                             }
                         }
+                    }
 
-                        // SUB-SYSTEM 3: Independent L1 Beat Shapes (Bi-State ON/OFF Toggle + 6 3D Rotating Styles + Density Slider)
+                    // =========================================================
+                    // TAB 3: 3: VECTORS — WIREFRAME BEAT SHAPES & 3D SQUADRONS
+                    // =========================================================
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        visible: root.activeConfigLayer === 3
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            VizPillButton {
+                                text: root.layer1ShapesEnabled ? "󰄬 Shapes: ON" : "󰅖 Shapes: OFF"
+                                active: root.layer1Enabled && root.layer1ShapesEnabled
+                                horizontalPad: 7
+                                onClicked: {
+                                    root.layer1ShapesEnabled = !root.layer1ShapesEnabled
+                                    root.syncLayer1MasterFromSubs()
+                                    root.clearCanvasImmediate()
+                                    scheduleSaveVisualiserConfig()
+                                }
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            VizPillButton {
+                                text: root.layerVectorsAutoRandomise ? "󰒟 Rand Vectors (Auto: ON)" : "󰒟 Rand Vectors"
+                                active: root.layerVectorsAutoRandomise
+                                onClicked: {
+                                    root.layerVectorsAutoRandomise = !root.layerVectorsAutoRandomise
+                                    if (root.layerVectorsAutoRandomise) {
+                                        root.randomiseLayerVectors()
+                                    }
+                                    scheduleSaveVisualiserConfig()
+                                }
+                                onRightClicked: root.randomiseLayerVectors()
+                            }
+                        }
+
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: shapesControlsCol.implicitHeight + 14
@@ -4003,32 +4783,18 @@ FocusScope {
                                     Layout.fillWidth: true
                                     spacing: 5
 
-                                    VizPillButton {
-                                        text: root.layer1ShapesEnabled ? "󰄬 Shapes: ON" : "󰅖 Shapes: OFF"
-                                        active: root.layer1ShapesEnabled
-                                        horizontalPad: 7
-                                        onClicked: {
-                                            root.layer1ShapesEnabled = !root.layer1ShapesEnabled
-                                            if (root.layer1ShapesEnabled) root.layer1Enabled = true
-                                            root.clearCanvasImmediate()
-                                            scheduleSaveVisualiserConfig()
-                                            root.requestActionFeedback("L1 Beat Shapes: " + (root.layer1ShapesEnabled ? "ON" : "OFF"))
-                                        }
-                                    }
-
                                     Repeater {
                                         model: Engine.LAYER1_SHAPE_STYLES.length
                                         delegate: VizPillButton {
                                             required property int index
-                                            text: Engine.LAYER1_SHAPE_STYLES[index]
+                                            text: (index + 1) + ". " + Engine.LAYER1_SHAPE_STYLES[index]
                                             active: root.layer1ShapesEnabled && root.layer1ShapeStyle === index
                                             horizontalPad: 7
                                             onClicked: {
-                                                root.layer1Enabled = true
                                                 root.layer1ShapesEnabled = true
+                                                root.syncLayer1MasterFromSubs()
                                                 root.layer1ShapeStyle = index
                                                 root.clearCanvasImmediate()
-                                                root.requestActionFeedback("L1 Beat Shape Style: " + Engine.LAYER1_SHAPE_STYLES[index])
                                             }
                                         }
                                     }
@@ -4067,7 +4833,7 @@ FocusScope {
                                     }
 
                                     LayerSlider {
-                                        label: "Shape Scale"
+                                        label: "Vector Scale"
                                         value: root.layer1ShapeScale
                                         minValue: 0.30
                                         maxValue: 2.50
@@ -4080,7 +4846,7 @@ FocusScope {
                                     }
 
                                     LayerSlider {
-                                        label: "Beat Shapes Density"
+                                        label: "Minimal → Many Density"
                                         value: root.layer1ShapeDensity
                                         minValue: 0.25
                                         maxValue: 2.50
@@ -4094,116 +4860,18 @@ FocusScope {
                                 }
                             }
                         }
-
-                        // SUB-SYSTEM 4: Independent Moving GPU Tunnel / Backdrop (8 GPU Shaders + Bi-State ON/OFF Toggle + Tri-State Direction)
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: gpuSubCol.implicitHeight + 14
-                            radius: 6
-                            color: Qt.rgba(0.22, 0.74, 0.97, 0.06)
-                            border.width: 1
-                            border.color: root.backdropEnabled ? Qt.rgba(0.22, 0.74, 0.97, 0.38) : Qt.rgba(1, 1, 1, 0.14)
-
-                            ColumnLayout {
-                                id: gpuSubCol
-                                anchors.fill: parent
-                                anchors.margins: 7
-                                spacing: 6
-
-                                Flow {
-                                    Layout.fillWidth: true
-                                    spacing: 5
-
-                                    VizPillButton {
-                                        text: root.backdropEnabled ? "󰄬 GPU Tunnel: ON" : "󰅖 GPU Tunnel: OFF"
-                                        active: root.backdropEnabled
-                                        horizontalPad: 7
-                                        onClicked: {
-                                            root.backdropEnabled = !root.backdropEnabled
-                                            if (root.backdropEnabled) root.layer1Enabled = true
-                                            root.clearCanvasImmediate()
-                                            scheduleSaveVisualiserConfig()
-                                            root.requestActionFeedback("GPU Tunnel Backdrop: " + (root.backdropEnabled ? "ON" : "OFF"))
-                                        }
-                                    }
-
-                                    Repeater {
-                                        model: Engine.BACKDROP_MODES.length
-                                        delegate: VizPillButton {
-                                            required property int index
-                                            text: (index + 1) + ". " + Engine.BACKDROP_MODES[index]
-                                            active: root.backdropEnabled && root.backdropMode === index
-                                            horizontalPad: 6
-                                            onClicked: {
-                                                root.backdropEnabled = true
-                                                root.backdropMode = index
-                                                root.clearCanvasImmediate()
-                                                root.requestActionFeedback("GPU Tunnel Backdrop: " + Engine.BACKDROP_MODES[index])
-                                            }
-                                        }
-                                    }
-
-                                    VizPillButton {
-                                        text: "Direction: " + (root.backdropDirection > 0 ? "Towards" : (root.backdropDirection < 0 ? "Away" : "Breathe"))
-                                        active: root.backdropEnabled
-                                        pillHeight: 24
-                                        horizontalPad: 6
-                                        onClicked: {
-                                            root.backdropDirection = (root.backdropDirection === 1) ? -1 : ((root.backdropDirection === -1) ? 0 : 1)
-                                            vizCanvas.requestPaint()
-                                            scheduleSaveVisualiserConfig()
-                                            root.requestActionFeedback("GPU Tunnel Direction: " + (root.backdropDirection > 0 ? "Towards" : (root.backdropDirection < 0 ? "Away" : "Breathe")))
-                                        }
-                                    }
-                                }
-
-                                GridLayout {
-                                    Layout.fillWidth: true
-                                    columns: 3
-                                    columnSpacing: 16
-                                    rowSpacing: 5
-
-                                    LayerSlider {
-                                        label: "Backdrop Speed"
-                                        value: root.backdropSpeed
-                                        minValue: 0.10
-                                        maxValue: 3.00
-                                        unitSuffix: "x"
-                                        onValueEdited: v => { root.backdropSpeed = v; vizCanvas.requestPaint() }
-                                    }
-
-                                    LayerSlider {
-                                        label: "Backdrop Glow"
-                                        value: root.backdropIntensity
-                                        minValue: 0.20
-                                        maxValue: 2.20
-                                        unitSuffix: "x"
-                                        onValueEdited: v => { root.backdropIntensity = v; vizCanvas.requestPaint() }
-                                    }
-
-                                    LayerSlider {
-                                        label: "Flower Petals / Folds"
-                                        value: root.backdropSymmetry
-                                        minValue: 2
-                                        maxValue: 16
-                                        integerSteps: true
-                                        unitSuffix: "x"
-                                        onValueEdited: v => { root.backdropSymmetry = Math.round(v); vizCanvas.requestPaint() }
-                                    }
-                                }
-                            }
-                        }
                     }
 
                     // =========================================================
-                    // TAB 2: LAYER #2 CONFIGURATION (SAVED L2 SETTINGS, 13 MODES, 8 GPU BACKDROPS & L2 3D TRACERS)
+                    // TAB 4: 4: GEOMETRY — SACRED GEOMETRY, OSCILLOSCOPES & 3D TRACERS
+                    // Zero duplicate GPU Tunnel Backdrop controls!
                     // =========================================================
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 8
-                        visible: root.activeConfigLayer === 2
+                        visible: root.activeConfigLayer === 4
 
-                        // Saved Layer #2 Settings Bar (Single-Layer Isolation: Never touches L1 or L3!)
+                        // Saved Layer #2 (Geometry) Settings Bar
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: savedL2Row.implicitHeight + 12
@@ -4219,7 +4887,7 @@ FocusScope {
                                 spacing: 5
 
                                 Text {
-                                    text: "󰆓 Saved L2:"
+                                    text: "󰆓 Saved Geometry:"
                                     textFormat: Text.PlainText
                                     font.family: "JetBrainsMono Nerd Font"
                                     font.pixelSize: 10
@@ -4275,7 +4943,7 @@ FocusScope {
                             spacing: 6
 
                             VizPillButton {
-                                text: root.layer2Enabled ? "󰄬 Layer #2 Master: ON" : "󰅖 Layer #2 Master: OFF"
+                                text: root.layer2Enabled ? "󰄬 4: Geometry Master: ON" : "󰅖 4: Geometry Master: OFF"
                                 active: root.layer2Enabled
                                 onClicked: {
                                     root.layer2Enabled = !root.layer2Enabled
@@ -4291,7 +4959,6 @@ FocusScope {
                                     if (root.layer2VizEnabled) root.layer2Enabled = true
                                     root.clearCanvasImmediate()
                                     scheduleSaveVisualiserConfig()
-                                    root.requestActionFeedback("L2 Main Visualiser: " + (root.layer2VizEnabled ? "ON" : "OFF"))
                                 }
                             }
 
@@ -4311,15 +4978,14 @@ FocusScope {
                                     if (root.layer2AutoRandomise) {
                                         root.layer2Enabled = true
                                         root.randomiseLayer2()
-                                    } else {
-                                        root.requestActionFeedback("Layer #2 Auto-Randomise: OFF")
                                     }
+                                    scheduleSaveVisualiserConfig()
                                 }
                                 onRightClicked: root.randomiseLayer2()
                             }
                         }
 
-                        // Complete 13-Mode Selector Grid for Layer #2 (including 13. 3D Sierpinski Fractal)
+                        // Complete 13-Mode Selector Grid for 4: Geometry
                         GridLayout {
                             Layout.fillWidth: true
                             columns: 4
@@ -4339,50 +5005,12 @@ FocusScope {
                                         root.layer2VizEnabled = true
                                         root.visualMode = index
                                         vizCanvas.requestPaint()
-                                        root.requestActionFeedback("Layer #2 Mode: " + Engine.MODE_NAMES[index])
                                     }
                                 }
                             }
                         }
 
-                        // GPU Shader Backdrop Selector Row (All 8 Modes including Voronoi Bio-Cells)
-                        Flow {
-                            Layout.fillWidth: true
-                            spacing: 5
-
-                            VizPillButton {
-                                text: root.backdropEnabled ? "󰄬 GPU Backdrop: ON" : "󰅖 GPU Backdrop: OFF"
-                                active: root.backdropEnabled
-                                horizontalPad: 7
-                                pillHeight: 22
-                                onClicked: {
-                                    root.backdropEnabled = !root.backdropEnabled
-                                    if (root.backdropEnabled) root.layer2Enabled = true
-                                    root.clearCanvasImmediate()
-                                    scheduleSaveVisualiserConfig()
-                                }
-                            }
-
-                            Repeater {
-                                model: Engine.BACKDROP_MODES.length
-                                delegate: VizPillButton {
-                                    required property int index
-                                    text: (index + 1) + ". " + Engine.BACKDROP_MODES[index]
-                                    active: root.backdropEnabled && root.backdropMode === index
-                                    horizontalPad: 6
-                                    pillHeight: 22
-                                    onClicked: {
-                                        root.layer2Enabled = true
-                                        root.backdropEnabled = true
-                                        root.backdropMode = index
-                                        root.clearCanvasImmediate()
-                                        root.requestActionFeedback("GPU Tunnel Backdrop: " + Engine.BACKDROP_MODES[index])
-                                    }
-                                }
-                            }
-                        }
-
-                        // Dedicated L2 3D History Tracers Strip (Bi-State ON/OFF Toggle + 1x..16x Quick Pills + 3D Flow Direction)
+                        // Dedicated 3D History Tracers Strip (Bi-State ON/OFF Toggle + 1x..16x Quick Pills + 3D Flow Direction)
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 5
@@ -4400,7 +5028,6 @@ FocusScope {
                                     }
                                     root.clearCanvasImmediate()
                                     scheduleSaveVisualiserConfig()
-                                    root.requestActionFeedback("L2 3D Tracers: " + (root.layer2TracersEnabled ? "ON" : "OFF"))
                                 }
                             }
 
@@ -4417,7 +5044,6 @@ FocusScope {
                                         root.layer2TracersEnabled = true
                                         root.tracerCount = modelData
                                         vizCanvas.requestPaint()
-                                        root.requestActionFeedback("L2 3D Tracers: " + modelData + "x")
                                     }
                                 }
                             }
@@ -4436,7 +5062,7 @@ FocusScope {
                             Item { Layout.fillWidth: true }
                         }
 
-                        // 2-Column Parameter Sliders for Layer #2 + L2 3D History Tracers
+                        // 2-Column Parameter Sliders for 4: Geometry + 3D History Tracers
                         GridLayout {
                             Layout.fillWidth: true
                             columns: 2
@@ -4444,7 +5070,7 @@ FocusScope {
                             rowSpacing: 6
 
                             LayerSlider {
-                                label: "L2 Tracers (1–16x)"
+                                label: "3D Tracers (1–16x)"
                                 value: root.tracerCount
                                 minValue: 1
                                 maxValue: 16
@@ -4510,17 +5136,310 @@ FocusScope {
                     }
 
                     // =========================================================
-                    // TAB 3: LAYER #3 CONFIGURATION — 2 × 3 × 12 MATRIX
-                    //   Primary Source (Album Cover Art vs Artist & Song Words)
-                    //   × Secondary Render Style (Braille vs Block vs Crisp Text)
-                    //   × Tertiary Animation Mode (12 Modes: Shatter..Sonic Lens)
+                    // TAB 5: 5: VORTEX — DEDICATED GPU TUNNEL & VORTEX ENGINE (16 MODES + 2X DUAL BLEND)
+                    // =========================================================
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 7
+                        visible: root.activeConfigLayer === 5
+
+                        // Saved Vortex Configs Bar
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: l4SavedRow.implicitHeight + 10
+                            radius: 6
+                            color: Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.08)
+                            border.width: 1
+                            border.color: Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.35)
+
+                            ColumnLayout {
+                                id: l4SavedRow
+                                anchors.fill: parent
+                                anchors.margins: 5
+                                spacing: 4
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 6
+
+                                    VizPillButton {
+                                        text: "󰆓 Save L4"
+                                        active: true
+                                        horizontalPad: 8
+                                        onClicked: root.saveCurrentL4Config()
+                                    }
+
+                                    VizPillButton {
+                                        text: "󰑓 Saved L4 (" + (root.savedL4Configs ? root.savedL4Configs.length : 0) + ")"
+                                        active: root.selectedSavedL4Index >= 0
+                                        horizontalPad: 8
+                                        onClicked: root.cycleSavedL4Config(1)
+                                        onRightClicked: root.cycleSavedL4Config(-1)
+                                    }
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: (root.savedL4Configs && root.savedL4Configs.length > 0)
+                                            ? "Click a saved Vortex preset below to apply, or right-click to delete:"
+                                            : "No saved Vortex presets yet — click 'Save L4' to snapshot your current GPU Vortex & Dual 2x setup."
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 9
+                                        color: Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.78)
+                                        elide: Text.ElideRight
+                                    }
+                                }
+
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+                                    visible: Boolean(root.savedL4Configs && root.savedL4Configs.length > 0)
+
+                                    Repeater {
+                                        model: root.savedL4Configs ? root.savedL4Configs.length : 0
+                                        delegate: VizPillButton {
+                                            required property int index
+                                            readonly property var itemData: (root.savedL4Configs && index < root.savedL4Configs.length) ? root.savedL4Configs[index] : ({})
+                                            text: "★ " + (itemData.name || ("L4 #" + (index + 1)))
+                                            active: root.selectedSavedL4Index === index
+                                            horizontalPad: 7
+                                            onClicked: root.applySavedL4Config(index)
+                                            onRightClicked: root.deleteSavedL4Config(index)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Master Toggles & Dual 2x Simultaneous Blending Row
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            VizPillButton {
+                                text: root.layer4Enabled ? "󰄬 5: Vortex Tunnel: ON" : "󰅖 5: Vortex Tunnel: OFF"
+                                active: root.layer4Enabled
+                                onClicked: {
+                                    root.layer4Enabled = !root.layer4Enabled
+                                    root.backdropEnabled = root.layer4Enabled
+                                    vizCanvas.requestPaint()
+                                    scheduleSaveVisualiserConfig()
+                                }
+                            }
+
+                            VizPillButton {
+                                text: root.layer4DualEnabled ? "󰄬 2x Dual Mode Blend: ON" : "2x Dual Mode Blend: OFF"
+                                active: root.layer4DualEnabled
+                                onClicked: {
+                                    root.layer4Enabled = true
+                                    root.backdropEnabled = true
+                                    root.layer4DualEnabled = !root.layer4DualEnabled
+                                    vizCanvas.requestPaint()
+                                    scheduleSaveVisualiserConfig()
+                                }
+                            }
+
+                            VizPillButton {
+                                text: root.layer4Direction === 0 ? "󰁔 Dir: Forward" : (root.layer4Direction === 1 ? "󰁍 Dir: Reverse" : "󰘁 Dir: Ping-Pong")
+                                active: root.layer4Direction !== 0
+                                onClicked: {
+                                    root.layer4Direction = (root.layer4Direction + 1) % 3
+                                    root.backdropDirection = root.layer4Direction
+                                    vizCanvas.requestPaint()
+                                    scheduleSaveVisualiserConfig()
+                                }
+                            }
+
+                            VizPillButton {
+                                text: root.layer4AutoRandomise ? "󰒟 Rand L4 (Auto: ON)" : "󰒟 Rand L4"
+                                active: root.layer4AutoRandomise
+                                onClicked: {
+                                    root.layer4AutoRandomise = !root.layer4AutoRandomise
+                                    if (root.layer4AutoRandomise) {
+                                        root.layer4Enabled = true
+                                        root.backdropEnabled = true
+                                        root.randomiseLayer4()
+                                    }
+                                    scheduleSaveVisualiserConfig()
+                                }
+                                onRightClicked: {
+                                    root.layer4Enabled = true
+                                    root.backdropEnabled = true
+                                    root.randomiseLayer4()
+                                }
+                            }
+
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        // Wall Pattern Selector (5 Wall Patterns)
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 5
+
+                            Text {
+                                text: "Tunnel Wall Pattern:"
+                                textFormat: Text.PlainText
+                                font.family: "JetBrainsMono Nerd Font"
+                                font.pixelSize: 10
+                                font.bold: true
+                                color: root.accentColour
+                            }
+
+                            Repeater {
+                                model: Engine.LAYER4_WALL_PATTERNS.length
+                                delegate: VizPillButton {
+                                    required property int index
+                                    text: Engine.LAYER4_WALL_PATTERNS[index]
+                                    active: root.layer4WallPattern === index
+                                    horizontalPad: 7
+                                    onClicked: {
+                                        root.layer4WallPattern = index
+                                        vizCanvas.requestPaint()
+                                        scheduleSaveVisualiserConfig()
+                                    }
+                                }
+                            }
+
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        // Primary 16-Mode Pill Selector for 5: Vortex (Left-click = Primary, Right-click = Secondary 2x)
+                        Text {
+                            text: "Primary GPU Vortex Shader Mode (Left-Click: Primary | Right-Click: Secondary 2x Blend):"
+                            textFormat: Text.PlainText
+                            font.family: "JetBrainsMono Nerd Font"
+                            font.pixelSize: 10
+                            font.bold: true
+                            color: root.accentColour
+                        }
+
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: 5
+
+                            Repeater {
+                                model: Engine.LAYER4_MODES.length
+                                delegate: VizPillButton {
+                                    required property int index
+                                    text: (index + 1) + ". " + Engine.LAYER4_MODES[index]
+                                    active: root.layer4Mode === index
+                                    horizontalPad: 7
+                                    onClicked: {
+                                        root.layer4Enabled = true
+                                        root.backdropEnabled = true
+                                        root.layer4Mode = index
+                                        root.backdropMode = index
+                                        vizCanvas.requestPaint()
+                                        scheduleSaveVisualiserConfig()
+                                    }
+                                    onRightClicked: {
+                                        root.layer4Enabled = true
+                                        root.backdropEnabled = true
+                                        root.layer4DualEnabled = true
+                                        root.layer4SecondaryMode = index
+                                        vizCanvas.requestPaint()
+                                        scheduleSaveVisualiserConfig()
+                                    }
+                                }
+                            }
+                        }
+
+                        // Secondary 2x Mode Selector (Visible when Dual 2x is enabled)
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: 5
+                            visible: root.layer4DualEnabled
+
+                            Text {
+                                text: "2x Secondary Mode:"
+                                textFormat: Text.PlainText
+                                font.family: "JetBrainsMono Nerd Font"
+                                font.pixelSize: 10
+                                font.bold: true
+                                color: root.accentColour
+                            }
+
+                            Repeater {
+                                model: Engine.LAYER4_MODES.length
+                                delegate: VizPillButton {
+                                    required property int index
+                                    text: (index + 1) + ". " + Engine.LAYER4_MODES[index]
+                                    active: root.layer4SecondaryMode === index
+                                    horizontalPad: 6
+                                    onClicked: {
+                                        root.layer4SecondaryMode = index
+                                        vizCanvas.requestPaint()
+                                        scheduleSaveVisualiserConfig()
+                                    }
+                                }
+                            }
+                        }
+
+                        // 2-Column Parameter Sliders for 5: Vortex
+                        GridLayout {
+                            Layout.fillWidth: true
+                            columns: 2
+                            columnSpacing: 16
+                            rowSpacing: 6
+
+                            LayerSlider {
+                                label: "Vortex Speed"
+                                value: root.layer4Speed
+                                minValue: 0.15
+                                maxValue: 3.00
+                                unitSuffix: "x"
+                                onValueEdited: v => { root.layer4Speed = v; root.backdropSpeed = v; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                            }
+
+                            LayerSlider {
+                                label: "Vortex Glow"
+                                value: root.layer4Intensity
+                                minValue: 0.15
+                                maxValue: 2.00
+                                unitSuffix: "x"
+                                onValueEdited: v => { root.layer4Intensity = v; root.backdropIntensity = v; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                            }
+
+                            LayerSlider {
+                                label: "Spiral Twist"
+                                value: root.layer4Twist
+                                minValue: 0.10
+                                maxValue: 3.00
+                                unitSuffix: "x"
+                                onValueEdited: v => { root.layer4Twist = v; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                            }
+
+                            LayerSlider {
+                                label: "Symmetry Folds"
+                                value: root.layer4Symmetry
+                                minValue: 2
+                                maxValue: 16
+                                integerSteps: true
+                                unitSuffix: "-fold"
+                                onValueEdited: v => { root.layer4Symmetry = Math.round(v); root.backdropSymmetry = Math.round(v); vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                            }
+
+                            LayerSlider {
+                                label: "Dual 2x Mix"
+                                value: root.layer4DualMix
+                                minValue: 0.10
+                                maxValue: 0.90
+                                unitSuffix: ""
+                                onValueEdited: v => { root.layer4DualMix = v; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                            }
+                        }
+                    }
+
+                    // =========================================================
+                    // TAB 6: 6: TYPOGRAPHY — 2 × 3 × 16 × 12 MATRIX (SMOOTH SCALE BREATHING ON RANDOM)
                     // =========================================================
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 8
-                        visible: root.activeConfigLayer === 3
+                        visible: root.activeConfigLayer === 6
 
-                        // Saved Layer #3 Settings Bar (Single-Layer Isolation: Never touches L1 or L2!)
+                        // Saved Layer #3 (Typography) Settings Bar
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: savedL3Row.implicitHeight + 12
@@ -4536,7 +5455,7 @@ FocusScope {
                                 spacing: 5
 
                                 Text {
-                                    text: "󰆓 Saved L3:"
+                                    text: "󰆓 Saved Typography:"
                                     textFormat: Text.PlainText
                                     font.family: "JetBrainsMono Nerd Font"
                                     font.pixelSize: 10
@@ -4592,12 +5511,11 @@ FocusScope {
                             spacing: 6
 
                             VizPillButton {
-                                text: root.layer3Enabled ? "󰄬 Layer #3: ON" : "󰅖 Layer #3: OFF"
+                                text: root.layer3Enabled ? "󰄬 6: Typography: ON" : "󰅖 6: Typography: OFF"
                                 active: root.layer3Enabled
                                 onClicked: {
                                     root.layer3Enabled = !root.layer3Enabled
                                     vizCanvas.requestPaint()
-                                    root.requestActionFeedback("Layer #3 Art/Words: " + (root.layer3Enabled ? "ON" : "OFF"))
                                 }
                             }
 
@@ -4639,9 +5557,8 @@ FocusScope {
                                     if (root.layer3AutoRandomise) {
                                         root.layer3Enabled = true
                                         root.randomiseLayer3()
-                                    } else {
-                                        root.requestActionFeedback("Layer #3 Auto-Randomise: OFF")
                                     }
+                                    scheduleSaveVisualiserConfig()
                                 }
                                 onRightClicked: {
                                     root.layer3Enabled = true
@@ -4659,6 +5576,105 @@ FocusScope {
                                 active: root.layer3Enabled && root.layer3Mode === 5
                                 onClicked: root.activateAndCycleTteInCanvas()
                             }
+                        }
+
+                        // Selectable Text Fields (Artist / Track / Album)
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 5
+
+                            Text {
+                                text: "Visible Text Fields:"
+                                textFormat: Text.PlainText
+                                font.family: "JetBrainsMono Nerd Font"
+                                font.pixelSize: 10
+                                font.bold: true
+                                color: root.accentColour
+                            }
+
+                            VizPillButton {
+                                text: root.layer3ShowArtist ? "󰄬 Artist" : "Artist"
+                                active: root.layer3ShowArtist
+                                horizontalPad: 7
+                                onClicked: root.toggleLayer3TextField("artist")
+                            }
+
+                            VizPillButton {
+                                text: root.layer3ShowTrack ? "󰄬 Track" : "Track"
+                                active: root.layer3ShowTrack
+                                horizontalPad: 7
+                                onClicked: root.toggleLayer3TextField("track")
+                            }
+
+                            VizPillButton {
+                                text: root.layer3ShowAlbum ? "󰄬 Album" : "Album"
+                                active: root.layer3ShowAlbum
+                                horizontalPad: 7
+                                onClicked: root.toggleLayer3TextField("album")
+                            }
+
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: 5
+
+                            Text {
+                                text: "Psychedelic / Techno / Dance Style (16):"
+                                textFormat: Text.PlainText
+                                font.family: "JetBrainsMono Nerd Font"
+                                font.pixelSize: 10
+                                font.bold: true
+                                color: root.accentColour
+                            }
+
+                            Repeater {
+                                model: Engine.LAYER3_TEXT_STYLES.length
+                                delegate: VizPillButton {
+                                    required property int index
+                                    text: (index + 1) + ". " + Engine.LAYER3_TEXT_STYLES[index]
+                                    active: root.layer3TextStyle === index
+                                    horizontalPad: 7
+                                    onClicked: {
+                                        root.layer3TextStyle = index
+                                        vizCanvas.requestPaint()
+                                        scheduleSaveVisualiserConfig()
+                                    }
+                                }
+                            }
+                        }
+
+                        // 3D Revolving Cylinder & Whole-Word 360° Spin Axis Selector Row
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 5
+
+                            Text {
+                                text: "3D Revolving Cylinder & 360° Word Spin:"
+                                textFormat: Text.PlainText
+                                font.family: "JetBrainsMono Nerd Font"
+                                font.pixelSize: 10
+                                font.bold: true
+                                color: root.accentColour
+                            }
+
+                            Repeater {
+                                model: Engine.LAYER3_CYLINDER_DIRS.length
+                                delegate: VizPillButton {
+                                    required property int index
+                                    text: Engine.LAYER3_CYLINDER_DIRS[index]
+                                    active: root.layer3CylinderDir === index
+                                    horizontalPad: 7
+                                    onClicked: {
+                                        root.layer3CylinderDir = index
+                                        vizCanvas.requestPaint()
+                                        scheduleSaveVisualiserConfig()
+                                    }
+                                }
+                            }
+
+                            Item { Layout.fillWidth: true }
                         }
 
                         // Song Progress Arc Selector Row (0% -> 100% Song Journey Options)
@@ -4686,13 +5702,12 @@ FocusScope {
                                         root.trackArcMode = index
                                         vizCanvas.requestPaint()
                                         scheduleSaveVisualiserConfig()
-                                        root.requestActionFeedback("Song Progress Arc: " + Engine.TRACK_ARC_MODES[index])
                                     }
                                 }
                             }
                         }
 
-                        // Direct 12-Mode Pill Selector for Layer #3 (Never alters Layer #1 or Layer #2!)
+                        // Direct 12-Mode Pill Selector for 6: Typography
                         Flow {
                             Layout.fillWidth: true
                             spacing: 5
@@ -4709,19 +5724,18 @@ FocusScope {
                                         root.layer3Mode = index
                                         if (index === 5) root.requestSelectTtfxEffect("random")
                                         vizCanvas.requestPaint()
-                                        root.requestActionFeedback("Layer #3 Mode: " + Engine.LAYER3_MODES[index])
                                     }
                                 }
                             }
                         }
 
-                        // Dedicated L3 Ghost Tracers Quick-Select Row (1x..8x)
+                        // Dedicated Ghost Tracers Quick-Select Row (1x..8x)
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 5
 
                             Text {
-                                text: "L3 Art Ghost Tracers:"
+                                text: "Typography Ghost Tracers:"
                                 textFormat: Text.PlainText
                                 font.family: "JetBrainsMono Nerd Font"
                                 font.pixelSize: 10
@@ -4740,7 +5754,6 @@ FocusScope {
                                     onClicked: {
                                         root.layer3Tracers = modelData
                                         vizCanvas.requestPaint()
-                                        root.requestActionFeedback("L3 Art Ghost Tracers: " + modelData + "x")
                                     }
                                 }
                             }
@@ -4748,7 +5761,7 @@ FocusScope {
                             Item { Layout.fillWidth: true }
                         }
 
-                        // 2-Column Parameter Sliders for Layer #3
+                        // 2-Column Parameter Sliders for 6: Typography
                         GridLayout {
                             Layout.fillWidth: true
                             columns: 2
@@ -4783,16 +5796,16 @@ FocusScope {
                             }
 
                             LayerSlider {
-                                label: "Art Matrix Scale"
+                                label: "Art/Words Scale"
                                 value: root.layer3Scale
-                                minValue: 0.50
-                                maxValue: 1.85
+                                minValue: 0.45
+                                maxValue: 1.95
                                 unitSuffix: "x"
                                 onValueEdited: v => { root.layer3Scale = v; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
                             }
 
                             LayerSlider {
-                                label: "L3 Tracer Echoes"
+                                label: "Ghost Tracer Echoes"
                                 value: root.layer3Tracers
                                 minValue: 1
                                 maxValue: 8
@@ -4804,17 +5817,16 @@ FocusScope {
                     }
 
                     // =========================================================
-                    // TAB 4: 󰒓 GENERAL & QUALITY CONFIGURATION
-                    //   Render Quality, Target FPS, Geometry Detail, Antialiasing,
-                    //   GPU Shader Backdrop, Global Audio & Beat Response,
-                    //   Colour Cycle & Master Brightness, Timings & Reset Defaults
+                    // TAB 7: 󰒓 GENERAL & QUALITY CONFIGURATION
+                    //   Render Quality, Target FPS, Inhibit Screensaver (FS/VJ),
+                    //   30-Palette Grid, Global Audio & Beat Response, Reset Defaults
                     // =========================================================
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 8
-                        visible: root.activeConfigLayer === 4
+                        visible: root.activeConfigLayer === 7
 
-                        // Section 1: Render Quality, Resolution, Target FPS & Antialiasing
+                        // Section 1: Render Quality, Resolution, Target FPS, Screensaver Inhibit & Antialiasing
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: qualitySecCol.implicitHeight + 14
@@ -4829,7 +5841,7 @@ FocusScope {
                                 anchors.margins: 7
                                 spacing: 6
 
-                                RowLayout {
+                                Flow {
                                     Layout.fillWidth: true
                                     spacing: 6
 
@@ -4861,19 +5873,8 @@ FocusScope {
                                                 root.geometryDetail = modelData.detail
                                                 vizCanvas.requestPaint()
                                                 scheduleSaveVisualiserConfig()
-                                                root.requestActionFeedback("Render Quality: " + modelData.label)
                                             }
                                         }
-                                    }
-
-                                    Item { Layout.fillWidth: true }
-
-                                    Text {
-                                        text: "Target FPS:"
-                                        textFormat: Text.PlainText
-                                        font.family: "JetBrainsMono Nerd Font"
-                                        font.pixelSize: 10
-                                        color: root.foregroundColour
                                     }
 
                                     Repeater {
@@ -4886,7 +5887,6 @@ FocusScope {
                                             onClicked: {
                                                 root.targetFps = modelData
                                                 scheduleSaveVisualiserConfig()
-                                                root.requestActionFeedback("Target Frame Rate: " + modelData + " FPS")
                                             }
                                         }
                                     }
@@ -4898,7 +5898,6 @@ FocusScope {
                                         onClicked: {
                                             root.gpuShaderEnabled = !root.gpuShaderEnabled
                                             root.clearCanvasImmediate()
-                                            root.requestActionFeedback("GPU Hardware Shader: " + (root.gpuShaderEnabled ? "ON" : "OFF"))
                                         }
                                     }
 
@@ -4910,7 +5909,16 @@ FocusScope {
                                             root.antialiasingEnabled = !root.antialiasingEnabled
                                             vizCanvas.requestPaint()
                                             scheduleSaveVisualiserConfig()
-                                            root.requestActionFeedback("Canvas Antialiasing: " + (root.antialiasingEnabled ? "ON" : "OFF"))
+                                        }
+                                    }
+
+                                    VizPillButton {
+                                        text: root.disableScreensaverInFullscreenOrVj ? "󰒲 Inhibit Screensaver (FS/VJ): ON" : "󰒲 Inhibit Screensaver (FS/VJ): OFF"
+                                        active: root.disableScreensaverInFullscreenOrVj
+                                        horizontalPad: 7
+                                        onClicked: {
+                                            root.disableScreensaverInFullscreenOrVj = !root.disableScreensaverInFullscreenOrVj
+                                            scheduleSaveVisualiserConfig()
                                         }
                                     }
                                 }
@@ -4951,7 +5959,55 @@ FocusScope {
                             }
                         }
 
-                        // Section 2: Global Audio & Beat Response + Colour & Brightness + Timings
+                        // Section 2: 30 Psychedelic & Nightclub Colour Palettes Selector Grid
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: paletteSecCol.implicitHeight + 14
+                            radius: 6
+                            color: Qt.rgba(1, 1, 1, 0.04)
+                            border.width: 1
+                            border.color: Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.25)
+
+                            ColumnLayout {
+                                id: paletteSecCol
+                                anchors.fill: parent
+                                anchors.margins: 7
+                                spacing: 6
+
+                                Text {
+                                    text: "󰏘 30 Psychedelic & Nightclub Colour Palettes:"
+                                    textFormat: Text.PlainText
+                                    font.family: "JetBrainsMono Nerd Font"
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                    color: root.accentColour
+                                }
+
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    Repeater {
+                                        model: Engine.PALETTE_NAMES.length
+                                        delegate: VizPillButton {
+                                            required property int index
+                                            text: (index + 1) + ". " + Engine.PALETTE_NAMES[index]
+                                            active: root.paletteIndex === index
+                                            pillHeight: 22
+                                            fontSize: 9
+                                            horizontalPad: 6
+                                            onClicked: {
+                                                root.paletteIndex = index
+                                                vizCanvas.requestPaint()
+                                                scheduleSaveVisualiserConfig()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Section 3: Global Audio & Beat Response + Colour & Brightness + Timings
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: audioSecCol.implicitHeight + 14
@@ -5055,8 +6111,9 @@ FocusScope {
                                     spacing: 6
 
                                     VizPillButton {
-                                        text: "󰏘 Palette: " + (Engine.PALETTE_NAMES[root.paletteIndex] || "Prism")
-                                        onClicked: root.cyclePalette(1)
+                                        text: root.allRandomisationsActive ? "󰒟 Full RANDOM (All 6 Layers): ON" : "󰒟 Full RANDOM (All 6 Layers): OFF"
+                                        active: root.allRandomisationsActive
+                                        onClicked: root.toggleAllRandomisations()
                                     }
 
                                     VizPillButton {
@@ -5064,7 +6121,6 @@ FocusScope {
                                         active: true
                                         onClicked: {
                                             root.requestSaveVisualiserConfig(root.buildPersistedConfigSnapshot())
-                                            root.requestActionFeedback("Saved Visualiser Config to ~/.config/bandarchy/visualiser.json")
                                         }
                                     }
 

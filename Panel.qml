@@ -641,9 +641,7 @@ Item {
                 onRequestStageModeChange: newStageMode => {
                     if (root.service) root.service.setStageMode(newStageMode)
                 }
-                onRequestActionFeedback: msg => {
-                    if (root.service) root.service.notifyAction(msg)
-                }
+                onRequestActionFeedback: msg => {}
                 onRequestSaveVisualiserConfig: cfg => {
                     if (root.service) root.service.saveVisualiserConfig(cfg)
                 }
@@ -807,7 +805,7 @@ Item {
                         model: [
                             { idx: 0, label: "󰲸 Library" },
                             { idx: 1, label: "󰐑 Playlists" },
-                            { idx: 2, label: "󰍹 Stage & Viz" },
+                            { idx: 2, label: "󰍹 Visuals" },
                             { idx: 3, label: "󰀄 Account & Sync" }
                         ]
 
@@ -2052,9 +2050,7 @@ Item {
                             if (root.service) root.service.setStageMode(newStageMode)
                             root.syncVisualiserActive()
                         }
-                        onRequestActionFeedback: msg => {
-                            if (root.service) root.service.notifyAction(msg)
-                        }
+                        onRequestActionFeedback: msg => {}
                         onRequestSaveVisualiserConfig: cfg => {
                             if (root.service) root.service.saveVisualiserConfig(cfg)
                         }

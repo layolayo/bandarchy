@@ -51,6 +51,93 @@ BarWidget {
         }
     }
 
+    property bool interactive: true
+    property bool pressable: true
+    property bool concealed: false
+    property var registeredBar: null
+    readonly property bool tooltipHovered: visible && interactive && !concealed && (ledHover.hovered || ledMouse.containsMouse)
+
+    function tooltipText() {
+        try {
+            if (root.isPlaying && root.service && root.service.trackTitle) {
+                var t = String(root.service.trackTitle || "")
+                var a = String(root.service.trackArtist || "")
+                return "Bandarchy · " + (a ? (a + " — " + t) : t)
+            }
+            return "Bandarchy · Click for player & visualiser"
+        } catch (e) {
+            return "Bandarchy"
+        }
+    }
+
+    function syncClickRegistration() {
+        if (root.registeredBar && typeof root.registeredBar.unregisterClickTarget === "function") {
+            root.registeredBar.unregisterClickTarget(root)
+        }
+        root.registeredBar = root.bar
+        if (root.registeredBar && typeof root.registeredBar.registerClickTarget === "function") {
+            root.registeredBar.registerClickTarget(root)
+        }
+    }
+
+    function triggerPress(button) {
+        root.clickFlash = true
+        clickFlashTimer.restart()
+        if (root.bar && typeof root.bar.hideTooltip === "function") {
+            root.bar.hideTooltip(root)
+        }
+        if (button === Qt.MiddleButton) {
+            if (root.service) root.service.togglePlayPause()
+            return
+        }
+        if (button === Qt.RightButton) {
+            if (root.service) root.service.launchStandalonePlayer()
+            return
+        }
+        if (root.bar && root.bar.shell) {
+            if (typeof root.bar.shell.toggle === "function")
+                root.bar.shell.toggle(root.moduleName, "{}")
+            else if (typeof root.bar.shell.summon === "function")
+                root.bar.shell.summon(root.moduleName, "{}")
+        } else if (root.bar && typeof root.bar.run === "function") {
+            root.bar.run("omarchy-shell shell toggle " + root.moduleName + " '{}'")
+        } else if (root.pluginApi && typeof root.pluginApi.togglePanel === "function") {
+            root.pluginApi.togglePanel(null, ledContainer)
+        }
+    }
+
+    onBarChanged: {
+        root.syncClickRegistration()
+        lateClickRegTimer.ticks = 0
+        lateClickRegTimer.restart()
+    }
+    onXChanged: root.syncClickRegistration()
+    onWidthChanged: root.syncClickRegistration()
+    Component.onCompleted: {
+        root.syncClickRegistration()
+        lateClickRegTimer.ticks = 0
+        lateClickRegTimer.restart()
+    }
+    Component.onDestruction: {
+        if (root.registeredBar && typeof root.registeredBar.unregisterClickTarget === "function") {
+            root.registeredBar.unregisterClickTarget(root)
+        }
+    }
+
+    // Re-register after deferred tray drawer items (e.g. field-notes, arcana) finish loading
+    // so Bandarchy always sits at the top of clickTargets above collapsed tray items.
+    Timer {
+        id: lateClickRegTimer
+        property int ticks: 0
+        interval: 300
+        repeat: true
+        onTriggered: {
+            root.syncClickRegistration()
+            ticks += 1
+            if (ticks >= 8) stop()
+        }
+    }
+
     // Poll until serviceFor() resolves if the service loads asynchronously after the bar widget
     Timer {
         interval: 250
@@ -62,14 +149,14 @@ BarWidget {
         }
     }
 
-    // Gentle idle breathing phase for bottom LED tier when paused/idle
+    // Fallback phase timer ONLY when actively playing and waiting for spectrum frames
     property real breathPhase: 0.0
     Timer {
         interval: 90
         repeat: true
         running: root.topBarLedEnabled && (!root.isPlaying || root.miniBands.length === 0)
         onTriggered: {
-            root.breathPhase = (root.breathPhase + 0.14) % (Math.PI * 2)
+            if (root.isPlaying) root.breathPhase = (root.breathPhase + 0.22) % (Math.PI * 2)
         }
     }
 
@@ -103,6 +190,20 @@ BarWidget {
     implicitWidth: root.topBarLedEnabled ? ledContainer.width : 0
     implicitHeight: root.topBarLedEnabled ? root.barSize : 0
 
+    HoverHandler {
+        id: ledHover
+        onHoveredChanged: {
+            if (hovered) {
+                root.syncClickRegistration()
+                if (root.bar && typeof root.bar.showTooltip === "function") {
+                    root.bar.showTooltip(root, root.tooltipText())
+                }
+            } else if (root.bar && typeof root.bar.hideTooltip === "function") {
+                root.bar.hideTooltip(root)
+            }
+        }
+    }
+
     property bool clickFlash: false
     Timer {
         id: clickFlashTimer
@@ -131,13 +232,13 @@ BarWidget {
         radius: 5
         color: root.clickFlash
             ? Qt.rgba(0.96, 0.25, 0.37, 0.22)
-            : (ledMouse.containsMouse ? Qt.rgba(0.06, 0.71, 0.83, 0.14) : Qt.rgba(0.04, 0.06, 0.10, 0.55))
+            : ((ledHover.hovered || ledMouse.containsMouse) ? Qt.rgba(0.06, 0.71, 0.83, 0.14) : Qt.rgba(0.04, 0.06, 0.10, 0.55))
         border.width: 1
         border.color: root.clickFlash
             ? "#f43f5e"
             : (root.isPlaying
                 ? Qt.rgba(0.06, 0.72, 0.51, 0.65)
-                : (ledMouse.containsMouse ? Qt.rgba(0.06, 0.71, 0.83, 0.45) : Qt.rgba(1, 1, 1, 0.12)))
+                : ((ledHover.hovered || ledMouse.containsMouse) ? Qt.rgba(0.06, 0.71, 0.83, 0.45) : Qt.rgba(1, 1, 1, 0.12)))
         scale: root.clickFlash ? 0.94 : 1.0
         Behavior on scale { NumberAnimation { duration: 90 } }
 
@@ -160,12 +261,13 @@ BarWidget {
                         if (root.isPlaying) {
                             return 0.35 + 0.25 * Math.sin(root.breathPhase + index * 0.7)
                         }
-                        // Idle / paused gentle wave across bottom tiers
-                        var wave = 0.5 + 0.5 * Math.sin(root.breathPhase + index * 0.65)
-                        return root.hasTrack ? (0.18 + 0.16 * wave) : (0.12 + 0.10 * wave)
+                        // Static calm bottom baseline when not playing (no idle bouncing)
+                        return 0.12
                     }
 
-                    readonly property int litSegments: Math.max(1, Math.min(root.segmentTiers, Math.round(bandVal * root.segmentTiers)))
+                    readonly property int litSegments: root.isPlaying
+                        ? Math.max(1, Math.min(root.segmentTiers, Math.round(bandVal * root.segmentTiers)))
+                        : 1
 
                     Column {
                         anchors.centerIn: parent
@@ -184,7 +286,7 @@ BarWidget {
                                 radius: 0.75
                                 color: isLit ? root.segmentColour(tierIdx) : "#161f2e"
                                 opacity: isLit
-                                    ? (root.isPlaying ? (isPeak ? 1.0 : 0.90) : (0.48 + 0.28 * Math.sin(root.breathPhase + colItem.index * 0.5)))
+                                    ? (root.isPlaying ? (isPeak ? 1.0 : 0.90) : 0.55)
                                     : 0.26
                             }
                         }
@@ -193,31 +295,16 @@ BarWidget {
             }
         }
 
+        // Middle and Right clicks pass through Bar.qml's left-button modulePointer MouseArea
         MouseArea {
             id: ledMouse
             anchors.fill: parent
             hoverEnabled: true
-            acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
+            acceptedButtons: Qt.MiddleButton | Qt.RightButton
             cursorShape: Qt.PointingHandCursor
-            onPressed: mouse => {
-                root.clickFlash = true
-                clickFlashTimer.restart()
-                if (mouse.button === Qt.MiddleButton) {
-                    if (root.service) root.service.togglePlayPause()
-                    return
-                }
-                if (mouse.button === Qt.RightButton) {
-                    if (root.service) root.service.launchStandalonePlayer()
-                    return
-                }
-                if (root.bar && root.bar.shell) {
-                    if (typeof root.bar.shell.toggle === "function")
-                        root.bar.shell.toggle(root.moduleName, "{}")
-                    else if (typeof root.bar.shell.summon === "function")
-                        root.bar.shell.summon(root.moduleName, "{}")
-                } else if (root.pluginApi && typeof root.pluginApi.togglePanel === "function") {
-                    root.pluginApi.togglePanel(null, ledContainer)
-                }
+            onEntered: root.syncClickRegistration()
+            onClicked: mouse => {
+                root.triggerPress(mouse.button)
             }
         }
     }

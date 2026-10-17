@@ -684,7 +684,7 @@ ShellRoot {
                         model: [
                             { idx: 0, label: "󰲸 Collection" },
                             { idx: 1, label: "󰐑 Playlists" },
-                            { idx: 2, label: "󰍹 Stage & Layers" },
+                            { idx: 2, label: "󰍹 Visuals" },
                             { idx: 3, label: "󰀄 Account & Sync" }
                         ]
 
@@ -2253,9 +2253,7 @@ ShellRoot {
                             onRequestStageModeChange: newStageMode => {
                                 service.setStageMode(newStageMode)
                             }
-                            onRequestActionFeedback: message => {
-                                service.notifyAction(message)
-                            }
+                            onRequestActionFeedback: message => {}
                             onRequestSaveVisualiserConfig: cfg => {
                                 service.saveVisualiserConfig(cfg)
                             }

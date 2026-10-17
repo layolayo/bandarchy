@@ -241,23 +241,28 @@ Item {
                 var p = d.playback || {}
                 var inOptimisticWindow = (Date.now() < root._optimisticPlayUntil)
                 if (p.playing || !inOptimisticWindow) {
+                    var fb = root.lastPlayedTrack || ((root.albums && root.albums.length > 0) ? root.albums[0] : null)
+                    var hadNoTrack = !root.trackTitle
                     root.playing = Boolean(p.playing)
                     root.paused = Boolean(p.paused)
-                    root.trackTitle = p.title || ""
-                    root.trackArtist = p.artist || ""
-                    root.trackAlbum = p.album || ""
-                    root.albumId = p.albumId || ""
-                    root.trackId = p.trackId || ""
+                    root.trackTitle = p.title || (fb ? (fb.title || fb.album || "") : root.trackTitle)
+                    root.trackArtist = p.artist || (fb ? (fb.artist || "") : root.trackArtist)
+                    root.trackAlbum = p.album || (fb ? (fb.album || fb.title || "") : root.trackAlbum)
+                    root.albumId = p.albumId || (fb ? (fb.albumId || fb.id || "") : root.albumId)
+                    root.trackId = p.trackId || (fb ? (fb.id || "") : root.trackId)
                     root.playSource = p.playSource || "local"
-                    root.artPath = p.artPath || ""
+                    root.artPath = p.artPath || (fb ? (fb.artPath || "") : root.artPath)
                     root.position = Number(p.position) || 0.0
-                    root.duration = Number(p.duration) || 0.0
+                    root.duration = Number(p.duration) || (fb && fb.duration ? Number(fb.duration) : 0.0)
                     root.volume = p.volume !== undefined ? Number(p.volume) : 100.0
                     root.playlistPos = Number(p.playlistPos) || 0
                     root.playlistCount = Number(p.playlistCount) || 0
                     root.shuffle = Boolean(p.shuffle)
                     root.loop = Boolean(p.loop)
                     root.queue = p.queue || []
+                    if (hadNoTrack && (root.trackTitle || root.trackArtist)) {
+                        root.refreshAsciiArt("", "random")
+                    }
                 }
             } catch (e) {}
         }
@@ -291,6 +296,16 @@ Item {
                     root.albums = d.albums || []
                     root.searchTracks = d.tracks || []
                     if (d.availableZips) root.availableZips = d.availableZips
+                    if (!root.trackTitle && root.albums.length > 0) {
+                        var fb = root.lastPlayedTrack || root.albums[0]
+                        if (fb) {
+                            root.trackTitle = fb.title || fb.album || ""
+                            root.trackArtist = fb.artist || ""
+                            root.trackAlbum = fb.album || fb.title || ""
+                            root.albumId = fb.albumId || fb.id || ""
+                            root.artPath = fb.artPath || ""
+                        }
+                    }
                     if (root.asciiLines.length === 0 && root.albums.length > 0) {
                         root.refreshAsciiArt()
                     }
@@ -526,6 +541,35 @@ Item {
         }
     }
 
+    property bool _screensaverInhibitedByUs: false
+    onFullscreenVisualiserOpenChanged: root.syncScreensaverInhibit()
+
+    function syncScreensaverInhibit() {
+        var cfg = root.visualiserConfig || ({})
+        var inhibitPref = (cfg.disableScreensaverInFullscreenOrVj === undefined) ? true : Boolean(cfg.disableScreensaverInFullscreenOrVj)
+        var shouldInhibit = inhibitPref && Boolean(root.fullscreenVisualiserOpen || cfg.vjDeckActive)
+        if (shouldInhibit && !root._screensaverInhibitedByUs) {
+            root._screensaverInhibitedByUs = true
+            Quickshell.execDetached([
+                "/bin/sh", "-c",
+                "mkdir -p \"$HOME/.local/state/omarchy/toggles\" \"$HOME/.local/state/omarchy/indicators\" && " +
+                "if [ ! -f \"$HOME/.local/state/omarchy/toggles/screensaver-off\" ]; then " +
+                "  printf 'bandarchy-fs-vj\\n' > \"$HOME/.local/state/omarchy/toggles/screensaver-off\"; " +
+                "  touch \"$HOME/.local/state/omarchy/indicators/stay-awake\"; " +
+                "fi"
+            ])
+        } else if (!shouldInhibit && root._screensaverInhibitedByUs) {
+            root._screensaverInhibitedByUs = false
+            Quickshell.execDetached([
+                "/bin/sh", "-c",
+                "if [ -f \"$HOME/.local/state/omarchy/toggles/screensaver-off\" ] && " +
+                "   grep -q 'bandarchy-fs-vj' \"$HOME/.local/state/omarchy/toggles/screensaver-off\" 2>/dev/null; then " +
+                "  rm -f \"$HOME/.local/state/omarchy/toggles/screensaver-off\" \"$HOME/.local/state/omarchy/indicators/stay-awake\"; " +
+                "fi"
+            ])
+        }
+    }
+
     function loadVisualiserConfig() {
         if (visualiserConfigProc.running) visualiserConfigProc.running = false
         visualiserConfigProc.outBuf = ""
@@ -538,6 +582,7 @@ Item {
         var merged = Object.assign({}, root.visualiserConfig || {}, cfgObj)
         root.visualiserConfig = merged
         root.visualiserConfigLoaded = true
+        root.syncScreensaverInhibit()
         Quickshell.execDetached([
             root.binPath, "visualiser-config",
             "--set", JSON.stringify(merged)
@@ -654,13 +699,26 @@ Item {
             "--width", "68",
             "--height", "30"
         ]
-        var aid = customAlbumId || root.albumId
+        var fb = root.lastPlayedTrack || ((root.albums && root.albums.length > 0) ? root.albums[0] : null)
+        var aid = customAlbumId || root.albumId || (fb ? (fb.albumId || fb.id || "") : "")
+        var apath = root.artPath || (fb ? (fb.artPath || "") : "")
         if (aid) {
             cmd.push("--album", aid)
-        } else if (root.artPath) {
-            cmd.push("--image", root.artPath)
+        } else if (apath) {
+            cmd.push("--image", apath)
         }
-        var bannerTxt = root.trackArtist || root.trackTitle || "BANDARCHY"
+        var vc = root.visualiserConfig || ({})
+        var showArtist = vc.layer3ShowArtist !== undefined ? Boolean(vc.layer3ShowArtist) : true
+        var showTrack = vc.layer3ShowTrack !== undefined ? Boolean(vc.layer3ShowTrack) : true
+        var showAlbum = vc.layer3ShowAlbum !== undefined ? Boolean(vc.layer3ShowAlbum) : false
+        var effArtist = root.trackArtist || (fb ? (fb.artist || "") : "")
+        var effTrack = root.trackTitle || (fb ? (fb.title || fb.album || "") : "")
+        var effAlbum = root.trackAlbum || (fb ? (fb.album || fb.title || "") : "")
+        var parts = []
+        if (showArtist && effArtist) parts.push(effArtist)
+        if (showTrack && effTrack) parts.push(effTrack)
+        if (showAlbum && effAlbum && effAlbum !== effTrack) parts.push(effAlbum)
+        var bannerTxt = parts.length > 0 ? parts.join(" — ") : (effArtist || effTrack || effAlbum || "BANDARCHY")
         cmd.push("--text", bannerTxt)
         asciiProc.command = cmd
         asciiProc.running = true

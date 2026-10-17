@@ -3670,11 +3670,14 @@ def get_playback_state() -> dict:
 
 def _visualiser_settings_payload(settings: dict) -> dict:
     top_led = bool(settings.get("top_bar_led", settings.get("topBarLedEnabled", True)))
+    l4_enabled = bool(settings.get("layer4Enabled", settings.get("backdropEnabled", True)))
+    l4_mode = bounded_int(settings.get("layer4Mode", settings.get("backdropMode")), 0, 0, 15)
     return {
         "top_bar_led": top_led,
         "topBarLedEnabled": top_led,
         "stageMode": settings.get("stageMode") or "visualiser",
-        "backdropMode": bounded_int(settings.get("backdropMode"), 0, 0, 7),
+        "backdropEnabled": l4_enabled,
+        "backdropMode": l4_mode,
         "layer1Enabled": bool(settings.get("layer1Enabled", True)),
         "layer1Mode": bounded_int(settings.get("layer1Mode"), 0, 0, 10),
         "layer1EqStyle": bounded_int(settings.get("layer1EqStyle"), 0, 0, 15),
@@ -3699,6 +3702,21 @@ def _visualiser_settings_payload(settings: dict) -> dict:
         "layer3Evolution": bounded_float(settings.get("layer3Evolution"), 0.65, 0.0, 3.0),
         "layer3Scale": bounded_float(settings.get("layer3Scale"), 1.0, 0.5, 2.5),
         "layer3AsciiMode": settings.get("layer3AsciiMode") or settings.get("asciiMode") or "braille",
+        "layer3TextStyle": bounded_int(settings.get("layer3TextStyle"), 0, 0, 7),
+        "layer3ShowArtist": bool(settings.get("layer3ShowArtist", True)),
+        "layer3ShowTrack": bool(settings.get("layer3ShowTrack", True)),
+        "layer3ShowAlbum": bool(settings.get("layer3ShowAlbum", False)),
+        "layer4Enabled": l4_enabled,
+        "layer4Mode": l4_mode,
+        "layer4DualEnabled": bool(settings.get("layer4DualEnabled", False)),
+        "layer4SecondaryMode": bounded_int(settings.get("layer4SecondaryMode"), 1, 0, 15),
+        "layer4DualMix": bounded_float(settings.get("layer4DualMix"), 0.45, 0.10, 0.90),
+        "layer4WallPattern": bounded_int(settings.get("layer4WallPattern"), 0, 0, 4),
+        "layer4Speed": bounded_float(settings.get("layer4Speed", settings.get("backdropSpeed")), 1.0, 0.15, 3.0),
+        "layer4Intensity": bounded_float(settings.get("layer4Intensity", settings.get("backdropIntensity")), 0.72, 0.15, 2.0),
+        "layer4Twist": bounded_float(settings.get("layer4Twist"), 1.0, 0.10, 3.0),
+        "layer4Symmetry": bounded_int(settings.get("layer4Symmetry", settings.get("backdropSymmetry")), 8, 2, 16),
+        "layer4Direction": bounded_int(settings.get("layer4Direction", settings.get("backdropDirection")), 0, 0, 2),
         "turntableRpm": bounded_float(settings.get("turntableRpm"), 33.3, 16.0, 78.0),
         "turntableStyle": bounded_int(settings.get("turntableStyle"), 0, 0, 4),
     }
