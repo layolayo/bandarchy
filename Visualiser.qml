@@ -728,7 +728,10 @@ FocusScope {
         if (cfg.layer3AutoRandomise !== undefined) root.layer3AutoRandomise = Boolean(cfg.layer3AutoRandomise)
         if (cfg.layer3Mode !== undefined) root.layer3Mode = Number(cfg.layer3Mode) % Engine.LAYER3_MODES.length
         if (cfg.useAlbumArt !== undefined) root.useAlbumArt = Boolean(cfg.useAlbumArt)
-        if (cfg.asciiMode !== undefined) root.asciiMode = String(cfg.asciiMode)
+        if (cfg.asciiMode !== undefined) {
+            var am = String(cfg.asciiMode).toLowerCase()
+            root.asciiMode = (am === "block" || am === "text") ? am : "braille"
+        }
         if (cfg.layer3Dismantle !== undefined) root.layer3Dismantle = Number(cfg.layer3Dismantle)
         if (cfg.layer3Rebuild !== undefined) root.layer3Rebuild = Number(cfg.layer3Rebuild)
         if (cfg.layer3Evolution !== undefined) root.layer3Evolution = Number(cfg.layer3Evolution)
@@ -1271,8 +1274,15 @@ FocusScope {
 
         root.layer3Enabled = Boolean(p.l3Enabled)
         root.layer3Mode = Number(p.l3Mode || 0) % Engine.LAYER3_MODES.length
-        if (p.asciiMode !== undefined) root.asciiMode = p.asciiMode
-        if (p.useAlbumArt !== undefined) root.useAlbumArt = Boolean(p.useAlbumArt)
+        if (p.useAlbumArt !== undefined) {
+            root.useAlbumArt = Boolean(p.useAlbumArt)
+            root.requestSetAsciiSourceMode(root.useAlbumArt ? "art" : "words")
+        }
+        if (p.asciiMode !== undefined) {
+            var pm = String(p.asciiMode).toLowerCase()
+            root.asciiMode = (pm === "block" || pm === "text") ? pm : "braille"
+            root.requestSetAsciiSourceMode(root.asciiMode)
+        }
         if (p.l3Tracers !== undefined) root.layer3Tracers = Number(p.l3Tracers)
 
         if (smoothMorph) {
@@ -1411,6 +1421,8 @@ FocusScope {
 
     function cycleLayer1Mode(delta) {
         var count = Engine.LAYER1_MODES.length
+        root.layer1FieldEnabled = true
+        root.syncLayer1MasterFromSubs()
         layer1Mode = (layer1Mode + delta + count) % count
         vizCanvas.requestPaint()
         root.requestActionFeedback("Layer #1 Field: " + Engine.LAYER1_MODES[layer1Mode])
@@ -1521,12 +1533,11 @@ FocusScope {
 
     function randomiseLayer1() {
         root.layer1Enabled = true
-        if (root.layer1FieldEnabled) {
-            root.layer1Mode = (root.layer1Mode + 1 + Math.floor(Math.random() * Math.max(1, Engine.LAYER1_MODES.length - 1))) % Engine.LAYER1_MODES.length
-            root.layer1Density = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
-            root.layer1Speed = Math.round((0.60 + Math.random() * 1.25) * 100) / 100
-            root.layer1Direction = [1, -1, 0][Math.floor(Math.random() * 3)]
-        }
+        root.layer1FieldEnabled = true
+        root.layer1Mode = (root.layer1Mode + 1 + Math.floor(Math.random() * Math.max(1, Engine.LAYER1_MODES.length - 1))) % Engine.LAYER1_MODES.length
+        root.layer1Density = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
+        root.layer1Speed = Math.round((0.60 + Math.random() * 1.25) * 100) / 100
+        root.layer1Direction = [1, -1, 0][Math.floor(Math.random() * 3)]
         if (root.layer1EqEnabled) {
             root.layer1EqStyle = (root.layer1EqStyle + 1 + Math.floor(Math.random() * Math.max(1, Engine.LAYER1_EQ_STYLES.length - 1))) % Engine.LAYER1_EQ_STYLES.length
             root.layer1EqLayout = Math.floor(Math.random() * Engine.LAYER1_EQ_LAYOUTS.length)
@@ -1846,6 +1857,7 @@ FocusScope {
         else if (event.key === Qt.Key_0) { visualMode = 9; event.accepted = true }
         else if (event.key === Qt.Key_BracketLeft) { visualMode = 10; event.accepted = true }
         else if (event.key === Qt.Key_BracketRight) { visualMode = 11; event.accepted = true }
+        else if (event.key === Qt.Key_Backslash) { visualMode = 12; event.accepted = true }
         else if (event.key === Qt.Key_M) {
             cycleMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
             event.accepted = true

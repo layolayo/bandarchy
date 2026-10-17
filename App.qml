@@ -2256,6 +2256,20 @@ ShellRoot {
                             onRequestSaveVisualiserConfig: cfg => {
                                 service.saveVisualiserConfig(cfg)
                             }
+
+                            Connections {
+                                target: service
+                                function onUseAlbumArtChanged() {
+                                    if (appVisualiser.useAlbumArt !== service.useAlbumArt) {
+                                        appVisualiser.useAlbumArt = service.useAlbumArt
+                                    }
+                                }
+                                function onAsciiModeChanged() {
+                                    if (appVisualiser.asciiMode !== service.asciiMode) {
+                                        appVisualiser.asciiMode = service.asciiMode
+                                    }
+                                }
+                            }
                         }
                     }
                 }

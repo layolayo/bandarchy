@@ -2671,13 +2671,32 @@ def save_playlists(playlists: list[dict]) -> None:
 # mpv IPC & Playback
 # --------------------------------------------------------------------------- #
 
+LEGACY_IPC_SOCKET = os.path.join(os.path.dirname(RUNTIME_DIR), "bandarchy.sock")
+
+
+def _active_ipc_socket() -> str | None:
+    candidates = [IPC_SOCKET]
+    if "BANDARCHY_MPV_SOCKET" not in os.environ and LEGACY_IPC_SOCKET != IPC_SOCKET:
+        candidates.append(LEGACY_IPC_SOCKET)
+    uid = os.getuid()
+    for cand in candidates:
+        try:
+            st = os.lstat(cand)
+            if stat.S_ISSOCK(st.st_mode) and st.st_uid == uid:
+                return cand
+        except OSError:
+            continue
+    return None
+
+
 def mpv_request(command: list, timeout: float = 1.5):
-    if not os.path.exists(IPC_SOCKET):
+    sock_path = _active_ipc_socket()
+    if not sock_path:
         return None
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
             sock.settimeout(timeout)
-            sock.connect(IPC_SOCKET)
+            sock.connect(sock_path)
             sock.sendall((json.dumps({"command": command}) + "\n").encode("utf-8"))
             buffer = b""
             deadline = time.monotonic() + timeout
@@ -2716,15 +2735,19 @@ def mpv_running() -> bool:
 
 
 def mpv_stop() -> None:
+    sock_path = _active_ipc_socket()
     mpv_request(["quit"])
     for _ in range(20):
-        if not os.path.exists(IPC_SOCKET):
-            return
+        if not _active_ipc_socket():
+            break
         time.sleep(0.05)
-    try:
-        os.unlink(IPC_SOCKET)
-    except OSError:
-        pass
+    for cand in {IPC_SOCKET, sock_path} - {None}:
+        try:
+            st = os.lstat(cand)
+            if stat.S_ISSOCK(st.st_mode) and st.st_uid == os.getuid():
+                os.unlink(cand)
+        except OSError:
+            pass
 
 
 def mpv_launch(playlist_path: str, shuffle: bool = False, start_index: int = 0, loop: bool = False) -> None:
@@ -2733,6 +2756,9 @@ def mpv_launch(playlist_path: str, shuffle: bool = False, start_index: int = 0, 
     mpv_bin = resolve_bin("mpv", required=True)
     args = [
         mpv_bin,
+        "--no-config",
+        "--no-ytdl",
+        "--no-load-scripts",
         "--no-video",
         "--audio-display=no",
         "--audio-client-name=Bandarchy",
@@ -2740,7 +2766,6 @@ def mpv_launch(playlist_path: str, shuffle: bool = False, start_index: int = 0, 
         "--no-terminal",
         "--idle=no",
         "--force-window=no",
-        "--ytdl=yes",
         f"--input-ipc-server={IPC_SOCKET}",
         f"--playlist={playlist_path}",
         "--cache=yes",
@@ -3520,7 +3545,7 @@ def cmd_auth(args) -> None:
         if xdg_bin:
             try:
                 subprocess.Popen(
-                    [xdg_bin, target_url],
+                    [xdg_bin, "--", target_url],
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,

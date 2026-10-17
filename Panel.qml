@@ -593,6 +593,7 @@ Item {
             color: "#05070b"
 
             Visualiser {
+                id: fsVisualiser
                 anchors.fill: parent
                 focus: true
                 isFullscreen: true
@@ -645,6 +646,20 @@ Item {
                 }
                 onRequestSaveVisualiserConfig: cfg => {
                     if (root.service) root.service.saveVisualiserConfig(cfg)
+                }
+
+                Connections {
+                    target: root.service
+                    function onUseAlbumArtChanged() {
+                        if (root.service && fsVisualiser.useAlbumArt !== root.service.useAlbumArt) {
+                            fsVisualiser.useAlbumArt = root.service.useAlbumArt
+                        }
+                    }
+                    function onAsciiModeChanged() {
+                        if (root.service && fsVisualiser.asciiMode !== root.service.asciiMode) {
+                            fsVisualiser.asciiMode = root.service.asciiMode
+                        }
+                    }
                 }
             }
         }
@@ -2039,6 +2054,20 @@ Item {
                         }
                         onRequestSaveVisualiserConfig: cfg => {
                             if (root.service) root.service.saveVisualiserConfig(cfg)
+                        }
+
+                        Connections {
+                            target: root.service
+                            function onUseAlbumArtChanged() {
+                                if (root.service && panelVisualiser.useAlbumArt !== root.service.useAlbumArt) {
+                                    panelVisualiser.useAlbumArt = root.service.useAlbumArt
+                                }
+                            }
+                            function onAsciiModeChanged() {
+                                if (root.service && panelVisualiser.asciiMode !== root.service.asciiMode) {
+                                    panelVisualiser.asciiMode = root.service.asciiMode
+                                }
+                            }
                         }
                     }
 

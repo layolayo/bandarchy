@@ -1740,7 +1740,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
     var vanishX = cx + Math.sin(driftT * 0.42) * w * 0.14
 
     // =========================================================================
-    // SUB-SYSTEM 1: L1 FIELD (7 Volumetric Background Fields)
+    // SUB-SYSTEM 1: L1 FIELD (11 Volumetric Background Fields 0..10)
     // =========================================================================
     if (fieldOn) {
         if (l1Mode === 0) {
@@ -7329,7 +7329,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         tracerDirection: c.tracerDirection !== undefined ? Number(c.tracerDirection) : 1,
         layer1Enabled: c.layer1Enabled !== undefined ? Boolean(c.layer1Enabled) : true,
         layer1FieldEnabled: c.layer1FieldEnabled !== undefined ? Boolean(c.layer1FieldEnabled) : true,
-        layer1Mode: Number(c.layer1Mode) || 0,
+        layer1Mode: c.layer1Mode !== undefined ? clamp(Math.round(Number(c.layer1Mode)), 0, LAYER1_MODES.length - 1) : 0,
         layer1Direction: c.layer1Direction !== undefined ? Number(c.layer1Direction) : 1,
         layer1Trail: Number(c.layer1Trail !== undefined ? c.layer1Trail : (c.layer1Persistence !== undefined ? c.layer1Persistence : 0.85)),
         layer1Speed: Number(c.layer1Speed !== undefined ? c.layer1Speed : 1.0),
@@ -7350,7 +7350,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer2Enabled: c.layer2Enabled !== undefined ? Boolean(c.layer2Enabled) : true,
         layer2VizEnabled: c.layer2VizEnabled !== undefined ? Boolean(c.layer2VizEnabled) : true,
         layer2TracersEnabled: c.layer2TracersEnabled !== undefined ? Boolean(c.layer2TracersEnabled) : true,
-        layer2Mode: Number(c.layer2Mode !== undefined ? c.layer2Mode : (c.mode !== undefined ? c.mode : (mode || 0))),
+        layer2Mode: clamp(Math.round(Number(c.layer2Mode !== undefined ? c.layer2Mode : (c.mode !== undefined ? c.mode : (mode || 0)))), 0, MODE_NAMES.length - 1),
         layer2Facets: Number(c.layer2Facets !== undefined ? c.layer2Facets : (c.symmetryFolds !== undefined ? c.symmetryFolds : 6)),
         layer2Complexity: Number(c.layer2Complexity !== undefined ? c.layer2Complexity : 1.0) * geomDetail,
         layer2Speed: Number(c.layer2Speed !== undefined ? c.layer2Speed : 1.0),
@@ -7358,7 +7358,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer2Zoom: Number(c.layer2Zoom !== undefined ? c.layer2Zoom : 1.0),
         layer2Chaos: Number(c.layer2Chaos !== undefined ? c.layer2Chaos : 0.45),
         layer3Enabled: c.layer3Enabled !== undefined ? Boolean(c.layer3Enabled) : true,
-        layer3Mode: Number(c.layer3Mode) || 0,
+        layer3Mode: c.layer3Mode !== undefined ? clamp(Math.round(Number(c.layer3Mode)), 0, LAYER3_MODES.length - 1) : 0,
         layer3Dismantle: Number(c.layer3Dismantle !== undefined ? c.layer3Dismantle : 1.15),
         layer3Rebuild: Number(c.layer3Rebuild !== undefined ? c.layer3Rebuild : 1.0),
         layer3Evolution: Number(c.layer3Evolution !== undefined ? c.layer3Evolution : 0.85),

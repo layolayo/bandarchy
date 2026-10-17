@@ -1356,9 +1356,13 @@ console.log('OK');
         with open(os.path.join(REPO_ROOT, "README.md"), "r", encoding="utf-8") as f:
             readme_src = f.read()
 
+        with open(os.path.join(REPO_ROOT, "Visualiser.qml"), "r", encoding="utf-8") as f:
+            viz_src = f.read()
+
         # 1. Top Bar LED Equaliser: zero Text items in BarWidget.qml, 9x6 LED segments, topBarLedEnabled toggle
         self.assertEqual(len(re.findall(r"\bText\s*\{", bar_src)), 0, "BarWidget.qml must contain zero Text items")
         self.assertIn("topBarLedEnabled", bar_src)
+        self.assertIn("running: root.topBarLedEnabled && (!root.isPlaying || root.miniBands.length === 0)", bar_src)
         self.assertIn("property bool topBarLedEnabled: true", svc_src)
         led_off = self.run_cli("auth", "--top-bar-led", "0")
         self.assertFalse(led_off["topBarLedEnabled"])
@@ -1375,11 +1379,20 @@ console.log('OK');
         self.assertNotIn("BANDCAMP_MPV_ARGS", bin_src)
         self.assertNotIn("shutil.which(", bin_src)
         self.assertNotIn('"yt-dlp"', bin_src)
+        self.assertNotIn('"--ytdl=yes"', bin_src)
+        self.assertIn('"--no-config"', bin_src)
+        self.assertIn('"--no-ytdl"', bin_src)
+        self.assertIn('"--no-load-scripts"', bin_src)
+        self.assertIn('[xdg_bin, "--", target_url]', bin_src)
+        self.assertIn('["/usr/bin/xdg-open", "--", s]', svc_src)
+        self.assertIn('s.indexOf("~/") === 0', svc_src)
+        self.assertNotIn('s.indexOf("http://") === 0', svc_src)
         self.assertNotIn('"-c", runner_sh', bin_src)
         self.assertIn('"--tty-loop"', bin_src)
         self.assertIn("umask 077", player_src)
         self.assertNotIn(":-/tmp}", player_src)
         self.assertIn("## Your Credentials & Privacy", readme_src)
+        self.assertIn('(am === "block" || am === "text") ? am : "braille"', viz_src)
 
         # Verify unit-level security functions in bin/bandarchy via Python import
         import importlib.machinery

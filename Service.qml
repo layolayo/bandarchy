@@ -799,14 +799,18 @@ Item {
     function openExternal(target, customMsg) {
         if (!target) return
         var s = String(target).trim()
-        if (!s || s.indexOf("-") === 0) return
-        var isSafeUrl = s.indexOf("https://") === 0 || s.indexOf("http://") === 0 || s.indexOf("file:///") === 0
-        var isSafePath = s.indexOf("/") === 0
+        if (!s || s.indexOf("-") === 0 || /[\r\n\0]/.test(s)) return
+        if (s === "~" || s.indexOf("~/") === 0) {
+            var homeDir = Quickshell.env("HOME") || "/home"
+            s = homeDir + s.slice(1)
+        }
+        var isSafeUrl = s.indexOf("https://") === 0
+        var isSafePath = s.indexOf("/") === 0 && s.indexOf("/../") === -1 && s.slice(-3) !== "/.."
         if (!isSafeUrl && !isSafePath) {
             root.notifyAction("Blocked unsafe external target")
             return
         }
-        Quickshell.execDetached(["xdg-open", s])
+        Quickshell.execDetached(["/usr/bin/xdg-open", "--", s])
         root.notifyAction(customMsg || ("Opened: " + s))
     }
 

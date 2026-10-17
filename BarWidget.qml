@@ -67,7 +67,7 @@ BarWidget {
     Timer {
         interval: 90
         repeat: true
-        running: root.topBarLedEnabled && !root.isPlaying
+        running: root.topBarLedEnabled && (!root.isPlaying || root.miniBands.length === 0)
         onTriggered: {
             root.breathPhase = (root.breathPhase + 0.14) % (Math.PI * 2)
         }
