@@ -855,7 +855,8 @@ function stepState(state, rawBands, active, cfg, dt) {
             bins: liveBins36,
             bass: state.bass,
             energy: state.energy,
-            hue: state.hueShift
+            hue: state.hueShift,
+            stepIdx: curRidgeStep
         })
         if (state.eqRidgeHistory.length > 24) {
             state.eqRidgeHistory.length = 24
@@ -865,7 +866,8 @@ function stepState(state, rawBands, active, cfg, dt) {
             bins: liveBins36,
             bass: state.bass,
             energy: state.energy,
-            hue: state.hueShift
+            hue: state.hueShift,
+            stepIdx: curRidgeStep
         }
     }
 
@@ -1751,9 +1753,9 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             ctx.stroke()
 
             // 2. True 1/z Perspective Scrolling TRON / Battlezone Ground Grid below `horizonY`
-            //    Fixed, clean grid spacing (rows = 10, cols = 12) so the landscape is always filled cleanly without clutter!
-            var rows = 10
-            var cols = 12
+            //    Fixed, clean grid spacing (rows = 16, cols = 18) so the landscape is always filled cleanly without clutter!
+            var rows = 16
+            var cols = 18
             var worldScroll = l1T * 0.095
             var scrollFract = (((worldScroll * rows) % 1.0) + 1.0) % 1.0
 
@@ -2489,6 +2491,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             var ridgeHist = (state.eqRidgeHistory && state.eqRidgeHistory.length > 0) ? state.eqRidgeHistory : null
             var ridgeCount = 16
             var binCount3 = 36
+            var worldRidgeStep = Math.floor(l1T * 2.8)
             var zPhase = (((l1T * 2.8) % 1.0) + 1.0) % 1.0
 
             // Render back-to-front (from horizonY at depthSlot=0 down to foreground at depthSlot=ridgeCount-1)
@@ -2499,6 +2502,9 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                     ? Math.min((ridgeHist ? ridgeHist.length : 1) - 1, depthSlot)
                     : Math.min((ridgeHist ? ridgeHist.length : 1) - 1, (ridgeCount - 1) - depthSlot)
                 var sliceObj = ridgeHist ? ridgeHist[histIdx] : null
+                var worldId = sliceObj && sliceObj.stepIdx !== undefined
+                    ? sliceObj.stepIdx
+                    : (worldRidgeStep - (l1Dir >= 0 ? depthSlot : -depthSlot))
 
                 // Perspective depth mapping (`z` from 3.4 at horizon to 0.45 in foreground, `persp = 1.0 / z`)
                 var zDist = lerp(3.4, 0.45, uDepth)
@@ -2517,7 +2523,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                     var rawVal = sliceObj && sliceObj.bins ? (sliceObj.bins[bin36Idx] || 0.05) : (state.smoothBands[bMapped3] || 0.05)
                     // Pulsar/terrain envelope: prominent central sculpture + full-width stereo wings
                     var pulsarEnv = 0.42 + 0.58 * Math.pow(Math.sin(uBin * Math.PI), 0.65)
-                    var ripple3D = 0.88 + 0.16 * Math.sin(uBin * 12.0 + (depthSlot - zPhase) * 0.7)
+                    var ripple3D = 0.88 + 0.16 * Math.sin(uBin * 12.0 + worldId * 0.7)
                     var bv3 = rawVal * eqGain * pulsarEnv * ripple3D * (0.45 + 0.85 * perspNorm)
                     var rx = leftXEq + uBin * ridgeW
                     var ry = ridgeBaseY - bv3 * maxEqH * 0.74
@@ -2525,7 +2531,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 }
 
                 // Occluding dark-tinted 3D terrain skirt + glowing neon frequency ridge crest (no cross-grid clutter!)
-                var ridgeCol = palette[(depthSlot + Math.floor((state.hueShift || 0) / 30)) % palette.length]
+                var ridgeColIdx = (((worldId + Math.floor((state.hueShift || 0) / 30)) % palette.length) + palette.length) % palette.length
+                var ridgeCol = palette[ridgeColIdx]
                 ctx.fillStyle = colourWithAlpha("#060812", (0.58 + 0.28 * perspNorm) * (1.0 - dim))
                 ctx.strokeStyle = colourWithAlpha(ridgeCol, clamp((0.35 + 0.65 * perspNorm) * (0.35 + 0.65 * edgeFade) * (1.0 - dim), 0.08, 1.0))
                 ctx.lineWidth = 1.2 + 1.8 * perspNorm
@@ -3116,7 +3123,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             var cityHist = (state.eqRidgeHistory && state.eqRidgeHistory.length > 0) ? state.eqRidgeHistory : null
             var cityCols = 16
             var cityRows = 5
-            var zPhaseCity = (((l1T * 1.65) % 1.0) + 1.0) % 1.0
+            var worldCityStep = Math.floor(l1T * 2.8)
+            var zPhaseCity = (((l1T * 2.8) % 1.0) + 1.0) % 1.0
             var cityCX = vanishX
             var cityCY = horizonY
             var cityScale = minDim * 0.62
@@ -3128,9 +3136,12 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             for (var rCity = 0; rCity < cityRows; rCity++) {
                 var uRow = clamp((rCity + zPhaseCity) / cityRows, 0.02, 0.995)
                 var histRowIdx = l1Dir >= 0
-                    ? Math.min((cityHist ? cityHist.length : 1) - 1, rCity * 3)
-                    : Math.min((cityHist ? cityHist.length : 1) - 1, (cityRows - 1 - rCity) * 3)
+                    ? Math.min((cityHist ? cityHist.length : 1) - 1, rCity)
+                    : Math.min((cityHist ? cityHist.length : 1) - 1, (cityRows - 1 - rCity))
                 var rowSlice = cityHist ? cityHist[histRowIdx] : null
+                var worldRowId = rowSlice && rowSlice.stepIdx !== undefined
+                    ? rowSlice.stepIdx
+                    : (worldCityStep - (l1Dir >= 0 ? rCity : -rCity))
                 var rowFade = Math.sin(uRow * Math.PI)
 
                 // World Z from far horizon (+2.8) to near foreground (-0.8) with camDist = 2.6
@@ -3140,8 +3151,9 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 var zFront = zCenter - halfDepthZ
                 var groundY3 = 0.68 // ground plane below horizonY in 3D space
 
-                var rowCol = palette[(rCity * 2 + Math.floor((state.hueShift || 0) / 30)) % palette.length]
-                var roofCol = palette[(rCity * 2 + 2 + Math.floor((state.hueShift || 0) / 30)) % palette.length]
+                var hueOffCity = Math.floor((state.hueShift || 0) / 30)
+                var rowCol = palette[(((worldRowId * 2 + hueOffCity) % palette.length) + palette.length) % palette.length]
+                var roofCol = palette[(((worldRowId * 2 + 2 + hueOffCity) % palette.length) + palette.length) % palette.length]
 
                 // Batch wireframe tower edges and glowing 3D rooftop quads per row for blazing-fast 60 FPS rendering
                 ctx.fillStyle = colourWithAlpha(roofCol, clamp((0.18 + 0.28 * uRow) * rowFade * (1.0 - dim), 0.04, 0.85))
@@ -4077,43 +4089,54 @@ function drawMode4MinterVlm(ctx, w, h, state, palette, cfg) {
 
 // Mode 5: True Complex-Plane Mandelbrot & Julia Boundary Deep-Zoom Engine
 // Zooms continuously in (Towards), out (Away), or breathes (Breathe) directly into a boundary section
-// (Seahorse Valley crevice / budding filament neck) of the Mandelbrot & Julia fractal shape,
-// allowing the boundary to recursively subdivide ("fractal out/in") across self-similar generations!
+// (Seahorse Valley, Elephant Valley, Double Sceptre, Triple Spiral, Feigenbaum Mini-Brot) from the full
+// Mandelbrot cardioid/bulb (-0.5, 0.0), allowing the boundary to fractal in and out across generations!
 function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
     var zoom = cfg.layer2Zoom || 1.0
     var minDim = Math.min(w, h) * zoom
     var comp = clamp(cfg.layer2Complexity || 1.0, 0.4, 2.0)
+    var gpuActive = cfg && cfg.gpuShaderEnabled !== undefined ? Boolean(cfg.gpuShaderEnabled) : true
+    var isEcho = Boolean(state.isTracerEcho)
 
     // Smooth monotonic zoom accumulator (`state.zoomTime`) — supports Towards (1), Away (-1), and Breathe (0)!
-    var zoomFlow = (state.zoomTime !== undefined ? state.zoomTime : state.t * 0.8) * 1.28
+    var trDir = cfg && cfg.tracerDirection !== undefined ? Number(cfg.tracerDirection) : 1
+    var dirSign = trDir === 0 ? Math.sin((state.t || 0.0) * 0.45) : (trDir < 0 ? -1.0 : 1.0)
+    var zoomFlow = (state.zoomTime !== undefined ? state.zoomTime : state.t * 0.8) * 1.28 * (dirSign < 0 ? -1.0 : 1.0)
     var zoomFract = ((zoomFlow % 1.0) + 1.0) % 1.0
     var zoomGen = Math.floor(zoomFlow)
 
+    // Continuous breath/dive envelope (0 = wide full Mandelbrot shape at (-0.5, 0.0), 1 = deep inside boundary section (poiRe, poiIm))
+    var cycPhase = (((state.zoomTime || state.t) * 0.14) % 1.0 + 1.0) % 1.0
+    var diveT = trDir === 0
+        ? (0.5 - 0.5 * Math.cos(cycPhase * Math.PI * 2.0))
+        : (trDir > 0
+            ? smoothstep(0.0, 0.78, cycPhase) * (1.0 - smoothstep(0.78, 1.0, cycPhase))
+            : smoothstep(0.0, 0.22, cycPhase) * (1.0 - smoothstep(0.22, 1.0, cycPhase)))
+
     // Active complex-plane POI coordinate (poiRe + i*poiIm) & Julia constant (cRe + i*cIm)
-    var poiRe = (state.fractalRe !== undefined ? state.fractalRe : -0.7436) + Math.cos(state.t * 0.22) * 0.03
-    var poiIm = (state.fractalIm !== undefined ? state.fractalIm : 0.1318) + Math.sin(state.t * 0.27) * 0.03
+    var poiRe = (state.fractalRe !== undefined ? state.fractalRe : -0.74364388) + Math.cos(state.t * 0.22) * 0.015
+    var poiIm = (state.fractalIm !== undefined ? state.fractalIm : 0.13182590) + Math.sin(state.t * 0.27) * 0.015
     var cRe = (state.fractalCRe !== undefined ? state.fractalCRe : -0.745) + Math.cos(state.t * 0.31) * (0.04 + state.bassSmooth * 0.04)
     var cIm = (state.fractalCIm !== undefined ? state.fractalCIm : 0.186) + Math.sin(state.t * 0.37) * (0.04 + state.midSmooth * 0.04)
 
     var driftT = state.driftTime !== undefined ? state.driftTime : state.t
     var endPt = computeTracerEndpoint(w, h, driftT, cfg.tracerDrift !== undefined ? cfg.tracerDrift : 1.0, 1.0)
-    // Zoom focal point on screen (where the boundary section of the fractal is pinned as we zoom in/out)
     var focalX = cx + endPt.dx * 0.38
     var focalY = cy + endPt.dy * 0.38
 
     var trEnabled = cfg.layer2TracersEnabled !== undefined ? Boolean(cfg.layer2TracersEnabled) : true
     var trCount = trEnabled ? clamp(Math.round(Number(cfg.tracerCount) || 7), 1, 16) : 3
-    var octaves = Math.max(5, Math.min(10, Math.round(4 + trCount * 0.35 * comp)))
+    var octaves = isEcho ? 2 : (gpuActive ? 4 : Math.max(5, Math.min(9, Math.round(4 + trCount * 0.35 * comp))))
     var ratio = 2.08 // Logarithmic magnification per self-similar boundary generation
-    var baseScale = minDim * 0.014
+    var baseScale = minDim * (0.014 + diveT * 0.018)
     var folds = clamp(Math.round(Number(cfg.layer2Facets) || 6), 3, 12)
-    var contourSteps = Math.max(64, Math.min(112, Math.floor(80 * comp)))
+    var contourSteps = isEcho ? 40 : Math.max(64, Math.min(104, Math.floor(76 * comp)))
     var palShift = Math.floor((state.hueShift || 0) / 45)
+    var gpuAlphaMul = gpuActive ? 0.32 : 1.0
 
-    // Helper: evaluate a point on the multi-lobed Mandelbrot + Julia fractal boundary in local complex space,
-    // where the Seahorse Valley boundary point (`theta = Math.PI * 0.82`) sits at local `(poiLocX, poiLocY)`.
+    // Helper: evaluate a point on the multi-lobed Mandelbrot + Julia fractal boundary in local complex space
     function evalFractalBoundaryLocal(theta, subDetail, cReVal, cImVal, bVal) {
         // 1. Exact Mandelbrot main cardioid: c(t) = 0.5*e^{it} - 0.25*e^{2it}
         var cardX = 0.5 * Math.cos(theta) - 0.25 * Math.cos(2.0 * theta)
@@ -4130,19 +4153,20 @@ function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
         var zr = cardX + poiRe * 0.25
         var zi = cardY + poiIm * 0.25
         var smoothIter = 0.0
-        for (var it = 0; it < 6; it++) {
+        for (var it = 0; it < 8; it++) {
             var r2 = zr * zr, i2 = zi * zi
-            if (r2 + i2 > 6.5) break
+            if (r2 + i2 > 8.0) break
             zi = 2.0 * zr * zi + cImVal
             zr = r2 - i2 + cReVal
             smoothIter += 1.0 / (1.0 + (r2 + i2) * 0.35)
         }
-        var escapePot = clamp(smoothIter / 4.2, 0.15, 1.45)
+        var escapePot = clamp(smoothIter / 4.8, 0.15, 1.55)
 
-        // 4. Recursive self-similar fractal sub-buds ("fractalling out/in" as subDetail increases with zoom!)
+        // 4. Recursive self-similar fractal sub-buds ("fractalling out/in" as subDetail & diveT increase with zoom!)
+        var detailGain = subDetail * (0.65 + diveT * 0.65)
         var bud1 = Math.sin(folds * theta + escapePot * 2.4) * 0.14
-        var bud2 = Math.cos(folds * 2.0 * theta - escapePot * 3.6 + state.phase * 0.5) * 0.09 * subDetail
-        var bud3 = Math.sin(folds * 4.0 * theta + escapePot * 5.2 - state.t * 1.4) * 0.06 * subDetail * subDetail
+        var bud2 = Math.cos(folds * 2.0 * theta - escapePot * 3.6 + state.phase * 0.5) * 0.09 * detailGain
+        var bud3 = Math.sin(folds * 4.0 * theta + escapePot * 5.2 - state.t * 1.4) * 0.06 * detailGain * detailGain
         var radialOut = 1.0 + headBulb + period3Bulbs + bud1 + bud2 + bud3 + bVal * 0.18
 
         var nx = Math.cos(theta), ny = Math.sin(theta)
@@ -4153,8 +4177,8 @@ function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
         }
     }
 
-    // Boundary section angle on the Mandelbrot perimeter to zoom directly into (Seahorse Valley crevice at theta = 0.82 * PI)
-    var poiTheta = Math.PI * 0.82 + Math.sin(state.t * 0.19) * 0.14
+    // Boundary section angle on the Mandelbrot perimeter corresponding to (poiRe, poiIm)
+    var poiTheta = Math.atan2(poiIm, poiRe + 0.25)
 
     ctx.save()
     ctx.globalCompositeOperation = "source-over"
@@ -4165,20 +4189,20 @@ function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
         var octScale = baseScale * Math.pow(ratio, octProgress)
         var octWorld = zoomGen - oct
 
-        // Smooth birth & exit fade-in/out envelope so new octaves emerge seamlessly from the boundary section
         var envAlpha = smoothstep(0.0, 0.20, uOct) * smoothstep(1.08, 0.82, uOct)
         if (envAlpha < 0.01) continue
 
-        // Progressive recursive subdivision detail as this fractal generation zooms in ("fractals out/in")
         var subDetail = smoothstep(0.08, 0.88, uOct) * (0.75 + state.bassSmooth * 0.35)
-        var octRot = octWorld * 0.42 + Math.sin(state.phase * 0.22 + octWorld * 0.7) * 0.24
+        var octRot = octWorld * 0.38 + Math.sin(state.phase * 0.22 + octWorld * 0.7) * 0.20
         var cosR = Math.cos(octRot), sinR = Math.sin(octRot)
 
-        // Pin the chosen boundary section `poiPt` of the fractal shape to `(focalX, focalY)` so the camera
-        // genuinely zooms INTO the boundary edge of the fractal shape (not its dead interior centre)!
+        // Smoothly interpolate camera centre from (-0.5, 0.0) (full Mandelbrot shape) into boundary section `poiPt` as diveT & uOct increase!
+        var panToBoundary = smoothstep(0.0, 0.75, diveT * 0.75 + uOct * 0.55)
         var poiPt = evalFractalBoundaryLocal(poiTheta, subDetail, cRe, cIm, state.bassSmooth * 0.5)
-        var poiRotX = poiPt.x * cosR - poiPt.y * sinR
-        var poiRotY = poiPt.x * sinR + poiPt.y * cosR
+        var camLocX = lerp(-0.25, poiPt.x, panToBoundary)
+        var camLocY = lerp(0.0, poiPt.y, panToBoundary)
+        var poiRotX = camLocX * cosR - camLocY * sinR
+        var poiRotY = camLocX * sinR + camLocY * cosR
         var shapeOriginX = focalX - poiRotX * octScale
         var shapeOriginY = focalY - poiRotY * octScale
 
@@ -4186,10 +4210,10 @@ function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
         var colSecondary = palette[((octWorld * 2 + 1 + palShift) % palette.length + palette.length) % palette.length]
         var colAccent = palette[((octWorld * 2 + 3 + palShift) % palette.length + palette.length) % palette.length]
 
-        // 1. Main Mandelbrot & Julia Boundary Shape zooming through the boundary section at (focalX, focalY)
-        ctx.fillStyle = colourWithAlpha(colPrimary, (0.10 + (1.0 - uOct) * 0.12 + state.bassSmooth * 0.06) * envAlpha)
-        ctx.strokeStyle = colourWithAlpha(colSecondary, (0.58 + envAlpha * 0.40) * envAlpha)
-        ctx.lineWidth = (1.2 + uOct * 2.6 + state.beatPulse * 1.1) * envAlpha
+        // 1. Main Mandelbrot & Julia Boundary Shape panning from (-0.5, 0.0) into the boundary section at (focalX, focalY)
+        ctx.fillStyle = colourWithAlpha(colPrimary, (0.09 + (1.0 - uOct) * 0.10 + state.bassSmooth * 0.05) * envAlpha * gpuAlphaMul)
+        ctx.strokeStyle = colourWithAlpha(colSecondary, (0.52 + envAlpha * 0.38) * envAlpha * (gpuActive ? 0.65 : 1.0))
+        ctx.lineWidth = (1.1 + uOct * 2.2 + state.beatPulse * 0.9) * envAlpha
 
         var boundaryPts = []
         ctx.beginPath()
@@ -4210,24 +4234,24 @@ function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
         ctx.fill()
         ctx.stroke()
 
-        // 2. Recursive Fractal Sub-Buds & Seahorse Valley Double-Spiral Filaments budding directly off the boundary!
-        var budStride = Math.max(4, Math.floor(contourSteps / Math.max(5, Math.min(12, folds * 2))))
-        ctx.strokeStyle = colourWithAlpha(colAccent, (0.66 + state.highSmooth * 0.32) * envAlpha)
-        ctx.fillStyle = colourWithAlpha(colSecondary, (0.16 + state.bassSmooth * 0.12) * envAlpha)
-        ctx.lineWidth = (1.0 + uOct * 1.8 + state.bassSmooth * 0.8) * envAlpha
+        // 2. Self-Similar Mini-Mandelbrot Cardioids & Period-2/3 Daughter Bulbs budding directly off the boundary (no fake spiral pinwheels!)
+        if (!isEcho) {
+            var budStride = Math.max(5, Math.floor(contourSteps / Math.max(5, Math.min(10, folds * 2))))
+            ctx.strokeStyle = colourWithAlpha(colAccent, (0.62 + state.highSmooth * 0.30) * envAlpha * (gpuActive ? 0.65 : 1.0))
+            ctx.fillStyle = colourWithAlpha(colSecondary, (0.14 + state.bassSmooth * 0.10) * envAlpha * gpuAlphaMul)
+            ctx.lineWidth = (1.0 + uOct * 1.6 + state.bassSmooth * 0.7) * envAlpha
 
-        for (var bi = 0; bi < contourSteps; bi += budStride) {
-            var bNode = boundaryPts[bi]
-            var budScale = octScale * (0.16 + subDetail * 0.14 + bNode.band * 0.10)
-            var outAng = bNode.theta
+            for (var bi = 0; bi < contourSteps; bi += budStride) {
+                var bNode = boundaryPts[bi]
+                var budScale = octScale * (0.14 + subDetail * 0.14 + bNode.band * 0.09)
+                var outAng = bNode.theta
 
-            if (((bi / budStride) + octWorld) & 1) {
-                // Self-similar mini-Mandelbrot cardioid & head bulb budding outward from the parent boundary
                 ctx.beginPath()
-                var cSteps = 18
+                var cSteps = 16
                 for (var cs = 0; cs <= cSteps; cs++) {
                     var ct = (cs / cSteps) * Math.PI * 2
-                    var cr = budScale * (0.55 * (1.0 - Math.cos(ct)) + 0.24 * Math.pow(Math.max(0.0, -Math.cos(ct)), 3.0))
+                    // Self-similar mini-Mandelbrot cardioid + period-2 head bulb profile
+                    var cr = budScale * (0.55 * (1.0 - Math.cos(ct)) + 0.26 * Math.pow(Math.max(0.0, -Math.cos(ct)), 3.0))
                     var lx = Math.cos(ct) * cr + budScale * 0.28
                     var ly = Math.sin(ct) * cr
                     var bx = bNode.x + lx * Math.cos(outAng) - ly * Math.sin(outAng)
@@ -4237,21 +4261,6 @@ function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
                 }
                 ctx.closePath()
                 ctx.fill()
-                ctx.stroke()
-            } else {
-                // Unfurling Seahorse Valley logarithmic double-spiral dendrite fractalling out/in from the boundary node
-                ctx.beginPath()
-                var spSteps = 14
-                var curlSign = ((bi & 2) === 0) ? 1.0 : -1.0
-                for (var sp = 0; sp <= spSteps; sp++) {
-                    var su = sp / spSteps
-                    var sTheta = outAng + curlSign * su * Math.PI * (2.2 + subDetail * 1.2)
-                    var sRad = budScale * 1.25 * Math.pow(1.0 - su * 0.82, 1.30)
-                    var spx = bNode.x + Math.cos(sTheta) * sRad
-                    var spy = bNode.y + Math.sin(sTheta) * sRad
-                    if (sp === 0) ctx.moveTo(spx, spy)
-                    else ctx.lineTo(spx, spy)
-                }
                 ctx.stroke()
             }
         }

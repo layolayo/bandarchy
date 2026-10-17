@@ -19,6 +19,7 @@ layout(std140, binding = 0) uniform buf {
     float uL1Dim;
     float uL2Enabled;
     float uL2Mode;
+    float uL2VizMode;
     float uZoom;
     float uFacets;
     float uComplexity;
@@ -137,13 +138,14 @@ void main() {
     //   0: Harmonic Ripple Tunnel
     //   1: Stained-Glass Rose Tunnel
     //   2: Volumetric Plasma Tunnel
-    //   3: Julia Seahorse Fractal Tunnel
+    //   3: Julia Seahorse Fractal Tunnel (also active whenever Layer #2 visualMode == 5 Fractals is selected)
     //   4: Raymarched Polygonal Tunnel
     //   5: Cosmic Aura Pulse
     //   6: Relativistic Event Horizon
     // =========================================================================
-    if (uL2Enabled > 0.5) {
-        int m = int(floor(uL2Mode + 0.5));
+    bool l2FractalActive = (int(floor(uL2VizMode + 0.5)) == 5);
+    if (uL2Enabled > 0.5 || l2FractalActive) {
+        int m = l2FractalActive ? 3 : int(floor(uL2Mode + 0.5));
         float sym = max(2.0, floor(uFacets + 0.5));
         float zoom = clamp(uZoom, 0.4, 2.5);
         float bIntensity = clamp(uComplexity, 0.2, 2.0);
@@ -188,47 +190,62 @@ void main() {
             vec3 pCol = mix(uCol0.rgb, uCol2.rgb, lift);
             col += pCol * pow(plasma, 1.55) * (0.42 + 0.30 * uBass) * bIntensity;
         } else if (m == 3) {
-            // Mode 3: Mandelbrot & Julia Boundary Deep-Zoom (Seahorse Valley boundary section zoom in/out)
-            vec2 poi = vec2(-0.743643887, 0.131825904);
-            vec2 cJulia = vec2(-0.745 + cos(uTime * 0.25) * (0.025 + uBass * 0.02),
-                               0.186 + sin(uTime * 0.31) * (0.025 + uMid * 0.02));
-            float zCycle = uZoomTime * 0.42 * dir;
-            vec3 accumCol = vec3(0.0);
-            float totalW = 0.0;
-            const float maxIter = 26.0;
+            // Mode 3: True Full-Resolution Mandelbrot & Julia Set Deep Zoom into Boundary Sections (Fractalling In & Out)
+            // Cycles through 5 famous self-similar Mandelbrot boundary POIs while panning from (-0.5, 0.0) into the boundary
+            // section and exponentially zooming in (up to ~18,000x with 96 iterations) and back out!
+            float zFlow = uZoomTime * 0.14;
+            int poiIdx = int(mod(floor(zFlow), 5.0));
+            vec2 poi = vec2(-0.74364388, 0.13182590); // 0: Seahorse Valley
+            if (poiIdx == 1) poi = vec2(0.28171792, 0.57710528);      // 1: Elephant Valley
+            else if (poiIdx == 2) poi = vec2(-0.10109636, 0.95628651); // 2: Double Sceptre Valley
+            else if (poiIdx == 3) poi = vec2(-0.08800000, 0.65400000); // 3: Triple Spiral Valley
+            else if (poiIdx == 4) poi = vec2(-1.40115500, 0.00000000); // 4: Feigenbaum Mini-Brot
 
-            for (int k = 0; k < 2; k++) {
-                float phase = fract(zCycle + float(k) * 0.5);
-                float sWin = sin(phase * PI);
-                float wOct = sWin * sWin;
-                // Starts at full Mandelbrot cardioid/bulb view (scale=1.65) and zooms 36x into the Seahorse Valley boundary!
-                float scale = exp2(-phase * 5.2) * 1.65;
-                float rotA = floor(zCycle + float(k) * 0.5) * 0.45 + uTime * 0.10;
-                vec2 zOff = rot2D(rotA) * cPos * scale;
-                vec2 c = poi + zOff;
-                vec2 z = c;
-                vec2 cStep = mix(c, cJulia, 0.18 + 0.08 * sin(uTime * 0.35 + phase * PI));
-
-                float iter = 0.0;
-                for (float i = 0.0; i < maxIter; i += 1.0) {
-                    if (dot(z, z) > 16.0) break;
-                    z = vec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + cStep;
-                    iter += 1.0;
-                }
-                float smoothIt = iter;
-                if (iter < maxIter) {
-                    float log_zn = log(max(1.001, dot(z, z))) * 0.5;
-                    float nu = log(max(0.001, log_zn / log(2.0))) / log(2.0);
-                    smoothIt = iter + 1.0 - nu;
-                }
-                float fVal = sin(smoothIt * 0.48 - uTime * 1.1) * 0.5 + 0.5;
-                float edgeGlow = exp(-abs(iter - maxIter * 0.62) * 0.22);
-                vec3 kCol = mix(uCol0.rgb, mix(uCol1.rgb, uCol2.rgb, fVal), edgeGlow);
-                accumCol += kCol * (0.38 + 0.52 * edgeGlow) * wOct;
-                totalW += wOct;
+            float cycPhase = fract(zFlow);
+            // Smooth dive-in & fractal-out breath wave (respecting Towards +1, Away -1, Breathe 0)
+            float diveT;
+            if (abs(uTracerDir) < 0.05) {
+                diveT = 0.5 - 0.5 * cos(cycPhase * TAU);
+            } else if (uTracerDir > 0.0) {
+                diveT = smoothstep(0.0, 0.78, cycPhase) * (1.0 - smoothstep(0.78, 1.0, cycPhase));
+            } else {
+                diveT = smoothstep(0.0, 0.22, cycPhase) * (1.0 - smoothstep(0.22, 1.0, cycPhase));
             }
-            vec3 fracCol = accumCol / max(0.001, totalW);
-            col = mix(col, fracCol, clamp((0.56 + 0.26 * uBass) * bIntensity, 0.0, 0.92));
+            float zoomExp = diveT * 9.8; // exp(9.8) ~ 18,000x magnification
+            float scale = 2.6 * exp(-zoomExp);
+            // Smoothly pan camera centre from full Mandelbrot shape (-0.5, 0.0) into the chosen boundary section (poiRe, poiIm)
+            vec2 camCenter = mix(vec2(-0.5, 0.0), poi, smoothstep(0.0, 2.2, zoomExp));
+            float camRot = sin(uTime * 0.12) * 0.28 * smoothstep(0.5, 3.5, zoomExp);
+            vec2 c = camCenter + rot2D(camRot) * cPos * scale;
+
+            // Subtle audio-reactive Julia perturbation at deep zoom levels so tendrils pulse with bass/mid
+            vec2 z = c;
+            vec2 cOrbit = c + vec2(cos(uTime * 0.45) * uBass, sin(uTime * 0.52) * uMid) * scale * 0.035;
+            const float maxIter = 96.0;
+            float iter = 0.0;
+            for (float i = 0.0; i < maxIter; i += 1.0) {
+                float r2 = dot(z, z);
+                if (r2 > 256.0) break;
+                z = vec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + cOrbit;
+                iter += 1.0;
+            }
+
+            vec3 fracCol = uBgCol.rgb * 0.08;
+            if (iter < maxIter) {
+                float nu = iter + 1.0 - log2(max(1.0, log2(max(1.0001, dot(z, z)))));
+                float cyc = nu * 0.11 - uTime * 0.35;
+                float w0 = 0.5 + 0.5 * sin(cyc * TAU);
+                float w1 = 0.5 + 0.5 * cos(cyc * TAU * 0.67 + 1.2);
+                float filament = pow(0.5 + 0.5 * sin(nu * 0.55 + uBass * 1.4), 2.2);
+                fracCol = mix(uCol0.rgb, uCol1.rgb, w0);
+                fracCol = mix(fracCol, uCol2.rgb, w1 * 0.72);
+                fracCol += vec3(0.95, 0.98, 1.0) * filament * (0.28 + 0.32 * uBeat);
+            } else {
+                // Interior cardioid/mini-brot subtle harmonic core glow
+                float intGlow = exp(-dot(z, z) * 2.4) * (0.22 + 0.25 * uBass);
+                fracCol = mix(uBgCol.rgb * 0.05, uCol2.rgb * 0.35, intGlow);
+            }
+            col = mix(col, fracCol, clamp((0.68 + 0.24 * uBass) * bIntensity, 0.0, 0.96));
         } else if (m == 4) {
             // Mode 4: Raymarched Shape Field (Smooth vanishing-point fade so zero sudden joint appears at r -> 0)
             float rotBase = uTime * 0.32;

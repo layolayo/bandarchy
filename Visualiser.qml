@@ -1930,12 +1930,13 @@ FocusScope {
 
             // Explicitly push dynamic time, audio, and smoothly blended palette uniforms to gpuShaderStage every frame
             // (since plain JS object mutations on root.engineState do not emit QML notify signals)
-            if (root.stageMode === "visualiser" && root.gpuShaderEnabled && root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) {
+            var l2FractalGpu = root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5
+            if (root.stageMode === "visualiser" && root.gpuShaderEnabled && ((root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || l2FractalGpu)) {
                 var st = root.engineState
                 var bT = st.backdropTime !== undefined ? st.backdropTime : (st.t || 0.0)
-                gpuShaderStage.uTime = bT
+                gpuShaderStage.uTime = l2FractalGpu ? (st.t || bT) : bT
                 gpuShaderStage.uL1Time = st.l1Time || 0.0
-                gpuShaderStage.uZoomTime = bT * 0.85
+                gpuShaderStage.uZoomTime = l2FractalGpu ? (st.zoomTime !== undefined ? st.zoomTime : (st.t || 0.0)) : (bT * 0.85)
                 gpuShaderStage.uBass = st.bassSmooth || 0.0
                 gpuShaderStage.uMid = st.midSmooth || 0.0
                 gpuShaderStage.uHigh = st.highSmooth || 0.0
@@ -2161,7 +2162,7 @@ FocusScope {
     ShaderEffect {
         id: gpuShaderStage
         anchors.fill: parent
-        visible: root.stageMode === "visualiser" && root.gpuShaderEnabled && root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)
+        visible: root.stageMode === "visualiser" && root.gpuShaderEnabled && ((root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || (root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5))
         fragmentShader: Qt.resolvedUrl("share/psychedelic.frag.qsb")
 
         property real uTime: 0.0
@@ -2177,11 +2178,12 @@ FocusScope {
         property real uL1Dim: root.layer1Dim
         property real uL2Enabled: (root.gpuShaderEnabled && root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) ? 1.0 : 0.0
         property real uL2Mode: root.backdropMode
+        property real uL2VizMode: (root.layer2Enabled && root.layer2VizEnabled) ? root.visualMode : -1.0
         property real uZoom: root.layer2Zoom
         property real uFacets: root.backdropSymmetry
         property real uComplexity: root.backdropIntensity
         property real uTracerCount: root.tracerCount
-        property real uTracerDir: 1.0
+        property real uTracerDir: (root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5) ? root.tracerDirection : root.backdropDirection
         property real uDriftX: 0.0
         property real uDriftY: 0.0
         property vector4d uBgCol: Qt.vector4d(root.backgroundColour.r, root.backgroundColour.g, root.backgroundColour.b, 1.0)
@@ -3779,8 +3781,8 @@ FocusScope {
 
                                 GridLayout {
                                     Layout.fillWidth: true
-                                    columns: 4
-                                    columnSpacing: 12
+                                    columns: 2
+                                    columnSpacing: 16
                                     rowSpacing: 5
 
                                     LayerSlider {

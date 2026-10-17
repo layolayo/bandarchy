@@ -1194,6 +1194,9 @@ console.log('OK');
         self.assertIn("Layout.preferredWidth: 138", viz_src)
         self.assertIn("function samplePaletteVec4(", viz_src)
         self.assertIn("function lerpVec4(", viz_src)
+        self.assertIn("property real uL2VizMode:", viz_src)
+        self.assertIn("var rows = 16", engine_src)
+        self.assertIn("var cols = 18", engine_src)
 
         # 2. Verify unified Rand buttons in drawer Tabs 1, 2, 3 (no duplicate Step Random buttons), orphaned L2 Tracers removed from App.qml, and Panel/Service cava gating
         self.assertNotIn("🎲 Step Random L2", viz_src)
@@ -1241,8 +1244,8 @@ stepState(stBreathe, bands, true, normaliseConfig({ backdropDirection: 0, backdr
 if (!(stTowards.backdropTime > 0 && stAway.backdropTime < 0)) {
     throw new Error('Tri-state backdropDirection failed: towards=' + stTowards.backdropTime + ' away=' + stAway.backdropTime);
 }
-if (!Array.isArray(stTowards.eqRidgeHistory) || stTowards.eqRidgeHistory.length === 0) {
-    throw new Error('Expected stepState to populate state.eqRidgeHistory for 3D Waterfall Ridges');
+if (!Array.isArray(stTowards.eqRidgeHistory) || stTowards.eqRidgeHistory.length === 0 || stTowards.eqRidgeHistory[0].stepIdx === undefined) {
+    throw new Error('Expected stepState to populate state.eqRidgeHistory with world stepIdx for 3D Waterfall Ridges and Tralis Voxel City');
 }
 if (!stTowards.shockwaves.length || stTowards.shockwaves[0].sizeMul === undefined || stTowards.shockwaves[0].spinX === undefined) {
     throw new Error('Expected stepState to populate per-shape randomised sizeMul and spinX on shockwaves');
@@ -1384,6 +1387,15 @@ for (const craftKind of [0, 1, 2]) {
     if (ctxSw.lineCount < 24) {
         throw new Error('append3DStarWarsFighter failed for craftKind=' + craftKind + ': lineCount=' + ctxSw.lineCount);
     }
+}
+
+// Verify Layer #2 Fractals (visualMode === 5) renders Mandelbrot/Julia boundary dive cleanly
+const ctxFrac = makeMockCtx();
+renderFrame(ctxFrac, 640, 360, stTowards, 5, theme, [], 'album-art', [], normaliseConfig({
+    layer1Enabled: false, layer2Enabled: true, layer2VizEnabled: true, visualMode: 5, layer3Enabled: false
+}, 5, []), null);
+if (ctxFrac.strokeCount < 4 || ctxFrac.lineCount < 50) {
+    throw new Error('drawMode5JuliaFractals failed to render boundary filaments: strokeCount=' + ctxFrac.strokeCount + ' lineCount=' + ctxFrac.lineCount);
 }
 console.log('OK');
 """
