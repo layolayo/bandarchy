@@ -32,8 +32,11 @@ import tempfile
 import time
 import unicodedata
 
+os.umask(0o077)
+
 if len(sys.argv) < 2 or sys.argv[1] not in ("status", "now", "cmd", "visualiser-config", "kill", "restart"):
     import concurrent.futures
+    import ipaddress
     import sqlite3
     import ssl
     import urllib.error
@@ -52,6 +55,7 @@ ART_DIR = os.path.join(CACHE_DIR, "art")
 ASCII_DIR = os.path.join(CACHE_DIR, "ascii")
 
 SETTINGS_FILE = os.path.join(CONFIG_DIR, "settings.json")
+CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 AUTH_FILE = os.path.join(CONFIG_DIR, "auth.json")
 FAVOURITES_FILE = os.path.join(CONFIG_DIR, "favourites.json")
 PLAYLISTS_FILE = os.path.join(CONFIG_DIR, "playlists.json")
@@ -69,7 +73,38 @@ LOG_FILE = os.path.join(CACHE_DIR, "bandarchy.log")
 SCREENSAVER_TXT_FILE = os.path.join(CACHE_DIR, "screensaver-art.txt")
 STATUS_COUNTS_FILE = os.path.join(CACHE_DIR, "status_counts.json")
 
-RUNTIME_DIR = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+
+def _resolve_runtime_dir() -> str:
+    """Resolve a private, non-symlinked, user-owned 0o700 runtime directory (never /tmp)."""
+    uid = os.getuid()
+    candidates = []
+    xdg_rt = (os.environ.get("XDG_RUNTIME_DIR") or "").strip()
+    if xdg_rt:
+        candidates.append(os.path.join(xdg_rt, "bandarchy"))
+    candidates.append(f"/run/user/{uid}/bandarchy")
+    candidates.append(os.path.join(CACHE_DIR, "runtime"))
+    for cand in candidates:
+        parent = os.path.dirname(os.path.abspath(cand))
+        try:
+            if os.path.exists(parent):
+                pst = os.lstat(parent)
+                if stat.S_ISLNK(pst.st_mode) or not stat.S_ISDIR(pst.st_mode) or pst.st_uid != uid:
+                    continue
+            os.makedirs(cand, mode=0o700, exist_ok=True)
+            st = os.lstat(cand)
+            if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode) or st.st_uid != uid:
+                continue
+            os.chmod(cand, 0o700)
+            return cand
+        except OSError:
+            continue
+    fallback = os.path.join(CACHE_DIR, "runtime")
+    os.makedirs(fallback, mode=0o700, exist_ok=True)
+    os.chmod(fallback, 0o700)
+    return fallback
+
+
+RUNTIME_DIR = _resolve_runtime_dir()
 IPC_SOCKET = os.environ.get("BANDARCHY_MPV_SOCKET") or os.path.join(
     RUNTIME_DIR, "bandarchy.sock"
 )
@@ -81,20 +116,52 @@ DEFAULT_LOCAL_DIRS = [
 ]
 
 OMARCHY_BIN_DIR = os.path.join(HOME, "omarchy", "bin")
+TRUSTED_BIN_DIRS = (
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+    OMARCHY_BIN_DIR,
+)
+
+
+def resolve_bin(name: str, extra_dirs: tuple[str, ...] = (), required: bool = False) -> str:
+    """Resolve an executable from trusted system/Omarchy directories with ownership & mode checks."""
+    uid = os.getuid()
+    for d in (*TRUSTED_BIN_DIRS, *extra_dirs):
+        if not d:
+            continue
+        cand = os.path.join(d, name)
+        try:
+            st = os.stat(cand)
+            if (
+                stat.S_ISREG(st.st_mode)
+                and (st.st_mode & 0o111)
+                and not (st.st_mode & stat.S_IWOTH)
+                and st.st_uid in (0, uid)
+            ):
+                return cand
+        except OSError:
+            continue
+    if required:
+        raise BandarchyError(f"required trusted binary not found: {name}")
+    return ""
+
+
 TRANSCODE_ASCII_BIN = (
-    shutil.which("omarchy-transcode-ascii")
+    resolve_bin("omarchy-transcode-ascii")
     or os.path.join(OMARCHY_BIN_DIR, "omarchy-transcode-ascii")
 )
 OMARCHY_ASCII_BIN = (
-    shutil.which("omarchy-ascii")
+    resolve_bin("omarchy-ascii")
     or os.path.join(OMARCHY_BIN_DIR, "omarchy-ascii")
 )
-TTFX_BIN = shutil.which("ttfx") or "/usr/bin/ttfx"
+TTFX_BIN = resolve_bin("ttfx") or "/usr/bin/ttfx"
 
 # Safety ceilings on untrusted network/disk data
 MAX_HTTP_BYTES = 32 * 1024 * 1024
 MAX_ART_BYTES = 16 * 1024 * 1024
 MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB archive ceiling
+MAX_ARCHIVE_FILES = 500
 MAX_COLLECTION_ITEMS = 50_000
 MAX_FIELD_CHARS = 512
 MAX_URL_CHARS = 2048
@@ -194,48 +261,133 @@ def ensure_private_dir(path: str) -> str:
     os.makedirs(path, mode=0o700, exist_ok=True)
     try:
         st = os.lstat(path)
-        if stat.S_ISLNK(st.st_mode):
-            raise BandarchyError(f"refusing symlinked state directory: {path}")
+        if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
+            raise BandarchyError(f"refusing symlinked or non-directory path: {path}")
+        if st.st_uid != os.getuid():
+            raise BandarchyError(f"refusing foreign-owned directory: {path}")
+        if (st.st_mode & 0o777) != 0o700:
+            os.chmod(path, 0o700)
     except OSError:
         pass
     return path
 
 
-def atomic_write(path: str, data: bytes, mode: int = 0o600, fatal: bool = True) -> None:
-    parent = os.path.dirname(os.path.abspath(path))
+def _make_private_temp_file(prefix: str = "ba_", suffix: str = ".tmp") -> str:
+    """Create a 0o600 temporary file with O_CREAT | O_EXCL | O_NOFOLLOW inside RUNTIME_DIR (never /tmp)."""
+    rt_dir = ensure_private_dir(RUNTIME_DIR)
+    tmp_path = os.path.join(rt_dir, f"{prefix}{secrets.token_hex(8)}{suffix}")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(tmp_path, flags, 0o600)
     try:
-        ensure_private_dir(parent)
-        tmp_name = f".{os.path.basename(path)}.{secrets.token_hex(6)}.tmp"
-        tmp_path = os.path.join(parent, tmp_name)
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-        if hasattr(os, "O_NOFOLLOW"):
-            flags |= os.O_NOFOLLOW
-        fd = os.open(tmp_path, flags, mode)
+        os.fchmod(fd, 0o600)
+    finally:
+        os.close(fd)
+    return tmp_path
+
+
+def safe_write_bytes(path: str, data: bytes, mode: int = 0o600, fatal: bool = True) -> None:
+    """Atomically write bytes to `path` via mkstemp(dir=target_dir) + fchmod(0o600) + fsync + os.replace."""
+    abs_path = os.path.abspath(path)
+    target_dir = os.path.dirname(abs_path)
+    tmp_path = ""
+    try:
+        ensure_private_dir(target_dir)
+        if os.path.lexists(abs_path):
+            st = os.lstat(abs_path)
+            if stat.S_ISLNK(st.st_mode):
+                raise BandarchyError(f"refusing symlinked file: {abs_path}")
+            if st.st_uid != os.getuid():
+                raise BandarchyError(f"refusing foreign-owned file: {abs_path}")
+        fd, tmp_path = tempfile.mkstemp(
+            prefix=f".{os.path.basename(abs_path)}.",
+            suffix=".tmp",
+            dir=target_dir,
+        )
         try:
+            os.fchmod(fd, mode)
             os.write(fd, data)
             os.fsync(fd)
         finally:
             os.close(fd)
-        os.replace(tmp_path, path)
+        os.replace(tmp_path, abs_path)
+        tmp_path = ""
     except Exception as exc:
+        if tmp_path and os.path.lexists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
         if fatal:
-            die(f"failed to write {os.path.basename(path)}: {exc}")
+            die(f"failed to write {os.path.basename(abs_path)}: {exc}")
 
 
-def read_json(path: str, default=None):
+def safe_write_text(path: str, text: str, mode: int = 0o600, fatal: bool = True) -> None:
+    safe_write_bytes(path, str(text).encode("utf-8"), mode=mode, fatal=fatal)
+
+
+def safe_read_bytes(path: str, max_bytes: int = MAX_HTTP_BYTES) -> bytes | None:
+    """Read regular file owned by current user with O_NOFOLLOW and size ceiling."""
     try:
-        st = os.lstat(path)
-        if stat.S_ISLNK(st.st_mode) or st.st_size > MAX_HTTP_BYTES:
-            return default
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        st_l = os.lstat(path)
+        if stat.S_ISLNK(st_l.st_mode) or not stat.S_ISREG(st_l.st_mode):
+            return None
+        if st_l.st_uid != os.getuid() or st_l.st_size > max_bytes:
+            return None
+        flags = os.O_RDONLY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(path, flags)
+        try:
+            st_f = os.fstat(fd)
+            if not stat.S_ISREG(st_f.st_mode) or st_f.st_uid != os.getuid() or st_f.st_size > max_bytes:
+                return None
+            chunks: list[bytes] = []
+            total = 0
+            while True:
+                chunk = os.read(fd, min(65536, max_bytes + 1 - total))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total += len(chunk)
+                if total > max_bytes:
+                    return None
+            return b"".join(chunks)
+        finally:
+            os.close(fd)
+    except OSError:
+        return None
+
+
+def safe_read_text(path: str, max_bytes: int = MAX_HTTP_BYTES) -> str | None:
+    raw = safe_read_bytes(path, max_bytes=max_bytes)
+    if raw is None:
+        return None
+    return raw.decode("utf-8", errors="replace")
+
+
+def safe_load_json(path: str, default=None, max_bytes: int = MAX_HTTP_BYTES):
+    raw_text = safe_read_text(path, max_bytes=max_bytes)
+    if raw_text is None:
+        return default
+    try:
+        return json.loads(raw_text)
     except Exception:
         return default
 
 
+def atomic_write(path: str, data: bytes, mode: int = 0o600, fatal: bool = True) -> None:
+    safe_write_bytes(path, data, mode=mode, fatal=fatal)
+
+
+def read_json(path: str, default=None):
+    return safe_load_json(path, default=default, max_bytes=MAX_HTTP_BYTES)
+
+
 def write_json(path: str, payload, mode: int = 0o600) -> None:
     raw = (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
-    atomic_write(path, raw, mode=mode)
+    safe_write_bytes(path, raw, mode=mode)
 
 
 def log_failure(message: str) -> None:
@@ -244,12 +396,12 @@ def log_failure(message: str) -> None:
         line = redact(message).replace("\n", " ")[:1000]
         stamp = time.strftime("%Y-%m-%d %H:%M:%S")
         existing = []
-        if os.path.exists(LOG_FILE) and not os.path.islink(LOG_FILE):
-            with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
-                existing = [l.rstrip("\n") for l in f.readlines()[-LOG_LINES:]]
+        prev_txt = safe_read_text(LOG_FILE, max_bytes=512 * 1024)
+        if prev_txt:
+            existing = [l.rstrip("\n") for l in prev_txt.splitlines()[-LOG_LINES:]]
         existing.append(f"{stamp} {line}")
         existing = existing[-LOG_LINES:]
-        atomic_write(LOG_FILE, ("\n".join(existing) + "\n").encode("utf-8"), 0o600, fatal=False)
+        safe_write_bytes(LOG_FILE, ("\n".join(existing) + "\n").encode("utf-8"), 0o600, fatal=False)
     except Exception:
         pass
 
@@ -319,6 +471,8 @@ def load_settings() -> dict:
         "localDirs": DEFAULT_LOCAL_DIRS,
         "preferredFormat": "flac",
         "autoImportZips": True,
+        "top_bar_led": True,
+        "topBarLedEnabled": True,
         "bgEnabled": True,
         "bgMode": 0,
         "bgTrail": 0.26,
@@ -334,9 +488,18 @@ def load_settings() -> dict:
         "glyphScale": 1.0,
         "apiBase": os.environ.get("BANDARCHY_API_BASE") or os.environ.get("BANDCAMP_API_BASE") or "https://bandcamp.com",
     }
+    cfg_saved = read_json(CONFIG_FILE, {})
+    if isinstance(cfg_saved, dict):
+        defaults.update({k: v for k, v in cfg_saved.items() if v is not None})
     saved = read_json(SETTINGS_FILE, {})
     if isinstance(saved, dict):
         defaults.update({k: v for k, v in saved.items() if v is not None})
+    if "top_bar_led" in saved and "topBarLedEnabled" not in saved:
+        defaults["topBarLedEnabled"] = bool(saved["top_bar_led"])
+    elif "topBarLedEnabled" in saved and "top_bar_led" not in saved:
+        defaults["top_bar_led"] = bool(saved["topBarLedEnabled"])
+    elif "top_bar_led" in cfg_saved and "topBarLedEnabled" not in cfg_saved:
+        defaults["topBarLedEnabled"] = bool(cfg_saved["top_bar_led"])
     env_base = os.environ.get("BANDARCHY_API_BASE") or os.environ.get("BANDCAMP_API_BASE")
     if env_base:
         defaults["apiBase"] = env_base
@@ -346,8 +509,57 @@ def load_settings() -> dict:
 _keyring_cache: dict[str, bytes] = {}
 
 
+def _aes_128_cbc_decrypt_inprocess(ct: bytes, key: bytes, iv: bytes) -> bytes:
+    """Decrypt AES-128-CBC ciphertext in-process via ctypes libcrypto.so.3 without exposing keys in argv."""
+    if not ct or len(ct) % 16 != 0 or len(key) != 16 or len(iv) != 16:
+        return b""
+    import ctypes
+    libcrypto = None
+    for lib_name in ("libcrypto.so.3", "libcrypto.so.1.1", "libcrypto.so"):
+        try:
+            libcrypto = ctypes.CDLL(lib_name)
+            break
+        except OSError:
+            continue
+    if libcrypto is None:
+        return b""
+    libcrypto.EVP_CIPHER_CTX_new.restype = ctypes.c_void_p
+    libcrypto.EVP_CIPHER_CTX_free.argtypes = [ctypes.c_void_p]
+    libcrypto.EVP_aes_128_cbc.restype = ctypes.c_void_p
+    libcrypto.EVP_DecryptInit_ex.argtypes = [
+        ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p
+    ]
+    libcrypto.EVP_DecryptInit_ex.restype = ctypes.c_int
+    libcrypto.EVP_DecryptUpdate.argtypes = [
+        ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_int), ctypes.c_char_p, ctypes.c_int
+    ]
+    libcrypto.EVP_DecryptUpdate.restype = ctypes.c_int
+    libcrypto.EVP_DecryptFinal_ex.argtypes = [
+        ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_int)
+    ]
+    libcrypto.EVP_DecryptFinal_ex.restype = ctypes.c_int
+
+    ctx = libcrypto.EVP_CIPHER_CTX_new()
+    if not ctx:
+        return b""
+    try:
+        out_buf = ctypes.create_string_buffer(len(ct) + 32)
+        out_len = ctypes.c_int(0)
+        final_len = ctypes.c_int(0)
+        if libcrypto.EVP_DecryptInit_ex(ctx, libcrypto.EVP_aes_128_cbc(), None, key, iv) != 1:
+            return b""
+        if libcrypto.EVP_DecryptUpdate(ctx, out_buf, ctypes.byref(out_len), ct, len(ct)) != 1:
+            return b""
+        tail_ptr = ctypes.cast(ctypes.addressof(out_buf) + out_len.value, ctypes.c_char_p)
+        if libcrypto.EVP_DecryptFinal_ex(ctx, tail_ptr, ctypes.byref(final_len)) != 1:
+            return b""
+        return out_buf.raw[: out_len.value + final_len.value]
+    finally:
+        libcrypto.EVP_CIPHER_CTX_free(ctx)
+
+
 def decrypt_chromium_cookie_value(enc: bytes, app_name: str = "chrome") -> str:
-    """Decrypt Linux Chrome/Chromium/Brave v10/v11 AES-128-CBC SQLite cookie values."""
+    """Decrypt Linux Chrome/Chromium/Brave v10/v11 AES-128-CBC SQLite cookie values in-process."""
     if not enc or not isinstance(enc, (bytes, bytearray)):
         return ""
     raw_enc = bytes(enc)
@@ -361,18 +573,20 @@ def decrypt_chromium_cookie_value(enc: bytes, app_name: str = "chrome") -> str:
     if raw_enc.startswith(b"v11"):
         if app_name not in _keyring_cache:
             secret_pw = b""
-            for cand_app in (app_name, "chrome", "chromium", "brave"):
-                try:
-                    r = subprocess.run(
-                        ["secret-tool", "lookup", "application", cand_app],
-                        capture_output=True,
-                        timeout=1.5,
-                    )
-                    if r.returncode == 0 and r.stdout.strip():
-                        secret_pw = r.stdout.strip()
-                        break
-                except Exception:
-                    continue
+            secret_tool_bin = resolve_bin("secret-tool")
+            if secret_tool_bin:
+                for cand_app in (app_name, "chrome", "chromium", "brave"):
+                    try:
+                        r = subprocess.run(
+                            [secret_tool_bin, "lookup", "application", cand_app],
+                            capture_output=True,
+                            timeout=1.5,
+                        )
+                        if r.returncode == 0 and r.stdout.strip():
+                            secret_pw = r.stdout.strip()
+                            break
+                    except Exception:
+                        continue
             _keyring_cache[app_name] = secret_pw or b"peanuts"
         pw = _keyring_cache[app_name]
 
@@ -382,15 +596,9 @@ def decrypt_chromium_cookie_value(enc: bytes, app_name: str = "chrome") -> str:
     if not ct or len(ct) % 16 != 0:
         return ""
     try:
-        p = subprocess.run(
-            ["openssl", "enc", "-d", "-aes-128-cbc", "-K", key.hex(), "-iv", iv.hex()],
-            input=ct,
-            capture_output=True,
-            timeout=1.5,
-        )
-        if p.returncode != 0 or not p.stdout:
+        pt = _aes_128_cbc_decrypt_inprocess(ct, key, iv)
+        if not pt:
             return ""
-        pt = p.stdout
         # Chromium >= 130 prepends a 32-byte SHA-256 domain digest before the plaintext cookie value
         if len(pt) > 32:
             tail = pt[32:]
@@ -407,7 +615,7 @@ def decrypt_chromium_cookie_value(enc: bytes, app_name: str = "chrome") -> str:
 
 
 def discover_from_browsers() -> dict:
-    """Scan local Chrome/Chromium/Brave/Firefox/Zen SQLite history & cookies safely via temp copy."""
+    """Scan local Chrome/Chromium/Brave/Firefox/Zen SQLite history & cookies safely via RUNTIME_DIR temp copy."""
     username = ""
     identity_cookie = ""
     albums_by_url: dict[str, dict] = {}
@@ -438,12 +646,14 @@ def discover_from_browsers() -> dict:
 
     for pat in history_globs:
         for db_path in glob.glob(pat):
-            if not os.path.isfile(db_path):
+            if not os.path.isfile(db_path) or os.path.islink(db_path):
                 continue
-            tmp_fd, tmp_path = tempfile.mkstemp(prefix="ba_hist_", suffix=".sqlite")
-            os.close(tmp_fd)
+            tmp_path = _make_private_temp_file(prefix="ba_hist_", suffix=".sqlite")
             try:
-                shutil.copy2(db_path, tmp_path)
+                raw_db = safe_read_bytes(db_path, max_bytes=128 * 1024 * 1024)
+                if not raw_db:
+                    continue
+                safe_write_bytes(tmp_path, raw_db, mode=0o600, fatal=False)
                 conn = sqlite3.connect(tmp_path)
                 cur = conn.cursor()
                 rows = cur.execute(
@@ -520,15 +730,17 @@ def discover_from_browsers() -> dict:
     has_identity_cookie = False
     for app_name, pat in cookie_globs:
         for db_path in glob.glob(pat):
-            if not os.path.isfile(db_path):
+            if not os.path.isfile(db_path) or os.path.islink(db_path):
                 continue
-            tmp_fd, tmp_path = tempfile.mkstemp(prefix="ba_cook_", suffix=".sqlite")
-            os.close(tmp_fd)
+            tmp_path = _make_private_temp_file(prefix="ba_cook_", suffix=".sqlite")
             try:
-                shutil.copy2(db_path, tmp_path)
+                raw_db = safe_read_bytes(db_path, max_bytes=64 * 1024 * 1024)
+                if not raw_db:
+                    continue
+                safe_write_bytes(tmp_path, raw_db, mode=0o600, fatal=False)
                 conn = sqlite3.connect(tmp_path)
                 rows = conn.execute(
-                    "SELECT host_key, name, value, encrypted_value FROM cookies WHERE host_key LIKE '%bandcamp.com%'"
+                    "SELECT host_key, name, value, encrypted_value FROM cookies WHERE host_key LIKE '%bandcamp.com'"
                 ).fetchall()
                 for host_key, name, val, enc_val in rows:
                     hk = (host_key or "").lstrip(".").lower()
@@ -556,15 +768,17 @@ def discover_from_browsers() -> dict:
     ]
     for pat in moz_globs:
         for db_path in glob.glob(pat):
-            if not os.path.isfile(db_path):
+            if not os.path.isfile(db_path) or os.path.islink(db_path):
                 continue
-            tmp_fd, tmp_path = tempfile.mkstemp(prefix="ba_moz_", suffix=".sqlite")
-            os.close(tmp_fd)
+            tmp_path = _make_private_temp_file(prefix="ba_moz_", suffix=".sqlite")
             try:
-                shutil.copy2(db_path, tmp_path)
+                raw_db = safe_read_bytes(db_path, max_bytes=64 * 1024 * 1024)
+                if not raw_db:
+                    continue
+                safe_write_bytes(tmp_path, raw_db, mode=0o600, fatal=False)
                 conn = sqlite3.connect(tmp_path)
                 rows = conn.execute(
-                    "SELECT host, name, value FROM moz_cookies WHERE host LIKE '%bandcamp.com%'"
+                    "SELECT host, name, value FROM moz_cookies WHERE host LIKE '%bandcamp.com'"
                 ).fetchall()
                 for host_key, name, val in rows:
                     hk = (host_key or "").lstrip(".").lower()
@@ -595,7 +809,60 @@ def discover_from_browsers() -> dict:
 # HTTP & Bandcamp Scraping / API Client
 # --------------------------------------------------------------------------- #
 
-def build_cookie_header() -> str:
+def _is_bandcamp_cookie_host(host: str) -> bool:
+    h = (host or "").lower().strip(".")
+    return h in ("bandcamp.com", "127.0.0.1", "localhost", "::1") or h.endswith(".bandcamp.com")
+
+
+def _is_allowed_remote_host(host: str) -> bool:
+    h = (host or "").lower().strip(".")
+    return (
+        h in ("bandcamp.com", "bcbits.com")
+        or h.endswith(".bandcamp.com")
+        or h.endswith(".bcbits.com")
+    )
+
+
+def validate_remote_url(url: str) -> urllib.parse.ParseResult:
+    """Validate that `url` targets an allowed Bandcamp/bcbits HTTPS endpoint (or localhost test server)."""
+    if not url or not isinstance(url, str):
+        raise BandarchyError("empty or invalid URL")
+    if any(ch in url for ch in ("\r", "\n", "\x00")) or url.startswith("-"):
+        raise BandarchyError("refusing URL with control characters or leading hyphen")
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise BandarchyError(f"unsupported URL scheme: {parsed.scheme}")
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise BandarchyError("missing URL hostname")
+    if parsed.scheme == "http":
+        if host not in ("127.0.0.1", "localhost", "::1"):
+            raise BandarchyError("plain HTTP is only permitted for localhost test servers")
+        return parsed
+    if not _is_allowed_remote_host(host):
+        raise BandarchyError(f"refusing untrusted remote host: {host}")
+    return parsed
+
+
+def _check_resolved_ip_public(ip_str: str) -> None:
+    """Reject private, loopback, link-local, or cloud-metadata IP addresses for HTTPS requests."""
+    import ipaddress as _ipa
+    addr = _ipa.ip_address(ip_str)
+    if (
+        addr.is_private
+        or addr.is_loopback
+        or addr.is_link_local
+        or addr.is_multicast
+        or addr.is_unspecified
+        or addr.is_reserved
+    ):
+        raise BandarchyError(f"refusing private or non-global IP address: {ip_str}")
+
+
+def build_cookie_header(host: str = "bandcamp.com") -> str:
+    """Return Bandcamp session Cookie header strictly for bandcamp.com / *.bandcamp.com."""
+    if not _is_bandcamp_cookie_host(host):
+        return ""
     settings = load_settings()
     if settings.get("loggedOut"):
         return ""
@@ -603,12 +870,16 @@ def build_cookie_header() -> str:
     parts = []
     if auth.get("identity"):
         val = str(auth["identity"]).strip()
-        if val.startswith("identity="):
-            parts.append(val)
-        else:
-            parts.append(f"identity={val}")
+        val = "".join(ch for ch in val if 32 <= ord(ch) < 127 and ch not in ("\r", "\n", ";"))
+        if val:
+            if val.startswith("identity="):
+                parts.append(val)
+            else:
+                parts.append(f"identity={val}")
     if auth.get("cookies"):
-        parts.append(str(auth["cookies"]).strip())
+        c_val = "".join(ch for ch in str(auth["cookies"]).strip() if 32 <= ord(ch) < 127 and ch not in ("\r", "\n"))
+        if c_val:
+            parts.append(c_val)
     return "; ".join(p for p in parts if p)
 
 
@@ -647,9 +918,9 @@ def _fastly_https_exchange(
 ) -> tuple[int, dict[str, str], bytes]:
     """Perform an HTTPS request to bandcamp.com / *.bandcamp.com / *.bcbits.com over
     Fastly's edge TLS (`server_hostname='f4.bcbits.com'` when *.bandcamp.com SNI is
-    reset by middleboxes) with full CA certificate verification.
+    reset by middleboxes) with full CA certificate and SSRF IP verification.
     """
-    parsed = urllib.parse.urlparse(url)
+    parsed = validate_remote_url(url)
     host = (parsed.hostname or "").lower()
     port = parsed.port or 443
     path = (parsed.path or "/") + (("?" + parsed.query) if parsed.query else "")
@@ -661,6 +932,9 @@ def _fastly_https_exchange(
     if not addrs:
         raise BandarchyError(f"cannot resolve host: {host}")
     target_ip = addrs[0][4][0]
+    _check_resolved_ip_public(target_ip)
+
+    effective_cookie = cookie_hdr if _is_bandcamp_cookie_host(host) else ""
 
     ctx = ssl.create_default_context()
     with socket.create_connection((target_ip, port), timeout=timeout) as raw_sock:
@@ -674,8 +948,8 @@ def _fastly_https_exchange(
                 "Accept-Encoding: identity",
                 "Connection: close",
             ]
-            if cookie_hdr:
-                req_lines.append(f"Cookie: {cookie_hdr}")
+            if effective_cookie:
+                req_lines.append(f"Cookie: {effective_cookie}")
             if body_bytes is not None:
                 req_lines.append("Content-Type: application/json")
                 req_lines.append(f"Content-Length: {len(body_bytes)}")
@@ -732,14 +1006,17 @@ def resolve_stream_redirect(url: str, timeout: float = 6.0) -> str:
     """
     if not url or not url.startswith("https://"):
         return url
-    parsed = urllib.parse.urlparse(url)
+    try:
+        parsed = validate_remote_url(url)
+    except BandarchyError:
+        return url
     host = (parsed.hostname or "").lower()
     if not (host == "bandcamp.com" or host.endswith(".bandcamp.com")):
         return url
     if "stream_redirect" not in (parsed.path or "") and "/download/track" not in (parsed.path or ""):
         return url
     try:
-        cookie_hdr = build_cookie_header()
+        cookie_hdr = build_cookie_header(host)
         status, hdrs, _ = _fastly_https_exchange(
             url,
             method="GET",
@@ -753,6 +1030,7 @@ def resolve_stream_redirect(url: str, timeout: float = 6.0) -> str:
                 loc = "https:" + loc
             elif loc.startswith("/"):
                 loc = f"https://{host}{loc}"
+            validate_remote_url(loc)
             return bounded_text(loc, MAX_URL_CHARS)
     except Exception:
         pass
@@ -767,18 +1045,13 @@ def http_request(
     max_bytes: int = MAX_HTTP_BYTES,
     on_chunk=None,
 ) -> bytes:
-    parsed = urllib.parse.urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        raise BandarchyError(f"unsupported URL scheme: {parsed.scheme}")
-    if parsed.scheme == "http" and parsed.hostname not in ("127.0.0.1", "localhost", "::1"):
-        raise BandarchyError("plain HTTP is only permitted for localhost test servers")
-
-    cookie_hdr = build_cookie_header()
+    parsed = validate_remote_url(url)
+    host = (parsed.hostname or "").lower()
+    cookie_hdr = build_cookie_header(host)
     body_bytes = None
     if json_body is not None:
         body_bytes = json.dumps(json_body).encode("utf-8")
 
-    host = (parsed.hostname or "").lower()
     is_bandcamp_https = parsed.scheme == "https" and (
         host == "bandcamp.com" or host.endswith(".bandcamp.com")
     )
@@ -790,29 +1063,33 @@ def http_request(
         cur_body = body_bytes
         for _ in range(6):
             try:
+                p_cur = validate_remote_url(cur_url)
+                cur_host = (p_cur.hostname or "").lower()
                 status, hdrs, resp_body = _fastly_https_exchange(
                     cur_url,
                     method=cur_method,
                     body_bytes=cur_body,
-                    cookie_hdr=cookie_hdr,
+                    cookie_hdr=build_cookie_header(cur_host),
                     timeout=timeout,
                     max_bytes=max_bytes,
                 )
                 if status in (301, 302, 303, 307, 308) and hdrs.get("location"):
                     loc = hdrs["location"]
-                    p_cur = urllib.parse.urlparse(cur_url)
                     if loc.startswith("//"):
                         loc = f"{p_cur.scheme}:{loc}"
                     elif loc.startswith("/"):
                         loc = f"{p_cur.scheme}://{p_cur.netloc}{loc}"
+                    p_next = validate_remote_url(loc)
                     cur_url = loc
                     if status in (301, 302, 303):
                         cur_method = "GET"
                         cur_body = None
-                    p_next = urllib.parse.urlparse(cur_url)
                     nhost = (p_next.hostname or "").lower()
                     if not (nhost == "bandcamp.com" or nhost.endswith(".bandcamp.com")):
                         url = cur_url
+                        parsed = p_next
+                        host = nhost
+                        cookie_hdr = build_cookie_header(host)
                         method = cur_method
                         body_bytes = cur_body
                         break
@@ -830,24 +1107,48 @@ def http_request(
             except Exception:
                 break
 
+    if parsed.scheme == "https":
+        addrs = socket.getaddrinfo(host, parsed.port or 443, socket.AF_INET, socket.SOCK_STREAM)
+        if not addrs:
+            raise BandarchyError(f"cannot resolve host: {host}")
+        _check_resolved_ip_public(addrs[0][4][0])
+
     headers = {
         "User-Agent": USER_AGENT,
         "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-GB,en;q=0.9",
     }
-    if cookie_hdr:
+    if cookie_hdr and _is_bandcamp_cookie_host(host):
         headers["Cookie"] = cookie_hdr
     if body_bytes is not None:
         headers["Content-Type"] = "application/json"
 
+    class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, hdrs, newurl):
+            p_new = validate_remote_url(newurl)
+            new_host = (p_new.hostname or "").lower()
+            if p_new.scheme == "https":
+                r_addrs = socket.getaddrinfo(new_host, p_new.port or 443, socket.AF_INET, socket.SOCK_STREAM)
+                if not r_addrs:
+                    raise BandarchyError(f"cannot resolve redirect host: {new_host}")
+                _check_resolved_ip_public(r_addrs[0][4][0])
+            new_req = super().redirect_request(req, fp, code, msg, hdrs, newurl)
+            if new_req is not None and not _is_bandcamp_cookie_host(new_host):
+                new_req.headers.pop("Cookie", None)
+                new_req.unredirected_hdrs.pop("Cookie", None)
+            return new_req
+
+    opener = urllib.request.build_opener(_SafeRedirectHandler)
     try:
         req = urllib.request.Request(url, data=body_bytes, headers=headers, method=method)
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with opener.open(req, timeout=timeout) as resp:
             content_len = 0
             try:
                 content_len = int(resp.headers.get("Content-Length") or 0)
             except Exception:
                 content_len = 0
+            if content_len > max_bytes:
+                raise BandarchyError(f"response from {parsed.netloc} exceeded {max_bytes} bytes")
             chunks = []
             total = 0
             last_report = 0.0
@@ -871,29 +1172,6 @@ def http_request(
     except BandarchyError:
         raise
     except Exception as urllib_exc:
-        cmd = [
-            "curl",
-            "-sSL",
-            "--max-time",
-            str(max(2, int(timeout))),
-            "--max-filesize",
-            str(max_bytes),
-            "-A",
-            USER_AGENT,
-        ]
-        if cookie_hdr:
-            cmd.extend(["-H", f"Cookie: {cookie_hdr}"])
-        if json_body is not None:
-            cmd.extend(["-X", method, "-H", "Content-Type: application/json", "-d", json.dumps(json_body)])
-        cmd.append(url)
-        try:
-            r = subprocess.run(cmd, capture_output=True, timeout=timeout + 2)
-            if r.returncode == 0 and r.stdout:
-                if len(r.stdout) > max_bytes:
-                    raise BandarchyError("response exceeded size ceiling")
-                return r.stdout
-        except Exception:
-            pass
         raise BandarchyError(f"cannot reach {parsed.netloc}: {urllib_exc}")
 
 
@@ -1709,13 +1987,17 @@ def scan_local_directories(local_dirs: list[str]) -> list[dict]:
 
 def safe_extract_zip(zip_path: str, dest_dir: str) -> list[str]:
     extracted: list[str] = []
-    os.makedirs(dest_dir, mode=0o755, exist_ok=True)
+    os.makedirs(dest_dir, mode=0o700, exist_ok=True)
     real_dest = os.path.realpath(dest_dir)
     with zipfile.ZipFile(zip_path, "r") as zf:
-        total_uncompressed = sum(info.file_size for info in zf.infolist())
+        infos = zf.infolist()
+        if len(infos) > MAX_ARCHIVE_FILES:
+            raise BandarchyError("archive exceeds maximum member count ceiling")
+        total_uncompressed = sum(info.file_size for info in infos)
         if total_uncompressed > MAX_DOWNLOAD_BYTES:
             raise BandarchyError("archive exceeds maximum uncompressed size ceiling")
-        for info in zf.infolist():
+        bytes_written = 0
+        for info in infos:
             name = info.filename
             if not name or name.endswith("/") or "__MACOSX" in name:
                 continue
@@ -1725,15 +2007,27 @@ def safe_extract_zip(zip_path: str, dest_dir: str) -> list[str]:
             base_name = os.path.basename(name)
             if base_name.startswith(".") or base_name.startswith("._"):
                 continue
-            target_path = os.path.realpath(os.path.join(real_dest, base_name))
-            if not target_path.startswith(real_dest + os.sep):
+            target_path = os.path.join(real_dest, base_name)
+            if os.path.islink(target_path):
+                raise BandarchyError(f"refusing symlink target in archive destination: {base_name}")
+            resolved_target = os.path.realpath(target_path)
+            if not resolved_target.startswith(real_dest + os.sep):
                 raise BandarchyError(f"refusing unsafe path in archive: {name}")
             mode = (info.external_attr >> 16) & 0o170000
             if mode == stat.S_IFLNK:
                 continue
-            with zf.open(info, "r") as src, open(target_path, "wb") as dst:
-                shutil.copyfileobj(src, dst)
-            extracted.append(target_path)
+            with zf.open(info, "r") as src:
+                fd = os.open(resolved_target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(fd, "wb") as dst:
+                    while True:
+                        chunk = src.read(65536)
+                        if not chunk:
+                            break
+                        bytes_written += len(chunk)
+                        if bytes_written > MAX_DOWNLOAD_BYTES:
+                            raise BandarchyError("archive stream exceeded maximum uncompressed byte ceiling")
+                        dst.write(chunk)
+            extracted.append(resolved_target)
     return extracted
 
 
@@ -1776,9 +2070,10 @@ def build_unified_collection(
     settings: dict,
     on_progress=None,
     fetch_remote: bool = True,
+    detect_browser: bool = False,
 ) -> dict:
     logged_out = bool(settings.get("loggedOut", False))
-    if logged_out:
+    if logged_out or not detect_browser:
         browser = {
             "username": "",
             "albums": [],
@@ -2435,8 +2730,9 @@ def mpv_stop() -> None:
 def mpv_launch(playlist_path: str, shuffle: bool = False, start_index: int = 0, loop: bool = False) -> None:
     mpv_stop()
     ensure_private_dir(os.path.dirname(IPC_SOCKET))
+    mpv_bin = resolve_bin("mpv", required=True)
     args = [
-        "mpv",
+        mpv_bin,
         "--no-video",
         "--audio-display=no",
         "--audio-client-name=Bandarchy",
@@ -2457,10 +2753,6 @@ def mpv_launch(playlist_path: str, shuffle: bool = False, start_index: int = 0, 
         args.append(f"--playlist-start={start_index}")
     if loop:
         args.append("--loop-playlist=inf")
-    extra = (os.environ.get("BANDARCHY_MPV_ARGS") or os.environ.get("BANDCAMP_MPV_ARGS") or "").strip()
-    if extra:
-        import shlex
-        args.extend(shlex.split(extra))
     subprocess.Popen(
         args,
         stdin=subprocess.DEVNULL,
@@ -2468,6 +2760,32 @@ def mpv_launch(playlist_path: str, shuffle: bool = False, start_index: int = 0, 
         stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
+    for _ in range(20):
+        if os.path.exists(IPC_SOCKET):
+            try:
+                os.chmod(IPC_SOCKET, 0o600)
+            except OSError:
+                pass
+            break
+        time.sleep(0.05)
+
+
+def sanitise_m3u_target(target: str) -> str:
+    """Validate and sanitise a playlist entry before writing to playlist.m3u (CRIT-6)."""
+    cleaned = re.sub(r"[\r\n\x00]+", "", str(target or "")).strip()
+    if not cleaned:
+        raise BandarchyError("refusing empty playlist target")
+    if cleaned.startswith("#") or cleaned.startswith("-"):
+        raise BandarchyError(f"refusing unsafe playlist directive or flag target: {cleaned[:40]}")
+    if "://" in cleaned or cleaned.lower().startswith(("http:", "https:")):
+        validate_remote_url(cleaned)
+        return cleaned
+    real_path = os.path.realpath(cleaned)
+    if not os.path.isabs(cleaned) or os.path.islink(cleaned) or not os.path.isfile(real_path):
+        raise BandarchyError(f"refusing non-regular local audio path: {cleaned}")
+    if not real_path.lower().endswith(AUDIO_EXTENSIONS):
+        raise BandarchyError(f"refusing unsupported local audio extension: {cleaned}")
+    return real_path
 
 
 def _resolve_direct_stream_targets(playable: list[dict], api_base: str = "https://bandcamp.com") -> list[dict]:
@@ -2586,11 +2904,16 @@ def start_queue(tracks: list[dict], source: dict, shuffle: bool = False, start_i
     if not tracks:
         die("no playable tracks found for that selection")
     lines = ["#EXTM3U"]
+    valid_tracks: list[dict] = []
     for t in tracks:
+        safe_target = sanitise_m3u_target(str(t.get("target") or ""))
         secs = int(t.get("duration") or 0)
-        label = f"{t.get('artist', '')} - {t.get('title', '')}".strip(" -")
+        label = re.sub(r"[\r\n\x00]+", " ", f"{t.get('artist', '')} - {t.get('title', '')}").strip(" -")
         lines.append(f"#EXTINF:{secs},{label}")
-        lines.append(str(t["target"]))
+        lines.append(safe_target)
+        tc = dict(t)
+        tc["target"] = safe_target
+        valid_tracks.append(tc)
     atomic_write(PLAYLIST_M3U_FILE, ("\n".join(lines) + "\n").encode("utf-8"), 0o600)
     write_json(
         QUEUE_FILE,
@@ -2598,17 +2921,17 @@ def start_queue(tracks: list[dict], source: dict, shuffle: bool = False, start_i
             "startedAt": int(time.time()),
             "source": source,
             "shuffle": shuffle,
-            "tracks": tracks,
+            "tracks": valid_tracks,
         },
     )
-    actual_idx = min(max(0, start_index), len(tracks) - 1)
-    first = tracks[actual_idx]
+    actual_idx = min(max(0, start_index), len(valid_tracks) - 1)
+    first = valid_tracks[actual_idx]
     record_history(first)
     mpv_launch(PLAYLIST_M3U_FILE, shuffle=shuffle, start_index=actual_idx, loop=loop)
     emit({
         "playing": True,
         "trackIndex": actual_idx,
-        "trackCount": len(tracks),
+        "trackCount": len(valid_tracks),
         "source": source,
         "shuffle": shuffle,
         "track": first,
@@ -2689,7 +3012,7 @@ def download_album_to_local(album: dict, preferred_format: str, settings: dict) 
     safe_folder = re.sub(r"[/\\:\*\?\"<>\|]+", "-", f"{artist} - {title}").strip(" .")
     dl_root = os.path.expanduser(settings.get("downloadDir") or DEFAULT_DOWNLOAD_DIR)
     dest_dir = os.path.join(dl_root, safe_folder)
-    os.makedirs(dest_dir, mode=0o755, exist_ok=True)
+    os.makedirs(dest_dir, mode=0o700, exist_ok=True)
 
     est_tracks = max(1, int(album.get("numTracks") or len(album.get("tracks") or []) or 1))
     state = {
@@ -2788,11 +3111,9 @@ def download_album_to_local(album: dict, preferred_format: str, settings: dict) 
                     on_chunk=_on_archive_chunk,
                 )
                 if payload[:4] == b"PK\x03\x04":
-                    tmp_fd, tmp_zip = tempfile.mkstemp(prefix="ba_dl_", suffix=".zip")
-                    os.close(tmp_fd)
+                    tmp_zip = _make_private_temp_file("ba_dl_", ".zip")
                     try:
-                        with open(tmp_zip, "wb") as f:
-                            f.write(payload)
+                        safe_write_bytes(tmp_zip, payload, mode=0o600)
                         state.update({
                             "trackIndex": est_tracks,
                             "trackTotal": est_tracks,
@@ -2808,7 +3129,7 @@ def download_album_to_local(album: dict, preferred_format: str, settings: dict) 
                             pass
                 else:
                     out_file = os.path.join(dest_dir, f"{artist} - {title} - 01 {title}.mp3")
-                    atomic_write(out_file, payload, 0o644)
+                    atomic_write(out_file, payload, 0o600)
                     files = [out_file]
 
                 final_count = len([f for f in files if f.lower().endswith(AUDIO_EXTENSIONS)]) or len(files) or est_tracks
@@ -2842,7 +3163,7 @@ def download_album_to_local(album: dict, preferred_format: str, settings: dict) 
             try:
                 art_bytes = http_request(art_url, timeout=8.0, max_bytes=MAX_ART_BYTES)
                 if art_bytes:
-                    atomic_write(os.path.join(dest_dir, "cover.jpg"), art_bytes, 0o644, fatal=False)
+                    atomic_write(os.path.join(dest_dir, "cover.jpg"), art_bytes, 0o600, fatal=False)
             except Exception:
                 pass
         total = len(streamable)
@@ -2885,7 +3206,7 @@ def download_album_to_local(album: dict, preferred_format: str, settings: dict) 
                 max_bytes=MAX_DOWNLOAD_BYTES,
                 on_chunk=_on_track_chunk,
             )
-            atomic_write(out_path, audio_bytes, 0o644)
+            atomic_write(out_path, audio_bytes, 0o600)
             saved_files.append(out_path)
 
         state.update({
@@ -2899,44 +3220,6 @@ def download_album_to_local(album: dict, preferred_format: str, settings: dict) 
         publish_download_progress(state)
         _mark_album_downloaded_in_index(album.get("id") or "", dest_dir)
         return {"downloaded": True, "albumId": album.get("id"), "destDir": dest_dir, "method": "stream-rip", "fileCount": len(saved_files)}
-
-    if item_url and shutil.which("yt-dlp"):
-        state.update({
-            "trackIndex": 1,
-            "trackTotal": est_tracks,
-            "stage": f"downloading 1/{est_tracks} (yt-dlp)",
-            "percent": 30,
-        })
-        publish_download_progress(state)
-        out_tmpl = os.path.join(dest_dir, f"{artist} - {title} - %(playlist_index|01)02d %(title)s.%(ext)s")
-        cmd = [
-            "yt-dlp",
-            "--no-playlist" if album.get("itemType") == "track" else "--yes-playlist",
-            "-x",
-            "--audio-format",
-            "flac" if preferred_format == "flac" else "mp3",
-            "-o",
-            out_tmpl,
-            item_url,
-        ]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
-        if r.returncode == 0:
-            files = [
-                os.path.join(dest_dir, f)
-                for f in os.listdir(dest_dir)
-                if f.lower().endswith(AUDIO_EXTENSIONS)
-            ]
-            state.update({
-                "running": False,
-                "trackIndex": len(files) or est_tracks,
-                "trackTotal": len(files) or est_tracks,
-                "stage": "done",
-                "percent": 100,
-                "fileCount": len(files),
-            })
-            publish_download_progress(state)
-            _mark_album_downloaded_in_index(album.get("id") or "", dest_dir)
-            return {"downloaded": True, "albumId": album.get("id"), "destDir": dest_dir, "method": "yt-dlp", "fileCount": len(files)}
 
     state.update({"running": False, "stage": "error", "error": "could not download album — check network or Bandcamp session"})
     publish_download_progress(state)
@@ -3029,16 +3312,23 @@ def get_playback_state() -> dict:
 
 
 def _visualiser_settings_payload(settings: dict) -> dict:
+    top_led = bool(settings.get("top_bar_led", settings.get("topBarLedEnabled", True)))
     return {
+        "top_bar_led": top_led,
+        "topBarLedEnabled": top_led,
         "stageMode": settings.get("stageMode") or "visualiser",
+        "backdropMode": bounded_int(settings.get("backdropMode"), 0, 0, 7),
         "layer1Enabled": bool(settings.get("layer1Enabled", True)),
         "layer1Mode": bounded_int(settings.get("layer1Mode"), 0, 0, 10),
+        "layer1EqStyle": bounded_int(settings.get("layer1EqStyle"), 0, 0, 15),
+        "layer1EqLayout": bounded_int(settings.get("layer1EqLayout"), 0, 0, 3),
+        "layer1EqScale": bounded_float(settings.get("layer1EqScale"), 1.0, 0.35, 2.25),
         "layer1Speed": bounded_float(settings.get("layer1Speed"), 1.0, 0.1, 4.0),
         "layer1Density": bounded_float(settings.get("layer1Density"), 1.0, 0.1, 3.0),
         "layer1Trail": bounded_float(settings.get("layer1Trail"), 0.84, 0.1, 0.98),
         "layer1Dim": bounded_float(settings.get("layer1Dim"), 0.15, 0.0, 0.9),
         "layer2Enabled": bool(settings.get("layer2Enabled", True)),
-        "layer2Mode": bounded_int(settings.get("layer2Mode"), 0, 0, 20),
+        "layer2Mode": bounded_int(settings.get("layer2Mode"), 0, 0, 12),
         "layer2Facets": bounded_int(settings.get("layer2Facets"), 8, 1, 24),
         "layer2Complexity": bounded_float(settings.get("layer2Complexity"), 1.0, 0.2, 3.0),
         "layer2Speed": bounded_float(settings.get("layer2Speed"), 1.0, 0.1, 4.0),
@@ -3046,7 +3336,7 @@ def _visualiser_settings_payload(settings: dict) -> dict:
         "layer2Zoom": bounded_float(settings.get("layer2Zoom"), 1.0, 0.3, 3.0),
         "layer2Chaos": bounded_float(settings.get("layer2Chaos"), 0.35, 0.0, 2.0),
         "layer3Enabled": bool(settings.get("layer3Enabled", True)),
-        "layer3Mode": bounded_int(settings.get("layer3Mode"), 0, 0, 10),
+        "layer3Mode": bounded_int(settings.get("layer3Mode"), 0, 0, 11),
         "layer3Dismantle": bounded_float(settings.get("layer3Dismantle"), 1.15, 0.0, 4.0),
         "layer3Rebuild": bounded_float(settings.get("layer3Rebuild"), 1.0, 0.05, 4.0),
         "layer3Evolution": bounded_float(settings.get("layer3Evolution"), 0.65, 0.0, 3.0),
@@ -3204,7 +3494,7 @@ def cmd_sync(args) -> None:
             },
         )
 
-    result = build_unified_collection(settings, on_progress=report, fetch_remote=not args.local_only)
+    result = build_unified_collection(settings, on_progress=report, fetch_remote=not args.local_only, detect_browser=False)
     emit({
         "synced": True,
         "username": result.get("username"),
@@ -3226,16 +3516,18 @@ def cmd_auth(args) -> None:
 
     if getattr(args, "open_browser", False):
         target_url = "https://bandcamp.com/login"
-        try:
-            subprocess.Popen(
-                ["xdg-open", target_url],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-        except Exception:
-            pass
+        xdg_bin = resolve_bin("xdg-open")
+        if xdg_bin:
+            try:
+                subprocess.Popen(
+                    [xdg_bin, target_url],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+            except Exception:
+                pass
         emit({"openedBrowser": True, "url": target_url})
         return
 
@@ -3244,7 +3536,7 @@ def cmd_auth(args) -> None:
         settings["loggedOut"] = True
         write_json(SETTINGS_FILE, settings)
         write_json(AUTH_FILE, {"identity": ""}, mode=0o600)
-        res = build_unified_collection(settings, fetch_remote=False)
+        res = build_unified_collection(settings, fetch_remote=False, detect_browser=False)
         emit({
             "loggedOut": True,
             "authenticated": False,
@@ -3283,7 +3575,7 @@ def cmd_auth(args) -> None:
         write_json(AUTH_FILE, auth, mode=0o600)
     if args.download_dir:
         dpath = os.path.expanduser(args.download_dir)
-        os.makedirs(dpath, mode=0o755, exist_ok=True)
+        os.makedirs(dpath, mode=0o700, exist_ok=True)
         settings["downloadDir"] = dpath
         if dpath not in settings.get("localDirs", []):
             settings.setdefault("localDirs", list(DEFAULT_LOCAL_DIRS)).insert(0, dpath)
@@ -3304,14 +3596,36 @@ def cmd_auth(args) -> None:
         if sm in ("off", "art", "turntable", "visualiser"):
             settings["stageMode"] = sm
             write_json(SETTINGS_FILE, settings)
+    if getattr(args, "top_bar_led", None) is not None:
+        raw_led = str(args.top_bar_led).strip().lower()
+        led_val = raw_led in ("1", "true", "yes", "on")
+        settings["top_bar_led"] = led_val
+        settings["topBarLedEnabled"] = led_val
+        write_json(SETTINGS_FILE, settings)
+        cfg_obj = read_json(CONFIG_FILE, {})
+        if not isinstance(cfg_obj, dict):
+            cfg_obj = {}
+        cfg_obj["top_bar_led"] = led_val
+        cfg_obj["topBarLedEnabled"] = led_val
+        write_json(CONFIG_FILE, cfg_obj)
     if getattr(args, "set_json", None):
         try:
             updates = json.loads(args.set_json)
             if isinstance(updates, dict):
-                allowed_keys = set(_visualiser_settings_payload(settings).keys()) | {"useAlbumArt", "asciiMode"}
+                allowed_keys = set(_visualiser_settings_payload(settings).keys()) | {"useAlbumArt", "asciiMode", "top_bar_led", "topBarLedEnabled"}
                 for k, v in updates.items():
                     if k in allowed_keys:
                         settings[k] = v
+                if "top_bar_led" in updates or "topBarLedEnabled" in updates:
+                    led_val = bool(updates.get("top_bar_led", updates.get("topBarLedEnabled", True)))
+                    settings["top_bar_led"] = led_val
+                    settings["topBarLedEnabled"] = led_val
+                    cfg_obj = read_json(CONFIG_FILE, {})
+                    if not isinstance(cfg_obj, dict):
+                        cfg_obj = {}
+                    cfg_obj["top_bar_led"] = led_val
+                    cfg_obj["topBarLedEnabled"] = led_val
+                    write_json(CONFIG_FILE, cfg_obj)
                 if "layer3Enabled" in updates:
                     settings["useAlbumArt"] = bool(updates["layer3Enabled"])
                 if "layer3AsciiMode" in updates:
@@ -3352,7 +3666,7 @@ def cmd_auth(args) -> None:
 
 
 def cmd_login(args) -> None:
-    """Log into Bandcamp via browser auto-detection, explicit username/cookie, or browser launch, then sync."""
+    """Log into Bandcamp via explicit username/cookie, optional browser import (--detect-browser), or browser launch."""
     settings = load_settings()
     auth = read_json(AUTH_FILE, {}) or {}
     if getattr(args, "open_browser", False):
@@ -3366,7 +3680,8 @@ def cmd_login(args) -> None:
     if getattr(args, "identity", None):
         auth["identity"] = bounded_text(args.identity, 4096)
         write_json(AUTH_FILE, auth, mode=0o600)
-    if not settings.get("username") or not auth.get("identity") or getattr(args, "detect_browser", False):
+    want_detect = bool(getattr(args, "detect_browser", False))
+    if want_detect:
         browser = discover_from_browsers()
         if browser.get("username") and not getattr(args, "username", None):
             settings["username"] = browser["username"]
@@ -3374,7 +3689,11 @@ def cmd_login(args) -> None:
             auth["identity"] = browser["identityCookie"]
             write_json(AUTH_FILE, auth, mode=0o600)
     write_json(SETTINGS_FILE, settings)
-    res = build_unified_collection(settings, fetch_remote=not getattr(args, "no_sync", False))
+    res = build_unified_collection(
+        settings,
+        fetch_remote=not getattr(args, "no_sync", False),
+        detect_browser=want_detect,
+    )
     emit({
         "loggedIn": bool(res.get("username") or auth.get("identity")),
         "loggedOut": False,
@@ -3537,18 +3856,92 @@ def cmd_ascii_art(args) -> None:
     })
 
 
+def _run_screensaver_tty_loop(self_bin: str, mode_flag: str, use_art_flag: str, effect: str) -> None:
+    """Execute the fullscreen ttfx screensaver loop directly in Python without bash -c (CRIT-7)."""
+    import select
+    import termios
+    import tty
+
+    sys.stdout.write("\033]11;rgb:00/00/00\007")
+    sys.stdout.flush()
+
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        try:
+            sz = os.get_terminal_size()
+            if (sz.lines, sz.columns) != (24, 80):
+                break
+        except OSError:
+            break
+        time.sleep(0.02)
+
+    stdin_fd = sys.stdin.fileno() if sys.stdin and sys.stdin.isatty() else -1
+    old_tty = None
+    if stdin_fd >= 0:
+        try:
+            old_tty = termios.tcgetattr(stdin_fd)
+            tty.setcbreak(stdin_fd)
+        except Exception:
+            old_tty = None
+
+    effect_arg = "--random-effect" if effect == "random" else effect
+    ttfx_argv = [
+        TTFX_BIN,
+        "-i",
+        SCREENSAVER_TXT_FILE,
+        "--frame-rate",
+        "120",
+        "--canvas-width",
+        "0",
+        "--canvas-height",
+        "0",
+        "--reuse-canvas",
+        "--anchor-canvas",
+        "c",
+        "--anchor-text",
+        "c",
+        "--no-eol",
+        "--no-restore-cursor",
+        effect_arg,
+    ]
+    try:
+        while True:
+            subprocess.run(
+                [self_bin, "ascii-art", "--mode", mode_flag, "--use-album-art", use_art_flag, "--effect", "random"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            child = subprocess.Popen(ttfx_argv)
+            while child.poll() is None:
+                if stdin_fd >= 0:
+                    rlist, _, _ = select.select([stdin_fd], [], [], 0.25)
+                    if rlist:
+                        try:
+                            os.read(stdin_fd, 1)
+                        except OSError:
+                            pass
+                        child.terminate()
+                        return
+                else:
+                    time.sleep(0.25)
+    finally:
+        if stdin_fd >= 0 and old_tty is not None:
+            try:
+                termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old_tty)
+            except Exception:
+                pass
+
+
 def cmd_screensaver(args) -> None:
     """Transcode the active album cover (or Omarchy banner) and launch `ttfx` in a visible fullscreen terminal."""
     settings = load_settings()
     if getattr(args, "use_album_art", None) is None:
         args.use_album_art = "1" if settings.get("useAlbumArt", False) and args.mode in ("braille", "block") else "0"
-    with quiet():
-        cmd_ascii_art(args)
 
     effect = (args.effect or "random").lower()
     if effect not in TTFX_EFFECTS:
         effect = "random"
-
     effect_flag = "--random-effect" if effect == "random" else effect
 
     if not os.path.isfile(TTFX_BIN):
@@ -3558,17 +3951,17 @@ def cmd_screensaver(args) -> None:
     use_art_flag = "1" if str(args.use_album_art) == "1" else "0"
     mode_flag = args.mode if args.mode in ("braille", "block", "banner") else "banner"
 
-    # Global ttfx flags (--no-eol --no-restore-cursor) MUST precede {effect_flag},
-    # because ttfx treats specific effect names (waves, blackhole, etc.) as subcommands.
+    if getattr(args, "tty_loop", False):
+        _run_screensaver_tty_loop(self_bin, mode_flag, use_art_flag, effect)
+        return
+
+    with quiet():
+        cmd_ascii_art(args)
+
     ttfx_cmd_str = (
-        f"{TTFX_BIN} -i '{SCREENSAVER_TXT_FILE}' "
+        f"{TTFX_BIN} -i {SCREENSAVER_TXT_FILE} "
         f"--frame-rate 120 --canvas-width 0 --canvas-height 0 --reuse-canvas "
         f"--anchor-canvas c --anchor-text c --no-eol --no-restore-cursor {effect_flag}"
-    )
-    ttfx_random_loop_cmd_str = (
-        f"{TTFX_BIN} -i '{SCREENSAVER_TXT_FILE}' "
-        f"--frame-rate 120 --canvas-width 0 --canvas-height 0 --reuse-canvas "
-        f"--anchor-canvas c --anchor-text c --no-eol --no-restore-cursor --random-effect"
     )
 
     if args.dry_run:
@@ -3582,50 +3975,49 @@ def cmd_screensaver(args) -> None:
         })
         return
 
-    runner_sh = (
-        f"printf '\\033]11;rgb:00/00/00\\007'; "
-        f"deadline=$((SECONDS + 2)); "
-        f"while ((SECONDS < deadline)) && [[ $(stty size 2>/dev/null) == '24 80' ]]; do sleep 0.02; done; "
-        f"while true; do "
-        f"'{self_bin}' ascii-art --mode {mode_flag} --use-album-art {use_art_flag} --effect random >/dev/null 2>&1 || true; "
-        f"{ttfx_random_loop_cmd_str} & "
-        f"pid=$!; "
-        f"while kill -0 $pid 2>/dev/null; do "
-        f"if read -r -n1 -t 1; then kill $pid 2>/dev/null; exit 0; fi; "
-        f"done; "
-        f"done"
-    )
-
     omarchy_dir = os.environ.get("OMARCHY_PATH") or "/usr/share/omarchy"
     if not os.path.isdir(omarchy_dir):
         omarchy_dir = os.path.join(HOME, "omarchy")
 
-    # Use class `org.bandarchy.tte` with explicit `--fullscreen` rather than `org.omarchy.screensaver`,
-    # because Hyprland's system.lua rule forces `org.omarchy.screensaver` to `workspace = "special:screensaver silent"`,
-    # which hides the window unless special:screensaver is dispatched.
     win_class = "org.bandarchy.tte"
+    loop_argv = [
+        self_bin,
+        "screensaver",
+        "--tty-loop",
+        "--mode",
+        mode_flag,
+        "--use-album-art",
+        use_art_flag,
+        "--effect",
+        effect,
+    ]
     term_cmd = None
-    if shutil.which("ghostty"):
+    ghostty_bin = resolve_bin("ghostty")
+    alacritty_bin = resolve_bin("alacritty")
+    foot_bin = resolve_bin("foot")
+    kitty_bin = resolve_bin("kitty")
+
+    if ghostty_bin:
         conf = os.path.join(omarchy_dir, "default", "ghostty", "screensaver")
-        term_cmd = ["ghostty", f"--class={win_class}", "--fullscreen=true", "--font-size=18"]
+        term_cmd = [ghostty_bin, f"--class={win_class}", "--fullscreen=true", "--font-size=18"]
         if os.path.isfile(conf):
             term_cmd.append(f"--config-file={conf}")
-        term_cmd.extend(["-e", "bash", "-c", runner_sh])
-    elif shutil.which("alacritty"):
+        term_cmd.extend(["-e", *loop_argv])
+    elif alacritty_bin:
         conf = os.path.join(omarchy_dir, "default", "alacritty", "screensaver.toml")
-        term_cmd = ["alacritty", f"--class={win_class}", "-o", 'window.startup_mode="Fullscreen"']
+        term_cmd = [alacritty_bin, f"--class={win_class}", "-o", 'window.startup_mode="Fullscreen"']
         if os.path.isfile(conf):
             term_cmd.extend(["--config-file", conf])
-        term_cmd.extend(["-e", "bash", "-c", runner_sh])
-    elif shutil.which("foot"):
+        term_cmd.extend(["-e", *loop_argv])
+    elif foot_bin:
         conf = os.path.join(omarchy_dir, "default", "foot", "screensaver.ini")
-        term_cmd = ["foot", f"--app-id={win_class}", "--fullscreen"]
+        term_cmd = [foot_bin, f"--app-id={win_class}", "--fullscreen"]
         if os.path.isfile(conf):
             term_cmd.append(f"--config={conf}")
-        term_cmd.extend(["-e", "bash", "-c", runner_sh])
-    elif shutil.which("kitty"):
+        term_cmd.extend(["-e", *loop_argv])
+    elif kitty_bin:
         term_cmd = [
-            "kitty",
+            kitty_bin,
             f"--class={win_class}",
             "--start-as=fullscreen",
             "--override",
@@ -3633,9 +4025,7 @@ def cmd_screensaver(args) -> None:
             "--override",
             "window_padding_width=0",
             "-e",
-            "bash",
-            "-c",
-            runner_sh,
+            *loop_argv,
         ]
 
     if not term_cmd:
@@ -3950,7 +4340,7 @@ def cmd_import_zip(args) -> None:
         stem = os.path.splitext(os.path.basename(zpath))[0]
         dest = os.path.join(dl_root, re.sub(r"[/\\:\*\?\"<>\|]+", "-", stem).strip())
         files = safe_extract_zip(zpath, dest)
-        res = build_unified_collection(settings, fetch_remote=False)
+        res = build_unified_collection(settings, fetch_remote=False, detect_browser=False)
         emit({"imported": 1, "fileCount": len(files), "destDir": dest, "albumCount": res.get("albumCount")})
         return
 
@@ -3962,7 +4352,7 @@ def cmd_import_zip(args) -> None:
         files = safe_extract_zip(z["zipPath"], dest)
         imported += 1
         total_files += len(files)
-    res = build_unified_collection(settings, fetch_remote=False)
+    res = build_unified_collection(settings, fetch_remote=False, detect_browser=False)
     emit({"imported": imported, "fileCount": total_files, "albumCount": res.get("albumCount")})
 
 
@@ -4075,13 +4465,14 @@ def _kill_bandarchy_processes() -> None:
         mpv_stop()
     except Exception:
         pass
+    pkill_bin = resolve_bin("pkill") or "pkill"
     for pat in (
         r"(quickshell|bandarchy) -p .*/bandarchy/App\.qml",
         r"(quickshell|bandarchy) -p .*io\.github\.layolayo\.bandarchy/App\.qml",
         r"cava -p .*(bandarchy|io\.github\.layolayo\.bandarchy)(/share)?/cava\.conf",
         r"mpv .*--audio-client-name=Bandarchy",
     ):
-        subprocess.run(["pkill", "-f", pat], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run([pkill_bin, "-f", pat], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def cmd_kill(args) -> None:
@@ -4094,11 +4485,10 @@ def cmd_restart(args) -> None:
     time.sleep(0.2)
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     app_qml = os.path.join(root_dir, "App.qml")
-    qs_bin = shutil.which("quickshell")
+    qs_bin = resolve_bin("quickshell")
     if os.path.isfile(app_qml) and qs_bin:
-        runtime_dir = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "bandarchy-runtime")
-        os.makedirs(runtime_dir, exist_ok=True)
-        bandarchy_bin = os.path.join(runtime_dir, "bandarchy")
+        ensure_private_dir(RUNTIME_DIR)
+        bandarchy_bin = os.path.join(RUNTIME_DIR, "bandarchy")
         try:
             if os.path.islink(bandarchy_bin) or os.path.exists(bandarchy_bin):
                 os.unlink(bandarchy_bin)
@@ -4161,8 +4551,9 @@ def main() -> None:
     p.add_argument("--download-dir")
     p.add_argument("--format", choices=["flac", "mp3-320", "mp3-v0", "wav", "ogg"])
     p.add_argument("--use-album-art", choices=["0", "1"], help="whether visualiser translates album cover art")
-    p.add_argument("--ascii-mode", choices=["braille", "block", "banner"], help="omarchy-transcode-ascii or banner mode")
+    p.add_argument("--ascii-mode", choices=["braille", "block", "banner", "text"], help="omarchy-transcode-ascii or banner mode")
     p.add_argument("--stage-mode", choices=["off", "art", "turntable", "visualiser"], help="active visualiser stage mode")
+    p.add_argument("--top-bar-led", choices=["0", "1", "true", "false"], help="enable or disable the Omarchy top status bar LED equaliser")
     p.add_argument("--set-json", help="JSON object of visualiser/turntable settings to update")
     p.add_argument("--add-url", help="add a Bandcamp album or track URL to the purchased collection")
     p.set_defaults(func=cmd_auth)
@@ -4182,7 +4573,7 @@ def main() -> None:
     p.add_argument("--album", help="album id or URL")
     p.add_argument("--image", help="explicit image path")
     p.add_argument("--text", help="fallback banner text for omarchy-ascii")
-    p.add_argument("--mode", choices=["braille", "block", "banner"], default=None)
+    p.add_argument("--mode", choices=["braille", "block", "banner", "text"], default=None)
     p.add_argument("--width", type=int, default=72)
     p.add_argument("--height", type=int, default=32)
     p.add_argument("--threshold", type=int, default=50)
@@ -4202,6 +4593,7 @@ def main() -> None:
     p.add_argument("--invert", action="store_true")
     p.add_argument("--use-album-art", choices=["0", "1"], default="1")
     p.add_argument("--effect", default="random", help="ttfx effect name or random")
+    p.add_argument("--tty-loop", action="store_true", help="internal flag: run ttfx fullscreen loop directly in terminal")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_screensaver)
 

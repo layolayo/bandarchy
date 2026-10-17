@@ -1742,9 +1742,8 @@ ShellRoot {
                                     Layout.fillWidth: true
                                     spacing: 5
                                     ActionPill {
-                                        text: !service.useAlbumArt
-                                            ? "󰀬 L3: Words"
-                                            : (service.asciiMode === "braille" ? "󰀥 L3: Braille ⣿" : "󰀥 L3: Block █")
+                                        text: (service.useAlbumArt ? "󰀥 L3 Art: " : "󰬴 L3 Words: ") +
+                                            (service.asciiMode === "block" ? "Block █" : (service.asciiMode === "text" ? "Crisp Text 󰬴" : "Braille ⣿"))
                                         active: true
                                         onClicked: service.cycleLayer3Source()
                                     }
@@ -2062,6 +2061,41 @@ ShellRoot {
                                                 horizontalPad: 10
                                                 pillHeight: 28
                                                 onClicked: service.openExternal("~/Music/Bandcamp", "Opened ~/Music/Bandcamp")
+                                            }
+                                        }
+
+                                        // Top Bar LED Equaliser Setting Toggle Row
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 8
+
+                                            Text {
+                                                Layout.preferredWidth: 110
+                                                text: "Omarchy Bar:"
+                                                textFormat: Text.PlainText
+                                                font.family: "JetBrainsMono Nerd Font"
+                                                font.pixelSize: 10
+                                                color: win.colFg
+                                            }
+
+                                            ActionPill {
+                                                text: "󰍹 Top Bar LED Equaliser: " + (service.topBarLedEnabled ? "ON" : "OFF")
+                                                active: Boolean(service.topBarLedEnabled)
+                                                primary: Boolean(service.topBarLedEnabled)
+                                                fontSize: 10
+                                                horizontalPad: 12
+                                                pillHeight: 26
+                                                onClicked: service.setTopBarLedEnabled(!service.topBarLedEnabled)
+                                            }
+
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: "Show compact segmented LED equaliser in top bar (zero text)"
+                                                textFormat: Text.PlainText
+                                                font.family: "JetBrainsMono Nerd Font"
+                                                font.pixelSize: 9
+                                                color: win.colMuted
+                                                elide: Text.ElideRight
                                             }
                                         }
 

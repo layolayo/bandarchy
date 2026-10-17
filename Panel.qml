@@ -2297,6 +2297,20 @@ Item {
                                             if (root.service) root.service.openExternal("~/Music/Bandcamp", "Opened ~/Music/Bandcamp")
                                         }
                                     }
+
+                                    ActionPill {
+                                        text: "󰍹 Top Bar LED Equaliser: " + ((root.service && root.service.topBarLedEnabled) ? "ON" : "OFF")
+                                        active: Boolean(root.service && root.service.topBarLedEnabled)
+                                        primary: Boolean(root.service && root.service.topBarLedEnabled)
+                                        fontSize: 10
+                                        horizontalPad: 12
+                                        pillHeight: 28
+                                        onClicked: {
+                                            if (root.service) {
+                                                root.service.setTopBarLedEnabled(!root.service.topBarLedEnabled)
+                                            }
+                                        }
+                                    }
                                 }
 
                                 Text {

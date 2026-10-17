@@ -4,11 +4,12 @@ import qs.Commons
 import qs.Ui
 
 // BarWidget.qml — Omarchy Status Bar Widget for Bandarchy
-// Displays Bandcamp emblem, mini live spectrum bars when playing, and
-// current track or collection count.
+// Displays ONLY a compact multi-tier segmented LED Equaliser (zero text labels).
+// Controlled by Main Settings toggle `topBarLedEnabled` (default: true).
 // Left-click: toggle Bandarchy overlay panel
 // Middle-click: play/pause
 // Right-click: launch dedicated standalone Bandarchy player window
+// Scroll wheel: next/previous track
 
 BarWidget {
     id: root
@@ -23,11 +24,16 @@ BarWidget {
             ? bar.shell.serviceFor("io.github.layolayo.bandarchy")
             : (pluginApi ? pluginApi.mainInstance : null))
 
-    readonly property bool showTrack: {
-        var v = setting("showTrack", true)
-        return v !== false && v !== "false"
+    readonly property bool topBarLedEnabled: {
+        try {
+            if (root.service && root.service.topBarLedEnabled !== undefined) {
+                return Boolean(root.service.topBarLedEnabled)
+            }
+            return true
+        } catch (e) {
+            return true
+        }
     }
-    readonly property int maxTrackChars: Math.max(8, Number(setting("maxTrackChars", 28)) || 28)
 
     readonly property bool isPlaying: {
         try {
@@ -56,63 +62,36 @@ BarWidget {
         }
     }
 
-    function displayText() {
-        try {
-            if (!root.service) return "Bandarchy"
-            if (root.service.syncing) return "Syncing…"
-            if (root.hasTrack) {
-                var artist = root.service.trackArtist ? (root.service.trackArtist + " — ") : ""
-                var s = artist + (root.service.trackTitle || "")
-                if (s.length > root.maxTrackChars) {
-                    s = s.substring(0, root.maxTrackChars - 1) + "…"
-                }
-                return s
-            }
-            if (root.service.purchasedCount > 0) {
-                return root.service.purchasedCount + " BC · " + root.service.localCount + " Local"
-            }
-            return "Bandarchy"
-        } catch (e) {
-            return "Bandarchy"
+    // Gentle idle breathing phase for bottom LED tier when paused/idle
+    property real breathPhase: 0.0
+    Timer {
+        interval: 90
+        repeat: true
+        running: root.topBarLedEnabled && !root.isPlaying
+        onTriggered: {
+            root.breathPhase = (root.breathPhase + 0.14) % (Math.PI * 2)
         }
     }
 
-    function tooltipText() {
-        try {
-            if (!root.service) return "Bandarchy — Bandcamp & Local Audio Player"
-            var lines = []
-            if (root.hasTrack) {
-                lines.push((root.service.paused ? "Paused: " : "Playing: ") + root.service.trackTitle)
-                if (root.service.trackArtist) lines.push("Artist: " + root.service.trackArtist)
-                if (root.service.trackAlbum) lines.push("Album: " + root.service.trackAlbum)
-                lines.push("Source: " + (root.service.playSource === "local" ? "Lossless Local" : "Bandcamp Stream"))
-            } else {
-                lines.push("Bandarchy — Bandcamp & Local Collection")
-                lines.push("Purchased: " + root.service.purchasedCount + " · Local: " + root.service.localCount + " (" + root.service.trackCount + " tracks)")
-            }
-            lines.push("Left-click: Panel · Mid-click: Play/Pause · Right-click: Dedicated Player")
-            return lines.join("\n")
-        } catch (e) {
-            return "Bandarchy — Bandcamp & Local Audio Player"
-        }
-    }
+    readonly property int columnCount: 9
+    readonly property int segmentTiers: 6
 
     readonly property var miniBands: {
         try {
             var raw = root.service ? root.service.spectrumBands : []
             if (!raw || raw.length === 0) return []
-            var maxRaw = 85.0
+            var maxRaw = 80.0
             for (var r = 0; r < raw.length; r++) {
                 var rv = Number(raw[r]) || 0
                 if (rv > maxRaw) maxRaw = rv
             }
-            var count = 8
+            var count = root.columnCount
             var step = Math.max(1, Math.floor(raw.length / count))
             var out = []
             for (var i = 0; i < count; i++) {
                 var idx = Math.min(raw.length - 1, i * step)
-                var norm = Math.pow(Math.min(1.0, Math.max(0.0, (Number(raw[idx]) || 0) / maxRaw)), 0.78)
-                out.push(Math.min(1.0, Math.max(0.10, norm)))
+                var norm = Math.pow(Math.min(1.0, Math.max(0.0, (Number(raw[idx]) || 0) / maxRaw)), 0.76)
+                out.push(Math.min(1.0, Math.max(0.14, norm)))
             }
             return out
         } catch (e) {
@@ -120,105 +99,124 @@ BarWidget {
         }
     }
 
-    readonly property bool meterLive: !root.vertical && root.isPlaying && root.miniBands.length > 0
-
-    implicitWidth: button.implicitWidth + (meter.visible ? meter.width + 2 : 0)
-    implicitHeight: root.vertical ? button.implicitHeight : root.barSize
+    visible: root.topBarLedEnabled
+    implicitWidth: root.topBarLedEnabled ? ledContainer.width : 0
+    implicitHeight: root.topBarLedEnabled ? root.barSize : 0
 
     property bool clickFlash: false
     Timer {
         id: clickFlashTimer
-        interval: 160
+        interval: 150
         repeat: false
         onTriggered: root.clickFlash = false
     }
 
-    WidgetButton {
-        id: button
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        bar: root.bar
-        tooltipText: root.tooltipText()
-        dimmed: !root.isPlaying && !root.hasTrack && !root.clickFlash
-        foreground: root.clickFlash ? Commons.Color.urgent : (root.isPlaying ? Commons.Color.accent : Commons.Color.foreground)
-        fontSize: Style.font.body
-        horizontalMargin: 6
-        verticalPadding: 2
-        scale: root.clickFlash ? 0.96 : 1.0
-        Behavior on scale { NumberAnimation { duration: 100 } }
-
-        text: {
-            var icon = root.isPlaying ? "󰀥" : (root.hasTrack ? "󰏤" : "󰎆")
-            if (root.vertical) return icon
-            var label = root.showTrack ? root.displayText() : ""
-            return label ? (icon + "  " + label) : icon
-        }
-
-        onPressed: function(mouseButton) {
-            root.clickFlash = true
-            clickFlashTimer.restart()
-            if (mouseButton === Qt.MiddleButton) {
-                if (root.service) root.service.togglePlayPause()
-                return
-            }
-            if (mouseButton === Qt.RightButton) {
-                if (root.service) root.service.launchStandalonePlayer()
-                return
-            }
-            if (root.bar && root.bar.shell) {
-                if (typeof root.bar.shell.toggle === "function")
-                    root.bar.shell.toggle(root.moduleName, "{}")
-                else if (typeof root.bar.shell.summon === "function")
-                    root.bar.shell.summon(root.moduleName, "{}")
-            } else if (root.pluginApi && typeof root.pluginApi.togglePanel === "function") {
-                root.pluginApi.togglePanel(null, button)
-            }
-        }
+    function segmentColour(tierIdx) {
+        // tierIdx: 0 = bottom .. 5 = top peak
+        if (tierIdx >= 5) return "#f43f5e" // Crimson peak tier
+        if (tierIdx === 4) return "#f59e0b" // Amber upper tier
+        if (tierIdx >= 2) return "#06b6d4" // Cyan mid tiers
+        return "#10b981" // Emerald green bottom tiers
     }
 
-    Item {
-        id: meter
-        anchors.left: button.right
-        anchors.leftMargin: 2
+    Rectangle {
+        id: ledContainer
+        visible: root.topBarLedEnabled
         anchors.verticalCenter: parent.verticalCenter
-        visible: root.meterLive
-        readonly property int bars: root.miniBands.length
-        readonly property real barW: 3
-        readonly property real gap: 1
-        width: bars > 0 ? bars * (barW + gap) - gap + 8 : 0
-        height: Math.max(10, root.barSize - 8)
+        readonly property int colW: 3
+        readonly property int colGap: 2
+        readonly property int hPad: 6
+        width: root.columnCount * colW + (root.columnCount - 1) * colGap + hPad * 2
+        height: Math.max(14, root.barSize - 6)
+        radius: 5
+        color: root.clickFlash
+            ? Qt.rgba(0.96, 0.25, 0.37, 0.22)
+            : (ledMouse.containsMouse ? Qt.rgba(0.06, 0.71, 0.83, 0.14) : Qt.rgba(0.04, 0.06, 0.10, 0.55))
+        border.width: 1
+        border.color: root.clickFlash
+            ? "#f43f5e"
+            : (root.isPlaying
+                ? Qt.rgba(0.06, 0.72, 0.51, 0.65)
+                : (ledMouse.containsMouse ? Qt.rgba(0.06, 0.71, 0.83, 0.45) : Qt.rgba(1, 1, 1, 0.12)))
+        scale: root.clickFlash ? 0.94 : 1.0
+        Behavior on scale { NumberAnimation { duration: 90 } }
 
         Row {
-            anchors.fill: parent
-            anchors.leftMargin: 4
-            anchors.rightMargin: 4
-            spacing: meter.gap
+            anchors.centerIn: parent
+            spacing: ledContainer.colGap
 
             Repeater {
-                model: meter.bars
+                model: root.columnCount
                 delegate: Item {
-                    width: meter.barW
-                    height: meter.height
-                    readonly property real v: index < root.miniBands.length ? root.miniBands[index] : 0.1
+                    id: colItem
+                    required property int index
+                    width: ledContainer.colW
+                    height: Math.max(10, ledContainer.height - 4)
 
-                    Rectangle {
-                        anchors.bottom: parent.bottom
-                        width: parent.width
-                        height: Math.max(2, parent.height * v)
-                        radius: 1
-                        color: index % 2 === 0 ? Commons.Color.accent : Commons.Color.urgent
-                        opacity: 0.92
+                    readonly property real bandVal: {
+                        if (root.isPlaying && root.miniBands.length > index) {
+                            return root.miniBands[index]
+                        }
+                        if (root.isPlaying) {
+                            return 0.35 + 0.25 * Math.sin(root.breathPhase + index * 0.7)
+                        }
+                        // Idle / paused gentle wave across bottom tiers
+                        var wave = 0.5 + 0.5 * Math.sin(root.breathPhase + index * 0.65)
+                        return root.hasTrack ? (0.18 + 0.16 * wave) : (0.12 + 0.10 * wave)
+                    }
+
+                    readonly property int litSegments: Math.max(1, Math.min(root.segmentTiers, Math.round(bandVal * root.segmentTiers)))
+
+                    Column {
+                        anchors.centerIn: parent
+                        spacing: 1
+
+                        Repeater {
+                            model: root.segmentTiers
+                            delegate: Rectangle {
+                                required property int index
+                                // Top-down repeater: tierIdx 0 is bottom, segmentTiers-1 is top
+                                readonly property int tierIdx: (root.segmentTiers - 1) - index
+                                readonly property bool isLit: tierIdx < colItem.litSegments
+                                readonly property bool isPeak: tierIdx === (colItem.litSegments - 1)
+                                width: ledContainer.colW
+                                height: Math.max(1, Math.floor((colItem.height - (root.segmentTiers - 1)) / root.segmentTiers))
+                                radius: 0.75
+                                color: isLit ? root.segmentColour(tierIdx) : "#161f2e"
+                                opacity: isLit
+                                    ? (root.isPlaying ? (isPeak ? 1.0 : 0.90) : (0.48 + 0.28 * Math.sin(root.breathPhase + colItem.index * 0.5)))
+                                    : 0.26
+                            }
+                        }
                     }
                 }
             }
         }
 
         MouseArea {
+            id: ledMouse
             anchors.fill: parent
-            onClicked: {
-                if (root.bar && root.bar.shell && typeof root.bar.shell.toggle === "function") {
-                    root.bar.shell.toggle(root.moduleName, "{}")
+            hoverEnabled: true
+            acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
+            cursorShape: Qt.PointingHandCursor
+            onPressed: mouse => {
+                root.clickFlash = true
+                clickFlashTimer.restart()
+                if (mouse.button === Qt.MiddleButton) {
+                    if (root.service) root.service.togglePlayPause()
+                    return
+                }
+                if (mouse.button === Qt.RightButton) {
+                    if (root.service) root.service.launchStandalonePlayer()
+                    return
+                }
+                if (root.bar && root.bar.shell) {
+                    if (typeof root.bar.shell.toggle === "function")
+                        root.bar.shell.toggle(root.moduleName, "{}")
+                    else if (typeof root.bar.shell.summon === "function")
+                        root.bar.shell.summon(root.moduleName, "{}")
+                } else if (root.pluginApi && typeof root.pluginApi.togglePanel === "function") {
+                    root.pluginApi.togglePanel(null, ledContainer)
                 }
             }
         }

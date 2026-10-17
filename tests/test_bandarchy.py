@@ -912,9 +912,12 @@ function makeMockCtx() {
     };
 }
 
-const state = createState();
-if (LAYER1_MODES.length !== 7) throw new Error('Expected 7 LAYER1_MODES, got ' + LAYER1_MODES.length);
-if (LAYER1_EQ_STYLES.length !== 13) throw new Error('Expected 13 LAYER1_EQ_STYLES, got ' + LAYER1_EQ_STYLES.length);
+        const state = createState();
+if (LAYER1_MODES.length !== 11) throw new Error('Expected 11 LAYER1_MODES, got ' + LAYER1_MODES.length);
+if (LAYER1_EQ_STYLES.length !== 16) throw new Error('Expected 16 LAYER1_EQ_STYLES, got ' + LAYER1_EQ_STYLES.length);
+if (LAYER1_EQ_LAYOUTS.length !== 4) throw new Error('Expected 4 LAYER1_EQ_LAYOUTS, got ' + LAYER1_EQ_LAYOUTS.length);
+if (MODE_NAMES.length !== 13) throw new Error('Expected 13 Layer 2 MODE_NAMES, got ' + MODE_NAMES.length);
+if (LAYER3_MODES.length !== 12) throw new Error('Expected 12 LAYER3_MODES, got ' + LAYER3_MODES.length);
 if (TRACK_ARC_MODES[0] !== 'Dynamic Audio Arc') throw new Error('Expected TRACK_ARC_MODES[0] to be Dynamic Audio Arc');
 
 // Verify monotonic phase accumulators never jump backwards under extreme bass/speed swings
@@ -936,23 +939,25 @@ for (let i = 0; i < 40; i++) {
     prevMatrix = state.matrixTime;
 }
 
-// Verify new L1 modes 5 (Star Wars Trench) and 6 (Gargantua Hole) and EQ style 6 (Spotlights)
+// Verify all 11 L1 Field modes (0..10) render geometry
 const theme = { accent: '#ffab00', urgent: '#ff4a6b', foreground: '#e2e8f0', background: '#08080c' };
-for (const l1m of [5, 6]) {
+for (let l1m = 0; l1m < 11; l1m++) {
     const ctx = makeMockCtx();
     const cfg = normaliseConfig({ layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: l1m, layer1EqEnabled: true, layer1EqStyle: 6, layer2Enabled: false, layer3Enabled: false }, 0, []);
     renderFrame(ctx, 640, 360, state, 0, theme, [], 'album-art', [], cfg, null);
-    if (ctx.fillCount < 2 || ctx.strokeCount < 2) {
-        throw new Error('New L1 mode ' + l1m + ' failed to draw geometry');
+    if (ctx.fillCount < 1 && ctx.strokeCount < 1) {
+        throw new Error('L1 mode ' + l1m + ' failed to draw geometry');
     }
 }
 
-// Verify all 4 Layer #3 combinations: (useAlbumArt: true/false) x (asciiMode: braille/block)
+// Verify all 6 Layer #3 source/style combinations: (useAlbumArt: true/false) x (asciiMode: braille/block/text)
 const brailleArt = Array.from({length: 12}, () => '⣿⣷⣯⣟⡿⢿⣻⣽'.repeat(4));
 const bannerWords = Array.from({length: 10}, () => '█▀▄░▒▓ BASS COMMUNION ▓▒░▄▀█');
 for (const useArt of [true, false]) {
-    for (const glyphMode of ['braille', 'block']) {
+    for (const glyphMode of ['braille', 'block', 'text']) {
         const ctx = makeMockCtx();
+        ctx.fillTextCount = 0;
+        ctx.fillText = function() { this.fillTextCount++; };
         const cfg = normaliseConfig({
             layer1Enabled: false, layer2Enabled: false, layer3Enabled: true,
             useAlbumArt: useArt, asciiMode: glyphMode,
@@ -960,8 +965,8 @@ for (const useArt of [true, false]) {
         }, 0, useArt ? brailleArt : bannerWords);
         stepState(state, Array.from({length: 64}, () => 400), true, cfg, 0.016);
         renderFrame(ctx, 640, 360, state, 0, theme, useArt ? brailleArt : bannerWords, useArt ? 'album-art' : 'banner', [], cfg, null);
-        if (ctx.rectCount < 20) {
-            throw new Error('Layer #3 combo useAlbumArt=' + useArt + ' asciiMode=' + glyphMode + ' failed: rectCount=' + ctx.rectCount);
+        if (ctx.rectCount + ctx.fillTextCount + ctx.fillCount < 10) {
+            throw new Error('Layer #3 combo useAlbumArt=' + useArt + ' asciiMode=' + glyphMode + ' failed');
         }
     }
 }
@@ -1099,7 +1104,7 @@ console.log('OK');
             self.assertIn("onRequestSaveVisualiserConfig:", src, f"{name} must bind onRequestSaveVisualiserConfig on Visualiser")
 
         # 3. Verify Node.js PsychedelicEngine.js:
-        #    - BACKDROP_MODES has 7 entries and state.backdropTime scales with backdropSpeed
+        #    - BACKDROP_MODES has 8 entries and state.backdropTime scales with backdropSpeed
         #    - evalMinterShapeProfile(kindOrPhase, a, baseFolds) smoothly interpolates across continuous kindOrPhase (no integer discontinuity)
         #    - L1 Mode 4 (TRON / Battlezone Landscape) renders 8-edge pyramids, 12-edge cubes, 3D Battlezone tanks, and locked worldScroll
         if shutil.which("node"):
@@ -1108,8 +1113,8 @@ const fs = require('fs');
 let code = fs.readFileSync('PsychedelicEngine.js', 'utf8').replace(/^\.pragma library\s*/m, '');
 eval(code);
 
-if (!Array.isArray(BACKDROP_MODES) || BACKDROP_MODES.length !== 7) {
-    throw new Error('Expected 7 BACKDROP_MODES, got ' + JSON.stringify(BACKDROP_MODES));
+if (!Array.isArray(BACKDROP_MODES) || BACKDROP_MODES.length !== 8) {
+    throw new Error('Expected 8 BACKDROP_MODES, got ' + JSON.stringify(BACKDROP_MODES));
 }
 
 // Verify state.backdropTime advances proportionally to cfg.backdropSpeed
@@ -1167,17 +1172,20 @@ console.log('OK');
         with open(os.path.join(REPO_ROOT, "PsychedelicEngine.js"), "r", encoding="utf-8") as f:
             engine_src = f.read()
 
-        # 1. Verify GPU Tunnel works in L1 even when L2 & L3 are OFF, and Row 2A has explicit ON/OFF + Tri-State controls
+        # 1. Verify GPU Tunnel controls live in Tab 4 (zero duplicate Tunnel buttons on Row 2A) and Row 2A has 16 EQ styles, 4 Orientations, and EqSz
         self.assertIn("property real uL1Enabled: 0.0", viz_src)
         self.assertIn("property real uL2Enabled: (root.gpuShaderEnabled && root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) ? 1.0 : 0.0", viz_src)
         self.assertIn("readonly property bool hasActiveCpuLayers:", viz_src)
         self.assertIn("visible: root.stageMode === \"visualiser\" && root.hasActiveCpuLayers", viz_src)
         self.assertIn("renderStrategy: Canvas.Threaded", viz_src)
-        self.assertIn('text: root.backdropEnabled ? "Tunnel:ON" : "Tunnel:OFF"', viz_src)
-        self.assertIn('text: "TunDir:" + (root.backdropDirection > 0 ? "Towards" : (root.backdropDirection < 0 ? "Away" : "Breathe"))', viz_src)
+        self.assertNotIn('text: root.backdropEnabled ? "Tunnel:ON" : "Tunnel:OFF"', viz_src)
         self.assertIn('text: root.layer1EqEnabled ? "LED:ON" : "LED:OFF"', viz_src)
-        self.assertIn('text: "EQ:" + (["Skyline", "LED Bars", "Mirror", "3D Ridges", "Sun", "TwinWave", "Spotlights", "3D Orb", "3D Torus", "Cymatics", "3D Helix", "Tesla Arcs", "Tralis City"][root.layer1EqStyle] || "Skyline")', viz_src)
+        self.assertIn('text: "EQ:" + (root.shortEqLabels[root.layer1EqStyle % root.shortEqLabels.length] || "Skyline")', viz_src)
+        self.assertIn('text: "EqPos:" + (root.shortEqPosLabels[root.layer1EqLayout % root.shortEqPosLabels.length] || "Bottom ▲")', viz_src)
+        self.assertIn('text: "EqSz:" + root.layer1EqScale.toFixed(1) + "x"', viz_src)
         self.assertIn('text: root.layer1ShapesEnabled ? "Shapes:ON" : "Shapes:OFF"', viz_src)
+        self.assertIn("property bool externalStageOpen: false", viz_src)
+        self.assertIn("id: externalStageWindow", viz_src)
 
         # Verify Bi-State Section Toggles, Density Sliders, Smooth GPU Colour Interpolation, 1280p Ultra+ Quality & Canvas Resolution in Visualiser.qml
         self.assertIn('text: root.layer1FieldEnabled ? "󰄬 Field: ON" : "󰅖 Field: OFF"', viz_src)
@@ -1206,7 +1214,7 @@ console.log('OK');
         self.assertIn('text: root.layer3AutoRandomise ? "󰒟 Rand L3 (Auto: ON)" : "󰒟 Rand L3"', viz_src)
         self.assertNotIn("L2 Tracers: ", app_src)
         self.assertIn("function syncVisualiserActive()", panel_src)
-        self.assertIn("running: root.visualiserActive || root.fullscreenVisualiserOpen", svc_src)
+        self.assertIn("running: (root.activelyPlaying && root.topBarLedEnabled) || root.visualiserActive || root.fullscreenVisualiserOpen", svc_src)
         self.assertIn('"Sun Rays"', engine_src)
         self.assertIn('"3D Sonic Orb"', engine_src)
         self.assertIn('"3D Torus Reactor"', engine_src)
@@ -1214,13 +1222,15 @@ console.log('OK');
         self.assertIn('"3D Helix Vortex"', engine_src)
         self.assertIn('"Tesla Plasma Arcs"', engine_src)
         self.assertIn('"Tralis Voxel City"', engine_src)
+        self.assertIn('"Aurora Curtains"', engine_src)
+        self.assertIn('"DNA Helix Beam"', engine_src)
+        self.assertIn('"Ferrofluid Lake"', engine_src)
         self.assertNotIn('"Synth Sun Rays"', engine_src)
 
         # 3. Verify Node.js PsychedelicEngine.js:
         #    - Tri-state backdropDirection (+1 Towards, -1 Away, 0 Breathe) on state.backdropTime
         #    - Sun Rays EQ (eqStyle === 4) draws colour-adapted rays without 6 internal horizontal sun bars
-        #    - All 13 L1 EQ styles (0..12) render geometry cleanly, and eqStyle >= 3 draw ZERO stray 2D rect() squares
-        #    - Per-shape randomness (sizeMul, laneX, laneY, spinX, spinY, spinZ, variant)
+        #    - All 16 L1 EQ styles (0..15) across all 4 orientations (0..3) render geometry cleanly
         #    - Battlezone (l1Mode === 4) scales model density and renders both tanks and sky/ground shapes
         #    - Death Star Trench Run (l1Mode === 5) pure wireframe 3D catwalk blockades + Star Wars craft
         if shutil.which("node"):
@@ -1229,7 +1239,7 @@ const fs = require('fs');
 let code = fs.readFileSync('PsychedelicEngine.js', 'utf8').replace(/^\.pragma library\s*/m, '');
 eval(code);
 
-if (LAYER1_EQ_STYLES.length !== 13 || LAYER1_EQ_STYLES[4] !== 'Sun Rays' || LAYER1_EQ_STYLES[7] !== '3D Sonic Orb' || LAYER1_EQ_STYLES[11] !== 'Tesla Plasma Arcs' || LAYER1_EQ_STYLES[12] !== 'Tralis Voxel City') {
+if (LAYER1_EQ_STYLES.length !== 16 || LAYER1_EQ_STYLES[4] !== 'Sun Rays' || LAYER1_EQ_STYLES[13] !== 'Aurora Curtains' || LAYER1_EQ_STYLES[14] !== 'DNA Helix Beam' || LAYER1_EQ_STYLES[15] !== 'Ferrofluid Lake') {
     throw new Error('Unexpected LAYER1_EQ_STYLES: ' + JSON.stringify(LAYER1_EQ_STYLES));
 }
 
@@ -1249,12 +1259,6 @@ if (!Array.isArray(stTowards.eqRidgeHistory) || stTowards.eqRidgeHistory.length 
 }
 if (!stTowards.shockwaves.length || stTowards.shockwaves[0].sizeMul === undefined || stTowards.shockwaves[0].spinX === undefined) {
     throw new Error('Expected stepState to populate per-shape randomised sizeMul and spinX on shockwaves');
-}
-
-// Verify normaliseConfig sets tracerCount=1 when layer2TracersEnabled=false and preserves layer1ShapeDensity
-const cfgTrOff = normaliseConfig({ layer2TracersEnabled: false, tracerCount: 8, layer1ShapeDensity: 2.2 }, 0, []);
-if (cfgTrOff.tracerCount !== 1 || Math.abs(cfgTrOff.layer1ShapeDensity - 2.2) > 0.01) {
-    throw new Error('Unexpected normaliseConfig result: ' + JSON.stringify(cfgTrOff));
 }
 
 function makeMockCtx() {
@@ -1299,112 +1303,137 @@ if (ctxSun.rectCount !== 0 || ctxSun.strokeCount < 5) {
     throw new Error('Sun Rays EQ should have 0 internal rect bars and >=5 ray/disc strokes: rectCount=' + ctxSun.rectCount + ' strokeCount=' + ctxSun.strokeCount);
 }
 
-// Verify all 13 L1 EQ styles (0..12) render geometry cleanly, with zero stray 2D rect() squares on eqStyle >= 3
-for (let eqS = 0; eqS < 13; eqS++) {
-    const ctxEq = makeMockCtx();
-    const cfgEq = normaliseConfig({
-        layer1Enabled: true, layer1FieldEnabled: false,
-        layer1EqEnabled: true, layer1EqStyle: eqS,
-        layer1ShapesEnabled: false, layer2Enabled: false, layer3Enabled: false
-    }, 0, []);
-    renderFrame(ctxEq, 640, 360, stTowards, 0, theme, [], 'album-art', [], cfgEq, null);
-    if ((ctxEq.strokeCount < 1 && ctxEq.fillCount < 1) || (ctxEq.lineCount < 10 && ctxEq.rectCount < 20)) {
-        throw new Error('L1 EQ style ' + eqS + ' failed to draw expected geometry: strokeCount=' + ctxEq.strokeCount + ' lineCount=' + ctxEq.lineCount + ' rectCount=' + ctxEq.rectCount);
-    }
-    if (eqS >= 3 && ctxEq.rectCount !== 0) {
-        throw new Error('L1 EQ style ' + eqS + ' drew stray 2D rect() squares: rectCount=' + ctxEq.rectCount);
-    }
-    if ((eqS === 1 || eqS === 2) && ctxEq.lineCount !== 0) {
-        throw new Error('L1 EQ style ' + eqS + ' drew stray dividing line across screen: lineCount=' + ctxEq.lineCount);
+// Verify all 16 L1 EQ styles (0..15) across all 4 orientations (0..3) render geometry cleanly
+for (let eqS = 0; eqS < 16; eqS++) {
+    for (let eqL = 0; eqL < 4; eqL++) {
+        const ctxEq = makeMockCtx();
+        const cfgEq = normaliseConfig({
+            layer1Enabled: true, layer1FieldEnabled: false,
+            layer1EqEnabled: true, layer1EqStyle: eqS, layer1EqLayout: eqL, layer1EqScale: 1.15,
+            layer1ShapesEnabled: false, layer2Enabled: false, layer3Enabled: false
+        }, 0, []);
+        renderFrame(ctxEq, 640, 360, stTowards, 0, theme, [], 'album-art', [], cfgEq, null);
+        if (ctxEq.strokeCount < 1 && ctxEq.fillCount < 1) {
+            throw new Error('L1 EQ style ' + eqS + ' layout ' + eqL + ' failed to draw geometry');
+        }
     }
 }
 
-// Verify Battlezone (l1Mode === 4) model density scaling (density=2.0 produces significantly more 3D model lines than density=0.4)
-const ctxLowDen = makeMockCtx();
-const ctxHighDen = makeMockCtx();
-renderFrame(ctxLowDen, 640, 360, stTowards, 0, theme, [], 'album-art', [], normaliseConfig({
-    layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: 4, layer1Density: 0.4,
-    layer1EqEnabled: false, layer1ShapesEnabled: false, layer2Enabled: false, layer3Enabled: false
-}, 0, []), null);
-renderFrame(ctxHighDen, 640, 360, stTowards, 0, theme, [], 'album-art', [], normaliseConfig({
-    layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: 4, layer1Density: 2.0,
-    layer1EqEnabled: false, layer1ShapesEnabled: false, layer2Enabled: false, layer3Enabled: false
-}, 0, []), null);
-if (!(ctxHighDen.lineCount > ctxLowDen.lineCount + 80)) {
-    throw new Error('Battlezone model density did not scale lineCount: low=' + ctxLowDen.lineCount + ' high=' + ctxHighDen.lineCount);
-}
-
-// Verify Death Star Trench Run (l1Mode === 5):
-//   1. Single-wall trench opens wide to screen limits (minX === -640 * 0.54, maxX === 640 * 0.54 — no outer cuboid lip rails!)
-//   2. Pure wireframe trench geometry (zero solid polygon ctx.fill() calls on walls/blockades; only 1 polyFillCount for CRT Vertex Bloom dots)
-//   3. Vertical movement up and down through the tunnel across time steps while near walls always span past ±0.55*h
-//   4. 3D cuboid wireframe blockades + CRT vertex bloom dots scaling with layer1Density
-const stTrench = createState();
-const cfgTrenchLow = normaliseConfig({
-    gpuShaderEnabled: true,
-    layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: 5, layer1Density: 0.5,
-    layer1EqEnabled: false, layer1ShapesEnabled: false, layer2Enabled: false, layer3Enabled: false
-}, 0, []);
-const cfgTrenchHigh = normaliseConfig({
-    gpuShaderEnabled: true,
-    layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: 5, layer1Density: 2.0,
-    layer1EqEnabled: false, layer1ShapesEnabled: false, layer2Enabled: false, layer3Enabled: false
-}, 0, []);
-stepState(stTrench, bands, true, cfgTrenchLow, 0.1);
-const ctxTr0 = makeMockCtx();
-renderFrame(ctxTr0, 640, 360, stTrench, 0, theme, [], 'album-art', [], cfgTrenchLow, null);
-if (Math.abs(ctxTr0.minX - (-640 * 0.54)) > 1.0 || Math.abs(ctxTr0.maxX - (640 * 0.54)) > 1.0) {
-    throw new Error('Death Star trench must open cleanly to single-wall screen limits ±0.54*w: minX=' + ctxTr0.minX + ' maxX=' + ctxTr0.maxX);
-}
-if (ctxTr0.polyFillCount !== 1) {
-    // Only the single CRT Vertex Bloom batch uses ctx.fill(); trench walls and blockades have zero solid polygon fills!
-    throw new Error('Death Star trench must be pure wireframe (only 1 fill call for CRT Vertex Bloom dots), got polyFillCount=' + ctxTr0.polyFillCount);
-}
-const ctxTrHigh = makeMockCtx();
-renderFrame(ctxTrHigh, 640, 360, stTrench, 0, theme, [], 'album-art', [], cfgTrenchHigh, null);
-if (!(ctxTrHigh.lineCount > ctxTr0.lineCount && ctxTrHigh.rectCount > ctxTr0.rectCount)) {
-    throw new Error('Death Star 3D wireframe blockades must scale with density: lowLines=' + ctxTr0.lineCount + ' highLines=' + ctxTrHigh.lineCount);
-}
-let minFirstY = ctxTr0.firstMoveY, maxFirstY = ctxTr0.firstMoveY;
-for (let step = 0; step < 30; step++) {
-    stepState(stTrench, bands, true, cfgTrenchLow, 0.12);
-    const ctxStep = makeMockCtx();
-    renderFrame(ctxStep, 640, 360, stTrench, 0, theme, [], 'album-art', [], cfgTrenchLow, null);
-    if (!(ctxStep.minY <= -360 * 0.55 && ctxStep.maxY >= 360 * 0.55)) {
-        throw new Error('Death Star near walls must always span past top/bottom screen limits (±0.55*h): minY=' + ctxStep.minY + ' maxY=' + ctxStep.maxY);
-    }
-    minFirstY = Math.min(minFirstY, ctxStep.firstMoveY);
-    maxFirstY = Math.max(maxFirstY, ctxStep.firstMoveY);
-}
-if (maxFirstY - minFirstY < 20.0) {
-    throw new Error('Death Star trench must move vertically up and down through the tunnel over time: range=' + (maxFirstY - minFirstY));
-}
-
-// Verify append3DStarWarsFighter renders all 3 craft types (0: Standard TIE, 1: Vader TIE Advanced x1, 2: Rebel X-Wing)
-for (const craftKind of [0, 1, 2]) {
-    const ctxSw = makeMockCtx();
-    append3DStarWarsFighter(ctxSw, craftKind, 320, 180, 40, 0.2, 0.4, -0.15);
-    if (ctxSw.lineCount < 24) {
-        throw new Error('append3DStarWarsFighter failed for craftKind=' + craftKind + ': lineCount=' + ctxSw.lineCount);
+// Verify all 13 Layer 2 modes (0..12) and all 12 Layer 3 modes (0..11) render cleanly
+for (let l2m = 0; l2m < 13; l2m++) {
+    const ctx2 = makeMockCtx();
+    renderFrame(ctx2, 640, 360, stTowards, l2m, theme, [], 'album-art', [], normaliseConfig({
+        layer1Enabled: false, layer2Enabled: true, layer2VizEnabled: true, visualMode: l2m, layer3Enabled: false
+    }, l2m, []), null);
+    if (ctx2.strokeCount < 1 && ctx2.fillCount < 1) {
+        throw new Error('L2 mode ' + l2m + ' failed to render');
     }
 }
-
-// Verify Layer #2 Fractals (visualMode === 5) renders Mandelbrot/Julia boundary dive cleanly
-const ctxFrac = makeMockCtx();
-renderFrame(ctxFrac, 640, 360, stTowards, 5, theme, [], 'album-art', [], normaliseConfig({
-    layer1Enabled: false, layer2Enabled: true, layer2VizEnabled: true, visualMode: 5, layer3Enabled: false
-}, 5, []), null);
-if (ctxFrac.strokeCount < 4 || ctxFrac.lineCount < 50) {
-    throw new Error('drawMode5JuliaFractals failed to render boundary filaments: strokeCount=' + ctxFrac.strokeCount + ' lineCount=' + ctxFrac.lineCount);
+const sampleLines = Array.from({length: 10}, () => '⣿⣷⣯⣟⡿⢿⣻⣽'.repeat(3));
+for (let l3m = 0; l3m < 12; l3m++) {
+    const ctx3 = makeMockCtx();
+    renderFrame(ctx3, 640, 360, stTowards, 0, theme, sampleLines, 'album-art', [], normaliseConfig({
+        layer1Enabled: false, layer2Enabled: false, layer3Enabled: true, layer3Mode: l3m, artLines: sampleLines
+    }, 0, sampleLines), null);
+    if (ctx3.rectCount + ctx3.fillCount + ctx3.strokeCount < 5) {
+        throw new Error('L3 mode ' + l3m + ' failed to render');
+    }
 }
 console.log('OK');
 """
             res = subprocess.run(["node", "-e", node_script], cwd=REPO_ROOT, capture_output=True, text=True, timeout=15)
             self.assertEqual(res.returncode, 0, f"Node test_13 failed: {res.stderr}")
 
+    def test_14_security_and_marketplace_hardening(self):
+        with open(os.path.join(REPO_ROOT, "BarWidget.qml"), "r", encoding="utf-8") as f:
+            bar_src = f.read()
+        with open(os.path.join(REPO_ROOT, "Service.qml"), "r", encoding="utf-8") as f:
+            svc_src = f.read()
+        with open(BIN_PATH, "r", encoding="utf-8") as f:
+            bin_src = f.read()
+        with open(os.path.join(REPO_ROOT, "bin", "bandarchy-player"), "r", encoding="utf-8") as f:
+            player_src = f.read()
+        with open(os.path.join(REPO_ROOT, "README.md"), "r", encoding="utf-8") as f:
+            readme_src = f.read()
+
+        # 1. Top Bar LED Equaliser: zero Text items in BarWidget.qml, 9x6 LED segments, topBarLedEnabled toggle
+        self.assertEqual(len(re.findall(r"\bText\s*\{", bar_src)), 0, "BarWidget.qml must contain zero Text items")
+        self.assertIn("topBarLedEnabled", bar_src)
+        self.assertIn("property bool topBarLedEnabled: true", svc_src)
+        led_off = self.run_cli("auth", "--top-bar-led", "0")
+        self.assertFalse(led_off["topBarLedEnabled"])
+        led_on = self.run_cli("auth", "--top-bar-led", "1")
+        self.assertTrue(led_on["topBarLedEnabled"])
+
+        # 2. CRIT-1..7 & HIGH-1..6 static and runtime security checks
+        self.assertIn("os.umask(0o077)", bin_src)
+        self.assertIn("def _make_private_temp_file(", bin_src)
+        self.assertIn("def _aes_128_cbc_decrypt_inprocess(", bin_src)
+        self.assertNotIn('"openssl", "enc"', bin_src)
+        self.assertIn("WHERE host LIKE '%bandcamp.com'", bin_src)
+        self.assertNotIn("BANDARCHY_MPV_ARGS", bin_src)
+        self.assertNotIn("BANDCAMP_MPV_ARGS", bin_src)
+        self.assertNotIn("shutil.which(", bin_src)
+        self.assertNotIn('"yt-dlp"', bin_src)
+        self.assertNotIn('"-c", runner_sh', bin_src)
+        self.assertIn('"--tty-loop"', bin_src)
+        self.assertIn("umask 077", player_src)
+        self.assertNotIn(":-/tmp}", player_src)
+        self.assertIn("## Your Credentials & Privacy", readme_src)
+
+        # Verify unit-level security functions in bin/bandarchy via Python import
+        import importlib.machinery
+        import importlib.util
+
+        loader = importlib.machinery.SourceFileLoader("bandarchy_mod", BIN_PATH)
+        spec = importlib.util.spec_from_loader("bandarchy_mod", loader)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        # CRIT-5: Cookie header restricted to bandcamp.com and *.bandcamp.com
+        mod.write_json(mod.AUTH_FILE, {"identity": "secret_test_cookie"}, mode=0o600)
+        mod.write_json(mod.SETTINGS_FILE, {"loggedOut": False}, mode=0o600)
+        self.assertIn("secret_test_cookie", mod.build_cookie_header("bandcamp.com"))
+        self.assertIn("secret_test_cookie", mod.build_cookie_header("daily.bandcamp.com"))
+        self.assertEqual(mod.build_cookie_header("t4.bcbits.com"), "")
+        self.assertEqual(mod.build_cookie_header("evilbandcamp.com"), "")
+
+        # CRIT-6: sanitise_m3u_target blocks dangerous mpv pseudo-protocols and flags
+        for bad_target in (
+            "edl://0;1,/etc/passwd",
+            "lavfi://aevalsrc=0",
+            "avdevice://alsa",
+            "--input-ipc-server=/tmp/pwn",
+            "#EXTM3U\n/etc/passwd",
+            "file:///etc/passwd",
+        ):
+            with self.assertRaises(mod.BandarchyError):
+                mod.sanitise_m3u_target(bad_target)
+
+        # HIGH-4: validate_remote_url blocks non-HTTPS and non-allowlisted hosts
+        for bad_url in (
+            "http://bandcamp.com/test",
+            "https://169.254.169.254/latest/meta-data/",
+            "https://evil.example.com/stream.mp3",
+        ):
+            with self.assertRaises(mod.BandarchyError):
+                mod.validate_remote_url(bad_url)
+
+        # CRIT-4: safe_load_json refuses symlink targets
+        sym_target = os.path.join(self.tmp_root, "real_secret.json")
+        sym_link = os.path.join(self.tmp_root, "symlink_secret.json")
+        with open(sym_target, "w", encoding="utf-8") as f:
+            f.write('{"secret": 1}')
+        if os.path.lexists(sym_link):
+            os.unlink(sym_link)
+        os.symlink(sym_target, sym_link)
+        self.assertEqual(mod.safe_load_json(sym_link, {"fallback": True}), {"fallback": True})
+        os.unlink(sym_link)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
 
 
 

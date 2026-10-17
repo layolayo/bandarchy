@@ -125,9 +125,10 @@ Item {
     property var playlists: []
 
     // Stage Mode & 3-Layer Visualiser / Omarchy Screensaver state
+    property bool topBarLedEnabled: true
     property string stageMode: "visualiser" // "off", "art", "turntable", "visualiser"
     property bool useAlbumArt: false
-    property string asciiMode: "banner" // "banner" (Words), "braille" (Cover Art), "block" (Cover Art)
+    property string asciiMode: "braille" // "braille", "block", "text"
     property string asciiSource: "omarchy-ascii"
     property var asciiLines: []
     property var bannerLines: []
@@ -202,6 +203,14 @@ Item {
                 root.downloadState = d.download || ({ running: false })
                 root.lastError = d.lastError || ""
 
+                if (!root._topBarLedChangedLocally) {
+                    if (d.topBarLedEnabled !== undefined) {
+                        root.topBarLedEnabled = Boolean(d.topBarLedEnabled)
+                    } else if (d.top_bar_led !== undefined) {
+                        root.topBarLedEnabled = Boolean(d.top_bar_led)
+                    }
+                }
+
                 if (d.stageMode && ["off", "art", "turntable", "visualiser"].indexOf(d.stageMode) >= 0) {
                     if (!root._stageChangedLocally) {
                         root.stageMode = d.stageMode
@@ -254,6 +263,7 @@ Item {
         }
     }
 
+    property bool _topBarLedChangedLocally: false
     property bool _stageChangedLocally: false
     property double _optimisticPlayUntil: 0
 
@@ -490,12 +500,19 @@ Item {
                 if (d.ok && d.config && typeof d.config === "object") {
                     root.visualiserConfig = d.config
                     root.visualiserConfigLoaded = true
+                    if (!root._topBarLedChangedLocally) {
+                        if (d.config.topBarLedEnabled !== undefined) {
+                            root.topBarLedEnabled = Boolean(d.config.topBarLedEnabled)
+                        } else if (d.config.top_bar_led !== undefined) {
+                            root.topBarLedEnabled = Boolean(d.config.top_bar_led)
+                        }
+                    }
                     var changedAscii = false
                     if (d.config.useAlbumArt !== undefined && Boolean(d.config.useAlbumArt) !== root.useAlbumArt) {
                         root.useAlbumArt = Boolean(d.config.useAlbumArt)
                         changedAscii = true
                     }
-                    if (d.config.asciiMode === "braille" || d.config.asciiMode === "block") {
+                    if (d.config.asciiMode === "braille" || d.config.asciiMode === "block" || d.config.asciiMode === "text") {
                         if (root.asciiMode !== d.config.asciiMode) {
                             root.asciiMode = d.config.asciiMode
                             changedAscii = true
@@ -531,7 +548,7 @@ Item {
     Process {
         id: cavaProc
         command: ["cava", "-p", root.cavaConfPath]
-        running: root.visualiserActive || root.fullscreenVisualiserOpen
+        running: (root.activelyPlaying && root.topBarLedEnabled) || root.visualiserActive || root.fullscreenVisualiserOpen
         stdout: SplitParser {
             onRead: line => {
                 var parts = line.trim().split(";")
@@ -554,6 +571,18 @@ Item {
             statusProc.outBuf = ""
             statusProc.running = true
         }
+    }
+
+    function setTopBarLedEnabled(enabled) {
+        var nextVal = Boolean(enabled)
+        root._topBarLedChangedLocally = true
+        root.topBarLedEnabled = nextVal
+        Quickshell.execDetached([
+            root.binPath, "auth",
+            "--top-bar-led", nextVal ? "1" : "0"
+        ])
+        saveVisualiserConfig({ topBarLedEnabled: nextVal, top_bar_led: nextVal })
+        root.notifyAction("Top Bar LED Equaliser: " + (nextVal ? "ON" : "OFF"))
     }
 
     function setStageMode(newMode) {
@@ -606,11 +635,17 @@ Item {
         }
     }
 
+    function _asciiStyleLabel(m) {
+        if (m === "block") return "Block █"
+        if (m === "text") return "Crisp Text 󰬴"
+        return "Braille ⣿"
+    }
+
     function refreshAsciiArt(customAlbumId, customEffect) {
         root.ttfxEffect = "random"
         if (asciiProc.running) asciiProc.running = false
         asciiProc.outBuf = ""
-        var effMode = (root.asciiMode === "block") ? "block" : "braille"
+        var effMode = (root.asciiMode === "block") ? "block" : ((root.asciiMode === "text") ? "text" : "braille")
         var cmd = [
             root.binPath, "ascii-art",
             "--mode", effMode,
@@ -639,7 +674,7 @@ Item {
 
     function setUseAlbumArt(useArt) {
         root.useAlbumArt = Boolean(useArt)
-        if (root.asciiMode !== "braille" && root.asciiMode !== "block") {
+        if (root.asciiMode !== "braille" && root.asciiMode !== "block" && root.asciiMode !== "text") {
             root.asciiMode = "braille"
         }
         Quickshell.execDetached([
@@ -650,12 +685,12 @@ Item {
         refreshAsciiArt()
         root.notifyAction(
             "Layer #3: " + (root.useAlbumArt ? "Cover Art" : "Artist/Song Words") +
-            " · " + (root.asciiMode === "block" ? "Block █" : "Braille ⣿")
+            " · " + _asciiStyleLabel(root.asciiMode)
         )
     }
 
     function setAsciiGlyphMode(glyphMode) {
-        root.asciiMode = (glyphMode === "block") ? "block" : "braille"
+        root.asciiMode = (glyphMode === "block") ? "block" : ((glyphMode === "text") ? "text" : "braille")
         Quickshell.execDetached([
             root.binPath, "auth",
             "--use-album-art", root.useAlbumArt ? "1" : "0",
@@ -664,7 +699,7 @@ Item {
         refreshAsciiArt()
         root.notifyAction(
             "Layer #3: " + (root.useAlbumArt ? "Cover Art" : "Artist/Song Words") +
-            " · " + (root.asciiMode === "block" ? "Block █" : "Braille ⣿")
+            " · " + _asciiStyleLabel(root.asciiMode)
         )
     }
 
@@ -673,18 +708,14 @@ Item {
     }
 
     function toggleAsciiMode() {
-        if (root.useAlbumArt && root.asciiMode !== "block") {
-            root.useAlbumArt = true
-            root.asciiMode = "block"
-        } else if (root.useAlbumArt && root.asciiMode === "block") {
-            root.useAlbumArt = false
-            root.asciiMode = "braille"
-        } else if (!root.useAlbumArt && root.asciiMode !== "block") {
-            root.useAlbumArt = false
-            root.asciiMode = "block"
+        var styles = ["braille", "block", "text"]
+        var idx = styles.indexOf(root.asciiMode)
+        if (idx < 0) idx = 0
+        if (idx < styles.length - 1) {
+            root.asciiMode = styles[idx + 1]
         } else {
-            root.useAlbumArt = true
             root.asciiMode = "braille"
+            root.useAlbumArt = !root.useAlbumArt
         }
         Quickshell.execDetached([
             root.binPath, "auth",
@@ -694,7 +725,7 @@ Item {
         refreshAsciiArt()
         root.notifyAction(
             "Layer #3: " + (root.useAlbumArt ? "Cover Art" : "Artist/Song Words") +
-            " · " + (root.asciiMode === "block" ? "Block █" : "Braille ⣿")
+            " · " + _asciiStyleLabel(root.asciiMode)
         )
     }
 
@@ -708,20 +739,28 @@ Item {
             root.asciiMode = "block"
         } else if (m === "braille") {
             root.asciiMode = "braille"
+        } else if (m === "text" || m === "crisp") {
+            root.asciiMode = "text"
         } else if (m === "art-braille") {
             root.useAlbumArt = true
             root.asciiMode = "braille"
         } else if (m === "art-block") {
             root.useAlbumArt = true
             root.asciiMode = "block"
+        } else if (m === "art-text") {
+            root.useAlbumArt = true
+            root.asciiMode = "text"
         } else if (m === "words-braille") {
             root.useAlbumArt = false
             root.asciiMode = "braille"
         } else if (m === "words-block") {
             root.useAlbumArt = false
             root.asciiMode = "block"
+        } else if (m === "words-text") {
+            root.useAlbumArt = false
+            root.asciiMode = "text"
         }
-        if (root.asciiMode !== "braille" && root.asciiMode !== "block") {
+        if (root.asciiMode !== "braille" && root.asciiMode !== "block" && root.asciiMode !== "text") {
             root.asciiMode = "braille"
         }
         Quickshell.execDetached([
@@ -732,7 +771,7 @@ Item {
         refreshAsciiArt()
         root.notifyAction(
             "Layer #3: " + (root.useAlbumArt ? "Cover Art" : "Artist/Song Words") +
-            " · " + (root.asciiMode === "block" ? "Block █" : "Braille ⣿")
+            " · " + _asciiStyleLabel(root.asciiMode)
         )
     }
 
@@ -759,8 +798,16 @@ Item {
 
     function openExternal(target, customMsg) {
         if (!target) return
-        Quickshell.execDetached(["xdg-open", String(target)])
-        root.notifyAction(customMsg || ("Opened: " + String(target)))
+        var s = String(target).trim()
+        if (!s || s.indexOf("-") === 0) return
+        var isSafeUrl = s.indexOf("https://") === 0 || s.indexOf("http://") === 0 || s.indexOf("file:///") === 0
+        var isSafePath = s.indexOf("/") === 0
+        if (!isSafeUrl && !isSafePath) {
+            root.notifyAction("Blocked unsafe external target")
+            return
+        }
+        Quickshell.execDetached(["xdg-open", s])
+        root.notifyAction(customMsg || ("Opened: " + s))
     }
 
     function refreshSmartPlaylist(preset, seedTrackId) {

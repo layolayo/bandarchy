@@ -41,6 +41,11 @@ mat2 rot2D(float a) {
     return mat2(c, -s, s, c);
 }
 
+vec2 hash2(vec2 p) {
+    p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+    return fract(sin(p) * 43758.5453123);
+}
+
 // Smooth polygon / star distance metric for C64 / Minter tunnel rings
 float shapeRadius(vec2 p, float folds, float starDepth, float roundness) {
     float r = length(p);
@@ -134,18 +139,19 @@ void main() {
     }
 
     // =========================================================================
-    // INDEPENDENT GPU SHADER TUNNEL & BACKDROP ENGINE (7 Modes 0..6)
-    //   0: Harmonic Ripple Tunnel
-    //   1: Stained-Glass Rose Tunnel
-    //   2: Volumetric Plasma Tunnel
-    //   3: Julia Seahorse Fractal Tunnel (also active whenever Layer #2 visualMode == 5 Fractals is selected)
-    //   4: Raymarched Polygonal Tunnel
+    // INDEPENDENT GPU SHADER TUNNEL & BACKDROP ENGINE (8 Modes 0..7)
+    //   0: Harmonic Ripple Flower
+    //   1: Stained-Glass Rose
+    //   2: Volumetric Plasma
+    //   3: Julia Seahorse Fractal
+    //   4: Raymarched Shape Field
     //   5: Cosmic Aura Pulse
-    //   6: Relativistic Event Horizon
+    //   6: Relativistic Event Horizon (Interstellar Gargantua Black Hole)
+    //   7: Voronoi Bio-Cells (Bioluminescent Cellular Tessellation)
     // =========================================================================
     bool l2FractalActive = (int(floor(uL2VizMode + 0.5)) == 5);
     if (uL2Enabled > 0.5 || l2FractalActive) {
-        int m = l2FractalActive ? 3 : int(floor(uL2Mode + 0.5));
+        int m = (uL2Enabled > 0.5) ? int(floor(uL2Mode + 0.5)) : 3;
         float sym = max(2.0, floor(uFacets + 0.5));
         float zoom = clamp(uZoom, 0.4, 2.5);
         float bIntensity = clamp(uComplexity, 0.2, 2.0);
@@ -276,14 +282,101 @@ void main() {
             float rays = pow(0.5 + 0.5 * cos(a * sym * 2.0 - uTime * 1.1 + sin(r * 6.0)), 2.2);
             float falloff = exp(-r * 1.15) * (0.38 + 0.32 * uBass + 0.18 * uBeat) * bIntensity;
             col += (mix(uCol0.rgb, uCol1.rgb, aura) + uCol2.rgb * rays * 0.45) * falloff;
+        } else if (m == 6) {
+            // Mode 6: Interstellar Gargantua Relativistic Black Hole
+            //   - Crisp pitch-black Event Horizon Shadow Sphere (`r < rHorizon` is pure #000000 black)
+            //   - Razor-thin white-hot Photon Ring (`abs(r - rHorizon) < 0.018`)
+            //   - Tilted 3D equatorial accretion belt (`y / 0.22`) + gravitationally lensed top/bottom halo arcs with Doppler beaming
+            //   - Relativistic Polar Quasar Jets blasting vertically from the north & south poles on bass/beat peaks
+            float tiltAngle = -0.24 + sin(uTime * 0.18) * 0.08;
+            vec2 bhPos = rot2D(tiltAngle) * cPos;
+            float rHorizon = 0.25 + uBass * 0.035;
+            float rBH = length(bhPos);
+
+            // Relativistic Doppler beaming (approaching left side of disk is hotter/brighter than receding right side)
+            float doppler = clamp(1.0 - bhPos.x * 1.15 * dir, 0.32, 1.85);
+
+            // 1. Gravitationally lensed upper & lower Einstein ring halo warping behind the black shadow sphere
+            float rLensed = length(vec2(bhPos.x * 0.82, abs(bhPos.y) - rHorizon * 0.18));
+            float lensedHalo = exp(-abs(rLensed - rHorizon * 1.06) * 14.0) * smoothstep(rHorizon * 0.90, rHorizon * 1.04, rBH);
+
+            // 2. Tilted 3D equatorial accretion disk (flattened by 1/0.22 in Y)
+            vec2 diskCoord = vec2(bhPos.x, bhPos.y / 0.22);
+            float rDisk = length(diskCoord);
+            float diskAngle = atan(diskCoord.y, diskCoord.x);
+            float diskRings = 0.5 + 0.5 * sin(rDisk * 28.0 - uZoomTime * 5.0 * dir + sin(diskAngle * 3.0 - uTime * 3.5) * 0.65);
+            float diskMask = smoothstep(rHorizon * 0.95, rHorizon * 1.25, rDisk) * exp(-max(0.0, rDisk - rHorizon * 1.15) * 2.35);
+            // Front half of the equatorial accretion belt crosses in front of the lower shadow hemisphere
+            bool inFrontBelt = (bhPos.y < 0.0) && (abs(bhPos.y) < rHorizon * 0.24) && (rDisk > rHorizon * 1.05);
+
+            // 3. Razor-thin white-hot Photon Ring at r == rHorizon
+            float photonRing = smoothstep(0.022, 0.0, abs(rBH - rHorizon)) + exp(-abs(rBH - rHorizon) * 42.0) * 0.85;
+
+            // 4. Relativistic Polar Quasar Jets blasting vertically along the rotation axis (bhPos.x == 0)
+            float jetWidth = 0.022 + abs(bhPos.y) * 0.085;
+            float jetCore = exp(-(bhPos.x * bhPos.x) / max(0.0002, jetWidth * jetWidth))
+                          * smoothstep(rHorizon * 0.88, rHorizon * 1.35, abs(bhPos.y))
+                          * exp(-abs(bhPos.y) * 1.35)
+                          * (0.45 + uBass * 0.85 + uBeat * 0.65);
+            float jetShock = 0.65 + 0.35 * sin(abs(bhPos.y) * 24.0 - uTime * 9.0);
+
+            vec3 diskCol = mix(uCol1.rgb, uCol0.rgb, diskRings) * doppler;
+            diskCol = mix(diskCol, vec3(1.0, 0.97, 0.90), clamp(diskRings * doppler * 0.48, 0.0, 1.0));
+            vec3 jetCol = mix(uCol2.rgb, vec3(0.88, 0.96, 1.0), 0.55) * jetCore * jetShock;
+            vec3 ringCol = mix(uCol0.rgb, vec3(1.0, 0.98, 0.92), 0.72) * photonRing * (0.95 + uBeat * 0.45);
+
+            // Pitch-black Event Horizon Shadow Sphere (`rBH < rHorizon` is pure #000000 black, except where front belt crosses)
+            if (rBH < rHorizon && !inFrontBelt) {
+                col = vec3(0.0);
+            } else {
+                float shadowEdge = smoothstep(rHorizon * 0.96, rHorizon * 1.02, rBH);
+                col *= shadowEdge;
+                col += (diskCol * (diskMask * 0.95 + lensedHalo * 0.78) + ringCol + jetCol) * bIntensity;
+            }
+            if (inFrontBelt && rBH < rHorizon) {
+                col = diskCol * diskMask * bIntensity;
+            }
         } else {
-            // Mode 6: Relativistic Event Horizon & Gravitational Lensing Accretion Halo
-            float ehR = 0.22 + uBass * 0.04;
-            float photonRing = exp(-abs(r - ehR) * 18.0) * (0.72 + uBeat * 0.38);
-            float swirl = sin(a * sym - log(max(0.04, r)) * 8.0 - uTime * 2.2 * dir) * 0.5 + 0.5;
-            float corona = smoothstep(ehR * 0.82, ehR * 1.08, r) * exp(-max(0.0, r - ehR) * 3.0);
-            col += (uCol0.rgb * photonRing + mix(uCol1.rgb, uCol2.rgb, swirl) * corona * 0.52) * bIntensity;
-            col *= smoothstep(ehR * 0.70, ehR * 0.98, r);
+            // Mode 7: Voronoi Bio-Cells (Bioluminescent Cellular Tessellation / Living Crystal Membrane — zero polar spiral!)
+            float flowPhase = uZoomTime * 1.15 * dir;
+            float cellScale = 3.2 + bIntensity * 1.4;
+            vec2 st = cPos * cellScale + vec2(sin(flowPhase * 0.32), cos(flowPhase * 0.27)) * 0.65;
+            vec2 ip = floor(st);
+            vec2 fp = fract(st);
+
+            float d1 = 8.0;
+            float d2 = 8.0;
+            vec2 bestCellId = vec2(0.0);
+
+            for (int y = -1; y <= 1; y++) {
+                for (int x = -1; x <= 1; x++) {
+                    vec2 offset = vec2(float(x), float(y));
+                    vec2 h2 = hash2(ip + offset);
+                    vec2 seed = offset + 0.5 + (0.42 + uBass * 0.06) * sin(flowPhase * 1.4 + TAU * h2 + vec2(uMid * 1.3, uHigh * 1.3));
+                    float dist = length(seed - fp);
+                    if (dist < d1) {
+                        d2 = d1;
+                        d1 = dist;
+                        bestCellId = h2;
+                    } else if (dist < d2) {
+                        d2 = dist;
+                    }
+                }
+            }
+
+            // Razor-sharp glowing neon cell membrane boundary + pulsing living cell nucleus + cytoplasmic standing waves
+            float edge = 1.0 - smoothstep(0.0, 0.08 + uBass * 0.05, d2 - d1);
+            float nucleus = exp(-d1 * d1 * (18.0 - uBeat * 8.0));
+            float cytoplasm = 0.5 + 0.5 * sin(d1 * 18.0 - flowPhase * 4.0 + bestCellId.x * TAU);
+
+            vec3 cellTint = mix(uCol0.rgb, uCol1.rgb, bestCellId.x);
+            cellTint = mix(cellTint, uCol2.rgb, bestCellId.y * 0.75);
+            vec3 membraneCol = mix(uCol2.rgb, vec3(0.95, 1.0, 0.98), 0.55);
+
+            vec3 voronoiCol = cellTint * (0.20 + 0.42 * cytoplasm)
+                            + membraneCol * edge * (0.85 + 0.45 * uBass)
+                            + mix(uCol1.rgb, vec3(1.0), 0.6) * nucleus * (0.65 + 0.55 * uBeat);
+            col = mix(col, voronoiCol, clamp((0.68 + 0.24 * uBass) * bIntensity, 0.0, 0.95));
         }
     }
 

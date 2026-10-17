@@ -1,26 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
+
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 if [[ ! -f "${ROOT_DIR}/App.qml" ]]; then
-    if [[ -f "${HOME}/Projects/bandarchy/App.qml" ]]; then
-        ROOT_DIR="${HOME}/Projects/bandarchy"
-    elif [[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/io.github.layolayo.bandarchy/App.qml" ]]; then
+    if [[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/io.github.layolayo.bandarchy/App.qml" ]]; then
         ROOT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/io.github.layolayo.bandarchy"
+    elif [[ -f "${HOME}/Projects/bandarchy/App.qml" ]]; then
+        ROOT_DIR="${HOME}/Projects/bandarchy"
     fi
 fi
 
+PKILL_BIN="/usr/bin/pkill"
+[[ -x "${PKILL_BIN}" ]] || PKILL_BIN="pkill"
+
 kill_bandarchy_ui() {
-    pkill -f "(quickshell|bandarchy) -p .*/bandarchy/App\.qml" 2>/dev/null || true
-    pkill -f "(quickshell|bandarchy) -p .*io\.github\.layolayo\.bandarchy/App\.qml" 2>/dev/null || true
-    pkill -x bandarchy 2>/dev/null || true
-    pkill -9 -f "/tmp/bandarchy_test_.*bandarchy\.sock" 2>/dev/null || true
+    "${PKILL_BIN}" -f "(quickshell|bandarchy) -p .*/bandarchy/App\.qml" 2>/dev/null || true
+    "${PKILL_BIN}" -f "(quickshell|bandarchy) -p .*io\.github\.layolayo\.bandarchy/App\.qml" 2>/dev/null || true
+    "${PKILL_BIN}" -x bandarchy 2>/dev/null || true
 }
 
 if [[ "${1:-}" == "--kill" || "${1:-}" == "kill" ]]; then
     kill_bandarchy_ui
-    pkill -f "bandarchy\.sock" 2>/dev/null || true
-    pkill -f "bandarchy.*cava" 2>/dev/null || true
+    "${PKILL_BIN}" -f "bandarchy\.sock" 2>/dev/null || true
+    "${PKILL_BIN}" -f "bandarchy.*cava" 2>/dev/null || true
     echo "Stopped all Bandarchy processes."
     exit 0
 fi
@@ -33,10 +37,27 @@ fi
 
 kill_bandarchy_ui
 
-RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}/bandarchy-runtime"
-mkdir -p "${RUNTIME_DIR}"
-QS_BIN="$(command -v quickshell)"
-ln -sf "${QS_BIN}" "${RUNTIME_DIR}/bandarchy"
+RUNTIME_BASE="${XDG_RUNTIME_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}}"
+mkdir -p -m 700 "${RUNTIME_BASE}"
+if [[ ! -O "${RUNTIME_BASE}" || -L "${RUNTIME_BASE}" ]]; then
+    RUNTIME_BASE="${HOME}/.cache/bandarchy/run"
+    mkdir -p -m 700 "${RUNTIME_BASE}"
+fi
+RUNTIME_DIR="${RUNTIME_BASE}/bandarchy-runtime"
+mkdir -p -m 700 "${RUNTIME_DIR}"
+chmod 700 "${RUNTIME_DIR}"
+
+QS_BIN="/usr/bin/quickshell"
+if [[ ! -x "${QS_BIN}" ]]; then
+    QS_BIN="/usr/local/bin/quickshell"
+fi
+if [[ ! -x "${QS_BIN}" ]]; then
+    echo "Error: trusted quickshell binary not found in /usr/bin or /usr/local/bin" >&2
+    exit 1
+fi
+
+rm -f "${RUNTIME_DIR}/bandarchy"
+ln -s "${QS_BIN}" "${RUNTIME_DIR}/bandarchy"
 
 if [[ "${RESTART_MODE}" -eq 1 ]]; then
     setsid -f "${RUNTIME_DIR}/bandarchy" -p "${ROOT_DIR}/App.qml" "$@" >/dev/null 2>&1 </dev/null
@@ -45,4 +66,5 @@ if [[ "${RESTART_MODE}" -eq 1 ]]; then
 fi
 
 exec "${RUNTIME_DIR}/bandarchy" -p "${ROOT_DIR}/App.qml" "$@"
+
 
