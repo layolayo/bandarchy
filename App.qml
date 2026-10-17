@@ -1737,7 +1737,7 @@ ShellRoot {
                                     }
                                 }
 
-                                // Layer 3 Content Source + Tracers + Random TTE Controls
+                                // Layer 3 Content Source + TTE & Mutate Controls
                                 RowLayout {
                                     Layout.fillWidth: true
                                     spacing: 5
@@ -1747,15 +1747,6 @@ ShellRoot {
                                             : (service.asciiMode === "braille" ? "󰀥 L3: Braille ⣿" : "󰀥 L3: Block █")
                                         active: true
                                         onClicked: service.cycleLayer3Source()
-                                    }
-                                    ActionPill {
-                                        text: "L2 Tracers: " + appVisualiser.tracerCount + "x ▾"
-                                        active: appVisualiser.showTracerPopover || appVisualiser.tracerCount > 1
-                                        primary: appVisualiser.showTracerPopover
-                                        onClicked: {
-                                            appVisualiser.setStage("visualiser")
-                                            appVisualiser.showTracerPopover = !appVisualiser.showTracerPopover
-                                        }
                                     }
                                     ActionPill {
                                         text: "󰍹 TTE"

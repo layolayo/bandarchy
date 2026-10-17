@@ -1974,7 +1974,7 @@ Item {
                     Visualiser {
                         id: panelVisualiser
                         anchors.fill: parent
-                        visible: root.activeTab === 2 && !(root.service && root.service.fullscreenVisualiserOpen)
+                        visible: (root.opened || root.standaloneMode) && root.activeTab === 2 && !(root.service && root.service.fullscreenVisualiserOpen)
                         isFullscreen: false
                         bands: root.service ? root.service.spectrumBands : []
                         playing: root.service ? root.service.activelyPlaying : false

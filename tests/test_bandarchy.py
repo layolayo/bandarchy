@@ -1155,9 +1155,112 @@ console.log('OK');
             res = subprocess.run(["node", "-e", node_script], cwd=REPO_ROOT, capture_output=True, text=True, timeout=15)
             self.assertEqual(res.returncode, 0, f"Node test_12 failed: {res.stderr}")
 
+    def test_13_gpu_tunnel_l1_controls_sun_eq_and_landscape_models(self):
+        with open(os.path.join(REPO_ROOT, "Visualiser.qml"), "r", encoding="utf-8") as f:
+            viz_src = f.read()
+        with open(os.path.join(REPO_ROOT, "App.qml"), "r", encoding="utf-8") as f:
+            app_src = f.read()
+        with open(os.path.join(REPO_ROOT, "Service.qml"), "r", encoding="utf-8") as f:
+            svc_src = f.read()
+        with open(os.path.join(REPO_ROOT, "PsychedelicEngine.js"), "r", encoding="utf-8") as f:
+            engine_src = f.read()
+
+        # 1. Verify GPU Tunnel works in L1 even when L2 & L3 are OFF, and Row 2A has explicit ON/OFF + Tri-State controls
+        self.assertIn("property real uL1Enabled: 0.0", viz_src)
+        self.assertIn("property real uL2Enabled: (root.gpuShaderEnabled && root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) ? 1.0 : 0.0", viz_src)
+        self.assertIn("renderStrategy: Canvas.Threaded", viz_src)
+        self.assertIn('text: root.backdropEnabled ? "GPU:ON" : "GPU:OFF"', viz_src)
+        self.assertIn('text: "TunDir:" + (root.backdropDirection > 0 ? "Towards" : (root.backdropDirection < 0 ? "Away" : "Breathe"))', viz_src)
+        self.assertIn('text: root.layer1EqEnabled ? "LED:ON" : "LED:OFF"', viz_src)
+        self.assertIn('text: root.layer1ShapesEnabled ? "Shapes:ON" : "Shapes:OFF"', viz_src)
+
+        # 2. Verify orphaned L2 Tracers pill is removed from App.qml and cavaProc is gated in Service.qml
+        self.assertNotIn("L2 Tracers: ", app_src)
+        self.assertIn("running: root.visualiserActive || root.fullscreenVisualiserOpen", svc_src)
+        self.assertIn('"Sun Rays"', engine_src)
+        self.assertNotIn('"Synth Sun Rays"', engine_src)
+
+        # 3. Verify Node.js PsychedelicEngine.js:
+        #    - Tri-state backdropDirection (+1 Towards, -1 Away, 0 Breathe) on state.backdropTime
+        #    - Sun Rays EQ (eqStyle === 4) draws colour-adapted rays without 6 internal horizontal sun bars
+        #    - Battlezone (l1Mode === 4) scales model density and matches layer1ShapeStyle when shapesOn=true vs tanks-only when shapesOn=false
+        if shutil.which("node"):
+            node_script = r"""
+const fs = require('fs');
+let code = fs.readFileSync('PsychedelicEngine.js', 'utf8').replace(/^\.pragma library\s*/m, '');
+eval(code);
+
+if (LAYER1_EQ_STYLES[4] !== 'Sun Rays') {
+    throw new Error('Expected LAYER1_EQ_STYLES[4] === "Sun Rays", got ' + LAYER1_EQ_STYLES[4]);
+}
+
+// Verify Tri-State backdropDirection (+1 Towards, -1 Away, 0 Breathe)
+const bands = new Array(64).fill(300);
+const stTowards = createState();
+const stAway = createState();
+const stBreathe = createState();
+stepState(stTowards, bands, true, normaliseConfig({ backdropDirection: 1, backdropSpeed: 1.2 }, 0, []), 0.05);
+stepState(stAway, bands, true, normaliseConfig({ backdropDirection: -1, backdropSpeed: 1.2 }, 0, []), 0.05);
+stepState(stBreathe, bands, true, normaliseConfig({ backdropDirection: 0, backdropSpeed: 1.2 }, 0, []), 0.05);
+if (!(stTowards.backdropTime > 0 && stAway.backdropTime < 0)) {
+    throw new Error('Tri-state backdropDirection failed: towards=' + stTowards.backdropTime + ' away=' + stAway.backdropTime);
+}
+
+function makeMockCtx() {
+    return {
+        fillCount: 0, strokeCount: 0, rectCount: 0, lineCount: 0,
+        fillStyle: '', strokeStyle: '', lineWidth: 1, globalAlpha: 1, globalCompositeOperation: 'source-over',
+        save() {}, restore() {}, translate() {}, rotate() {}, scale() {},
+        beginPath() {}, closePath() {}, moveTo() {},
+        lineTo() { this.lineCount++; },
+        rect() { this.rectCount++; },
+        arc() {},
+        fill() { this.fillCount++; },
+        stroke() { this.strokeCount++; },
+        fillRect() { this.fillCount++; },
+        clearRect() {},
+        createLinearGradient() { return { addColorStop() {} }; },
+        createRadialGradient() { return { addColorStop() {} }; }
+    };
+}
+
+const theme = { accent: '#ffab00', urgent: '#ff4a6b', foreground: '#e2e8f0', background: '#08080c' };
+
+// Verify Sun Rays (eqStyle === 4) draws 0 internal horizontal rect bars inside the sun disc and >= 4 colour-adapted ray stroke buckets
+const ctxSun = makeMockCtx();
+const cfgSun = normaliseConfig({
+    layer1Enabled: true, layer1FieldEnabled: false,
+    layer1EqEnabled: true, layer1EqStyle: 4,
+    layer1ShapesEnabled: false, layer2Enabled: false, layer3Enabled: false
+}, 0, []);
+renderFrame(ctxSun, 640, 360, stTowards, 0, theme, [], 'album-art', [], cfgSun, null);
+if (ctxSun.rectCount !== 0 || ctxSun.strokeCount < 5) {
+    throw new Error('Sun Rays EQ should have 0 internal rect bars and >=5 ray/disc strokes: rectCount=' + ctxSun.rectCount + ' strokeCount=' + ctxSun.strokeCount);
+}
+
+// Verify Battlezone (l1Mode === 4) model density scaling (density=2.0 produces significantly more 3D model lines than density=0.4)
+const ctxLowDen = makeMockCtx();
+const ctxHighDen = makeMockCtx();
+renderFrame(ctxLowDen, 640, 360, stTowards, 0, theme, [], 'album-art', [], normaliseConfig({
+    layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: 4, layer1Density: 0.4,
+    layer1EqEnabled: false, layer1ShapesEnabled: false, layer2Enabled: false, layer3Enabled: false
+}, 0, []), null);
+renderFrame(ctxHighDen, 640, 360, stTowards, 0, theme, [], 'album-art', [], normaliseConfig({
+    layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: 4, layer1Density: 2.0,
+    layer1EqEnabled: false, layer1ShapesEnabled: false, layer2Enabled: false, layer3Enabled: false
+}, 0, []), null);
+if (!(ctxHighDen.lineCount > ctxLowDen.lineCount + 80)) {
+    throw new Error('Battlezone model density did not scale lineCount: low=' + ctxLowDen.lineCount + ' high=' + ctxHighDen.lineCount);
+}
+console.log('OK');
+"""
+            res = subprocess.run(["node", "-e", node_script], cwd=REPO_ROOT, capture_output=True, text=True, timeout=15)
+            self.assertEqual(res.returncode, 0, f"Node test_13 failed: {res.stderr}")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
 
 
 

@@ -60,7 +60,7 @@ void main() {
     vec2 pDrift = p - drift * 0.55;
 
     vec3 col = uBgCol.rgb;
-    float dir = (abs(uTracerDir) < 0.05) ? sin(uTime * 0.25) : sign(uTracerDir);
+    float dir = (abs(uTracerDir) < 0.05) ? 1.0 : sign(uTracerDir);
     if (dir == 0.0) dir = 1.0;
 
     // =========================================================================
@@ -74,14 +74,20 @@ void main() {
         float aq = atan(q.y, q.x);
 
         if (l1m == 0) {
-            // Mode 0: MilkDrop Liquid Feedback Warp (Harmonic Ripple Field)
-            float w = sin(rq * 14.0 - uL1Time * 3.2 * dir + sin(aq * 6.0 + uL1Time * 0.9) * (1.0 + uBass * 0.8)) * 0.5 + 0.5;
-            float w2 = sin(rq * 8.0 - uL1Time * 2.1 * dir - cos(aq * 4.0 - uL1Time * 0.7)) * 0.5 + 0.5;
+            // Mode 0: MilkDrop 3D Expanding Warp Tunnel & Harmonic Ripple Field
+            vec2 tp0 = rot2D(uL1Time * 0.22) * q;
+            float dShape0 = shapeRadius(tp0, 6.0, sin(uL1Time * 0.4) * 0.14, 0.42);
+            float zDepth0 = 0.80 / max(0.04, dShape0);
+            float zPhase0 = zDepth0 - uL1Time * 2.4;
+            float birth0 = smoothstep(0.04, 0.22, dShape0);
+            float ring0 = smoothstep(0.65, 0.96, sin(zPhase0 * TAU * 0.5)) * birth0;
+            float w = sin(rq * 14.0 - uL1Time * 3.2 + sin(aq * 6.0 + uL1Time * 0.9) * (1.0 + uBass * 0.8)) * 0.5 + 0.5;
+            float w2 = sin(rq * 8.0 - uL1Time * 2.1 - cos(aq * 4.0 - uL1Time * 0.7)) * 0.5 + 0.5;
             vec3 cMix = mix(uCol0.rgb, uCol1.rgb, w2);
-            col += cMix * pow(w, 1.6) * (0.32 + 0.28 * uBass) * l1Bright;
+            col += (cMix * pow(w, 1.6) * (0.28 + 0.24 * uBass) + mix(uCol1.rgb, uCol2.rgb, 0.5 + 0.5 * sin(zPhase0 * 0.5)) * ring0 * (0.45 + 0.35 * uBass)) * l1Bright;
         } else if (l1m == 1) {
             // Mode 1: G-Force Polar Spiral FlowField
-            float spiral = sin(log(max(0.03, rq)) * 7.5 - uL1Time * 2.4 * dir + aq * 4.0 + sin(rq * 6.0 - uL1Time)) * 0.5 + 0.5;
+            float spiral = sin(log(max(0.03, rq)) * 7.5 - uL1Time * 2.4 + aq * 4.0 + sin(rq * 6.0 - uL1Time)) * 0.5 + 0.5;
             float wake = cos(aq * 6.0 - rq * 9.0 + uL1Time * 1.6) * 0.5 + 0.5;
             vec3 cFlow = mix(uCol1.rgb, uCol2.rgb, wake);
             col += cFlow * pow(spiral, 1.8) * (0.30 + 0.26 * uMid) * l1Bright;
@@ -96,12 +102,12 @@ void main() {
         } else if (l1m == 3) {
             // Mode 3: Relativistic Nebula & Deep-Space Aurora
             float neb1 = sin(q.x * 3.2 + sin(q.y * 2.8 + uL1Time * 0.7)) * cos(q.y * 3.0 - uL1Time * 0.6) * 0.5 + 0.5;
-            float neb2 = sin(rq * 6.5 - uL1Time * 1.5 * dir + aq * 3.0) * 0.5 + 0.5;
+            float neb2 = sin(rq * 6.5 - uL1Time * 1.5 + aq * 3.0) * 0.5 + 0.5;
             float ringGlow = exp(-abs(rq - (0.35 + 0.12 * sin(uL1Time * 0.5))) * 5.5);
             col += (mix(uCol0.rgb, uCol2.rgb, neb1) * neb2 * 0.24 + uCol1.rgb * ringGlow * 0.32) * l1Bright;
         } else if (l1m == 4) {
             // Mode 4: TRON / Atari Battlezone Fixed-Horizon Vector Landscape Backing
-            float hy = qt_TexCoord0.y - 0.48;
+            float hy = qt_TexCoord0.y - 0.50;
             float horizonGlow = exp(-abs(hy) * 28.0) * (0.42 + uBass * 0.28);
             col += uCol0.rgb * horizonGlow * l1Bright;
             if (hy > 0.0) {
@@ -111,7 +117,7 @@ void main() {
         } else if (l1m == 5) {
             // Mode 5: 1983 Atari Star Wars Death Star Trench Run Backing
             vec2 tp = p - vec2(drift.x * 0.35, drift.y * 0.25);
-            float trenchGlow = exp(-abs(tp.x) * 4.2) * step(-0.35, tp.y) * (0.18 + 0.16 * uBass);
+            float trenchGlow = exp(-abs(tp.x) * 5.8) * step(-0.78, tp.y) * (0.18 + 0.16 * uBass);
             float targetGlow = exp(-length(tp) * 6.5) * (0.28 + 0.24 * uBeat);
             col += (uCol0.rgb * trenchGlow + uCol1.rgb * targetGlow) * l1Bright;
         } else {
@@ -126,12 +132,12 @@ void main() {
     }
 
     // =========================================================================
-    // INDEPENDENT GPU SHADER BACKDROP ENGINE (7 Configurable Modes 0..6)
-    //   0: Harmonic Ripple Flower
-    //   1: Stained-Glass Rose
-    //   2: Volumetric Plasma
-    //   3: Julia Seahorse Fractal
-    //   4: Raymarched Shape Field
+    // INDEPENDENT GPU SHADER TUNNEL & BACKDROP ENGINE (7 Modes 0..6)
+    //   0: Harmonic Ripple Tunnel
+    //   1: Stained-Glass Rose Tunnel
+    //   2: Volumetric Plasma Tunnel
+    //   3: Julia Seahorse Fractal Tunnel
+    //   4: Raymarched Polygonal Tunnel
     //   5: Cosmic Aura Pulse
     //   6: Relativistic Event Horizon
     // =========================================================================
@@ -145,8 +151,15 @@ void main() {
         float a = atan(cPos.y, cPos.x);
 
         if (m == 0) {
-            // Mode 0: Harmonic Ripple Flower (`sin(r * 18.0 - uTime * 4.0 + sin(a * sym + uTime)) * 0.5 + 0.5`)
+            // Mode 0: Harmonic Ripple Tunnel (3D Expanding Polygonal Tunnel Rings + Harmonic Ripple Flower)
             float petals = max(4.0, sym);
+            vec2 tp0 = rot2D(uTime * 0.24 * dir) * cPos;
+            float dShape0 = shapeRadius(tp0, petals, sin(uTime * 0.42) * 0.16, 0.40);
+            float zDepth0 = 0.82 / max(0.04, dShape0);
+            float zPhase0 = zDepth0 - uZoomTime * 2.4 * dir;
+            float birth0 = smoothstep(0.04, 0.22, dShape0);
+            float ring0 = smoothstep(0.66, 0.97, sin(zPhase0 * TAU * 0.5)) * birth0;
+
             float wPrimary = sin(r * 18.0 - uTime * 3.8 * dir + sin(a * petals + uTime * 1.15) * (1.05 + uBass * 0.85)) * 0.5 + 0.5;
             float wHarmonic = sin(r * 12.0 - uTime * 2.6 * dir - cos(a * (petals * 2.0) - uTime * 0.85) * (0.85 + uMid * 0.95)) * 0.5 + 0.5;
             float petalCrest = pow(wPrimary, 1.45);
@@ -158,7 +171,8 @@ void main() {
             col = mix(col, flowerCol, clamp(petalCrest * intensity * 0.78, 0.0, 0.94));
 
             float ridge = smoothstep(0.86, 0.99, wPrimary) * (0.55 + 0.45 * uBass) * bIntensity;
-            col += mix(uCol1.rgb, vec3(0.92, 1.0, 0.96), 0.45) * ridge * 0.58;
+            vec3 tunRingCol = mix(uCol1.rgb, uCol2.rgb, 0.5 + 0.5 * sin(zPhase0 * 0.5));
+            col += mix(uCol1.rgb, vec3(0.92, 1.0, 0.96), 0.45) * ridge * 0.52 + tunRingCol * ring0 * (0.48 + 0.36 * uBass) * bIntensity;
         } else if (m == 1) {
             // Mode 1: Stained-Glass Rose Cathedral Field
             float kAng = abs(mod(a + uTime * 0.22, TAU / sym) - (PI / sym));

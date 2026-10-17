@@ -68,7 +68,7 @@ var LAYER1_EQ_STYLES = [
     "LED Bars & Peaks",
     "Mirrored Reflection",
     "3D Waterfall Ridges",
-    "Synth Sun Rays",
+    "Sun Rays",
     "Centre Twin Wave",
     "Horizon Spotlights"
 ]
@@ -221,6 +221,39 @@ function colourWithAlpha(col, alpha) {
         return "rgba(" + s.slice(4, -1) + "," + a + ")"
     }
     return s
+}
+
+function parseRgbTriplet(col) {
+    if (!col) return [110, 231, 183]
+    if (typeof col === "object" && col.r !== undefined) {
+        return [Math.round(col.r * 255), Math.round(col.g * 255), Math.round(col.b * 255)]
+    }
+    var s = col.toString()
+    if (s.charAt(0) === "#" && s.length >= 7) {
+        var offset = s.length === 9 ? 3 : 1
+        return [
+            parseInt(s.slice(offset, offset + 2), 16) || 0,
+            parseInt(s.slice(offset + 2, offset + 4), 16) || 0,
+            parseInt(s.slice(offset + 4, offset + 6), 16) || 0
+        ]
+    }
+    if (s.indexOf("rgb(") === 0) {
+        var parts = s.slice(4, -1).split(",")
+        if (parts.length >= 3) {
+            return [parseInt(parts[0], 10) || 0, parseInt(parts[1], 10) || 0, parseInt(parts[2], 10) || 0]
+        }
+    }
+    return [110, 231, 183]
+}
+
+function mixHexColours(colA, colB, t) {
+    var f = clamp(Number(t) || 0, 0, 1)
+    var a = parseRgbTriplet(colA)
+    var b = parseRgbTriplet(colB)
+    var r = Math.round(a[0] + (b[0] - a[0]) * f)
+    var g = Math.round(a[1] + (b[1] - a[1]) * f)
+    var bl = Math.round(a[2] + (b[2] - a[2]) * f)
+    return "rgb(" + r + "," + g + "," + bl + ")"
 }
 
 function buildPalette(theme, hueShift, paletteIndex) {
@@ -432,7 +465,7 @@ function rebuildArtCells(state, asciiLines, mode) {
         }
     }
 
-    var maxParticles = 960
+    var maxParticles = 420
     var stride = candidates.length > maxParticles ? (candidates.length / maxParticles) : 1.0
     var cells = []
     var count = Math.min(maxParticles, candidates.length)
@@ -485,17 +518,29 @@ function shatterAlbumArt(state, strength) {
     triggerArtBurst(state, strength)
 }
 
+var FRACTAL_POIS = [
+    { re: -0.7436439, im:  0.1318259, cRe: -0.745, cIm:  0.186, folds: 2, name: "Seahorse Valley" },
+    { re:  0.2817179, im:  0.5771053, cRe:  0.285, cIm:  0.010, folds: 3, name: "Elephant Valley" },
+    { re: -0.0880000, im:  0.6540000, cRe: -0.400, cIm:  0.600, folds: 3, name: "Triple Spiral Valley" },
+    { re: -1.7492046, im:  0.0000000, cRe: -0.800, cIm:  0.156, folds: 2, name: "Mini-Mandelbrot Island" },
+    { re: -0.1225612, im:  0.7448618, cRe: -0.123, cIm:  0.745, folds: 3, name: "Douady Rabbit Spiral" },
+    { re: -0.7500000, im:  0.1100000, cRe: -0.750, cIm:  0.110, folds: 2, name: "San Marco Dragon" },
+    { re: -0.3905408, im: -0.5867879, cRe: -0.391, cIm: -0.587, folds: 5, name: "Siegel Disc Vortex" },
+    { re: -0.1010964, im:  0.9562865, cRe: -0.701, cIm: -0.384, folds: 4, name: "Dendrite Lightning" }
+]
+
 function randomiseState(state) {
     if (!state) return
     state.hueShift = (state.hueShift + 65 + Math.random() * 190) % 360
     state.beatCount = (state.beatCount || 0) + 1
     state.avsTarget = {
-        m: 2 + Math.floor(Math.random() * 7),
-        n: 3 + Math.floor(Math.random() * 9),
-        k: 1 + Math.floor(Math.random() * 6),
-        twist: 0.8 + Math.random() * 2.8,
+        m: 1 + Math.floor(Math.random() * 3),
+        n: 2 + Math.floor(Math.random() * 3),
+        k: 1 + Math.floor(Math.random() * 2),
+        twist: 0.6 + Math.random() * 1.2,
         style: Math.floor(Math.random() * 3)
     }
+    state.fractalPoiIndex = ((state.fractalPoiIndex || 0) + 1 + Math.floor(Math.random() * (FRACTAL_POIS.length - 1))) % FRACTAL_POIS.length
     triggerArtBurst(state, 1.15)
 }
 
@@ -600,24 +645,30 @@ function stepState(state, rawBands, active, cfg, dt) {
     var kickRatio = state.kickSlow > 0.04 ? (state.kickFast / state.kickSlow) : 1.0
     var snareRatio = state.snareSlow > 0.04 ? (state.snareFast / state.snareSlow) : 1.0
 
+    var rawL1Dir = cfg && cfg.layer1Direction !== undefined ? Number(cfg.layer1Direction) : 1
+    var l1Dir = (rawL1Dir === 0) ? Math.sin((state.t || 0.0) * 0.45) : (rawL1Dir < 0 ? -1.0 : 1.0)
+
     if ((kickRatio > 1.22 && state.kickFast > 0.16 || snareRatio > 1.28 && state.snareFast > 0.20) && state.beatCooldown <= 0.0) {
         state.beatPulse = clamp(beatPunch, 0.25, 2.0)
         state.beatFlash = clamp(beatPunch, 0.25, 2.0)
         state.beatCooldown = 0.28
         state.beatCount = (state.beatCount || 0) + 1
-        // Update target harmonics on every 4th beat (interpolated smoothly below, never snapped!)
-        if (state.beatCount % 4 === 0) {
+        // Update target harmonics on every 8th beat (low, clean ratios so AVS Scope is never noisy!)
+        if (state.beatCount % 8 === 0) {
             state.avsTarget = {
-                m: 2 + ((state.beatCount * 3) % 7),
-                n: 3 + ((state.beatCount * 5) % 9),
-                k: 1 + ((state.beatCount * 2) % 6),
-                twist: 0.8 + ((state.beatCount * 1.7) % 2.4) * (0.5 + chaos * 0.4),
+                m: 1 + (state.beatCount % 3),
+                n: 2 + ((state.beatCount * 2) % 3),
+                k: 1 + (state.beatCount % 2),
+                twist: 0.65 + ((state.beatCount * 0.7) % 1.1) * (0.5 + chaos * 0.3),
                 style: state.beatCount % 3
             }
         }
+        if (state.beatCount % 16 === 0) {
+            state.fractalPoiIndex = ((state.fractalPoiIndex || 0) + 1 + (state.beatCount % 3)) % FRACTAL_POIS.length
+        }
         if (state.shockwaves.length < 6) {
             state.shockwaves.push({
-                r: 0.02,
+                r: l1Dir < 0 ? 1.38 : 0.02,
                 alpha: 0.88,
                 speed: 0.52 + state.bassSmooth * 0.65,
                 hueOffset: (state.hueShift + state.beatCount * 35) % 360,
@@ -634,14 +685,22 @@ function stepState(state, rawBands, active, cfg, dt) {
     state.beatPulse = state.beatSmooth
 
     // Smoothly interpolate AVS harmonics toward avsTarget instead of snapping integers
-    if (!state.avsHarmonics) state.avsHarmonics = { m: 3, n: 5, k: 2, twist: 1.4, style: 0 }
-    if (!state.avsTarget) state.avsTarget = { m: 3, n: 5, k: 2, twist: 1.4, style: 0 }
-    var harmRate = clamp(dt * 1.5, 0.01, 0.06)
+    if (!state.avsHarmonics) state.avsHarmonics = { m: 1, n: 2, k: 1, twist: 0.9, style: 0 }
+    if (!state.avsTarget) state.avsTarget = { m: 1, n: 2, k: 1, twist: 0.9, style: 0 }
+    var harmRate = clamp(dt * 1.2, 0.01, 0.05)
     state.avsHarmonics.m = lerp(state.avsHarmonics.m, state.avsTarget.m, harmRate)
     state.avsHarmonics.n = lerp(state.avsHarmonics.n, state.avsTarget.n, harmRate)
     state.avsHarmonics.k = lerp(state.avsHarmonics.k, state.avsTarget.k, harmRate)
     state.avsHarmonics.twist = lerp(state.avsHarmonics.twist, state.avsTarget.twist, harmRate)
     state.avsHarmonics.style = state.avsTarget.style
+
+    // Smoothly interpolate active Fractal POI coordinates so fractal zoom wanders across random fractal regions
+    var targetPoi = FRACTAL_POIS[(state.fractalPoiIndex || 0) % FRACTAL_POIS.length]
+    var poiRate = clamp(dt * 0.65, 0.005, 0.03)
+    state.fractalRe = lerp(state.fractalRe !== undefined ? state.fractalRe : targetPoi.re, targetPoi.re, poiRate)
+    state.fractalIm = lerp(state.fractalIm !== undefined ? state.fractalIm : targetPoi.im, targetPoi.im, poiRate)
+    state.fractalCRe = lerp(state.fractalCRe !== undefined ? state.fractalCRe : targetPoi.cRe, targetPoi.cRe, poiRate)
+    state.fractalCIm = lerp(state.fractalCIm !== undefined ? state.fractalCIm : targetPoi.cIm, targetPoi.cIm, poiRate)
 
     state.artBurst = Math.max(0.0, (state.artBurst || 0.0) - dt * 1.4)
 
@@ -659,34 +718,29 @@ function stepState(state, rawBands, active, cfg, dt) {
     state.trackArcChapter = Math.min(3, Math.floor(trackProg * 4.0))
 
     if (arcMode === 0) {
-        // 0: Dynamic Audio Arc — quiet passages coalesce & hold, loud drops/choruses surge outward
         var audioSurge = clamp((state.musicIntensity - 0.32) * 1.45 + Math.max(0.0, state.bassAtt - 1.0) * 0.45, 0.0, 1.35)
         arcDismantleMul = 0.45 + 1.15 * audioSurge
         arcRebuildMul = clamp(1.65 - 0.85 * audioSurge, 0.45, 1.85)
         arcEvoBoost = 0.65 * audioSurge
         arcSpeedBoost = 0.82 + 0.48 * audioSurge
     } else if (arcMode === 1) {
-        // 1: Song Climax Arc (0% Calm -> 75% Peak -> 100% Resolve)
         var climaxCurve = Math.sin(Math.pow(trackProg, 0.82) * Math.PI)
         arcDismantleMul = 0.55 + 1.05 * climaxCurve
         arcRebuildMul = 1.35 - 0.65 * climaxCurve + (trackProg > 0.82 ? (trackProg - 0.82) * 3.5 : 0.0)
         arcEvoBoost = 0.78 * climaxCurve
         arcSpeedBoost = 0.85 + 0.35 * climaxCurve
     } else if (arcMode === 2) {
-        // 2: Progressive Dismantle (0% Intact -> 100% Shattered)
         arcDismantleMul = 0.25 + 1.85 * trackProg
         arcRebuildMul = clamp(1.85 - 1.45 * trackProg, 0.25, 2.2)
         arcEvoBoost = 1.15 * trackProg
         arcSpeedBoost = 0.80 + 0.50 * trackProg
     } else if (arcMode === 3) {
-        // 3: Progressive Rebuild (0% Chaos -> 100% Coalesced)
         arcDismantleMul = clamp(1.90 - 1.65 * trackProg, 0.20, 2.2)
         arcRebuildMul = 0.35 + 2.10 * trackProg
         arcEvoBoost = 0.95 * (1.0 - trackProg)
         arcSpeedBoost = 1.25 - 0.35 * trackProg
     } else if (arcMode === 4) {
-        // 4: Quarter-Track Chapters (25% / 50% / 75% Shifts)
-        var ch = state.trackArcChapter // 0, 1, 2, 3
+        var ch = state.trackArcChapter
         arcDismantleMul = (ch === 0 ? 0.65 : (ch === 1 ? 1.15 : (ch === 2 ? 1.65 : 0.75)))
         arcRebuildMul = (ch === 0 ? 1.35 : (ch === 1 ? 0.95 : (ch === 2 ? 0.65 : 1.75)))
         arcEvoBoost = ch * 0.32
@@ -717,14 +771,16 @@ function stepState(state, rawBands, active, cfg, dt) {
     state.liveTracerSpeed = lerp(state.liveTracerSpeed !== undefined ? state.liveTracerSpeed : targetTracerSpeed, targetTracerSpeed, liveRate)
     state.liveTracerDrift = lerp(state.liveTracerDrift !== undefined ? state.liveTracerDrift : targetTracerDrift, targetTracerDrift, liveRate)
 
-    // Smoothly integrated phase accumulators (eliminates d/dt[t * v(t)] phase teleportation!)
+    // Smoothly integrated phase accumulators (honours Tri-State l1Dir: +1 Towards, -1 Away, 0 Breathe!)
     var l1Speed = clamp(Number(cfg && cfg.layer1Speed !== undefined ? cfg.layer1Speed : 1.0), 0.05, 4.0)
     var bdSpeed = clamp(Number(cfg && cfg.backdropSpeed !== undefined ? cfg.backdropSpeed : 1.0), 0.1, 3.0)
+    var bdDirCfg = Number(cfg && cfg.backdropDirection !== undefined ? cfg.backdropDirection : (cfg && cfg.layer1Direction !== undefined ? cfg.layer1Direction : 1))
+    var bdDir = (bdDirCfg === 0) ? Math.sin((state.t || 0.0) * 0.72) : clamp(bdDirCfg, -1, 1)
     var trSpeedCfg = clamp(Number(cfg && cfg.tracerSpeed !== undefined ? cfg.tracerSpeed : 1.0), 0.2, 2.5)
     var timeStep = dt * l2Speed * (active ? (0.35 + state.energySmooth * 0.45) : 0.18)
     state.t += timeStep
-    state.l1Time = (state.l1Time || 0.0) + dt * l1Speed * (active ? (0.85 + state.bassSmooth * 0.55) : 0.45)
-    state.backdropTime = (state.backdropTime || 0.0) + dt * bdSpeed * (active ? (0.42 + state.energySmooth * 0.45) : 0.22)
+    state.l1Time = (state.l1Time || 0.0) + dt * l1Speed * l1Dir * (active ? (0.85 + state.bassSmooth * 0.55) : 0.45)
+    state.backdropTime = (state.backdropTime || 0.0) + dt * bdSpeed * bdDir * (active ? (0.42 + state.energySmooth * 0.45) : 0.22)
     state.driftTime = (state.driftTime || 0.0) + dt * 0.28 * trSpeedCfg
     state.zoomTime = (state.zoomTime || 0.0) + dt * 0.38 * l2Speed * (0.75 + state.bassSmooth * 0.45)
     state.tunnelTime = (state.tunnelTime || 0.0) + dt * 0.52 * l2Speed * trSpeedCfg * (0.72 + state.bassSmooth * 0.42)
@@ -732,6 +788,11 @@ function stepState(state, rawBands, active, cfg, dt) {
     state.phase += timeStep * 0.55 * state.rotPolarity
     var colCycleSpd = clamp(Number(cfg && cfg.colourCycleSpeed !== undefined ? cfg.colourCycleSpeed : 1.0), 0.0, 2.5)
     state.hueShift = (state.hueShift + dt * (8.0 + state.energySmooth * 14.0) * colCycleSpd) % 360.0
+
+    // Periodically drift to a new random fractal region every ~14 seconds even without beat triggers
+    if (Math.floor((state.t - timeStep) / 14.0) !== Math.floor(state.t / 14.0)) {
+        state.fractalPoiIndex = ((state.fractalPoiIndex || 0) + 1 + Math.floor(Math.random() * (FRACTAL_POIS.length - 1))) % FRACTAL_POIS.length
+    }
 
     // Record 32-band snapshot into state.waveHistory ring buffer (for Cthugha 3D Plasma Tunnel & L1 3D Waterfall EQ)
     if (!state.waveHistory) state.waveHistory = []
@@ -750,12 +811,12 @@ function stepState(state, rawBands, active, cfg, dt) {
         state.waveHistory.length = 18
     }
 
-    // Step Layer #1 Beat Shapes (shockwaves moving towards the user)
+    // Step Layer #1 Beat Shapes (obeying Tri-State l1Dir: Towards, Away, or Breathe!)
     var shapeSpeed = clamp(Number(cfg && cfg.layer1ShapeSpeed !== undefined ? cfg.layer1ShapeSpeed : 1.0), 0.2, 3.0)
     var shapesOn = cfg ? (cfg.layer1ShapesEnabled !== false) : true
     if (shapesOn && active && state.shockwaves.length === 0) {
         state.shockwaves.push({
-            r: 0.08,
+            r: l1Dir < 0 ? 1.35 : 0.08,
             alpha: 0.85,
             speed: 0.48 + state.bassSmooth * 0.55,
             hueOffset: (state.hueShift + state.beatCount * 35) % 360,
@@ -764,15 +825,15 @@ function stepState(state, rawBands, active, cfg, dt) {
     }
     for (var sw = state.shockwaves.length - 1; sw >= 0; sw--) {
         var wave = state.shockwaves[sw]
-        wave.r += dt * wave.speed * shapeSpeed * 0.72
-        wave.alpha -= dt * 0.38 * (0.6 + 0.4 * shapeSpeed)
-        if (wave.alpha <= 0.02 || wave.r > 1.45) {
+        wave.r += dt * wave.speed * shapeSpeed * 0.72 * (rawL1Dir === 0 ? (0.25 + 0.75 * l1Dir) : l1Dir)
+        wave.alpha -= dt * 0.34 * (0.6 + 0.4 * shapeSpeed)
+        if (wave.alpha <= 0.02 || wave.r > 1.45 || wave.r < 0.01) {
             state.shockwaves.splice(sw, 1)
         }
     }
 
-    // Step Layer #1 Starfield
-    var starVel = dt * l1Speed * (0.22 + state.bassSmooth * 0.65)
+    // Step Layer #1 Starfield (obeying Tri-State l1Dir: Towards, Away, or Breathe!)
+    var starVel = dt * l1Speed * (0.22 + state.bassSmooth * 0.65) * l1Dir
     for (var st = 0; st < state.stars.length; st++) {
         var star = state.stars[st]
         star.pz = star.z
@@ -782,19 +843,29 @@ function stepState(state, rawBands, active, cfg, dt) {
             star.y = (Math.random() - 0.5) * 2.2
             star.z = 1.0
             star.pz = 1.0
+        } else if (star.z >= 1.0) {
+            star.x = (Math.random() - 0.5) * 2.2
+            star.y = (Math.random() - 0.5) * 2.2
+            star.z = 0.04
+            star.pz = 0.04
         }
     }
 
-    // Step Layer #1 Cthugha Flame ribbons
+    // Step Layer #1 Cthugha Flame ribbons (obeying Tri-State l1Dir)
+    var flameDir = rawL1Dir === 0 ? (0.35 + 0.65 * Math.abs(l1Dir)) : (l1Dir < 0 ? -1.0 : 1.0)
     for (var fl = 0; fl < state.flames.length; fl++) {
         var fm = state.flames[fl]
         var bIdx = Math.min(63, Math.floor(fm.x * 63))
         var bandE = state.smoothBands[bIdx] || 0.1
-        fm.y -= dt * l1Speed * (fm.vy * 0.65 + bandE * 0.45 + state.bassSmooth * 0.25)
+        fm.y -= dt * l1Speed * flameDir * (fm.vy * 0.65 + bandE * 0.45 + state.bassSmooth * 0.25)
         fm.x += Math.sin(state.l1Time * 1.2 + fl * 0.5) * dt * 0.04 * (1.0 + state.midSmooth * 0.5)
         fm.energy = lerp(fm.energy, bandE, 0.15)
         if (fm.y < -0.05) {
             fm.y = 1.02
+            fm.x = (fl + (Math.random() - 0.5) * 0.6) / 48.0
+            fm.energy = bandE
+        } else if (fm.y > 1.05) {
+            fm.y = -0.02
             fm.x = (fl + (Math.random() - 0.5) * 0.6) / 48.0
             fm.energy = bandE
         }
@@ -812,7 +883,7 @@ function stepArtCells(state, cfg, dt) {
     if (n === 0) return
 
     var l3Mode = (Number(cfg.layer3Mode) || 0) % LAYER3_MODES.length
-    var isWordsSource = (l3Mode === 5 || cfg.useAlbumArt === false)
+    var isWordsSource = (cfg.useAlbumArt === false)
 
     var dismantle = state.liveDismantle !== undefined
         ? state.liveDismantle
@@ -1084,8 +1155,11 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
     var eqOn = cfg && cfg.layer1EqEnabled !== undefined ? Boolean(cfg.layer1EqEnabled) : (cfg && Number(cfg.layer1Mode) === 4)
     var shapesOn = cfg && cfg.layer1ShapesEnabled !== undefined ? Boolean(cfg.layer1ShapesEnabled) : true
     var l2On = cfg ? Boolean(cfg.layer2Enabled) : true
+    var l2BackdropOn = cfg ? Boolean(cfg.backdropEnabled) : false
     var l3On = cfg ? Boolean(cfg.layer3Enabled) : true
-    var gpuOn = cfg ? Boolean(cfg.backdropEnabled !== undefined ? cfg.backdropEnabled : cfg.gpuShaderEnabled) : false
+    var l1Mode = cfg ? ((Number(cfg.layer1Mode) || 0) % LAYER1_MODES.length) : 0
+    var gpuHw = cfg && cfg.gpuShaderEnabled !== undefined ? Boolean(cfg.gpuShaderEnabled) : true
+    var gpuOn = Boolean(gpuHw && l2BackdropOn)
 
     // Detect any layer or L1 sub-system ON/OFF toggle so disabled layers clear from the persistent buffer immediately
     if (state.lastL1 !== enabled || state.lastL2 !== l2On || state.lastL3 !== l3On
@@ -1120,7 +1194,6 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
         if (!enabled) return
     }
 
-    var l1Mode = cfg ? ((Number(cfg.layer1Mode) || 0) % LAYER1_MODES.length) : 0
     var trail = cfg && cfg.layer1Trail !== undefined ? clamp(Number(cfg.layer1Trail), 0.10, 0.97) : 0.84
     var dim = cfg && cfg.layer1Dim !== undefined ? clamp(Number(cfg.layer1Dim), 0.0, 0.92) : 0.16
     var density = cfg && cfg.layer1Density !== undefined ? clamp(Number(cfg.layer1Density), 0.2, 3.0) : 1.0
@@ -1159,14 +1232,15 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
     if (fieldOn) {
         if (l1Mode === 0) {
             // Mode 0: MilkDrop / Geiss 3D Expanding Logarithmic Warp Tunnel Web & Volumetric Curtains
-            // Rings expand all the way past diagR so every ring moves towards the user and passes OFF the screen!
+            // Rings expand/contract smoothly with l1T (Towards / Away / Breathe)!
             ctx.save()
             ctx.globalCompositeOperation = "source-over"
-            var ringCount = Math.max(5, Math.min(9, Math.round(7 * density)))
+            var ringCount = Math.max(5, Math.min(11, Math.round(7 * density)))
             var segs = 24
             var ringsPts = []
+            var warpFract = (((l1T * 0.28) % 1.0) + 1.0) % 1.0
             for (var rIdx = 0; rIdx < ringCount; rIdx++) {
-                var rProg = ((rIdx + (l1T * 0.28) % 1.0) / ringCount)
+                var rProg = (rIdx + warpFract) / ringCount
                 var baseR = Math.pow(rProg, 1.85) * diagR * 1.18
                 var ringCX = cx + endPt.dx * 0.65 * Math.pow(1.0 - rProg, 1.25)
                 var ringCY = cy + endPt.dy * 0.65 * Math.pow(1.0 - rProg, 1.25)
@@ -1230,7 +1304,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             ctx.globalCompositeOperation = "source-over"
             var focalX = cx + endPt.dx * 0.55
             var focalY = cy + endPt.dy * 0.55
-            var fCount = Math.max(8, Math.min(24, Math.floor(15 * density)))
+            var fCount = Math.max(8, Math.min(28, Math.floor(15 * density)))
             var segSteps = 5
             for (var fb = 0; fb < 3; fb++) {
                 var ribCol = palette[(fb * 3) % palette.length]
@@ -1240,7 +1314,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.beginPath()
                 for (var fi = fb; fi < fCount; fi += 3) {
                     var baseA = (fi / fCount) * Math.PI * 2 + fb * 0.65 + l1T * 0.28
-                    var depthBase = (fi * 0.17 + l1T * 0.22) % 0.78
+                    var depthBase = (((fi * 0.17 + l1T * 0.22) % 0.78) + 0.78) % 0.78
                     var bVal1 = state.smoothBands[(fi * 3) & 63]
                     var curl = (0.20 + state.mid * 0.24) * (fi % 2 === 0 ? 1.0 : -1.0)
                     var leftX = [], leftY = [], rightX = [], rightY = []
@@ -1301,17 +1375,18 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
 
             // Rising organic plasma flame tongues (curved diamond/teardrop plumes)
             var flames = state.flames || []
+            var flameCount = Math.min(flames.length, Math.max(8, Math.round(flames.length * clamp(density * 0.65, 0.25, 1.0))))
             for (var cBucket = 0; cBucket < 4; cBucket++) {
                 ctx.fillStyle = colourWithAlpha(palette[(cBucket * 2) % palette.length], (0.14 + state.bass * 0.20) * (1.0 - dim) * (gpuOn ? 0.55 : 1.0))
                 ctx.strokeStyle = colourWithAlpha(palette[(cBucket * 2 + 1) % palette.length], (0.26 + state.mid * 0.22) * (1.0 - dim))
                 ctx.lineWidth = 1.2
                 ctx.beginPath()
-                for (var f = cBucket; f < flames.length; f += 4) {
+                for (var f = cBucket; f < flameCount; f += 4) {
                     var fm = flames[f]
                     var fx2 = fm.x * w + endPt.dx * 0.28 * (1.0 - fm.y)
                     var fy2 = fm.y * h
-                    var fw = (w / 24.0) * (0.65 + fm.energy * 1.45) * density
-                    var fh = h * (0.07 + fm.energy * 0.20) * density
+                    var fw = (w / 24.0) * (0.65 + fm.energy * 1.45) * clamp(density, 0.5, 1.8)
+                    var fh = h * (0.07 + fm.energy * 0.20) * clamp(density, 0.5, 1.8)
                     var sway = Math.sin(l1T * 1.4 + f) * fw * 0.40
                     ctx.moveTo(fx2 + sway, fy2 - fh * 0.65)
                     ctx.lineTo(fx2 + fw * 0.5, fy2)
@@ -1325,9 +1400,10 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 // Glowing rising embers detaching from the flame tips
                 ctx.fillStyle = colourWithAlpha(palette[(cBucket * 2 + 2) % palette.length], (0.52 + state.high * 0.32) * (1.0 - dim))
                 ctx.beginPath()
-                for (var fe = cBucket; fe < flames.length; fe += 4) {
+                for (var fe = cBucket; fe < flameCount; fe += 4) {
                     var fme = flames[fe]
-                    var emberY = ((fme.y - (l1T * 0.16 + fe * 0.13) % 0.45 + 1.0) % 1.0) * h
+                    var emberPhase = (((l1T * 0.16 + fe * 0.13) % 0.45) + 0.45) % 0.45
+                    var emberY = (((fme.y - emberPhase) % 1.0) + 1.0) % 1.0 * h
                     var emberX = fme.x * w + Math.sin(l1T * 1.2 + fe * 1.7) * 14.0 + endPt.dx * 0.25 * (1.0 - emberY / h)
                     var er = 1.6 + fme.energy * 2.2
                     ctx.rect(emberX - er, emberY - er, er * 2.0, er * 2.0)
@@ -1343,8 +1419,9 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             var starOriginY = cy + endPt.dy * 0.60
 
             // Volumetric 3D nebula cloud rings around warp origin
+            var nebFract = (((l1T * 0.20) % 1.0) + 1.0) % 1.0
             for (var nb = 2; nb >= 0; nb--) {
-                var nebProg = ((nb + (l1T * 0.20) % 1.0) / 3.0)
+                var nebProg = (nb + nebFract) / 3.0
                 var nebR = diagR * (0.08 + Math.pow(nebProg, 1.5) * 0.72) * (1.0 + state.bass * 0.18)
                 var nebX = lerp(starOriginX, cx, nebProg * 0.5)
                 var nebY = lerp(starOriginY, cy, nebProg * 0.5)
@@ -1367,7 +1444,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             }
 
             // Relativistic hyperspace star streaks + glowing star heads
-            var starLimit = Math.min(state.stars.length, Math.floor(90 * density))
+            var starLimit = Math.min(state.stars.length, Math.max(18, Math.floor(90 * density)))
             for (var sbk = 0; sbk < 3; sbk++) {
                 var stCol = palette[(sbk * 3) % palette.length]
                 ctx.strokeStyle = colourWithAlpha(stCol, (0.52 + state.high * 0.42) * (1.0 - dim))
@@ -1403,8 +1480,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             // Features:
             //   1. Rock-steady fixed horizon at `horizonY` (never bobs vertically!)
             //   2. Jagged Atari Battlezone vector mountain range + active volcano peak + vector crescent moon on the horizon
-            //   3. True 1/z perspective ground grid scrolling continuously towards the user (`l1T`)
-            //   4. 3D wireframe TRON / Battlezone pyramids & monolith blocks scrolling past the viewer on the landscape
+            //   3. True 1/z perspective ground grid scrolling smoothly at calibrated speed (`l1T * 0.095`) in Towards / Away / Breathe
+            //   4. 3D wireframe TRON / Battlezone pyramids, monolith blocks & tanks scaled by Content Density (`density`)
             ctx.save()
             ctx.globalCompositeOperation = "source-over"
             var groundH = h - horizonY
@@ -1469,14 +1546,13 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             ctx.stroke()
 
             // 2. True 1/z Perspective Scrolling TRON / Battlezone Ground Grid below `horizonY`
-            //    Ground grid lines (`scrollFract`) and ground objects (`obProg`, `tkProg`) are locked
-            //    to the exact same `worldScroll` coordinate and `Math.pow(u, 2.05)` perspective curve!
-            var rows = Math.max(8, Math.floor(14 * density))
-            var cols = Math.max(10, Math.floor(18 * density))
-            var worldScroll = l1T * 0.38
-            var scrollFract = ((worldScroll * rows) % 1.0 + 1.0) % 1.0
+            //    Fixed, clean grid spacing (rows = 10, cols = 12) so the landscape is always filled cleanly without clutter!
+            var rows = 10
+            var cols = 12
+            var worldScroll = l1T * 0.095
+            var scrollFract = (((worldScroll * rows) % 1.0) + 1.0) % 1.0
 
-            // Translucent volumetric floor bands marching towards the viewer
+            // Translucent volumetric floor bands marching towards/away from the viewer
             ctx.fillStyle = colourWithAlpha(palette[2 % palette.length], (0.06 + state.bass * 0.09) * (1.0 - dim) * (gpuOn ? 0.45 : 1.0))
             ctx.beginPath()
             for (var rf = 0; rf < rows; rf += 2) {
@@ -1501,27 +1577,30 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.lineTo(w, gy)
             }
             for (var c = -cols; c <= cols; c++) {
-                var topX = vanishX + c * (w * 0.012)
-                var botX = vanishX + c * (w * 0.16)
+                var topX = vanishX + c * (w * 0.014)
+                var botX = vanishX + c * (w * 0.18)
                 ctx.moveTo(topX, horizonY)
                 ctx.lineTo(botX, h)
             }
             ctx.stroke()
 
-            // 3. Full 3-Axis 3D Rotating Wireframe TRON / Battlezone Landscape Objects
-            //    (8-Edge 3D Pyramids, 12-Edge 3D Monolith Cubes, and 12-Edge 3D Octahedra)
-            var obsCount = 6
+            // 3. Full 3-Axis 3D Wireframe Landscape Models scaled by Field Density (`density`)!
+            //    - When `shapesOn` (`cfg.layer1ShapesEnabled`) is ON: landscape models match the selected `layer1ShapeStyle` (`0..5`)!
+            //    - When `shapesOn` is OFF ("if none selected just use tanks"): `obsCount = 0` and only 3D wireframe tanks populate the landscape!
+            var activeShapeStyle = cfg && cfg.layer1ShapeStyle !== undefined ? ((Number(cfg.layer1ShapeStyle) || 0) % LAYER1_SHAPE_STYLES.length) : 0
+            var shapeScaleBz = cfg && cfg.layer1ShapeScale !== undefined ? clamp(Number(cfg.layer1ShapeScale), 0.3, 2.5) : 1.0
+            var obsCount = shapesOn ? Math.max(2, Math.min(16, Math.round(6 * density))) : 0
             var objSpinCfg = cfg && cfg.layer1ShapeSpin !== undefined ? clamp(Number(cfg.layer1ShapeSpin), -2.5, 2.5) : 1.0
             for (var ob = 0; ob < obsCount; ob++) {
-                var obProg = ((ob / obsCount) + worldScroll) % 1.0
+                var obProg = ((((ob / obsCount) + worldScroll) % 1.0) + 1.0) % 1.0
                 var horizonFade = smoothstep(0.0, 0.14, obProg)
                 if (horizonFade < 0.02) continue
                 var perspOb = Math.pow(obProg, 2.05) // 0 at horizon -> 1 at foreground bottom
                 var sideSign = (ob % 2 === 0) ? -1.0 : 1.0
-                var laneSpread = 0.24 + ((ob * 3) % 4) * 0.14
+                var laneSpread = 0.22 + ((ob * 3) % 5) * 0.13
                 var obX = vanishX + sideSign * laneSpread * w * (0.03 + perspOb * 0.88)
                 var obY = horizonY + perspOb * groundH * 1.05
-                var obScale = (5.0 + perspOb * minDim * 0.11) * (1.0 + state.bass * 0.16)
+                var obScale = (5.5 + perspOb * minDim * 0.115) * (1.0 + state.bass * 0.16) * Math.sqrt(shapeScaleBz)
                 var hoverY = obY - obScale * (0.85 + 0.18 * Math.sin(l1T * 1.8 + ob * 2.1))
 
                 // Full 3-axis 3D rotation angles (rx, ry, rz)
@@ -1529,12 +1608,151 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 var rx = Math.sin(l1T * 0.72 + ob * 1.9) * 0.38 + (ob % 3 === 2 ? l1T * 0.55 : 0.18)
                 var rz = Math.cos(l1T * 0.64 + ob * 1.3) * 0.28
 
-                ctx.strokeStyle = colourWithAlpha(palette[(1 + ob) % palette.length], (0.76 + state.high * 0.22) * horizonFade * (1.0 - dim))
+                ctx.strokeStyle = colourWithAlpha(palette[(1 + ob) % palette.length], (0.78 + state.high * 0.22) * horizonFade * (1.0 - dim))
                 ctx.lineWidth = (1.5 + perspOb * 1.2 + state.bass * 0.8)
                 ctx.beginPath()
 
-                if (ob % 3 === 1) {
-                    // 3D Wireframe Battlezone Pyramid (5 vertices, ALL 8 edges: 4 base edges + 4 apex edges!)
+                if (activeShapeStyle === 1) {
+                    // Style 1: 3D Star Wars Fighters (X-Wing Starfighters & TIE Fighters skimming over the Battlezone terrain)
+                    var csBz = Math.max(7.0, obScale * 1.15)
+                    if ((ob & 1) === 0) {
+                        var xwFusBz = [
+                            [ 0.0,  -0.14,  0.85],
+                            [ 0.18, -0.10, -0.15],
+                            [ 0.14,  0.10, -0.68],
+                            [-0.14,  0.10, -0.68],
+                            [-0.18, -0.10, -0.15],
+                            [ 0.0,  -0.26, -0.22]
+                        ]
+                        var xpBz = []
+                        for (var xfiB = 0; xfiB < xwFusBz.length; xfiB++) {
+                            xpBz.push(project3DPoint(xwFusBz[xfiB][0], xwFusBz[xfiB][1], xwFusBz[xfiB][2], rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6))
+                        }
+                        var xEdgesBz = [0, 1,  1, 2,  2, 3,  3, 4,  4, 0,  0, 5,  5, 2,  5, 3,  1, 5,  4, 5]
+                        for (var xfeB = 0; xfeB < xEdgesBz.length; xfeB += 2) {
+                            ctx.moveTo(xpBz[xEdgesBz[xfeB]].x, xpBz[xEdgesBz[xfeB]].y)
+                            ctx.lineTo(xpBz[xEdgesBz[xfeB + 1]].x, xpBz[xEdgesBz[xfeB + 1]].y)
+                        }
+                        for (var wxSB = -1; wxSB <= 1; wxSB += 2) {
+                            for (var wySB = -1; wySB <= 1; wySB += 2) {
+                                var rFB = project3DPoint(wxSB * 0.15, wySB * 0.06, -0.18, rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
+                                var rRB = project3DPoint(wxSB * 0.14, wySB * 0.08, -0.58, rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
+                                var tFB = project3DPoint(wxSB * 0.96, wySB * 0.44, -0.14, rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
+                                var tRB = project3DPoint(wxSB * 0.96, wySB * 0.52, -0.48, rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
+                                var cTB = project3DPoint(wxSB * 0.96, wySB * 0.44,  0.48, rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
+                                ctx.moveTo(rFB.x, rFB.y); ctx.lineTo(tFB.x, tFB.y); ctx.lineTo(tRB.x, tRB.y); ctx.lineTo(rRB.x, rRB.y); ctx.closePath()
+                                ctx.moveTo(tRB.x, tRB.y); ctx.lineTo(cTB.x, cTB.y)
+                            }
+                        }
+                    } else {
+                        var ballRBz = 0.28
+                        for (var biBz = 0; biBz <= 8; biBz++) {
+                            var baBz = (biBz / 8.0) * Math.PI * 2
+                            var bpBz = project3DPoint(Math.cos(baBz) * ballRBz, Math.sin(baBz) * ballRBz, 0.08, rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
+                            if (biBz === 0) ctx.moveTo(bpBz.x, bpBz.y)
+                            else ctx.lineTo(bpBz.x, bpBz.y)
+                        }
+                        var pL0B = project3DPoint(-ballRBz, 0, 0, rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
+                        var pL1B = project3DPoint(-0.74,    0, 0, rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
+                        var pR0B = project3DPoint( ballRBz, 0, 0, rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
+                        var pR1B = project3DPoint( 0.74,    0, 0, rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
+                        ctx.moveTo(pL0B.x, pL0B.y); ctx.lineTo(pL1B.x, pL1B.y)
+                        ctx.moveTo(pR0B.x, pR0B.y); ctx.lineTo(pR1B.x, pR1B.y)
+                        for (var tSideB = -1; tSideB <= 1; tSideB += 2) {
+                            var wPtsBz = [
+                                [tSideB * 0.56, -0.68,  0.42], [tSideB * 0.76, -0.28,  0.48],
+                                [tSideB * 0.76,  0.28,  0.48], [tSideB * 0.56,  0.68,  0.42],
+                                [tSideB * 0.56,  0.68, -0.42], [tSideB * 0.76,  0.28, -0.48],
+                                [tSideB * 0.76, -0.28, -0.48], [tSideB * 0.56, -0.68, -0.42]
+                            ]
+                            for (var wpiB = 0; wpiB < wPtsBz.length; wpiB++) {
+                                var wpPB = project3DPoint(wPtsBz[wpiB][0], wPtsBz[wpiB][1], wPtsBz[wpiB][2], rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
+                                if (wpiB === 0) ctx.moveTo(wpPB.x, wpPB.y)
+                                else ctx.lineTo(wpPB.x, wpPB.y)
+                            }
+                            ctx.closePath()
+                        }
+                    }
+                } else if (activeShapeStyle === 2) {
+                    // Style 2: 3D TRON Recognizers marching across the Battlezone grid
+                    var rsBz = Math.max(8.0, obScale * 1.15)
+                    var recBoxes = [
+                        [-0.48, -0.88, -0.22,  0.48, -0.72, 0.22],
+                        [-0.82, -0.62, -0.28,  0.82, -0.34, 0.28],
+                        [-0.80, -0.34, -0.24, -0.44,  0.54, 0.24],
+                        [ 0.44, -0.34, -0.24,  0.80,  0.54, 0.24],
+                        [-0.96,  0.54, -0.32, -0.38,  0.72, 0.32],
+                        [ 0.38,  0.54, -0.32,  0.96,  0.72, 0.32]
+                    ]
+                    var bEdgesBz = [0, 1,  1, 2,  2, 3,  3, 0,  4, 5,  5, 6,  6, 7,  7, 4,  0, 4,  1, 5,  2, 6,  3, 7]
+                    for (var rbi = 0; rbi < recBoxes.length; rbi++) {
+                        var bx = recBoxes[rbi]
+                        var bvBz = [
+                            [bx[0], bx[1], bx[2]], [bx[3], bx[1], bx[2]], [bx[3], bx[1], bx[5]], [bx[0], bx[1], bx[5]],
+                            [bx[0], bx[4], bx[2]], [bx[3], bx[4], bx[2]], [bx[3], bx[4], bx[5]], [bx[0], bx[4], bx[5]]
+                        ]
+                        var bpRec = []
+                        for (var bvi = 0; bvi < 8; bvi++) {
+                            bpRec.push(project3DPoint(bvBz[bvi][0], bvBz[bvi][1], bvBz[bvi][2], rx * 0.4, ry, rz * 0.3, obX, hoverY, rsBz, 3.8))
+                        }
+                        for (var bei = 0; bei < bEdgesBz.length; bei += 2) {
+                            ctx.moveTo(bpRec[bEdgesBz[bei]].x, bpRec[bEdgesBz[bei]].y)
+                            ctx.lineTo(bpRec[bEdgesBz[bei + 1]].x, bpRec[bEdgesBz[bei + 1]].y)
+                        }
+                    }
+                } else if (activeShapeStyle === 3) {
+                    // Style 3: 3D Sacred Polyhedra (Dual-Ring 3D Hexagonal/Octagonal Prism Monoliths on the terrain)
+                    var sidesBz = 6 + (ob & 1) * 2
+                    var topPtsBz = [], botPtsBz = []
+                    for (var vBz = 0; vBz < sidesBz; vBz++) {
+                        var angBz = (vBz / sidesBz) * Math.PI * 2
+                        topPtsBz.push(project3DPoint(Math.cos(angBz), Math.sin(angBz),  0.42, rx, ry, rz, obX, hoverY, obScale * 1.15, 3.6))
+                        botPtsBz.push(project3DPoint(Math.cos(angBz), Math.sin(angBz), -0.42, rx, ry, rz, obX, hoverY, obScale * 1.15, 3.6))
+                    }
+                    for (var v1B = 0; v1B <= sidesBz; v1B++) {
+                        var pTB = topPtsBz[v1B % sidesBz]
+                        if (v1B === 0) ctx.moveTo(pTB.x, pTB.y); else ctx.lineTo(pTB.x, pTB.y)
+                    }
+                    for (var v2B = 0; v2B <= sidesBz; v2B++) {
+                        var pBB = botPtsBz[v2B % sidesBz]
+                        if (v2B === 0) ctx.moveTo(pBB.x, pBB.y); else ctx.lineTo(pBB.x, pBB.y)
+                    }
+                    for (var v3B = 0; v3B < sidesBz; v3B++) {
+                        ctx.moveTo(topPtsBz[v3B].x, topPtsBz[v3B].y)
+                        ctx.lineTo(botPtsBz[v3B].x, botPtsBz[v3B].y)
+                    }
+                } else if (activeShapeStyle === 4) {
+                    // Style 4: 3D Merkaba Starbursts (Dual-Apex 3D Star Tetrahedra hovering over the terrain)
+                    var pts2Bz = 12
+                    var starRingBz = []
+                    for (var svB = 0; svB < pts2Bz; svB++) {
+                        var ang2B = (svB / pts2Bz) * Math.PI * 2
+                        var r2B = (svB % 2 === 0) ? 1.0 : 0.48
+                        var szB = (svB % 2 === 0) ? ((svB % 4 === 0) ? 0.32 : -0.32) : 0.0
+                        var sPtB = project3DPoint(Math.cos(ang2B) * r2B, Math.sin(ang2B) * r2B, szB, rx, ry, rz, obX, hoverY, obScale * 1.2, 3.6)
+                        starRingBz.push(sPtB)
+                        if (svB === 0) ctx.moveTo(sPtB.x, sPtB.y); else ctx.lineTo(sPtB.x, sPtB.y)
+                    }
+                    ctx.closePath()
+                    var apexFB = project3DPoint(0, 0,  0.68, rx, ry, rz, obX, hoverY, obScale * 1.2, 3.6)
+                    var apexBB = project3DPoint(0, 0, -0.68, rx, ry, rz, obX, hoverY, obScale * 1.2, 3.6)
+                    for (var sv2B = 0; sv2B < pts2Bz; sv2B += 2) {
+                        ctx.moveTo(starRingBz[sv2B].x, starRingBz[sv2B].y); ctx.lineTo(apexFB.x, apexFB.y)
+                        ctx.moveTo(starRingBz[sv2B].x, starRingBz[sv2B].y); ctx.lineTo(apexBB.x, apexBB.y)
+                    }
+                } else if (activeShapeStyle === 5) {
+                    // Style 5: 3D Sonic Boom Rings (3D Gyroscopic Harmonic Portal Rings across the landscape)
+                    var ringSegsBz = 24
+                    for (var rs2B = 0; rs2B <= ringSegsBz; rs2B++) {
+                        var ang1B = (rs2B / ringSegsBz) * Math.PI * 2
+                        var mod1B = 1.0 + Math.sin(ang1B * 4.0) * state.bass * 0.08
+                        var rzWaveB = Math.sin(ang1B * 3.0 + l1T * 2.5) * 0.18 * (0.4 + state.bass)
+                        var rp1B = project3DPoint(Math.cos(ang1B) * mod1B, Math.sin(ang1B) * mod1B, rzWaveB, rx * 0.65, ry * 0.65, rz, obX, hoverY, obScale * 1.25, 3.6)
+                        if (rs2B === 0) ctx.moveTo(rp1B.x, rp1B.y); else ctx.lineTo(rp1B.x, rp1B.y)
+                    }
+                    ctx.closePath()
+                } else if (ob % 3 === 1) {
+                    // Style 0: 3D Wireframe Battlezone Pyramid (5 vertices, ALL 8 edges: 4 base edges + 4 apex edges!)
                     var pyrV = [
                         [-1.0,  0.75, -1.0],
                         [ 1.0,  0.75, -1.0],
@@ -1546,19 +1764,17 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                     for (var pv = 0; pv < 5; pv++) {
                         pp.push(project3DPoint(pyrV[pv][0], pyrV[pv][1], pyrV[pv][2], rx, ry, rz, obX, hoverY, obScale, 3.8))
                     }
-                    // Base square (4 edges)
                     ctx.moveTo(pp[0].x, pp[0].y)
                     ctx.lineTo(pp[1].x, pp[1].y)
                     ctx.lineTo(pp[2].x, pp[2].y)
                     ctx.lineTo(pp[3].x, pp[3].y)
                     ctx.closePath()
-                    // All 4 base corners connected to apex pp[4] (4 edges -> 8 edges total!)
                     for (var pc = 0; pc < 4; pc++) {
                         ctx.moveTo(pp[pc].x, pp[pc].y)
                         ctx.lineTo(pp[4].x, pp[4].y)
                     }
                 } else if (ob % 3 === 0) {
-                    // 3D Wireframe Battlezone / TRON Monolith Cube (8 vertices, ALL 12 edges!)
+                    // Style 0: 3D Wireframe Battlezone / TRON Monolith Cube (8 vertices, ALL 12 edges!)
                     var cubV = [
                         [-0.82,  0.88, -0.82], [ 0.82,  0.88, -0.82], [ 0.82,  0.88,  0.82], [-0.82,  0.88,  0.82],
                         [-0.82, -0.88, -0.82], [ 0.82, -0.88, -0.82], [ 0.82, -0.88,  0.82], [-0.82, -0.88,  0.82]
@@ -1568,9 +1784,9 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                         cp.push(project3DPoint(cubV[cv][0], cubV[cv][1], cubV[cv][2], rx, ry, rz, obX, hoverY, obScale, 3.8))
                     }
                     var cubEdges = [
-                        0, 1,  1, 2,  2, 3,  3, 0, // Bottom face (4 edges)
-                        4, 5,  5, 6,  6, 7,  7, 4, // Top face (4 edges)
-                        0, 4,  1, 5,  2, 6,  3, 7  // Vertical pillars (4 edges)
+                        0, 1,  1, 2,  2, 3,  3, 0,
+                        4, 5,  5, 6,  6, 7,  7, 4,
+                        0, 4,  1, 5,  2, 6,  3, 7
                     ]
                     for (var ce = 0; ce < cubEdges.length; ce += 2) {
                         var cA = cp[cubEdges[ce]], cB = cp[cubEdges[ce + 1]]
@@ -1578,7 +1794,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                         ctx.lineTo(cB.x, cB.y)
                     }
                 } else {
-                    // 3D Wireframe Diamond Octahedron (6 vertices, ALL 12 edges!)
+                    // Style 0: 3D Wireframe Diamond Octahedron (6 vertices, ALL 12 edges!)
                     var octV = [
                         [-0.95,  0.0,  0.0], [ 0.95,  0.0,  0.0],
                         [ 0.0,   0.0, -0.95], [ 0.0,   0.0,  0.95],
@@ -1589,9 +1805,9 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                         op.push(project3DPoint(octV[ov][0], octV[ov][1], octV[ov][2], rx, ry, rz, obX, hoverY, obScale, 3.8))
                     }
                     var octEdges = [
-                        0, 2,  2, 1,  1, 3,  3, 0, // Equatorial ring (4 edges)
-                        0, 4,  1, 4,  2, 4,  3, 4, // Upper pyramid to top apex (4 edges)
-                        0, 5,  1, 5,  2, 5,  3, 5  // Lower pyramid to bottom apex (4 edges)
+                        0, 2,  2, 1,  1, 3,  3, 0,
+                        0, 4,  1, 4,  2, 4,  3, 4,
+                        0, 5,  1, 5,  2, 5,  3, 5
                     ]
                     for (var oe = 0; oe < octEdges.length; oe += 2) {
                         var oA = op[octEdges[oe]], oB = op[octEdges[oe + 1]]
@@ -1603,27 +1819,30 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             }
 
             // 4. 3D Wireframe 1980 Atari Battlezone Tanks Rolling on the Landscape + Cannon Shells!
-            var tankCount = 4
+            //    When Shapes is OFF ("if none selected just use tanks") or Shapes Style 0 ("Battlezone Tanks"), scale tank count up with `density`!
+            var tankCount = (!shapesOn || activeShapeStyle === 0)
+                ? Math.max(2, Math.min(12, Math.round(5 * density)))
+                : Math.max(1, Math.min(6, Math.round(2.5 * density)))
             var shellMuzzles = []
             for (var tk = 0; tk < tankCount; tk++) {
-                var tkProg = ((tk / tankCount) + worldScroll + 0.12) % 1.0
+                var tkProg = ((((tk / tankCount) + worldScroll + 0.12) % 1.0) + 1.0) % 1.0
                 var tkFade = smoothstep(0.0, 0.14, tkProg)
                 if (tkFade < 0.02) continue
                 var perspTk = Math.pow(tkProg, 2.05)
                 var tkSide = (tk % 2 === 0) ? 1.0 : -1.0
-                var tkSteer = Math.sin(l1T * 0.65 + tk * 2.3) * 0.12
-                var tkLane = (tk < 2 ? 0.18 : 0.44) * tkSide + tkSteer
+                var tkSteer = Math.sin(l1T * 0.35 + tk * 2.3) * 0.10
+                var tkLane = ((tk % 3) * 0.18 + 0.18) * tkSide + tkSteer
                 var tkX = vanishX + tkLane * w * (0.04 + perspTk * 0.86)
                 var tkY = horizonY + perspTk * groundH * 1.02
                 var tkScale = (6.0 + perspTk * minDim * 0.115) * (1.0 + state.bass * 0.12)
 
                 // Tank hull 3D orientation (steering yaw + terrain pitch + subtle suspension roll)
-                var hullYaw = Math.sin(l1T * 0.78 + tk * 1.9) * 0.48 - tkSide * 0.22
-                var hullPitch = 0.16 + Math.sin(l1T * 2.2 + tk) * 0.04
-                var hullRoll = Math.cos(l1T * 1.5 + tk * 1.7) * 0.05
-                var turretYawRel = Math.sin(l1T * 1.15 + tk * 2.4) * 0.85 + Math.cos(l1T * 0.45 + tk) * 0.45
+                var hullYaw = Math.sin(l1T * 0.42 + tk * 1.9) * 0.42 - tkSide * 0.22
+                var hullPitch = 0.16 + Math.sin(l1T * 1.2 + tk) * 0.04
+                var hullRoll = Math.cos(l1T * 0.9 + tk * 1.7) * 0.05
+                var turretYawRel = Math.sin(l1T * 0.65 + tk * 2.4) * 0.85 + Math.cos(l1T * 0.28 + tk) * 0.45
                 var gunElev = 0.12 + state.bassSmooth * 0.18 + state.beatPulse * 0.12
-                var radarSpin = l1T * 4.8 + tk * 1.57
+                var radarSpin = l1T * 2.8 + tk * 1.57
 
                 ctx.strokeStyle = colourWithAlpha(palette[(tk * 2) % palette.length], (0.84 + state.bass * 0.16) * tkFade * (1.0 - dim))
                 ctx.lineWidth = 1.6 + perspTk * 1.3 + state.beatPulse * 0.8
@@ -1662,14 +1881,13 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.beginPath()
                 for (var sm = 0; sm < shellMuzzles.length; sm++) {
                     var mObj = shellMuzzles[sm]
-                    var shotTravel = ((l1T * 2.4 + mObj.idx * 0.37) % 1.0)
+                    var shotTravel = (((l1T * 0.95 + mObj.idx * 0.37) % 1.0) + 1.0) % 1.0
                     var sx0 = mObj.x + mObj.dx * (0.4 + shotTravel * 4.2)
                     var sy0 = mObj.y + mObj.dy * (0.4 + shotTravel * 4.2)
                     var sx1 = mObj.x + mObj.dx * (1.0 + shotTravel * 4.2)
                     var sy1 = mObj.y + mObj.dy * (1.0 + shotTravel * 4.2)
                     ctx.moveTo(sx0, sy0)
                     ctx.lineTo(sx1, sy1)
-                    // 4-point Atari vector flare at the shell head
                     var flareR = Math.max(2.5, mObj.scale * 0.14 * (1.0 - shotTravel * 0.4))
                     ctx.moveTo(sx1 - flareR, sy1); ctx.lineTo(sx1 + flareR, sy1)
                     ctx.moveTo(sx1, sy1 - flareR); ctx.lineTo(sx1, sy1 + flareR)
@@ -1680,32 +1898,34 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
         } else if (l1Mode === 5) {
             // Mode 5: 1983 Atari Star Wars 3D Vector Death Star Trench Run!
             // Features:
-            //   1. Rectangular U-shaped 3D vector trench channel (left wall, right wall, trench floor, upper trench lips)
-            //      expanding with true perspective past all 4 edges of the screen!
-            //   2. Scrolling cross-sectional U-frames + alternating illuminated trench armour panels
-            //   3. Transverse 3D truss catwalk girders that the camera weaves over/under
-            //   4. Turbolaser tower pillars on the trench walls firing 8-spoke Atari vector fireballs towards the viewer
-            //   5. Classic 1983 Atari Star Wars amber targeting computer distance readout brackets
+            //   1. Tall-and-narrow vertical U-shaped canyon (`halfWNear < Math.abs(topYNear)` — taller than wide, just like the arcade game!)
+            //   2. Clean, open upper trench top (zero crossed diagonal top lines or cluttered top X-truss!) with horizontal Death Star surface lips
+            //   3. High-velocity trench run (`tFlow = l1T * 1.95`) with full Towards / Away / Breathe direction support
+            //   4. Fixed clean canyon frame spacing (`sliceCount = 10`), while `density` controls the amount of 3D catwalks, turbolaser towers & fireballs!
             ctx.save()
             ctx.globalCompositeOperation = "source-over"
 
             var bankAngle = Math.sin(driftT * 0.52) * 0.08
-            var trenchVX = Math.sin(driftT * 0.45) * w * 0.10
-            var trenchVY = -h * 0.04 + Math.cos(driftT * 0.38) * h * 0.05
+            var trenchVX = Math.sin(driftT * 0.45) * minDim * 0.08
+            var trenchVY = -h * 0.04 + Math.cos(driftT * 0.38) * h * 0.04
 
             ctx.translate(cx, cy)
             ctx.rotate(bankAngle)
 
-            var halfWFar = w * 0.035
-            var halfWNear = w * 0.72
-            var topYFar = -h * 0.028
-            var topYNear = -h * 0.62
-            var botYFar = h * 0.032
-            var botYNear = h * 0.64
+            // Taller-than-wide vertical canyon proportions (height is ~2.1x width!)
+            var halfWFar = minDim * 0.022
+            var halfWNear = minDim * 0.38
+            var topYFar = -minDim * 0.048
+            var topYNear = -h * 0.82
+            var botYFar = minDim * 0.052
+            var botYNear = h * 0.84
 
-            var sliceCount = Math.max(8, Math.min(14, Math.round(11 * density)))
-            var tScroll = (l1T * 0.72) % 1.0
-            var baseWorldSlice = Math.floor(l1T * 0.72)
+            var sliceCount = 10
+            var catwalkMod = density >= 1.35 ? 3 : (density <= 0.65 ? 5 : 4)
+            var towerMod = density >= 1.35 ? 2 : (density <= 0.65 ? 4 : 3)
+            var tFlow = l1T * 1.95
+            var tScroll = ((tFlow % 1.0) + 1.0) % 1.0
+            var baseWorldSlice = Math.floor(tFlow)
 
             // 1. Alternating illuminated Atari vector trench wall & floor panels (back-to-front)
             ctx.fillStyle = colourWithAlpha(palette[2 % palette.length], (0.08 + state.bass * 0.10) * (1.0 - dim) * (gpuOn ? 0.5 : 1.0))
@@ -1713,8 +1933,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             for (var sIdx = 0; sIdx < sliceCount - 1; sIdx++) {
                 var u0 = (sIdx + tScroll) / sliceCount
                 var u1 = (sIdx + 1 + tScroll) / sliceCount
-                var p0 = Math.pow(u0, 1.95)
-                var p1 = Math.pow(u1, 1.95)
+                var p0 = Math.pow(u0, 1.90)
+                var p1 = Math.pow(u1, 1.90)
                 var vx0 = trenchVX * (1.0 - p0), vy0 = trenchVY * (1.0 - p0)
                 var vx1 = trenchVX * (1.0 - p1), vy1 = trenchVY * (1.0 - p1)
                 var xL0 = vx0 - lerp(halfWFar, halfWNear, p0), xR0 = vx0 + lerp(halfWFar, halfWNear, p0)
@@ -1724,26 +1944,27 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
 
                 var worldS = baseWorldSlice - sIdx
                 if ((worldS & 1) === 0) {
-                    // Left & right mid-wall armour bay panels
-                    var ym0a = lerp(yT0, yB0, 0.30), ym0b = lerp(yT0, yB0, 0.70)
-                    var ym1a = lerp(yT1, yB1, 0.30), ym1b = lerp(yT1, yB1, 0.70)
+                    // Left & right vertical wall armour bay panels
+                    var ym0a = lerp(yT0, yB0, 0.28), ym0b = lerp(yT0, yB0, 0.72)
+                    var ym1a = lerp(yT1, yB1, 0.28), ym1b = lerp(yT1, yB1, 0.72)
                     ctx.moveTo(xL0, ym0a); ctx.lineTo(xL1, ym1a); ctx.lineTo(xL1, ym1b); ctx.lineTo(xL0, ym0b); ctx.closePath()
                     ctx.moveTo(xR0, ym0a); ctx.lineTo(xR1, ym1a); ctx.lineTo(xR1, ym1b); ctx.lineTo(xR0, ym0b); ctx.closePath()
                 } else {
                     // Central trench floor grating bay
-                    var xfL0 = lerp(xL0, xR0, 0.25), xfR0 = lerp(xL0, xR0, 0.75)
-                    var xfL1 = lerp(xL1, xR1, 0.25), xfR1 = lerp(xL1, xR1, 0.75)
+                    var xfL0 = lerp(xL0, xR0, 0.22), xfR0 = lerp(xL0, xR0, 0.78)
+                    var xfL1 = lerp(xL1, xR1, 0.22), xfR1 = lerp(xL1, xR1, 0.78)
                     ctx.moveTo(xfL0, yB0); ctx.lineTo(xfR0, yB0); ctx.lineTo(xfR1, yB1); ctx.lineTo(xfL1, yB1); ctx.closePath()
                 }
             }
             ctx.fill()
 
-            // 2. Longitudinal Trench Rails (Left Wall, Right Wall, Floor Lanes, and Upper Trench Lips)
+            // 2. Clean Longitudinal Trench Rails (Left Wall, Right Wall, Floor Lanes, and Outer Death Star Surface Lips)
+            //    Every longitudinal rail stays strictly aligned with `(xL, yT)..(xR, yB)` so the open top is 100% clean!
             ctx.strokeStyle = colourWithAlpha(palette[0 % palette.length], (0.68 + state.bass * 0.30) * (1.0 - dim))
             ctx.lineWidth = 1.8 + state.bass * 1.4
             ctx.beginPath()
-            for (var wl = 0; wl <= 3; wl++) {
-                var wf = wl / 3.0
+            for (var wl = 0; wl <= 4; wl++) {
+                var wf = wl / 4.0
                 var yFar = trenchVY + lerp(topYFar, botYFar, wf)
                 var yNear = lerp(topYNear, botYNear, wf)
                 ctx.moveTo(trenchVX - halfWFar, yFar)
@@ -1756,28 +1977,30 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.moveTo(trenchVX + lerp(-halfWFar, halfWFar, ff), trenchVY + botYFar)
                 ctx.lineTo(lerp(-halfWNear, halfWNear, ff), botYNear)
             }
-            ctx.moveTo(trenchVX - halfWFar, trenchVY + topYFar)
-            ctx.lineTo(-w * 0.75, topYNear)
-            ctx.moveTo(trenchVX + halfWFar, trenchVY + topYFar)
-            ctx.lineTo(w * 0.75, topYNear)
+            // Outer horizontal Death Star surface rim rails outside the top canyon edge
+            ctx.moveTo(trenchVX - halfWFar * 1.55, trenchVY + topYFar)
+            ctx.lineTo(-halfWNear * 1.55, topYNear)
+            ctx.moveTo(trenchVX + halfWFar * 1.55, trenchVY + topYFar)
+            ctx.lineTo(halfWNear * 1.55, topYNear)
             ctx.stroke()
 
-            // 3. Scrolling Cross-Sectional U-Frames, Overhead Truss Catwalks & Turbolaser Towers
-            ctx.strokeStyle = colourWithAlpha(palette[1 % palette.length], (0.76 + state.high * 0.24) * (1.0 - dim))
+            // 3. Scrolling Cross-Sectional Tall U-Frames, Clean Mid-Trench Catwalk Girders & Turbolaser Towers
+            ctx.strokeStyle = colourWithAlpha(palette[1 % palette.length], (0.78 + state.high * 0.22) * (1.0 - dim))
             ctx.lineWidth = 1.9 + state.beatPulse * 1.2
             ctx.beginPath()
             var fireballs = []
 
             for (var sf = 0; sf < sliceCount; sf++) {
                 var uS = (sf + tScroll) / sliceCount
-                var pS = Math.pow(uS, 1.95)
+                var pS = Math.pow(uS, 1.90)
                 var vxs = trenchVX * (1.0 - pS), vys = trenchVY * (1.0 - pS)
                 var xL = vxs - lerp(halfWFar, halfWNear, pS)
                 var xR = vxs + lerp(halfWFar, halfWNear, pS)
                 var yT = vys + lerp(topYFar, topYNear, pS)
                 var yB = vys + lerp(botYFar, botYNear, pS)
-                var lipW = (xR - xL) * 0.25
+                var lipW = (xR - xL) * 0.28
 
+                // Open-top tall U-frame + horizontal upper surface lips
                 ctx.moveTo(xL - lipW, yT)
                 ctx.lineTo(xL, yT)
                 ctx.lineTo(xL, yB)
@@ -1786,25 +2009,23 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.lineTo(xR + lipW, yT)
 
                 var wSlice = baseWorldSlice - sf
-                if (((wSlice % 4) + 4) % 4 === 0 && uS > 0.12) {
-                    var beamY0 = lerp(yT, yB, 0.22)
-                    var beamY1 = lerp(yT, yB, 0.36)
+                // Clean horizontal Atari catwalk beam across mid-lower canyon (leaves top 100% open and uncluttered!)
+                if (((wSlice % catwalkMod) + catwalkMod) % catwalkMod === 0 && uS > 0.14) {
+                    var beamY0 = lerp(yT, yB, 0.52)
+                    var beamY1 = lerp(yT, yB, 0.60)
                     ctx.moveTo(xL, beamY0); ctx.lineTo(xR, beamY0)
                     ctx.moveTo(xL, beamY1); ctx.lineTo(xR, beamY1)
-                    var trussSteps = 4
-                    for (var ts = 0; ts < trussSteps; ts++) {
-                        var tx0 = lerp(xL, xR, ts / trussSteps)
-                        var tx1 = lerp(xL, xR, (ts + 1) / trussSteps)
-                        ctx.moveTo(tx0, beamY0); ctx.lineTo(tx1, beamY1)
-                        ctx.moveTo(tx0, beamY1); ctx.lineTo(tx1, beamY0)
+                    for (var vs = 1; vs <= 3; vs++) {
+                        var vxStrut = lerp(xL, xR, vs / 4.0)
+                        ctx.moveTo(vxStrut, beamY0); ctx.lineTo(vxStrut, beamY1)
                     }
                 }
 
-                if (((wSlice % 3) + 3) % 3 === 1 && uS > 0.18) {
+                if (((wSlice % towerMod) + towerMod) % towerMod === 1 && uS > 0.18) {
                     var sideT = (wSlice & 1) ? -1.0 : 1.0
-                    var towX = sideT < 0 ? lerp(xL, xR, 0.14) : lerp(xL, xR, 0.86)
-                    var towW = (xR - xL) * 0.08
-                    var towTopY = lerp(yT, yB, 0.38)
+                    var towX = sideT < 0 ? lerp(xL, xR, 0.16) : lerp(xL, xR, 0.84)
+                    var towW = (xR - xL) * 0.10
+                    var towTopY = lerp(yT, yB, 0.44)
                     ctx.rect(towX - towW * 0.5, towTopY, towW, yB - towTopY)
                     fireballs.push({
                         x: lerp(towX, 0, 0.35),
@@ -1837,10 +2058,10 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             ctx.strokeStyle = colourWithAlpha("#ffd147", (0.58 + state.beatPulse * 0.32) * (1.0 - dim))
             ctx.lineWidth = 1.6
             ctx.beginPath()
-            ctx.moveTo(-hudR * 1.3, -hudR * 0.85); ctx.lineTo(-hudR * 0.45, -hudR * 0.28)
-            ctx.moveTo(hudR * 1.3, -hudR * 0.85);  ctx.lineTo(hudR * 0.45, -hudR * 0.28)
-            ctx.moveTo(-hudR * 1.3, hudR * 0.85);  ctx.lineTo(-hudR * 0.45, hudR * 0.28)
-            ctx.moveTo(hudR * 1.3, hudR * 0.85);   ctx.lineTo(hudR * 0.45, hudR * 0.28)
+            ctx.moveTo(-hudR * 1.1, -hudR * 0.95); ctx.lineTo(-hudR * 0.40, -hudR * 0.32)
+            ctx.moveTo(hudR * 1.1, -hudR * 0.95);  ctx.lineTo(hudR * 0.40, -hudR * 0.32)
+            ctx.moveTo(-hudR * 1.1, hudR * 0.95);  ctx.lineTo(-hudR * 0.40, hudR * 0.32)
+            ctx.moveTo(hudR * 1.1, hudR * 0.95);   ctx.lineTo(hudR * 0.40, hudR * 0.32)
             ctx.stroke()
 
             ctx.restore()
@@ -1894,8 +2115,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             }
 
             // 3. Infalling Logarithmic Spiral Matter Streams pulled from diagR into the Event Horizon
-            var spiralArms = Math.max(10, Math.min(20, Math.round(14 * density)))
-            var inflowScroll = (l1T * 0.55) % 1.0
+            var spiralArms = Math.max(8, Math.min(24, Math.round(14 * density)))
+            var inflowScroll = (((l1T * 0.55) % 1.0) + 1.0) % 1.0
             for (var arm = 0; arm < spiralArms; arm++) {
                 var armCol = palette[(arm + palShift6) % palette.length]
                 var armBaseA = (arm / spiralArms) * Math.PI * 2 - l1T * 0.65
@@ -2056,31 +2277,38 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.stroke()
             }
         } else if (eqStyle === 4) {
-            // Style 4: Synthwave Horizon Sun & Radial Equaliser Corona Rays
+            // Style 4: Sun Rays — Clean Open Sun Horizon & Colour-Adaptive Radial Equaliser Corona Rays
+            // (No internal horizontal slice bars filling the sun disc!)
             var sunR = minDim * (0.20 + state.bass * 0.05)
-            // Segmented retro sun bands
-            for (var sl = 0; sl < 6; sl++) {
-                ctx.fillStyle = colourWithAlpha(palette[(sl + 8) % palette.length], (0.32 - sl * 0.03) * (1.0 - dim))
-                var bandTop = horizonY - sunR * (1.0 - sl * 0.15)
-                var bandH = sunR * 0.11
-                var chordW = Math.sqrt(Math.max(0.0, sunR * sunR - Math.pow(horizonY - bandTop, 2))) * 2.0
-                ctx.fillRect(vanishX - chordW * 0.5, bandTop, chordW, bandH)
-            }
-            // Radial equaliser rays erupting around the upper semicircle of the sun
-            ctx.strokeStyle = colourWithAlpha(palette[1], (0.78 + state.beatPulse * 0.22) * (1.0 - dim))
+            var rayCount = 44
+            var palShiftSun = Math.floor((state.hueShift || 0) / 45)
             ctx.lineWidth = 2.2 + state.bass * 1.4
+
+            // Subtle upper horizon sun rim arc
+            ctx.strokeStyle = colourWithAlpha(palette[(1 + palShiftSun) % palette.length], (0.42 + state.bass * 0.24) * (1.0 - dim))
             ctx.beginPath()
-            var rayCount = 40
-            for (var ryIdx = 0; ryIdx <= rayCount; ryIdx++) {
-                var rAng = Math.PI + (ryIdx / rayCount) * Math.PI
-                var bIdx4 = mapEqBandIndex(ryIdx, rayCount + 1, eqLayout)
-                var v4 = sampleEqBandValue(state, bIdx4, eqDamping, eqGain)
-                var rInner = sunR * 0.95
-                var rOuter = sunR + v4 * maxEqH * 0.85
-                ctx.moveTo(vanishX + Math.cos(rAng) * rInner, horizonY + Math.sin(rAng) * rInner)
-                ctx.lineTo(vanishX + Math.cos(rAng) * rOuter, horizonY + Math.sin(rAng) * rOuter)
-            }
+            ctx.arc(vanishX, horizonY, sunR * 0.94, Math.PI, Math.PI * 2)
             ctx.stroke()
+
+            // Radial equaliser rays erupting around the upper semicircle of the sun with subtle colour adaptation across rays
+            var numRayBuckets = 4
+            for (var rBucket = 0; rBucket < numRayBuckets; rBucket++) {
+                var baseCol = palette[(1 + palShiftSun) % palette.length]
+                var adjCol = palette[(1 + rBucket + palShiftSun) % palette.length]
+                var rayCol = mixHexColours(baseCol, adjCol, 0.16 * rBucket)
+                ctx.strokeStyle = colourWithAlpha(rayCol, (0.80 + state.beatPulse * 0.20) * (1.0 - dim))
+                ctx.beginPath()
+                for (var ryIdx = rBucket; ryIdx <= rayCount; ryIdx += numRayBuckets) {
+                    var rAng = Math.PI + (ryIdx / rayCount) * Math.PI
+                    var bIdx4 = mapEqBandIndex(ryIdx, rayCount + 1, eqLayout)
+                    var v4 = sampleEqBandValue(state, bIdx4, eqDamping, eqGain)
+                    var rInner = sunR * 0.95
+                    var rOuter = sunR + v4 * maxEqH * 0.85
+                    ctx.moveTo(vanishX + Math.cos(rAng) * rInner, horizonY + Math.sin(rAng) * rInner)
+                    ctx.lineTo(vanishX + Math.cos(rAng) * rOuter, horizonY + Math.sin(rAng) * rOuter)
+                }
+                ctx.stroke()
+            }
         } else if (eqStyle === 5) {
             // Style 5: Centre-Symmetric Twin Wave Ribbon (Bass anchored at vanishX expanding to wings)
             for (var wingPass = 0; wingPass < 3; wingPass++) {
@@ -2300,9 +2528,10 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
 
     // =========================================================================
     // SUB-SYSTEM 3: L1 BEAT SHAPES & 3D ARCADE VECTOR CRAFT
-    // (Spawning at the distant vanishing point and moving all the way OFF screen!)
+    // (Spawning at the distant vanishing point and moving all the way OFF screen!
+    //  In Battlezone `l1Mode === 4`, shapes are placed directly on the 3D terrain grid above.)
     // =========================================================================
-    if (shapesOn && state.shockwaves.length > 0) {
+    if (shapesOn && state.shockwaves.length > 0 && !(fieldOn && l1Mode === 4)) {
         var shapeStyle = cfg && cfg.layer1ShapeStyle !== undefined ? ((Number(cfg.layer1ShapeStyle) || 0) % LAYER1_SHAPE_STYLES.length) : 0
         var shapeSpin = cfg && cfg.layer1ShapeSpin !== undefined ? clamp(Number(cfg.layer1ShapeSpin), -2.5, 2.5) : 0.25
         var shapeScale = cfg && cfg.layer1ShapeScale !== undefined ? clamp(Number(cfg.layer1ShapeScale), 0.3, 2.5) : 1.0
@@ -2703,20 +2932,23 @@ function drawMode0MilkDrop(ctx, w, h, state, palette, cfg) {
     ctx.restore()
 }
 
-// Mode 1: Winamp AVS 3D SuperScope (3D Volumetric Extruded Torus-Knot Ribbon Tube & Harmonic Flares)
+// Mode 1: Winamp AVS 3D SuperScope (Clean 3D Parametric Oscilloscope Wave Ribbon & Stereo Lissajous Core)
 function drawMode1AvsSuperScope(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
-    var scale = Math.min(w, h) * 0.44 * (cfg.layer2Zoom || 1.0)
-    var isEcho = Boolean(state.isTracerEcho)
-    var lod = state.echoLod || 1.0
-    var comp = clamp(cfg.layer2Complexity || 1.0, 0.4, 2.0) * lod
-    var N = isEcho ? 36 : Math.max(44, Math.floor(76 * clamp(comp, 0.5, 1.4)))
-    var harm = state.avsHarmonics || { m: 3, n: 5, k: 2, twist: 1.4, style: 0 }
+    var minDim = Math.min(w, h) * (cfg.layer2Zoom || 1.0)
+    var comp = clamp(cfg.layer2Complexity || 1.0, 0.4, 2.0)
+    var trEnabled = cfg.layer2TracersEnabled !== undefined ? Boolean(cfg.layer2TracersEnabled) : true
+    var trCount = trEnabled ? clamp(Math.round(Number(cfg.tracerCount) || 6), 1, 12) : 1
+    var ringPasses = Math.max(1, Math.min(5, Math.ceil(trCount * 0.4)))
+    var N = Math.max(36, Math.min(72, Math.floor(48 * comp)))
     var palShift = Math.floor((state.hueShift || 0) / 45)
+    var tunT = state.tunnelTime !== undefined ? state.tunnelTime : state.t
+    var driftT = state.driftTime !== undefined ? state.driftTime : state.t
+    var endPt = computeTracerEndpoint(w, h, driftT, cfg.tracerDrift !== undefined ? cfg.tracerDrift : 1.0, 1.0)
 
-    var rotX = state.t * 0.52 + state.bass * 0.35
-    var rotY = state.t * 0.68 - state.mid * 0.30
+    var rotX = Math.sin(state.t * 0.38) * 0.42 + state.bassSmooth * 0.18
+    var rotY = state.t * 0.44
     var cosX = Math.cos(rotX), sinX = Math.sin(rotX)
     var cosY = Math.cos(rotY), sinY = Math.sin(rotY)
 
@@ -2724,96 +2956,88 @@ function drawMode1AvsSuperScope(ctx, w, h, state, palette, cfg) {
     ctx.translate(cx, cy)
     ctx.globalCompositeOperation = "source-over"
 
-    var strandCount = isEcho ? 2 : 3
-    for (var strand = 0; strand < strandCount; strand++) {
-        var sPhase = strand * (Math.PI * 2 / 3.0)
-        var spine = []
+    // 1. Clean 3D Parametric AVS Oscilloscope Wave Rings (smooth 1:1 circular / 1:2 saddle wave — zero tangled knot noise!)
+    for (var pass = ringPasses - 1; pass >= 0; pass--) {
+        var uPass = ringPasses > 1 ? (pass / (ringPasses - 1)) : 0.0
+        var passLag = pass * 0.14
+        var tPass = state.t - passLag
+        var depthScale = minDim * (0.36 - uPass * 0.14 + state.bassSmooth * 0.05)
+        var offX = endPt.dx * 0.35 * uPass
+        var offY = endPt.dy * 0.35 * uPass
+        var alpha = pass === 0 ? 0.92 : (0.48 * (1.0 - uPass * 0.68))
+
+        var ptsTop = []
+        var ptsBot = []
+        var ribHalfH = (4.5 + state.bassSmooth * 9.0) * (1.0 - uPass * 0.45)
 
         for (var i = 0; i <= N; i++) {
             var u = (i / N) * Math.PI * 2
-            var bIdx = (i + strand * 11) & 63
-            var v = state.smoothBands[bIdx]
-            var R = 0.56 + (0.24 + v * 0.32) * Math.cos(harm.n * u + state.t * 1.4 + sPhase)
-            var x3 = R * Math.cos(harm.m * u + sPhase)
-            var y3 = R * Math.sin(harm.m * u + sPhase)
-            var z3 = (0.38 + v * 0.40 + state.bass * 0.22) * Math.sin(harm.k * u + state.t * 1.2)
+            var bVal = state.smoothBands[(i + pass * 5) & 63] || 0.08
+            // Smooth AVS oscilloscope displacement along 3D ring
+            var waveY = (bVal - 0.18) * 0.55 * Math.sin(u * 3.0 + tPass * 2.4)
+                      + Math.cos(u * 2.0 - tPass * 1.6) * (0.12 + state.midSmooth * 0.18)
+            var rMod = 1.0 + (bVal * 0.24) * Math.cos(u * 4.0 - tPass * 1.8)
+            var x3 = Math.cos(u) * rMod
+            var z3 = Math.sin(u) * rMod
+            var y3 = waveY
 
             var x1 = x3 * cosY - z3 * sinY
             var z1 = x3 * sinY + z3 * cosY
             var y2 = y3 * cosX - z1 * sinX
             var z2 = y3 * sinX + z1 * cosX
 
-            var persp = 1.68 / (2.25 - clamp(z2, -1.25, 1.25))
-            var tubeW = (3.5 + v * 10.5 + state.bass * 5.5) * persp * (isEcho ? 0.65 : 1.0)
-            spine.push({
-                x: x1 * scale * persp,
-                y: y2 * scale * persp,
-                w: tubeW,
-                persp: persp,
-                band: v
-            })
+            var persp = 1.75 / (2.35 - clamp(z2, -1.15, 1.15))
+            var sx = offX + x1 * depthScale * persp
+            var sy = offY + y2 * depthScale * persp
+            var hw = ribHalfH * persp
+            ptsTop.push({ x: sx, y: sy - hw, p: persp, b: bVal })
+            ptsBot.push({ x: sx, y: sy + hw })
         }
 
-        var leftRail = []
-        var rightRail = []
-        for (var k = 0; k <= N; k++) {
-            var pPrev = spine[k > 0 ? k - 1 : N - 1]
-            var pNext = spine[k < N ? k + 1 : 1]
-            var dx = pNext.x - pPrev.x
-            var dy = pNext.y - pPrev.y
-            var len = Math.sqrt(dx * dx + dy * dy) || 1.0
-            var nx = -dy / len
-            var ny = dx / len
-            var hw = spine[k].w
-            leftRail.push({ x: spine[k].x + nx * hw, y: spine[k].y + ny * hw })
-            rightRail.push({ x: spine[k].x - nx * hw, y: spine[k].y - ny * hw })
-        }
+        var colFill = palette[(pass * 2 + palShift) % palette.length]
+        var colLine = palette[(pass * 2 + 1 + palShift) % palette.length]
 
-        var fillCol = palette[(strand * 3 + palShift) % palette.length]
-        var railCol = palette[(strand * 3 + 1 + palShift) % palette.length]
-
-        if (!isEcho || (state.echoIndex || 0) < 3) {
-            ctx.fillStyle = colourWithAlpha(fillCol, (0.14 + state.bass * 0.14) * (isEcho ? 0.55 : 1.0))
+        if (pass < 2) {
+            ctx.fillStyle = colourWithAlpha(colFill, (0.14 + state.bassSmooth * 0.10) * alpha)
             ctx.beginPath()
             for (var f0 = 0; f0 <= N; f0++) {
-                if (f0 === 0) ctx.moveTo(leftRail[f0].x, leftRail[f0].y)
-                else ctx.lineTo(leftRail[f0].x, leftRail[f0].y)
+                if (f0 === 0) ctx.moveTo(ptsTop[f0].x, ptsTop[f0].y)
+                else ctx.lineTo(ptsTop[f0].x, ptsTop[f0].y)
             }
             for (var f1 = N; f1 >= 0; f1--) {
-                ctx.lineTo(rightRail[f1].x, rightRail[f1].y)
+                ctx.lineTo(ptsBot[f1].x, ptsBot[f1].y)
             }
             ctx.closePath()
             ctx.fill()
         }
 
-        ctx.strokeStyle = colourWithAlpha(railCol, 0.74 + state.bass * 0.24)
-        ctx.lineWidth = clamp(2.4 + (strand === 0 ? 0.6 : 0.0) + state.bass * 1.0 + state.beatPulse * 0.8, 2.4, 4.8) * (isEcho ? 0.75 : 1.0)
+        ctx.strokeStyle = colourWithAlpha(colLine, alpha)
+        ctx.lineWidth = (pass === 0 ? 2.4 : 1.5) + state.beatPulse * 0.9
         ctx.beginPath()
-        for (var r0 = 0; r0 <= N; r0++) {
-            if (r0 === 0) ctx.moveTo(leftRail[r0].x, leftRail[r0].y)
-            else ctx.lineTo(leftRail[r0].x, leftRail[r0].y)
-        }
-        for (var r1 = 0; r1 <= N; r1++) {
-            if (r1 === 0) ctx.moveTo(rightRail[r1].x, rightRail[r1].y)
-            else ctx.lineTo(rightRail[r1].x, rightRail[r1].y)
-        }
-        for (var cr = 0; cr < N; cr += 4) {
-            ctx.moveTo(leftRail[cr].x, leftRail[cr].y)
-            ctx.lineTo(rightRail[cr].x, rightRail[cr].y)
+        for (var s0 = 0; s0 <= N; s0++) {
+            if (s0 === 0) ctx.moveTo(ptsTop[s0].x, ptsTop[s0].y)
+            else ctx.lineTo(ptsTop[s0].x, ptsTop[s0].y)
         }
         ctx.stroke()
-
-        if (!isEcho) {
-            ctx.fillStyle = colourWithAlpha(palette[(strand * 3 + 2 + palShift) % palette.length], 0.82 + state.beatPulse * 0.18)
-            ctx.beginPath()
-            for (var vf = 0; vf < N; vf += 6) {
-                var spPt = spine[vf]
-                var fr = (2.0 + spPt.band * 3.5 + state.beatPulse * 2.0) * spPt.persp
-                ctx.rect(spPt.x - fr, spPt.y - fr, fr * 2.0, fr * 2.0)
-            }
-            ctx.fill()
-        }
     }
+
+    // 2. Central Stereo Lissajous Phase-Scope (clean 1:2 / 2:3 figure-8 harmonic loop at core)
+    var lissSteps = 48
+    var lissR = minDim * (0.16 + state.bassSmooth * 0.06)
+    ctx.strokeStyle = colourWithAlpha(palette[(3 + palShift) % palette.length], 0.86)
+    ctx.lineWidth = 2.0 + state.highSmooth * 1.2
+    ctx.beginPath()
+    for (var li = 0; li <= lissSteps; li++) {
+        var lu = (li / lissSteps) * Math.PI * 2
+        var lb = state.smoothBands[(li * 2) & 63] || 0.08
+        var lx = Math.sin(lu + state.t * 1.1) * lissR * (0.85 + lb * 0.30)
+        var ly = Math.sin(lu * 2.0 - state.t * 0.85) * lissR * (0.55 + state.midSmooth * 0.28)
+        if (li === 0) ctx.moveTo(lx, ly)
+        else ctx.lineTo(lx, ly)
+    }
+    ctx.closePath()
+    ctx.stroke()
+
     ctx.restore()
 }
 
@@ -3230,41 +3454,44 @@ function drawMode4MinterVlm(ctx, w, h, state, palette, cfg) {
     ctx.restore()
 }
 
-// Mode 5: True Continuous Infinite Fractal Zoom (Logarithmic Scale-Invariant Julia Seahorse Spiral + 3-Gen Recursive Fractal)
+// Mode 5: True Complex-Plane Mandelbrot & Julia Set Deep Zoom Engine
+// Zooms continuously in (Towards), out (Away), or breathes (Breathe) into wandering complex-plane POIs
+// (Seahorse Valley, Elephant Valley, Triple Spiral, Douady Rabbit, San Marco, Siegel Disk, Misiurewicz Spiral)
+// with true z_{n+1} = z_n^2 + c escape-time equipotential contours, self-similar Mandelbrot cardioids & spiral eddies!
 function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
     var zoom = cfg.layer2Zoom || 1.0
     var minDim = Math.min(w, h) * zoom
-    var isEcho = Boolean(state.isTracerEcho)
-    var lod = state.echoLod || 1.0
-    var comp = clamp(cfg.layer2Complexity || 1.0, 0.4, 2.0) * lod
+    var diagR = Math.sqrt(w * w + h * h) * 0.72 * zoom
+    var comp = clamp(cfg.layer2Complexity || 1.0, 0.4, 2.0)
 
-    // Smooth monotonic zoom accumulator (`state.zoomTime`) — zero phase jumps when bass changes!
-    var tracerDir = Number(cfg && cfg.tracerDirection !== undefined ? cfg.tracerDirection : 1)
-    var zoomDir = (tracerDir < 0) ? -1.0 : 1.0
-    var zoomFlow = (state.zoomTime !== undefined ? state.zoomTime : state.t * 0.8) * 1.45 * zoomDir
+    // Smooth monotonic zoom accumulator (`state.zoomTime`) — supports Towards (1), Away (-1), and Breathe (0)!
+    var zoomFlow = (state.zoomTime !== undefined ? state.zoomTime : state.t * 0.8) * 1.35
     var zoomFract = ((zoomFlow % 1.0) + 1.0) % 1.0
     var zoomGen = Math.floor(zoomFlow)
 
-    // Live audio-modulated Douady / Seahorse Valley Julia constant c = cRe + i*cIm
-    var cRe = -0.745 + Math.cos(state.t * 0.28) * (0.09 + state.bass * 0.06)
-    var cIm = 0.186 + Math.sin(state.t * 0.34) * (0.09 + state.mid * 0.06)
+    // Active complex-plane POI coordinate (poiRe + i*poiIm) & Julia constant (cRe + i*cIm)
+    var poiRe = (state.fractalRe !== undefined ? state.fractalRe : -0.7436) + Math.cos(state.t * 0.22) * 0.04
+    var poiIm = (state.fractalIm !== undefined ? state.fractalIm : 0.1318) + Math.sin(state.t * 0.27) * 0.04
+    var cRe = (state.fractalCRe !== undefined ? state.fractalCRe : -0.745) + Math.cos(state.t * 0.31) * (0.04 + state.bassSmooth * 0.04)
+    var cIm = (state.fractalCIm !== undefined ? state.fractalCIm : 0.186) + Math.sin(state.t * 0.37) * (0.04 + state.midSmooth * 0.04)
 
     var driftT = state.driftTime !== undefined ? state.driftTime : state.t
     var endPt = computeTracerEndpoint(w, h, driftT, cfg.tracerDrift !== undefined ? cfg.tracerDrift : 1.0, 1.0)
-    var focalX = cx + endPt.dx * 0.35
-    var focalY = cy + endPt.dy * 0.35
+    var focalX = cx + endPt.dx * 0.52 + (poiRe + 0.55) * minDim * 0.18
+    var focalY = cy + endPt.dy * 0.52 + poiIm * minDim * 0.18
 
-    var trCount = clamp(Math.round(Number(cfg.tracerCount) || 7), 1, 16)
-    var octaves = isEcho ? 4 : Math.max(6, Math.min(10, Math.round(5 + trCount * 0.3 * comp)))
-    var ratio = 1.86 // Logarithmic scale factor per octave so outer octaves expand past all 4 screen borders!
-    var baseScale = minDim * 0.012
-    var arms = clamp(Math.round(Number(cfg.layer2Facets) || 6), 5, 8)
-    var spiralSteps = isEcho ? 30 : 48
+    var trEnabled = cfg.layer2TracersEnabled !== undefined ? Boolean(cfg.layer2TracersEnabled) : true
+    var trCount = trEnabled ? clamp(Math.round(Number(cfg.tracerCount) || 7), 1, 16) : 3
+    var octaves = Math.max(5, Math.min(11, Math.round(4 + trCount * 0.35 * comp)))
+    var ratio = 1.88 // Logarithmic scale factor per octave so outer fractal contours expand past all 4 screen borders!
+    var baseScale = minDim * 0.011
+    var folds = clamp(Math.round(Number(cfg.layer2Facets) || 6), 3, 12)
+    var contourSteps = Math.max(48, Math.min(84, Math.floor(64 * comp)))
+    var palShift = Math.floor((state.hueShift || 0) / 45)
 
     ctx.save()
-    ctx.translate(focalX, focalY)
     ctx.globalCompositeOperation = "source-over"
 
     for (var oct = octaves - 1; oct >= 0; oct--) {
@@ -3273,36 +3500,49 @@ function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
         var octScale = baseScale * Math.pow(ratio, octProgress)
         var octWorld = zoomGen - oct
 
-        // Smooth birth & exit fade-in/out envelope (0.0 at uOct=0 and uOct=1 so new octaves never pop in!)
-        var envAlpha = smoothstep(0.0, 0.20, uOct) * smoothstep(1.0, 0.86, uOct)
+        // Smooth birth & exit fade-in/out envelope so new octaves never pop at the deep focal core
+        var envAlpha = smoothstep(0.0, 0.22, uOct) * smoothstep(1.05, 0.84, uOct)
         if (envAlpha < 0.01) continue
-        var octRot = octWorld * 0.523598 + state.phase * 0.35
 
-        var colPrimary = palette[((octWorld * 2) % palette.length + palette.length) % palette.length]
-        var colSecondary = palette[((octWorld * 2 + 1) % palette.length + palette.length) % palette.length]
-        var colAccent = palette[((octWorld * 2 + 3) % palette.length + palette.length) % palette.length]
+        // Complex-plane zoom centre shifts progressively from the wandering POI at deep scale out to viewport centre
+        var centerX = lerp(focalX, cx, clamp(uOct * 0.65, 0.0, 0.75))
+        var centerY = lerp(focalY, cy, clamp(uOct * 0.65, 0.0, 0.75))
+        var octRot = octWorld * 0.618034 * Math.PI + state.phase * 0.28
 
-        ctx.fillStyle = colourWithAlpha(colPrimary, (0.14 + (1.0 - uOct) * 0.12 + state.bass * 0.06) * envAlpha * (isEcho ? 0.5 : 1.0))
-        ctx.strokeStyle = colourWithAlpha(colSecondary, (0.48 + envAlpha * 0.46) * envAlpha * (isEcho ? 0.65 : 1.0))
-        ctx.lineWidth = (1.2 + uOct * 2.6 + state.beatPulse * 1.0) * envAlpha * (isEcho ? 0.75 : 1.0)
+        var colPrimary = palette[((octWorld * 2 + palShift) % palette.length + palette.length) % palette.length]
+        var colSecondary = palette[((octWorld * 2 + 1 + palShift) % palette.length + palette.length) % palette.length]
+        var colAccent = palette[((octWorld * 2 + 3 + palShift) % palette.length + palette.length) % palette.length]
+
+        // 1. Complex-Plane Julia Equipotential Escape-Time Contour Ring (z_{n+1} = z_n^2 + c)
+        ctx.fillStyle = colourWithAlpha(colPrimary, (0.11 + (1.0 - uOct) * 0.12 + state.bassSmooth * 0.06) * envAlpha)
+        ctx.strokeStyle = colourWithAlpha(colSecondary, (0.54 + envAlpha * 0.42) * envAlpha)
+        ctx.lineWidth = (1.1 + uOct * 2.5 + state.beatPulse * 1.1) * envAlpha
 
         ctx.beginPath()
-        for (var s = 0; s <= spiralSteps; s++) {
-            var u = s / spiralSteps
+        for (var s = 0; s <= contourSteps; s++) {
+            var u = s / contourSteps
             var theta = u * Math.PI * 2 + octRot
-            var zr = Math.cos(theta * (arms * 0.5)) * 0.84
-            var zi = Math.sin(theta * (arms * 0.5)) * 0.84
-            for (var it = 0; it < 4; it++) {
-                var tr = zr * zr - zi * zi + cRe
+            // Sample complex orbit around POI + harmonic fold symmetry
+            var zr = poiRe * 0.35 + Math.cos(theta) * 0.78
+            var zi = poiIm * 0.35 + Math.sin(theta) * 0.78
+            var smoothIter = 0.0
+            for (var it = 0; it < 6; it++) {
+                var r2 = zr * zr
+                var i2 = zi * zi
+                if (r2 + i2 > 6.5) break
                 zi = 2.0 * zr * zi + cIm
-                zr = tr
+                zr = r2 - i2 + cRe
+                smoothIter += 1.0 / (1.0 + (r2 + i2) * 0.35)
             }
-            var escapePot = Math.atan(Math.sqrt(zr * zr + zi * zi)) / 1.5708
-            var bVal = state.smoothBands[(s + (octWorld & 15) * 4) & 63]
-            var rJulia = octScale * (0.64 + 0.52 * escapePot + bVal * 0.24 + Math.sin(u * arms * Math.PI * 2) * 0.16)
-            var curlA = theta + (escapePot - 0.5) * 0.42
-            var jx = Math.cos(curlA) * rJulia
-            var jy = Math.sin(curlA) * rJulia
+            var escapePot = clamp(smoothIter / 4.2, 0.15, 1.45)
+            var bVal = state.smoothBands[(s + (octWorld & 15) * 4) & 63] || 0.08
+            // True Mandelbrot cardioid + bulb harmonic modulation along equipotential boundary
+            var cardioidMod = 1.0 - 0.32 * Math.cos(theta - octRot) + 0.18 * Math.cos(2.0 * (theta - octRot))
+            var spiralMod = 0.16 * Math.sin(folds * u * Math.PI * 2 + (escapePot * 3.2))
+            var rContour = octScale * (0.58 + 0.48 * escapePot * cardioidMod + spiralMod + bVal * 0.22)
+            var curlA = theta + (escapePot - 0.65) * 0.48
+            var jx = centerX + Math.cos(curlA) * rContour
+            var jy = centerY + Math.sin(curlA) * rContour
             if (s === 0) ctx.moveTo(jx, jy)
             else ctx.lineTo(jx, jy)
         }
@@ -3310,64 +3550,55 @@ function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
         ctx.fill()
         ctx.stroke()
 
-        var branchSplit = 0.58 + state.mid * 0.20 + Math.sin(state.t * 0.7 + octWorld) * 0.10
-        var subRatio = 0.48
-        ctx.strokeStyle = colourWithAlpha(colAccent, (0.58 + envAlpha * 0.40) * envAlpha * (isEcho ? 0.65 : 1.0))
-        ctx.lineWidth = (1.1 + uOct * 1.9 + state.bass * 0.8) * envAlpha * (isEcho ? 0.75 : 1.0)
-        ctx.beginPath()
+        // 2. Self-Similar Mini-Mandelbrot Cardioid & Period-2 Bulb Silhouettes + Seahorse Spiral Eddies
+        var satCount = Math.max(3, Math.min(8, Math.round(folds * 0.65)))
+        ctx.strokeStyle = colourWithAlpha(colAccent, (0.62 + state.highSmooth * 0.32) * envAlpha)
+        ctx.fillStyle = colourWithAlpha(colSecondary, (0.16 + state.bassSmooth * 0.12) * envAlpha)
+        ctx.lineWidth = (1.0 + uOct * 1.8 + state.bassSmooth * 0.8) * envAlpha
 
-        var tipDiamonds = []
-        for (var arm = 0; arm < arms; arm++) {
-            var armA = (arm / arms) * Math.PI * 2 + octRot
-            var bArm = state.smoothBands[(arm * 7 + (octWorld & 7) * 5) & 63]
-            var len1 = octScale * (0.68 + bArm * 0.30)
-            var x0 = Math.cos(armA) * (octScale * 0.22)
-            var y0 = Math.sin(armA) * (octScale * 0.22)
-            var x1 = x0 + Math.cos(armA) * len1
-            var y1 = y0 + Math.sin(armA) * len1
-            ctx.moveTo(x0, y0)
-            ctx.lineTo(x1, y1)
+        for (var sat = 0; sat < satCount; sat++) {
+            var satA = (sat / satCount) * Math.PI * 2 + octRot
+            var bSat = state.smoothBands[(sat * 9 + (octWorld & 7) * 5) & 63] || 0.1
+            var satDist = octScale * (0.72 + bSat * 0.22)
+            var sx = centerX + Math.cos(satA) * satDist
+            var sy = centerY + Math.sin(satA) * satDist
+            var cardScale = octScale * (0.20 + bSat * 0.08)
+            var cardRot = satA + Math.PI * 0.5 + state.phase * 0.25
 
-            var len2 = len1 * subRatio
-            for (var s1 = -1; s1 <= 1; s1 += 2) {
-                var a2 = armA + s1 * branchSplit
-                var x2 = x1 + Math.cos(a2) * len2
-                var y2 = y1 + Math.sin(a2) * len2
-                ctx.moveTo(x1, y1)
-                ctx.lineTo(x2, y2)
-
-                if (!isEcho || oct >= 2) {
-                    var len3 = len2 * subRatio
-                    for (var s2 = -1; s2 <= 1; s2 += 2) {
-                        var a3 = a2 + s2 * (branchSplit * 0.88)
-                        var x3 = x2 + Math.cos(a3) * len3
-                        var y3 = y2 + Math.sin(a3) * len3
-                        ctx.moveTo(x2, y2)
-                        ctx.lineTo(x3, y3)
-                        if (!isEcho) {
-                            tipDiamonds.push(x3, y3, a3, Math.max(1.5, len3 * 0.36))
-                        }
-                    }
+            if ((sat + octWorld) & 1) {
+                // True Mandelbrot Cardioid + Period-2 Head Bulb (`r = cardScale * (1 - cos(t))`)
+                ctx.beginPath()
+                var cSteps = 20
+                for (var cs = 0; cs <= cSteps; cs++) {
+                    var ct = (cs / cSteps) * Math.PI * 2
+                    // Cardioid in local complex coordinates + period-2 bulb bump at ct = PI
+                    var cr = cardScale * (0.85 * (1.0 - Math.cos(ct)) + 0.32 * Math.pow(Math.max(0.0, -Math.cos(ct)), 3.0))
+                    var lx = Math.cos(ct) * cr + cardScale * 0.35
+                    var ly = Math.sin(ct) * cr
+                    var rx = sx + lx * Math.cos(cardRot) - ly * Math.sin(cardRot)
+                    var ry = sy + lx * Math.sin(cardRot) + ly * Math.cos(cardRot)
+                    if (cs === 0) ctx.moveTo(rx, ry)
+                    else ctx.lineTo(rx, ry)
                 }
-            }
-        }
-        ctx.stroke()
-
-        if (tipDiamonds.length > 0) {
-            ctx.fillStyle = colourWithAlpha(colSecondary, 0.72 * envAlpha)
-            ctx.beginPath()
-            for (var td = 0; td < tipDiamonds.length; td += 4) {
-                var tx = tipDiamonds[td], ty = tipDiamonds[td + 1]
-                var ta = tipDiamonds[td + 2], tr2 = tipDiamonds[td + 3]
-                var dx = Math.cos(ta) * tr2, dy = Math.sin(ta) * tr2
-                var nx = -dy * 0.6, ny = dx * 0.6
-                ctx.moveTo(tx + dx, ty + dy)
-                ctx.lineTo(tx + nx, ty + ny)
-                ctx.lineTo(tx - dx, ty - dy)
-                ctx.lineTo(tx - nx, ty - ny)
                 ctx.closePath()
+                ctx.fill()
+                ctx.stroke()
+            } else {
+                // Logarithmic Seahorse Valley Double-Spiral Eddy (curling fractal tendril)
+                ctx.beginPath()
+                var spSteps = 16
+                var curlSign = (sat % 2 === 0) ? 1.0 : -1.0
+                for (var sp = 0; sp <= spSteps; sp++) {
+                    var su = sp / spSteps
+                    var sTheta = cardRot + curlSign * su * Math.PI * 2.6
+                    var sRad = cardScale * 1.15 * Math.pow(1.0 - su * 0.82, 1.35)
+                    var spx = sx + Math.cos(sTheta) * sRad
+                    var spy = sy + Math.sin(sTheta) * sRad
+                    if (sp === 0) ctx.moveTo(spx, spy)
+                    else ctx.lineTo(spx, spy)
+                }
+                ctx.stroke()
             }
-            ctx.fill()
         }
     }
 
@@ -4176,9 +4407,11 @@ function drawSingleLayer2Mode(ctx, w, h, state, palette, cfg, m) {
 
 function drawLayer2Visualiser(ctx, w, h, state, palette, cfg) {
     if (cfg && !cfg.layer2Enabled) return
+    if (cfg && cfg.layer2VizEnabled === false) return
     var m = ((Number(cfg && cfg.layer2Mode !== undefined ? cfg.layer2Mode : (cfg && cfg.mode)) || 0) % MODE_NAMES.length + MODE_NAMES.length) % MODE_NAMES.length
 
-    var tracerCount = clamp(Math.round(Number(cfg && cfg.tracerCount !== undefined ? cfg.tracerCount : 9)), 1, 16)
+    var trEnabled = cfg && cfg.layer2TracersEnabled !== undefined ? Boolean(cfg.layer2TracersEnabled) : true
+    var tracerCount = trEnabled ? clamp(Math.round(Number(cfg && cfg.tracerCount !== undefined ? cfg.tracerCount : 9)), 1, 16) : 1
     var tracerSpeed = state.liveTracerSpeed !== undefined
         ? state.liveTracerSpeed
         : clamp(Number(cfg && cfg.tracerSpeed !== undefined ? cfg.tracerSpeed : 1.15), 0.15, 3.0)
@@ -4187,9 +4420,9 @@ function drawLayer2Visualiser(ctx, w, h, state, palette, cfg) {
         : clamp(Number(cfg && cfg.tracerDrift !== undefined ? cfg.tracerDrift : 1.0), 0.0, 2.5)
     var tracerDir = Number(cfg && cfg.tracerDirection !== undefined ? cfg.tracerDirection : 1)
 
-    // Modes 0, 2, 3, 4, 5, 7, and 9 already render native 3D depth tunnels, relativistic accretion vortices, or full-screen Matrix rain
+    // Modes 0, 1, 2, 3, 4, 5, 7, and 9 already render native 3D depth tunnels, oscilloscope rings, fractal cascades, or full-screen Matrix rain
     // using cfg.tracerCount directly for their ring/slice/octave/arm/trail count.
-    var isNativeTunnelOrFullScreen = (m === 0 || m === 2 || m === 3 || m === 4 || m === 5 || m === 7 || m === 9)
+    var isNativeTunnelOrFullScreen = (m === 0 || m === 1 || m === 2 || m === 3 || m === 4 || m === 5 || m === 7 || m === 9)
     if (tracerCount <= 1 || isNativeTunnelOrFullScreen) {
         state.isTracerEcho = false
         state.echoIndex = 0
@@ -4329,7 +4562,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     }
 
     // Layer #3 3D Graded History Tracers (`layer3Tracers`)
-    var l3Tracers = clamp(Math.round(Number(cfg.layer3Tracers !== undefined ? cfg.layer3Tracers : 4)), 1, 8)
+    var l3Tracers = clamp(Math.round(Number(cfg.layer3Tracers !== undefined ? cfg.layer3Tracers : 3)), 1, 6)
     var tracerSpeed = state.liveTracerSpeed !== undefined
         ? state.liveTracerSpeed
         : clamp(Number(cfg.tracerSpeed !== undefined ? cfg.tracerSpeed : 1.15), 0.15, 3.0)
@@ -4387,11 +4620,11 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                 var szH = tileH * pulseBoost
 
                 if (isBrailleGlyph) {
-                    // Genuine 2x4 Braille pinpoint dot-matrix rendering for both Art · Braille and Words · Braille
+                    // Crisp, ultra-fast 2-dot Braille pinpoint rendering for Art · Braille and Words · Braille
                     var mask = p.brailleMask || (((i * 37 + 13) & 0xFF) | 0x09)
-                    var dotW = Math.max(1.25, szW * 0.24)
-                    var dotH = Math.max(1.25, szH * 0.18)
-                    var maxDots = isEcho ? 3 : 6
+                    var dotW = Math.max(1.6, szW * 0.30)
+                    var dotH = Math.max(1.6, szH * 0.26)
+                    var maxDots = isEcho ? 1 : 2
                     var drawnDots = 0
                     for (var bit = 0; bit < 8; bit++) {
                         if ((mask >> bit) & 1) {
@@ -4449,8 +4682,8 @@ function normaliseConfig(cfg, mode, asciiLines) {
         audioSmoothing: c.audioSmoothing !== undefined ? clamp(Number(c.audioSmoothing), 0.20, 0.92) : 0.65,
         colourCycleSpeed: c.colourCycleSpeed !== undefined ? clamp(Number(c.colourCycleSpeed), 0.0, 2.50) : 1.0,
         masterBrightness: c.masterBrightness !== undefined ? clamp(Number(c.masterBrightness), 0.50, 1.50) : 1.0,
-        gpuShaderEnabled: c.gpuShaderEnabled !== undefined ? Boolean(c.gpuShaderEnabled) : (c.backdropEnabled !== undefined ? Boolean(c.backdropEnabled) : false),
-        backdropEnabled: c.backdropEnabled !== undefined ? Boolean(c.backdropEnabled) : (c.gpuShaderEnabled !== undefined ? Boolean(c.gpuShaderEnabled) : false),
+        gpuShaderEnabled: c.gpuShaderEnabled !== undefined ? Boolean(c.gpuShaderEnabled) : true,
+        backdropEnabled: c.backdropEnabled !== undefined ? Boolean(c.backdropEnabled) : false,
         backdropMode: c.backdropMode !== undefined ? clamp(Math.round(Number(c.backdropMode)), 0, 6) : 0,
         backdropSpeed: c.backdropSpeed !== undefined ? clamp(Number(c.backdropSpeed), 0.1, 3.0) : 1.0,
         backdropIntensity: c.backdropIntensity !== undefined ? clamp(Number(c.backdropIntensity), 0.2, 2.0) : 1.0,
@@ -4464,6 +4697,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer1Enabled: c.layer1Enabled !== undefined ? Boolean(c.layer1Enabled) : true,
         layer1FieldEnabled: c.layer1FieldEnabled !== undefined ? Boolean(c.layer1FieldEnabled) : true,
         layer1Mode: Number(c.layer1Mode) || 0,
+        layer1Direction: c.layer1Direction !== undefined ? Number(c.layer1Direction) : 1,
         layer1Trail: Number(c.layer1Trail !== undefined ? c.layer1Trail : (c.layer1Persistence !== undefined ? c.layer1Persistence : 0.85)),
         layer1Speed: Number(c.layer1Speed !== undefined ? c.layer1Speed : 1.0),
         layer1Density: Number(c.layer1Density !== undefined ? c.layer1Density : 1.0) * geomDetail,
@@ -4479,6 +4713,8 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer1ShapeSpeed: c.layer1ShapeSpeed !== undefined ? clamp(Number(c.layer1ShapeSpeed), 0.2, 3.0) : 1.0,
         layer1ShapeScale: c.layer1ShapeScale !== undefined ? clamp(Number(c.layer1ShapeScale), 0.3, 2.5) : 1.0,
         layer2Enabled: c.layer2Enabled !== undefined ? Boolean(c.layer2Enabled) : true,
+        layer2VizEnabled: c.layer2VizEnabled !== undefined ? Boolean(c.layer2VizEnabled) : true,
+        layer2TracersEnabled: c.layer2TracersEnabled !== undefined ? Boolean(c.layer2TracersEnabled) : true,
         layer2Mode: Number(c.layer2Mode !== undefined ? c.layer2Mode : (c.mode !== undefined ? c.mode : (mode || 0))),
         layer2Facets: Number(c.layer2Facets !== undefined ? c.layer2Facets : (c.symmetryFolds !== undefined ? c.symmetryFolds : 6)),
         layer2Complexity: Number(c.layer2Complexity !== undefined ? c.layer2Complexity : 1.0) * geomDetail,
@@ -4492,7 +4728,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer3Rebuild: Number(c.layer3Rebuild !== undefined ? c.layer3Rebuild : 1.0),
         layer3Evolution: Number(c.layer3Evolution !== undefined ? c.layer3Evolution : 0.85),
         layer3Scale: Number(c.layer3Scale !== undefined ? c.layer3Scale : 1.0),
-        layer3Tracers: c.layer3Tracers !== undefined ? clamp(Math.round(Number(c.layer3Tracers)), 1, 8) : 4,
+        layer3Tracers: c.layer3Tracers !== undefined ? clamp(Math.round(Number(c.layer3Tracers)), 1, 6) : 3,
         layer3AsciiMode: c.layer3AsciiMode || c.asciiMode || "braille",
         asciiMode: c.asciiMode || c.layer3AsciiMode || "braille",
         useAlbumArt: c.useAlbumArt !== undefined ? Boolean(c.useAlbumArt) : true,

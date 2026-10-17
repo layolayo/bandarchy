@@ -531,7 +531,7 @@ Item {
     Process {
         id: cavaProc
         command: ["cava", "-p", root.cavaConfPath]
-        running: root.activelyPlaying || root.visualiserActive || root.fullscreenVisualiserOpen
+        running: root.visualiserActive || root.fullscreenVisualiserOpen
         stdout: SplitParser {
             onRead: line => {
                 var parts = line.trim().split(";")
