@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Window
 import Quickshell
+import Quickshell.Io
 
 // App.qml — Dedicated Standalone Bandarchy Desktop Player & 4-Mode Stage / 3-Layer Visualiser
 // Launch with: quickshell -p /path/to/App.qml (or `bandarchy-player`)
@@ -14,13 +15,21 @@ ShellRoot {
         visualiserActive: win.visible && appVisualiser.stageMode !== "off"
     }
 
+    FileView {
+        id: omarchyThemeFile
+        path: (Quickshell.env("HOME") || "/home/matthew") + "/.local/state/omarchy/current/theme/colors.toml"
+        watchChanges: true
+        onFileChanged: reload()
+        onLoaded: win.applyOmarchyTheme(text())
+    }
+
     FloatingWindow {
         id: win
         title: "Bandarchy — Bandcamp & Local Lossless Player"
         implicitWidth: 1240
         implicitHeight: 780
         minimumSize: Qt.size(900, 580)
-        color: "#07090e"
+        color: win.colBg
         visible: true
         property bool hasShown: false
         onVisibleChanged: {
@@ -31,13 +40,35 @@ ShellRoot {
             }
         }
 
-        property color colBg: "#07090e"
+        property color colBg: "#08080c"
         property color colFg: "#e2e8f0"
-        property color colAccent: "#6ee7b7"
-        property color colUrgent: "#f472b6"
-        property color colSurface: "#111622"
+        property color colAccent: "#ffab00"
+        property color colUrgent: "#ff4a6b"
+        property color colSurface: "#121218"
         property color colBorder: "#242e42"
         property color colMuted: "#94a3b8"
+
+        function applyOmarchyTheme(tomlText) {
+            if (!tomlText) return
+            function extractHex(key) {
+                var re = new RegExp("^\\s*" + key + "\\s*=\\s*\"(#[0-9a-fA-F]{6,8})\"", "m")
+                var m = tomlText.match(re)
+                return m ? m[1] : ""
+            }
+            var bg = extractHex("background")
+            var fg = extractHex("foreground")
+            var acc = extractHex("accent")
+            var urg = extractHex("red") || extractHex("magenta")
+            var surf = extractHex("lighter_background")
+            var mut = extractHex("light_foreground") || extractHex("dark_foreground")
+            if (bg) win.colBg = bg
+            if (fg) win.colFg = fg
+            if (acc) win.colAccent = acc
+            if (urg) win.colUrgent = urg
+            if (surf) win.colSurface = surf
+            if (mut) win.colMuted = mut
+            win.colBorder = Qt.rgba(win.colFg.r, win.colFg.g, win.colFg.b, 0.16)
+        }
 
         property int leftTab: 0 // 0: Collection, 1: Playlists & Radio, 2: Stage & Visualiser, 3: Account & Sync
         property string selectedAlbumId: ""
@@ -73,7 +104,7 @@ ShellRoot {
             }
         }
 
-        // Reusable tactile button with immediate hover/click flash & scale response
+        // Reusable tactile button with high-contrast hover/click flash & scale response
         component ActionPill: Rectangle {
             id: pill
             property string text: ""
@@ -88,7 +119,7 @@ ShellRoot {
             property real flashOpacity: 0.0
             NumberAnimation on flashOpacity {
                 id: pillFlashAnim
-                from: 0.45
+                from: 0.65
                 to: 0.0
                 duration: 240
                 running: false
@@ -99,27 +130,36 @@ ShellRoot {
             implicitHeight: pillHeight
             implicitWidth: pillLabel.implicitWidth + horizontalPad * 2
             radius: 5
-            scale: pillMouse.pressed ? 0.95 : (pillMouse.containsMouse ? 1.02 : 1.0)
-            Behavior on scale { NumberAnimation { duration: 85; easing.type: Easing.OutQuad } }
+            scale: pillMouse.pressed ? 0.92 : (pillMouse.containsMouse ? 1.05 : 1.0)
+            Behavior on scale { NumberAnimation { duration: 75; easing.type: Easing.OutQuad } }
+            Behavior on color { ColorAnimation { duration: 85 } }
 
             color: {
                 if (pill.primary) {
-                    return pillMouse.pressed ? Qt.darker(win.colAccent, 1.18)
-                         : (pillMouse.containsMouse ? Qt.lighter(win.colAccent, 1.12) : win.colAccent)
+                    return pillMouse.pressed ? Qt.darker(win.colAccent, 1.25)
+                         : (pillMouse.containsMouse ? Qt.lighter(win.colAccent, 1.22) : win.colAccent)
                 }
                 if (pill.danger) {
-                    return pillMouse.pressed ? Qt.rgba(win.colUrgent.r, win.colUrgent.g, win.colUrgent.b, 0.38)
-                         : (pillMouse.containsMouse ? Qt.rgba(win.colUrgent.r, win.colUrgent.g, win.colUrgent.b, 0.26)
-                         : (pill.active ? Qt.rgba(win.colUrgent.r, win.colUrgent.g, win.colUrgent.b, 0.22) : "#141824"))
+                    return pillMouse.pressed ? Qt.rgba(win.colUrgent.r, win.colUrgent.g, win.colUrgent.b, 0.45)
+                         : (pillMouse.containsMouse ? Qt.rgba(win.colUrgent.r, win.colUrgent.g, win.colUrgent.b, 0.32)
+                         : (pill.active ? Qt.rgba(win.colUrgent.r, win.colUrgent.g, win.colUrgent.b, 0.22) : win.colSurface))
                 }
                 if (pill.active) {
-                    return pillMouse.pressed ? "#1f4a40" : (pillMouse.containsMouse ? "#1b3f37" : "#15322c")
+                    return pillMouse.pressed
+                        ? Qt.rgba(win.colAccent.r, win.colAccent.g, win.colAccent.b, 0.42)
+                        : (pillMouse.containsMouse
+                            ? Qt.rgba(win.colAccent.r, win.colAccent.g, win.colAccent.b, 0.30)
+                            : Qt.rgba(win.colAccent.r, win.colAccent.g, win.colAccent.b, 0.18))
                 }
-                return pillMouse.pressed ? "#1e293b" : (pillMouse.containsMouse ? "#162032" : "#0b0f17")
+                return pillMouse.pressed
+                    ? Qt.rgba(win.colAccent.r, win.colAccent.g, win.colAccent.b, 0.28)
+                    : (pillMouse.containsMouse
+                        ? Qt.rgba(win.colAccent.r, win.colAccent.g, win.colAccent.b, 0.18)
+                        : win.colSurface)
             }
-            border.width: (pill.active || pill.primary || pill.danger || pillMouse.containsMouse) ? 1.2 : 1
+            border.width: (pill.primary || pillMouse.containsMouse || pillMouse.pressed) ? 1.6 : ((pill.active || pill.danger) ? 1.2 : 1)
             border.color: pill.primary
-                ? win.colAccent
+                ? (pillMouse.containsMouse ? "#ffffff" : win.colAccent)
                 : (pill.danger
                     ? win.colUrgent
                     : (pill.active || pillMouse.containsMouse ? win.colAccent : win.colBorder))
@@ -138,12 +178,12 @@ ShellRoot {
                 textFormat: Text.PlainText
                 font.family: "JetBrainsMono Nerd Font"
                 font.pixelSize: pill.fontSize
-                font.bold: pill.primary || pill.active || pill.danger
+                font.bold: pill.primary || pill.active || pill.danger || pillMouse.containsMouse
                 color: pill.primary
                     ? "#07090e"
                     : (pill.danger
                         ? win.colUrgent
-                        : (pill.active ? win.colAccent : win.colFg))
+                        : (pill.active || pillMouse.containsMouse ? win.colAccent : win.colFg))
             }
 
             MouseArea {
@@ -914,7 +954,7 @@ ShellRoot {
                                                         }
                                                     }
 
-                                                    // Album Title, Artist & Non-Truncating Pill Badges
+                                                    // Album Title, Artist & Left-Aligned Info Tags
                                                     Item {
                                                         Layout.fillWidth: true
                                                         Layout.preferredHeight: 42
@@ -934,19 +974,23 @@ ShellRoot {
                                                                     font.family: "JetBrainsMono Nerd Font"
                                                                     font.pixelSize: 11
                                                                     font.bold: true
-                                                                    color: appAlbumCard.isKeyboardFocused ? win.colAccent : win.colFg
+                                                                    color: (appAlbumCard.isCurrentAlbum || appAlbumCard.isKeyboardFocused) ? win.colAccent : win.colFg
                                                                     elide: Text.ElideRight
                                                                 }
+                                                            }
 
-                                                                // Non-truncating PURCHASED badge
+                                                            RowLayout {
+                                                                Layout.fillWidth: true
+                                                                spacing: 5
+
+                                                                // Left-aligned flat informational tags (distinct from right-side action buttons)
                                                                 Rectangle {
                                                                     visible: Boolean(modelData.purchased)
-                                                                    Layout.preferredHeight: 16
-                                                                    Layout.preferredWidth: appPurBadgeTxt.implicitWidth + 8
+                                                                    Layout.preferredHeight: 15
+                                                                    Layout.preferredWidth: appPurBadgeTxt.implicitWidth + 6
                                                                     radius: 3
-                                                                    color: Qt.rgba(win.colAccent.r, win.colAccent.g, win.colAccent.b, 0.18)
-                                                                    border.width: 1
-                                                                    border.color: win.colAccent
+                                                                    color: Qt.rgba(win.colAccent.r, win.colAccent.g, win.colAccent.b, 0.14)
+                                                                    border.width: 0
                                                                     Text {
                                                                         id: appPurBadgeTxt
                                                                         anchors.centerIn: parent
@@ -959,16 +1003,14 @@ ShellRoot {
                                                                     }
                                                                 }
 
-                                                                // Non-truncating LOCAL vs STREAM badge
                                                                 Rectangle {
-                                                                    Layout.preferredHeight: 16
-                                                                    Layout.preferredWidth: appLocBadgeTxt.implicitWidth + 8
+                                                                    Layout.preferredHeight: 15
+                                                                    Layout.preferredWidth: appLocBadgeTxt.implicitWidth + 6
                                                                     radius: 3
                                                                     color: modelData.isLocal
-                                                                        ? Qt.rgba(0.2, 0.85, 0.6, 0.16)
-                                                                        : Qt.rgba(win.colUrgent.r, win.colUrgent.g, win.colUrgent.b, 0.16)
-                                                                    border.width: 1
-                                                                    border.color: modelData.isLocal ? win.colAccent : win.colUrgent
+                                                                        ? Qt.rgba(win.colAccent.r, win.colAccent.g, win.colAccent.b, 0.12)
+                                                                        : Qt.rgba(win.colUrgent.r, win.colUrgent.g, win.colUrgent.b, 0.14)
+                                                                    border.width: 0
                                                                     Text {
                                                                         id: appLocBadgeTxt
                                                                         anchors.centerIn: parent
@@ -980,21 +1022,6 @@ ShellRoot {
                                                                         color: modelData.isLocal ? win.colAccent : win.colUrgent
                                                                     }
                                                                 }
-                                                            }
-
-                                                            RowLayout {
-                                                                Layout.fillWidth: true
-                                                                spacing: 6
-
-                                                                Text {
-                                                                    Layout.fillWidth: true
-                                                                    text: modelData.artist || "Unknown Artist"
-                                                                    textFormat: Text.PlainText
-                                                                    font.family: "JetBrainsMono Nerd Font"
-                                                                    font.pixelSize: 10
-                                                                    color: win.colMuted
-                                                                    elide: Text.ElideRight
-                                                                }
 
                                                                 Text {
                                                                     text: (modelData.numTracks || tracksList.length || 0) + " trk" +
@@ -1003,6 +1030,16 @@ ShellRoot {
                                                                     font.family: "JetBrainsMono Nerd Font"
                                                                     font.pixelSize: 9
                                                                     color: win.colAccent
+                                                                }
+
+                                                                Text {
+                                                                    Layout.fillWidth: true
+                                                                    text: "· " + (modelData.artist || "Unknown Artist")
+                                                                    textFormat: Text.PlainText
+                                                                    font.family: "JetBrainsMono Nerd Font"
+                                                                    font.pixelSize: 10
+                                                                    color: win.colMuted
+                                                                    elide: Text.ElideRight
                                                                 }
                                                             }
                                                         }
@@ -1036,16 +1073,23 @@ ShellRoot {
                                                         }
                                                     }
 
-                                                    // Play / Stream Album button
+                                                    // Play / Stream Album button (primary fill ONLY when actively playing this album)
                                                     ActionPill {
-                                                        text: modelData.isLocal ? "󰐊 Play" : "󰐊 Stream"
-                                                        primary: true
+                                                        text: appAlbumCard.isCurrentAlbum
+                                                            ? (service.paused ? "󰐊 Paused" : "󰏤 Playing")
+                                                            : (modelData.isLocal ? "󰐊 Play" : "󰐊 Stream")
+                                                        primary: appAlbumCard.isCurrentAlbum
+                                                        active: !appAlbumCard.isCurrentAlbum
                                                         fontSize: 9
                                                         horizontalPad: 9
                                                         pillHeight: 26
                                                         onClicked: {
                                                             win.focusedAlbumIndex = appAlbumCard.index
-                                                            service.playAlbum(modelData.id, 0, "auto", false)
+                                                            if (appAlbumCard.isCurrentAlbum && service.playing) {
+                                                                service.togglePlayPause()
+                                                            } else {
+                                                                service.playAlbum(modelData.id, 0, "auto", false)
+                                                            }
                                                             appRootRect.forceActiveFocus()
                                                         }
                                                     }
@@ -2204,6 +2248,7 @@ ShellRoot {
                             onRequestSeek: seconds => service.seekTo(seconds)
                             onRequestToggleUseAlbumArt: service.toggleUseAlbumArt()
                             onRequestToggleAsciiMode: service.toggleAsciiMode()
+                            onRequestSetAsciiSourceMode: modeStr => service.setAsciiSourceMode(modeStr)
                             onRequestLaunchTtfxScreensaver: effectName => {
                                 service.launchTtfxScreensaver(effectName)
                             }

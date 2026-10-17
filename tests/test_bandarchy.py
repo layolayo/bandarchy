@@ -857,8 +857,111 @@ console.log(JSON.stringify({ ok: true, maxFrameMs: maxMs }));
             self.assertTrue(bench["ok"])
             self.assertLess(bench["maxFrameMs"], 5.0, f"Frame render too slow: {bench['maxFrameMs']} ms")
 
+    def test_11_smooth_accumulators_dedup_and_4combo_layer3(self):
+        # 1. Verify compiled Qt6 QSB fragment shader exists and is non-empty
+        qsb_path = os.path.join(REPO_ROOT, "share", "psychedelic.frag.qsb")
+        self.assertTrue(os.path.isfile(qsb_path), "share/psychedelic.frag.qsb must exist")
+        self.assertGreater(os.path.getsize(qsb_path), 512, "share/psychedelic.frag.qsb must be non-empty")
+
+        # 2. Verify Visualiser.qml, App.qml, Panel.qml, Service.qml new features
+        with open(os.path.join(REPO_ROOT, "Visualiser.qml"), "r", encoding="utf-8") as f:
+            viz_src = f.read()
+        with open(os.path.join(REPO_ROOT, "Service.qml"), "r", encoding="utf-8") as f:
+            svc_src = f.read()
+        with open(os.path.join(REPO_ROOT, "App.qml"), "r", encoding="utf-8") as f:
+            app_src = f.read()
+
+        self.assertIn("property bool gpuShaderEnabled: false", viz_src)
+        self.assertIn("visible: root.showHud && root.isFullscreen", viz_src)
+        self.assertIn("function setAsciiSourceMode(", svc_src)
+        self.assertIn("fastPlayPollTimer", svc_src)
+        self.assertIn("applyOmarchyTheme", app_src)
+
+        # 3. Verify Node.js monotonic phase accumulators, 7 L1 modes, 7 EQ styles, and all 4 Layer #3 combinations
+        if shutil.which("node"):
+            node_script = r"""
+const fs = require('fs');
+let code = fs.readFileSync('PsychedelicEngine.js', 'utf8').replace(/^\.pragma library\s*/m, '');
+eval(code);
+
+function makeMockCtx() {
+    return {
+        fillCount: 0, strokeCount: 0, rectCount: 0,
+        fillStyle: '', strokeStyle: '', lineWidth: 1, globalAlpha: 1, globalCompositeOperation: 'source-over',
+        save() {}, restore() {}, translate() {}, rotate() {}, scale() {},
+        beginPath() {}, closePath() {}, moveTo() {}, lineTo() {},
+        rect() { this.rectCount++; },
+        arc() {},
+        fill() { this.fillCount++; },
+        stroke() { this.strokeCount++; },
+        fillRect() { this.fillCount++; },
+        clearRect() {},
+        drawImage() {},
+        createLinearGradient() { return { addColorStop() {} }; },
+        createRadialGradient() { return { addColorStop() {} }; }
+    };
+}
+
+const state = createState();
+if (LAYER1_MODES.length !== 7) throw new Error('Expected 7 LAYER1_MODES, got ' + LAYER1_MODES.length);
+if (LAYER1_EQ_STYLES.length !== 7) throw new Error('Expected 7 LAYER1_EQ_STYLES, got ' + LAYER1_EQ_STYLES.length);
+
+// Verify monotonic phase accumulators never jump backwards under extreme bass/speed swings
+let prevL1 = 0, prevTunnel = 0, prevZoom = 0, prevMatrix = 0;
+for (let i = 0; i < 40; i++) {
+    const swingBands = Array.from({length: 64}, () => (i % 2 === 0 ? 1000 : 0));
+    const cfg = normaliseConfig({
+        layer1Speed: (i % 2 === 0 ? 2.5 : 0.2),
+        layer2Speed: (i % 2 === 0 ? 2.5 : 0.2),
+        tracerSpeed: (i % 2 === 0 ? 2.8 : 0.2)
+    }, 0, []);
+    stepState(state, swingBands, true, cfg, 0.016);
+    if (state.l1Time < prevL1 || state.tunnelTime < prevTunnel || state.zoomTime < prevZoom || state.matrixTime < prevMatrix) {
+        throw new Error('Phase accumulator jumped backwards at step ' + i);
+    }
+    prevL1 = state.l1Time;
+    prevTunnel = state.tunnelTime;
+    prevZoom = state.zoomTime;
+    prevMatrix = state.matrixTime;
+}
+
+// Verify new L1 modes 5 (Star Wars Trench) and 6 (Gargantua Hole) and EQ style 6 (Spotlights)
+const theme = { accent: '#ffab00', urgent: '#ff4a6b', foreground: '#e2e8f0', background: '#08080c' };
+for (const l1m of [5, 6]) {
+    const ctx = makeMockCtx();
+    const cfg = normaliseConfig({ layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: l1m, layer1EqEnabled: true, layer1EqStyle: 6, layer2Enabled: false, layer3Enabled: false }, 0, []);
+    renderFrame(ctx, 640, 360, state, 0, theme, [], 'album-art', [], cfg, null);
+    if (ctx.fillCount < 2 || ctx.strokeCount < 2) {
+        throw new Error('New L1 mode ' + l1m + ' failed to draw geometry');
+    }
+}
+
+// Verify all 4 Layer #3 combinations: (useAlbumArt: true/false) x (asciiMode: braille/block)
+const brailleArt = Array.from({length: 12}, () => '⣿⣷⣯⣟⡿⢿⣻⣽'.repeat(4));
+const bannerWords = Array.from({length: 10}, () => '█▀▄░▒▓ BASS COMMUNION ▓▒░▄▀█');
+for (const useArt of [true, false]) {
+    for (const glyphMode of ['braille', 'block']) {
+        const ctx = makeMockCtx();
+        const cfg = normaliseConfig({
+            layer1Enabled: false, layer2Enabled: false, layer3Enabled: true,
+            useAlbumArt: useArt, asciiMode: glyphMode,
+            artLines: brailleArt, bannerLines: bannerWords
+        }, 0, useArt ? brailleArt : bannerWords);
+        stepState(state, Array.from({length: 64}, () => 400), true, cfg, 0.016);
+        renderFrame(ctx, 640, 360, state, 0, theme, useArt ? brailleArt : bannerWords, useArt ? 'album-art' : 'banner', [], cfg, null);
+        if (ctx.rectCount < 20) {
+            throw new Error('Layer #3 combo useAlbumArt=' + useArt + ' asciiMode=' + glyphMode + ' failed: rectCount=' + ctx.rectCount);
+        }
+    }
+}
+console.log('OK');
+"""
+            res = subprocess.run(["node", "-e", node_script], cwd=REPO_ROOT, capture_output=True, text=True, timeout=15)
+            self.assertEqual(res.returncode, 0, f"Node test_11 failed: {res.stderr}")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
 
 

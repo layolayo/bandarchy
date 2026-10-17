@@ -61,7 +61,7 @@ Item {
     property int focusedPlaylistTrackIndex: -1
     property int playlistPaneFocus: 0
 
-    // Reusable tactile button with immediate hover/click flash & scale response
+    // Reusable tactile button with high-contrast hover/click flash & scale response
     component ActionPill: Rectangle {
         id: pill
         property string text: ""
@@ -76,7 +76,7 @@ Item {
         property real flashOpacity: 0.0
         NumberAnimation on flashOpacity {
             id: pillFlashAnim
-            from: 0.45
+            from: 0.65
             to: 0.0
             duration: 240
             running: false
@@ -87,35 +87,36 @@ Item {
         implicitHeight: pillHeight
         implicitWidth: pillLabel.implicitWidth + horizontalPad * 2
         radius: 5
-        scale: pillMouse.pressed ? 0.95 : (pillMouse.containsMouse ? 1.02 : 1.0)
-        Behavior on scale { NumberAnimation { duration: 85; easing.type: Easing.OutQuad } }
+        scale: pillMouse.pressed ? 0.92 : (pillMouse.containsMouse ? 1.05 : 1.0)
+        Behavior on scale { NumberAnimation { duration: 75; easing.type: Easing.OutQuad } }
+        Behavior on color { ColorAnimation { duration: 85 } }
 
         color: {
             if (pill.primary) {
-                return pillMouse.pressed ? Qt.darker(root.colAccent, 1.18)
-                     : (pillMouse.containsMouse ? Qt.lighter(root.colAccent, 1.12) : root.colAccent)
+                return pillMouse.pressed ? Qt.darker(root.colAccent, 1.25)
+                     : (pillMouse.containsMouse ? Qt.lighter(root.colAccent, 1.22) : root.colAccent)
             }
             if (pill.danger) {
-                return pillMouse.pressed ? Qt.rgba(root.colUrgent.r, root.colUrgent.g, root.colUrgent.b, 0.36)
-                     : (pillMouse.containsMouse ? Qt.rgba(root.colUrgent.r, root.colUrgent.g, root.colUrgent.b, 0.25)
-                     : (pill.active ? Qt.rgba(root.colUrgent.r, root.colUrgent.g, root.colUrgent.b, 0.20) : root.colSurface))
+                return pillMouse.pressed ? Qt.rgba(root.colUrgent.r, root.colUrgent.g, root.colUrgent.b, 0.45)
+                     : (pillMouse.containsMouse ? Qt.rgba(root.colUrgent.r, root.colUrgent.g, root.colUrgent.b, 0.32)
+                     : (pill.active ? Qt.rgba(root.colUrgent.r, root.colUrgent.g, root.colUrgent.b, 0.22) : root.colSurface))
             }
             if (pill.active) {
                 return pillMouse.pressed
-                    ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.34)
+                    ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.42)
                     : (pillMouse.containsMouse
-                        ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.28)
+                        ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.30)
                         : Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.20))
             }
             return pillMouse.pressed
-                ? Qt.rgba(root.colFg.r, root.colFg.g, root.colFg.b, 0.16)
+                ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.28)
                 : (pillMouse.containsMouse
-                    ? Qt.rgba(root.colFg.r, root.colFg.g, root.colFg.b, 0.11)
+                    ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.18)
                     : root.colSurface)
         }
-        border.width: (pill.active || pill.primary || pill.danger || pillMouse.containsMouse) ? 1.2 : 1
+        border.width: (pill.primary || pillMouse.containsMouse || pillMouse.pressed) ? 1.6 : ((pill.active || pill.danger) ? 1.2 : 1)
         border.color: pill.primary
-            ? root.colAccent
+            ? (pillMouse.containsMouse ? "#ffffff" : root.colAccent)
             : (pill.danger
                 ? root.colUrgent
                 : (pill.active || pillMouse.containsMouse ? root.colAccent : root.colBorder))
@@ -134,12 +135,12 @@ Item {
             textFormat: Text.PlainText
             font.family: "JetBrainsMono Nerd Font"
             font.pixelSize: pill.fontSize
-            font.bold: pill.primary || pill.active || pill.danger
+            font.bold: pill.primary || pill.active || pill.danger || pillMouse.containsMouse
             color: pill.primary
                 ? "#07090e"
                 : (pill.danger
                     ? root.colUrgent
-                    : (pill.active ? root.colAccent : root.colFg))
+                    : (pill.active || pillMouse.containsMouse ? root.colAccent : root.colFg))
         }
 
         MouseArea {
@@ -615,6 +616,7 @@ Item {
                 onRequestSeek: sec => { if (root.service) root.service.seekTo(sec) }
                 onRequestToggleUseAlbumArt: if (root.service) root.service.toggleUseAlbumArt()
                 onRequestToggleAsciiMode: if (root.service) root.service.toggleAsciiMode()
+                onRequestSetAsciiSourceMode: modeStr => { if (root.service) root.service.setAsciiSourceMode(modeStr) }
                 onRequestLaunchTtfxScreensaver: effectName => {
                     if (root.service) root.service.launchTtfxScreensaver(effectName)
                 }
@@ -1041,7 +1043,7 @@ Item {
                                                 }
                                             }
 
-                                            // Artist, Album Title & Non-Truncating Pill Badges
+                                            // Album Title, Artist & Left-Aligned Info Tags
                                             Item {
                                                 Layout.fillWidth: true
                                                 Layout.preferredHeight: 44
@@ -1061,66 +1063,53 @@ Item {
                                                             font.family: "JetBrainsMono Nerd Font"
                                                             font.pixelSize: 12
                                                             font.bold: true
-                                                            color: albumCard.isKeyboardFocused ? root.colAccent : root.colFg
+                                                            color: (albumCard.isCurrentAlbum || albumCard.isKeyboardFocused) ? root.colAccent : root.colFg
                                                             elide: Text.ElideRight
                                                         }
+                                                    }
 
-                                                        // PURCHASED badge
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 5
+
+                                                        // Left-aligned flat informational tags (distinct from right-side action buttons)
                                                         Rectangle {
                                                             visible: Boolean(modelData.purchased)
-                                                            Layout.preferredHeight: 18
-                                                            Layout.preferredWidth: purTxt.implicitWidth + 10
-                                                            radius: 4
-                                                            color: Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.20)
-                                                            border.width: 1
-                                                            border.color: root.colAccent
+                                                            Layout.preferredHeight: 16
+                                                            Layout.preferredWidth: purTxt.implicitWidth + 8
+                                                            radius: 3
+                                                            color: Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.14)
+                                                            border.width: 0
                                                             Text {
                                                                 id: purTxt
                                                                 anchors.centerIn: parent
                                                                 text: "PURCHASED"
                                                                 textFormat: Text.PlainText
                                                                 font.family: "JetBrainsMono Nerd Font"
-                                                                font.pixelSize: 9
+                                                                font.pixelSize: 8
                                                                 font.bold: true
                                                                 color: root.colAccent
                                                             }
                                                         }
 
-                                                        // LOCAL vs STREAM badge
                                                         Rectangle {
-                                                            Layout.preferredHeight: 18
-                                                            Layout.preferredWidth: locTxt.implicitWidth + 10
-                                                            radius: 4
+                                                            Layout.preferredHeight: 16
+                                                            Layout.preferredWidth: locTxt.implicitWidth + 8
+                                                            radius: 3
                                                             color: modelData.isLocal
-                                                                ? Qt.rgba(0.2, 0.85, 0.6, 0.16)
-                                                                : Qt.rgba(root.colUrgent.r, root.colUrgent.g, root.colUrgent.b, 0.16)
-                                                            border.width: 1
-                                                            border.color: modelData.isLocal ? root.colAccent : root.colUrgent
+                                                                ? Qt.rgba(root.colAccent.r, root.colAccent.g, root.colAccent.b, 0.12)
+                                                                : Qt.rgba(root.colUrgent.r, root.colUrgent.g, root.colUrgent.b, 0.14)
+                                                            border.width: 0
                                                             Text {
                                                                 id: locTxt
                                                                 anchors.centerIn: parent
                                                                 text: modelData.isLocal ? "LOCAL" : "STREAM"
                                                                 textFormat: Text.PlainText
                                                                 font.family: "JetBrainsMono Nerd Font"
-                                                                font.pixelSize: 9
+                                                                font.pixelSize: 8
                                                                 font.bold: true
                                                                 color: modelData.isLocal ? root.colAccent : root.colUrgent
                                                             }
-                                                        }
-                                                    }
-
-                                                    RowLayout {
-                                                        Layout.fillWidth: true
-                                                        spacing: 6
-
-                                                        Text {
-                                                            Layout.fillWidth: true
-                                                            text: modelData.artist || "Unknown Artist"
-                                                            textFormat: Text.PlainText
-                                                            font.family: "JetBrainsMono Nerd Font"
-                                                            font.pixelSize: 11
-                                                            color: root.colMuted
-                                                            elide: Text.ElideRight
                                                         }
 
                                                         Text {
@@ -1130,6 +1119,16 @@ Item {
                                                             font.family: "JetBrainsMono Nerd Font"
                                                             font.pixelSize: 9
                                                             color: root.colAccent
+                                                        }
+
+                                                        Text {
+                                                            Layout.fillWidth: true
+                                                            text: "· " + (modelData.artist || "Unknown Artist")
+                                                            textFormat: Text.PlainText
+                                                            font.family: "JetBrainsMono Nerd Font"
+                                                            font.pixelSize: 11
+                                                            color: root.colMuted
+                                                            elide: Text.ElideRight
                                                         }
                                                     }
                                                 }
@@ -1167,14 +1166,23 @@ Item {
                                                 }
 
                                                 ActionPill {
-                                                    text: modelData.isLocal ? "󰐊 Play" : "󰐊 Stream"
-                                                    primary: true
+                                                    text: albumCard.isCurrentAlbum
+                                                        ? ((root.service && root.service.paused) ? "󰐊 Paused" : "󰏤 Playing")
+                                                        : (modelData.isLocal ? "󰐊 Play" : "󰐊 Stream")
+                                                    primary: albumCard.isCurrentAlbum
+                                                    active: !albumCard.isCurrentAlbum
                                                     fontSize: 10
                                                     horizontalPad: 9
                                                     pillHeight: 28
                                                     onClicked: {
                                                         root.focusedAlbumIndex = albumCard.index
-                                                        if (root.service) root.service.playAlbum(modelData.id, 0, "auto", false)
+                                                        if (root.service) {
+                                                            if (albumCard.isCurrentAlbum && root.service.playing) {
+                                                                root.service.togglePlayPause()
+                                                            } else {
+                                                                root.service.playAlbum(modelData.id, 0, "auto", false)
+                                                            }
+                                                        }
                                                         panelFrame.forceActiveFocus()
                                                     }
                                                 }
@@ -2031,6 +2039,7 @@ Item {
                         onRequestSeek: sec => { if (root.service) root.service.seekTo(sec) }
                         onRequestToggleUseAlbumArt: if (root.service) root.service.toggleUseAlbumArt()
                         onRequestToggleAsciiMode: if (root.service) root.service.toggleAsciiMode()
+                        onRequestSetAsciiSourceMode: modeStr => { if (root.service) root.service.setAsciiSourceMode(modeStr) }
                         onRequestLaunchTtfxScreensaver: effectName => {
                             if (root.service) root.service.launchTtfxScreensaver(effectName)
                         }

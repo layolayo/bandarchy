@@ -227,28 +227,39 @@ Item {
                 }
 
                 var p = d.playback || {}
-                root.playing = Boolean(p.playing)
-                root.paused = Boolean(p.paused)
-                root.trackTitle = p.title || ""
-                root.trackArtist = p.artist || ""
-                root.trackAlbum = p.album || ""
-                root.albumId = p.albumId || ""
-                root.trackId = p.trackId || ""
-                root.playSource = p.playSource || "local"
-                root.artPath = p.artPath || ""
-                root.position = Number(p.position) || 0.0
-                root.duration = Number(p.duration) || 0.0
-                root.volume = p.volume !== undefined ? Number(p.volume) : 100.0
-                root.playlistPos = Number(p.playlistPos) || 0
-                root.playlistCount = Number(p.playlistCount) || 0
-                root.shuffle = Boolean(p.shuffle)
-                root.loop = Boolean(p.loop)
-                root.queue = p.queue || []
+                var inOptimisticWindow = (Date.now() < root._optimisticPlayUntil)
+                if (p.playing || !inOptimisticWindow) {
+                    root.playing = Boolean(p.playing)
+                    root.paused = Boolean(p.paused)
+                    root.trackTitle = p.title || ""
+                    root.trackArtist = p.artist || ""
+                    root.trackAlbum = p.album || ""
+                    root.albumId = p.albumId || ""
+                    root.trackId = p.trackId || ""
+                    root.playSource = p.playSource || "local"
+                    root.artPath = p.artPath || ""
+                    root.position = Number(p.position) || 0.0
+                    root.duration = Number(p.duration) || 0.0
+                    root.volume = p.volume !== undefined ? Number(p.volume) : 100.0
+                    root.playlistPos = Number(p.playlistPos) || 0
+                    root.playlistCount = Number(p.playlistCount) || 0
+                    root.shuffle = Boolean(p.shuffle)
+                    root.loop = Boolean(p.loop)
+                    root.queue = p.queue || []
+                }
             } catch (e) {}
         }
     }
 
     property bool _stageChangedLocally: false
+    property double _optimisticPlayUntil: 0
+
+    Timer {
+        id: fastPlayPollTimer
+        interval: 250
+        repeat: false
+        onTriggered: root.refreshStatus()
+    }
 
     // Collection / search loader process
     Process {
@@ -543,7 +554,7 @@ Item {
         root.ttfxEffect = "random"
         if (asciiProc.running) asciiProc.running = false
         asciiProc.outBuf = ""
-        var effMode = (!root.useAlbumArt || root.asciiMode === "banner") ? "banner" : root.asciiMode
+        var effMode = (root.asciiMode === "block") ? "block" : "braille"
         var cmd = [
             root.binPath, "ascii-art",
             "--mode", effMode,
@@ -570,9 +581,9 @@ Item {
         root.notifyAction("TTE Effect Randomised")
     }
 
-    function toggleUseAlbumArt() {
-        root.useAlbumArt = !root.useAlbumArt
-        if (root.useAlbumArt && root.asciiMode === "banner") {
+    function setUseAlbumArt(useArt) {
+        root.useAlbumArt = Boolean(useArt)
+        if (root.asciiMode !== "braille" && root.asciiMode !== "block") {
             root.asciiMode = "braille"
         }
         Quickshell.execDetached([
@@ -581,24 +592,43 @@ Item {
             "--ascii-mode", root.asciiMode
         ])
         refreshAsciiArt()
-        root.notifyAction(root.useAlbumArt ? "Layer #3 Source: Album Cover Art" : "Layer #3 Source: Artist/Track Words")
+        root.notifyAction(
+            "Layer #3: " + (root.useAlbumArt ? "Cover Art" : "Artist/Song Words") +
+            " · " + (root.asciiMode === "block" ? "Block █" : "Braille ⣿")
+        )
+    }
+
+    function setAsciiGlyphMode(glyphMode) {
+        root.asciiMode = (glyphMode === "block") ? "block" : "braille"
+        Quickshell.execDetached([
+            root.binPath, "auth",
+            "--use-album-art", root.useAlbumArt ? "1" : "0",
+            "--ascii-mode", root.asciiMode
+        ])
+        refreshAsciiArt()
+        root.notifyAction(
+            "Layer #3: " + (root.useAlbumArt ? "Cover Art" : "Artist/Song Words") +
+            " · " + (root.asciiMode === "block" ? "Block █" : "Braille ⣿")
+        )
+    }
+
+    function toggleUseAlbumArt() {
+        setUseAlbumArt(!root.useAlbumArt)
     }
 
     function toggleAsciiMode() {
-        // Cycle cleanly across 3 distinct visual sources:
-        //   1. Words (Banner) -> 2. Braille Cover Art -> 3. Block Cover Art -> 1. Words (Banner)
-        if (!root.useAlbumArt || root.asciiMode === "banner") {
-            root.useAlbumArt = true
-            root.asciiMode = "braille"
-            root.notifyAction("Layer #3 Source: Cover Art (Braille ⣿)")
-        } else if (root.asciiMode === "braille") {
+        if (root.useAlbumArt && root.asciiMode !== "block") {
             root.useAlbumArt = true
             root.asciiMode = "block"
-            root.notifyAction("Layer #3 Source: Cover Art (Block █)")
-        } else {
+        } else if (root.useAlbumArt && root.asciiMode === "block") {
             root.useAlbumArt = false
-            root.asciiMode = "banner"
-            root.notifyAction("Layer #3 Source: Artist/Track Words (Banner)")
+            root.asciiMode = "braille"
+        } else if (!root.useAlbumArt && root.asciiMode !== "block") {
+            root.useAlbumArt = false
+            root.asciiMode = "block"
+        } else {
+            root.useAlbumArt = true
+            root.asciiMode = "braille"
         }
         Quickshell.execDetached([
             root.binPath, "auth",
@@ -606,21 +636,37 @@ Item {
             "--ascii-mode", root.asciiMode
         ])
         refreshAsciiArt()
+        root.notifyAction(
+            "Layer #3: " + (root.useAlbumArt ? "Cover Art" : "Artist/Song Words") +
+            " · " + (root.asciiMode === "block" ? "Block █" : "Braille ⣿")
+        )
     }
 
     function setAsciiSourceMode(modeStr) {
-        if (modeStr === "banner" || modeStr === "words") {
+        var m = String(modeStr || "").toLowerCase()
+        if (m === "words" || m === "banner") {
             root.useAlbumArt = false
-            root.asciiMode = "banner"
-            root.notifyAction("Layer #3 Source: Artist/Track Words (Banner)")
-        } else if (modeStr === "block") {
+        } else if (m === "art") {
             root.useAlbumArt = true
+        } else if (m === "block") {
             root.asciiMode = "block"
-            root.notifyAction("Layer #3 Source: Cover Art (Block █)")
-        } else {
+        } else if (m === "braille") {
+            root.asciiMode = "braille"
+        } else if (m === "art-braille") {
             root.useAlbumArt = true
             root.asciiMode = "braille"
-            root.notifyAction("Layer #3 Source: Cover Art (Braille ⣿)")
+        } else if (m === "art-block") {
+            root.useAlbumArt = true
+            root.asciiMode = "block"
+        } else if (m === "words-braille") {
+            root.useAlbumArt = false
+            root.asciiMode = "braille"
+        } else if (m === "words-block") {
+            root.useAlbumArt = false
+            root.asciiMode = "block"
+        }
+        if (root.asciiMode !== "braille" && root.asciiMode !== "block") {
+            root.asciiMode = "braille"
         }
         Quickshell.execDetached([
             root.binPath, "auth",
@@ -628,6 +674,10 @@ Item {
             "--ascii-mode", root.asciiMode
         ])
         refreshAsciiArt()
+        root.notifyAction(
+            "Layer #3: " + (root.useAlbumArt ? "Cover Art" : "Artist/Song Words") +
+            " · " + (root.asciiMode === "block" ? "Block █" : "Braille ⣿")
+        )
     }
 
     function cycleLayer3Source() {
@@ -817,31 +867,67 @@ Item {
     }
 
     function playAlbum(albumId, trackIndex, mode, shuffle) {
-        var args = ["play", "--album", albumId, "--track-index", String(trackIndex || 0)]
+        var idx = Number(trackIndex) || 0
+        root._optimisticPlayUntil = Date.now() + 2400
+        root.albumId = albumId || ""
+        root.playing = true
+        root.paused = false
+        for (var i = 0; i < root.albums.length; i++) {
+            var alb = root.albums[i]
+            if (alb.id === albumId) {
+                root.trackAlbum = alb.title || ""
+                root.trackArtist = alb.artist || ""
+                if (alb.artPath) root.artPath = alb.artPath
+                var trs = alb.tracks || []
+                if (idx >= 0 && idx < trs.length) {
+                    root.trackTitle = trs[idx].title || alb.title || ""
+                    root.trackId = trs[idx].id || ""
+                } else {
+                    root.trackTitle = alb.title || ""
+                }
+                break
+            }
+        }
+        var args = ["play", "--album", albumId, "--track-index", String(idx)]
         if (mode) args.push("--mode", mode)
         if (shuffle) args.push("--shuffle")
         runAction(args, false)
-        root.notifyAction("Starting playback...")
+        fastPlayPollTimer.restart()
+        root.notifyAction("Playing " + (root.trackAlbum || "album") + "...")
     }
 
     function playTrack(trackId, albumId) {
+        root._optimisticPlayUntil = Date.now() + 2400
+        if (albumId) root.albumId = albumId
+        root.trackId = trackId || ""
+        root.playing = true
+        root.paused = false
         var args = ["play", "--track-id", trackId]
         if (albumId) args.push("--album", albumId)
         runAction(args, false)
+        fastPlayPollTimer.restart()
         root.notifyAction("Playing selected track...")
     }
 
     function playPlaylist(playlistId, trackIndex, shuffle) {
+        root._optimisticPlayUntil = Date.now() + 2400
+        root.playing = true
+        root.paused = false
         var args = ["play", "--playlist", playlistId, "--track-index", String(trackIndex || 0)]
         if (shuffle) args.push("--shuffle")
         runAction(args, false)
+        fastPlayPollTimer.restart()
         root.notifyAction(shuffle ? "Shuffling playlist..." : "Playing playlist...")
     }
 
     function playScope(scope, shuffle) {
+        root._optimisticPlayUntil = Date.now() + 2400
+        root.playing = true
+        root.paused = false
         var args = ["play", "--scope", scope || "all"]
         if (shuffle) args.push("--shuffle")
         runAction(args, false)
+        fastPlayPollTimer.restart()
         root.notifyAction((shuffle ? "Shuffling " : "Playing ") + (scope || "all") + " collection...")
     }
 
@@ -999,19 +1085,30 @@ Item {
     }
 
     function togglePlayPause() {
+        var wasActive = root.activelyPlaying
+        if (root.playing) {
+            root.paused = !root.paused
+        }
         runAction(["cmd", "play-pause"], false)
-        root.notifyAction(root.activelyPlaying ? "Paused playback" : "Resumed playback")
+        fastPlayPollTimer.restart()
+        root.notifyAction(wasActive ? "Paused playback" : "Resumed playback")
     }
     function nextTrack() {
         runAction(["cmd", "next"], false)
+        fastPlayPollTimer.restart()
         root.notifyAction("Next track 󰒭")
     }
     function prevTrack() {
         runAction(["cmd", "prev"], false)
+        fastPlayPollTimer.restart()
         root.notifyAction("Previous track 󰒮")
     }
     function stopPlayback() {
+        root._optimisticPlayUntil = 0
+        root.playing = false
+        root.paused = false
         runAction(["cmd", "stop"], false)
+        fastPlayPollTimer.restart()
         root.notifyAction("Stopped playback")
     }
     function toggleLoop() {

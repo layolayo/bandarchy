@@ -56,9 +56,11 @@ FocusScope {
     readonly property var paletteNames: Engine.PALETTE_NAMES
     readonly property var trackArcModes: Engine.TRACK_ARC_MODES
 
-    // Global Music-Driven Modulation, Song Arc & Universal 3D Graded History Tracer state
+    // Global Music-Driven Modulation, GPU Shader, Song Arc & Universal 3D Graded History Tracer state
     property bool musicDrive: true
-    property int trackArcMode: 1 // 0 = Off, 1 = Song Climax Arc (75% Peak), 2 = Dismantle, 3 = Rebuild, 4 = Quarter Chapters
+    property bool gpuShaderEnabled: false
+    property int hudFocusedLayer: 2 // 1 = L1 Strip, 2 = L2 Strip, 3 = L3 Strip on Row 2 of topHud
+    property int trackArcMode: 1 // 0 = Dynamic Audio Arc, 1 = Climax (75%), 2 = Dismantle, 3 = Rebuild, 4 = Quarters
     property int tracerCount: 4
     property real tracerSpeed: 1.15
     property real tracerDrift: 1.00
@@ -287,6 +289,7 @@ FocusScope {
     signal requestSeek(real seconds)
     signal requestToggleUseAlbumArt()
     signal requestToggleAsciiMode()
+    signal requestSetAsciiSourceMode(string modeStr)
     signal requestLaunchTtfxScreensaver(string effectName)
     signal requestSelectTtfxEffect(string effectName)
     signal requestStageModeChange(string newStageMode)
@@ -334,6 +337,7 @@ FocusScope {
             trackArcMode: root.trackArcMode,
             palette: root.paletteIndex,
             musicDrive: root.musicDrive,
+            gpuShaderEnabled: root.gpuShaderEnabled,
             tracerCount: root.tracerCount,
             tracerSpeed: root.tracerSpeed,
             tracerDrift: root.tracerDrift,
@@ -627,11 +631,23 @@ FocusScope {
         }
     }
 
+    function randomiseLayer3() {
+        var total = Engine.LAYER3_MODES.length
+        var nextM = (root.layer3Mode + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total
+        root.layer3Mode = nextM
+        Engine.shatterAlbumArt(root.engineState, 1.35)
+        if (nextM === 5) {
+            root.requestSelectTtfxEffect("random")
+        }
+        vizCanvas.requestPaint()
+        root.requestActionFeedback("Layer #3 Randomised: " + Engine.LAYER3_MODES[nextM])
+    }
+
     function randomiseVisuals() {
         Engine.randomiseState(root.engineState)
         paletteIndex = (paletteIndex + 1 + Math.floor(Math.random() * (Engine.PALETTE_NAMES.length - 1))) % Engine.PALETTE_NAMES.length
         if (root.layer3Enabled && root.layer3AutoRandomise) {
-            root.layer3Mode = Math.floor(Math.random() * Engine.LAYER3_MODES.length)
+            root.randomiseLayer3()
         }
         vizCanvas.requestPaint()
         root.requestActionFeedback("Mutated psychedelic seed + palette (" + Engine.PALETTE_NAMES[paletteIndex] + ")")
@@ -708,9 +724,13 @@ FocusScope {
         property int horizontalPad: 10
         property int pillHeight: 24
         signal clicked()
+        signal rightClicked()
+        signal wheelScrolled(int delta)
 
-        Layout.preferredHeight: pillHeight
-        Layout.preferredWidth: pillLabel.implicitWidth + horizontalPad * 2
+        implicitHeight: pillHeight
+        implicitWidth: pillLabel.implicitWidth + horizontalPad * 2
+        Layout.preferredHeight: implicitHeight
+        Layout.preferredWidth: implicitWidth
         radius: 5
         scale: pillArea.pressed ? 0.94 : (pillArea.containsMouse ? 1.02 : 1.0)
         color: {
@@ -765,10 +785,20 @@ FocusScope {
             id: pillArea
             anchors.fill: parent
             hoverEnabled: true
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
             cursorShape: Qt.PointingHandCursor
-            onClicked: {
+            onClicked: mouse => {
                 flashTimer.restart()
-                pill.clicked()
+                if (mouse.button === Qt.RightButton) {
+                    pill.rightClicked()
+                } else {
+                    pill.clicked()
+                }
+            }
+            onWheel: wheel => {
+                if (wheel.angleDelta.y !== 0) {
+                    pill.wheelScrolled(wheel.angleDelta.y > 0 ? 1 : -1)
+                }
             }
         }
     }
@@ -1079,6 +1109,17 @@ FocusScope {
         }
     }
 
+    // Independent Layer #3 Auto-Randomise Timer (Cycles L3 Modes & TTE effects automatically when L3 Auto-Randomise is ON)
+    Timer {
+        id: l3RandomiseTimer
+        interval: 9000
+        running: root.visible && root.stageMode === "visualiser" && root.layer3Enabled && root.layer3AutoRandomise
+        repeat: true
+        onTriggered: {
+            root.randomiseLayer3()
+        }
+    }
+
     // =========================================================================
     // STAGE MODE 1: ALBUM ART AS-IS ("art")
     // =========================================================================
@@ -1187,8 +1228,30 @@ FocusScope {
 
     // =========================================================================
     // STAGE MODE 3: 3-LAYER PSYCHEDELIC & NIGHTCLUB VISUALISER ("visualiser")
-    // 486/686 Demoscene Hardware-Scaled Viewport for Ultra-Low-CPU Smooth Rendering
+    // Native Qt6 GPU Fragment Shader Stage + Hardware-Scaled Vector & ASCII Canvas
     // =========================================================================
+    ShaderEffect {
+        id: gpuShaderStage
+        anchors.fill: parent
+        visible: root.stageMode === "visualiser" && root.gpuShaderEnabled
+        fragmentShader: Qt.resolvedUrl("share/psychedelic.frag.qsb")
+
+        property real uTime: root.engineState ? (root.engineState.t || 0.0) : 0.0
+        property real uAspect: height > 0 ? (width / height) : 1.777
+        property real uBass: root.liveBass
+        property real uMid: root.liveMid
+        property real uHigh: root.liveHigh
+        property real uBeat: root.liveBeat
+        property real uMode: (root.visualMode === 4 ? 1.0 : (root.visualMode === 5 ? 2.0 : 0.0))
+        property real uZoom: root.layer2Zoom
+        property real uEndX: Math.sin(uTime * 0.27) * 0.18
+        property real uEndY: Math.cos(uTime * 0.21) * 0.14
+        property vector4d uCol0: Qt.vector4d(root.accentColour.r, root.accentColour.g, root.accentColour.b, 1.0)
+        property vector4d uCol1: Qt.vector4d(root.urgentColour.r, root.urgentColour.g, root.urgentColour.b, 1.0)
+        property vector4d uCol2: Qt.vector4d(0.22, 0.74, 0.97, 1.0)
+        property vector4d uBgCol: Qt.vector4d(root.backgroundColour.r, root.backgroundColour.g, root.backgroundColour.b, 1.0)
+    }
+
     Canvas {
         id: vizCanvas
         readonly property int maxInternalW: 640
@@ -1305,54 +1368,80 @@ FocusScope {
                     visible: root.stageMode === "visualiser"
                 }
 
-                // Layer #1 Independent Quick Toggle
+                // Layer #1 Independent Quick Toggle (Fixed width so Row 1 never resizes!)
                 VizPillButton {
                     visible: root.stageMode === "visualiser"
-                    text: "L1: " + (root.layer1Enabled ? "ON" : "OFF")
+                    Layout.preferredWidth: 64
+                    text: root.layer1Enabled ? "L1: ON" : "L1: OFF"
                     active: root.layer1Enabled
-                    horizontalPad: 7
+                    urgent: root.hudFocusedLayer === 1 && !root.layer1Enabled
+                    horizontalPad: 6
                     onClicked: {
                         root.layer1Enabled = !root.layer1Enabled
+                        root.hudFocusedLayer = 1
                         vizCanvas.requestPaint()
                         root.requestActionFeedback("Layer #1 Background: " + (root.layer1Enabled ? ("ON (" + Engine.LAYER1_MODES[root.layer1Mode] + ")") : "OFF"))
                     }
-                }
-
-                // Layer #2 Independent Quick Toggle
-                VizPillButton {
-                    visible: root.stageMode === "visualiser"
-                    text: "L2: " + (root.layer2Enabled ? (Engine.MODE_NAMES[root.visualMode] || "ON").split(" ")[0] : "OFF")
-                    active: root.layer2Enabled
-                    horizontalPad: 7
-                    onClicked: {
-                        root.layer2Enabled = !root.layer2Enabled
-                        vizCanvas.requestPaint()
-                        root.requestActionFeedback("Layer #2 Visualiser: " + (root.layer2Enabled ? "ON" : "OFF"))
+                    onRightClicked: {
+                        root.hudFocusedLayer = 1
+                        root.requestActionFeedback("Row 2 focused on Layer #1 Controls")
                     }
                 }
 
-                // Layer #3 Independent Quick Toggle
+                // Layer #2 Independent Quick Toggle (Fixed width so Row 1 never resizes!)
                 VizPillButton {
                     visible: root.stageMode === "visualiser"
-                    text: root.layer3Enabled ? "󰀥 L3: ON" : "󰀥 L3: OFF"
+                    Layout.preferredWidth: 64
+                    text: root.layer2Enabled ? "L2: ON" : "L2: OFF"
+                    active: root.layer2Enabled
+                    urgent: root.hudFocusedLayer === 2 && !root.layer2Enabled
+                    horizontalPad: 6
+                    onClicked: {
+                        root.layer2Enabled = !root.layer2Enabled
+                        root.hudFocusedLayer = 2
+                        vizCanvas.requestPaint()
+                        root.requestActionFeedback("Layer #2 Visualiser: " + (root.layer2Enabled ? ("ON (" + Engine.MODE_NAMES[root.visualMode] + ")") : "OFF"))
+                    }
+                    onRightClicked: {
+                        root.hudFocusedLayer = 2
+                        root.requestActionFeedback("Row 2 focused on Layer #2 Modes")
+                    }
+                }
+
+                // Layer #3 Independent Quick Toggle (Fixed width so Row 1 never resizes!)
+                VizPillButton {
+                    visible: root.stageMode === "visualiser"
+                    Layout.preferredWidth: 64
+                    text: root.layer3Enabled ? "L3: ON" : "L3: OFF"
                     active: root.layer3Enabled
-                    horizontalPad: 7
+                    urgent: root.hudFocusedLayer === 3 && !root.layer3Enabled
+                    horizontalPad: 6
                     onClicked: {
                         root.layer3Enabled = !root.layer3Enabled
+                        root.hudFocusedLayer = 3
                         vizCanvas.requestPaint()
                         root.requestActionFeedback("Layer #3 Art/Words: " + (root.layer3Enabled ? ("ON (" + Engine.LAYER3_MODES[root.layer3Mode] + ")") : "OFF"))
                     }
+                    onRightClicked: {
+                        root.hudFocusedLayer = 3
+                        root.requestActionFeedback("Row 2 focused on Layer #3 Controls")
+                    }
                 }
 
-                // Layer #3 Source Toggle: Words (Banner) vs Braille Cover Art vs Block Cover Art
+                // Contextual Row 2 Strip Switcher (L1 / L2 / L3 Quick Strip)
                 VizPillButton {
-                    visible: root.stageMode === "visualiser" && root.layer3Enabled
-                    text: (!root.useAlbumArt || root.asciiMode === "banner")
-                        ? "󰬴 Words"
-                        : (root.asciiMode === "block" ? "█ Block Art" : "⣿ Braille Art")
+                    visible: root.stageMode === "visualiser"
+                    Layout.preferredWidth: 68
+                    text: "Strip: L" + root.hudFocusedLayer
                     active: true
-                    horizontalPad: 7
-                    onClicked: root.requestToggleAsciiMode()
+                    horizontalPad: 6
+                    onClicked: {
+                        root.hudFocusedLayer = (root.hudFocusedLayer % 3) + 1
+                        root.requestActionFeedback("HUD Row 2 Strip: Layer #" + root.hudFocusedLayer)
+                    }
+                    onRightClicked: {
+                        root.hudFocusedLayer = ((root.hudFocusedLayer + 1) % 3) + 1
+                    }
                 }
 
                 // Open 3-Layer + Presets Configuration Drawer button
@@ -1369,6 +1458,20 @@ FocusScope {
                     }
                 }
 
+                // Native Qt6 GPU ShaderEffect Toggle Pill
+                VizPillButton {
+                    visible: root.stageMode === "visualiser"
+                    Layout.preferredWidth: 74
+                    text: root.gpuShaderEnabled ? "󰢮 GPU: ON" : "󰢮 GPU"
+                    active: root.gpuShaderEnabled
+                    horizontalPad: 6
+                    onClicked: {
+                        root.gpuShaderEnabled = !root.gpuShaderEnabled
+                        vizCanvas.requestPaint()
+                        root.requestActionFeedback("GPU Fragment Shader Stage: " + (root.gpuShaderEnabled ? "ON" : "OFF"))
+                    }
+                }
+
                 // Collective Scene Preset Quick Cycler
                 VizPillButton {
                     visible: root.stageMode === "visualiser"
@@ -1379,44 +1482,33 @@ FocusScope {
                 }
 
                 // Interactive L2/L3 3D Graded History Tracers Button -> Opens Slider Popover (plus mouse wheel adjust!)
-                Item {
+                VizPillButton {
+                    id: tracerBtnPill
                     visible: root.stageMode === "visualiser"
-                    Layout.preferredHeight: 24
-                    Layout.preferredWidth: tracerBtnPill.implicitWidth
-
-                    VizPillButton {
-                        id: tracerBtnPill
-                        anchors.fill: parent
-                        text: "L2 Tracers: " + root.tracerCount + "x " + (root.showTracerPopover ? "▲" : "▾")
-                        active: root.showTracerPopover || root.tracerCount > 1
-                        urgent: root.showTracerPopover
-                        horizontalPad: 7
-                        onClicked: {
-                            root.showTracerPopover = !root.showTracerPopover
-                            if (root.showTracerPopover) root.showLayerDrawer = false
-                        }
+                    Layout.preferredWidth: 146
+                    text: "Tracers: L2 " + root.tracerCount + "x·L3 " + root.layer3Tracers + "x " + (root.showTracerPopover ? "▲" : "▾")
+                    active: root.showTracerPopover || root.tracerCount > 1 || root.layer3Tracers > 1
+                    urgent: root.showTracerPopover
+                    horizontalPad: 6
+                    onClicked: {
+                        root.showTracerPopover = !root.showTracerPopover
+                        if (root.showTracerPopover) root.showLayerDrawer = false
+                        root.requestActionFeedback(root.showTracerPopover ? "Opened 3D Tracers Sliders" : "Closed 3D Tracers Sliders")
                     }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        acceptedButtons: Qt.RightButton
-                        onClicked: {
-                            root.cycleTracers(-1)
-                        }
-                        onWheel: wheel => {
-                            var step = wheel.angleDelta.y > 0 ? 1 : -1
-                            root.tracerCount = Math.max(1, Math.min(16, root.tracerCount + step))
-                            vizCanvas.requestPaint()
-                            root.requestActionFeedback("L2 Tracers: " + root.tracerCount + "x")
-                        }
+                    onRightClicked: root.cycleTracers(-1)
+                    onWheelScrolled: delta => {
+                        root.tracerCount = Math.max(1, Math.min(16, root.tracerCount + delta))
+                        vizCanvas.requestPaint()
+                        root.requestActionFeedback("L2 Tracers: " + root.tracerCount + "x")
                     }
                 }
 
-                // Palette selector
+                // Palette selector (fixed width so Row 1 never shifts)
                 VizPillButton {
                     visible: root.stageMode === "visualiser"
+                    Layout.preferredWidth: 82
                     text: "󰏘 " + (Engine.PALETTE_NAMES[root.paletteIndex] || "Prism").split(" ")[0]
-                    horizontalPad: 7
+                    horizontalPad: 6
                     onClicked: root.cyclePalette(1)
                 }
 
@@ -1432,9 +1524,10 @@ FocusScope {
                 // Auto-Morph
                 VizPillButton {
                     visible: root.stageMode === "visualiser"
+                    Layout.preferredWidth: 74
                     text: root.autoCycle ? "󰑐 Auto: ON" : "󰑐 Auto"
                     active: root.autoCycle
-                    horizontalPad: 7
+                    horizontalPad: 6
                     onClicked: {
                         root.autoCycle = !root.autoCycle
                         root.requestActionFeedback("Auto-Morph Evolution: " + (root.autoCycle ? "ON" : "OFF"))
@@ -1476,11 +1569,83 @@ FocusScope {
                 }
             }
 
-            // Row 2: Direct 12-Mode Quick-Select Strip for Layer #2 (never alters Layer #1 or Layer #3!)
+            // Row 2A: Contextual Strip for Layer #1 (7 Field Modes + Equaliser + Beat Shapes)
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 4
-                visible: root.stageMode === "visualiser"
+                visible: root.stageMode === "visualiser" && root.hudFocusedLayer === 1
+
+                Repeater {
+                    model: ["Flame", "SynthGrid", "StarWarp", "Nebula", "Battlezone", "DeathStar", "BlackHole"]
+                    delegate: VizPillButton {
+                        required property int index
+                        required property string modelData
+                        Layout.fillWidth: true
+                        pillHeight: 22
+                        fontSize: 9
+                        horizontalPad: 5
+                        text: modelData
+                        active: root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === index
+                        onClicked: {
+                            root.layer1Enabled = true
+                            root.layer1FieldEnabled = true
+                            root.layer1Mode = index
+                            root.clearCanvasImmediate()
+                            root.requestActionFeedback("L1 Field: " + Engine.LAYER1_MODES[index])
+                        }
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 6
+                    text: "EQ: " + (root.layer1EqEnabled ? (Engine.LAYER1_EQ_STYLES[root.layer1EqStyle] || "ON").split(" ")[0] : "OFF")
+                    active: root.layer1Enabled && root.layer1EqEnabled
+                    onClicked: {
+                        root.layer1Enabled = true
+                        if (!root.layer1EqEnabled) {
+                            root.layer1EqEnabled = true
+                        } else {
+                            root.layer1EqStyle = (root.layer1EqStyle + 1) % Engine.LAYER1_EQ_STYLES.length
+                        }
+                        vizCanvas.requestPaint()
+                        root.requestActionFeedback("L1 Equaliser: " + Engine.LAYER1_EQ_STYLES[root.layer1EqStyle])
+                    }
+                    onRightClicked: {
+                        root.layer1EqEnabled = !root.layer1EqEnabled
+                        vizCanvas.requestPaint()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 6
+                    text: "Shapes: " + (root.layer1ShapesEnabled ? (Engine.LAYER1_SHAPE_STYLES[root.layer1ShapeStyle] || "ON").split(" ")[0] : "OFF")
+                    active: root.layer1Enabled && root.layer1ShapesEnabled
+                    onClicked: {
+                        root.layer1Enabled = true
+                        if (!root.layer1ShapesEnabled) {
+                            root.layer1ShapesEnabled = true
+                        } else {
+                            root.layer1ShapeStyle = (root.layer1ShapeStyle + 1) % Engine.LAYER1_SHAPE_STYLES.length
+                        }
+                        vizCanvas.requestPaint()
+                        root.requestActionFeedback("L1 Beat Shapes: " + Engine.LAYER1_SHAPE_STYLES[root.layer1ShapeStyle])
+                    }
+                    onRightClicked: {
+                        root.layer1ShapesEnabled = !root.layer1ShapesEnabled
+                        vizCanvas.requestPaint()
+                    }
+                }
+            }
+
+            // Row 2B: Direct 12-Mode Quick-Select Strip for Layer #2
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 4
+                visible: root.stageMode === "visualiser" && root.hudFocusedLayer === 2
 
                 Repeater {
                     model: root.shortModeLabels.length
@@ -1515,6 +1680,7 @@ FocusScope {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
+                                root.layer2Enabled = true
                                 root.visualMode = index
                                 root.forceActiveFocus()
                                 root.requestActionFeedback("Layer #2 Mode: " + Engine.MODE_NAMES[index])
@@ -1523,11 +1689,111 @@ FocusScope {
                     }
                 }
             }
+
+            // Row 2C: Contextual Strip for Layer #3 (Decoupled Art/Words + Braille/Block + 6 L3 Modes + Randomise L3)
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 4
+                visible: root.stageMode === "visualiser" && root.hudFocusedLayer === 3
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 6
+                    text: "󰀥 Art"
+                    active: root.useAlbumArt
+                    onClicked: {
+                        root.layer3Enabled = true
+                        root.requestSetAsciiSourceMode("art")
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 6
+                    text: "󰬴 Words"
+                    active: !root.useAlbumArt
+                    onClicked: {
+                        root.layer3Enabled = true
+                        root.requestSetAsciiSourceMode("words")
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 6
+                    text: "⣿ Braille"
+                    active: root.asciiMode !== "block"
+                    onClicked: {
+                        root.layer3Enabled = true
+                        root.requestSetAsciiSourceMode("braille")
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 6
+                    text: "█ Block"
+                    active: root.asciiMode === "block"
+                    onClicked: {
+                        root.layer3Enabled = true
+                        root.requestSetAsciiSourceMode("block")
+                    }
+                }
+
+                Repeater {
+                    model: ["Shatter", "Automata", "Blackhole", "Ripple", "Scanline", "TTE Morph"]
+                    delegate: VizPillButton {
+                        required property int index
+                        required property string modelData
+                        Layout.fillWidth: true
+                        pillHeight: 22
+                        fontSize: 9
+                        horizontalPad: 5
+                        text: modelData
+                        active: root.layer3Enabled && root.layer3Mode === index
+                        onClicked: {
+                            root.layer3Enabled = true
+                            root.layer3Mode = index
+                            if (index === 5) root.requestSelectTtfxEffect("random")
+                            vizCanvas.requestPaint()
+                            root.requestActionFeedback("Layer #3 Mode: " + Engine.LAYER3_MODES[index])
+                        }
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 6
+                    text: "󰒟 Rand L3"
+                    urgent: true
+                    onClicked: {
+                        root.layer3Enabled = true
+                        root.randomiseLayer3()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 6
+                    text: root.layer3AutoRandomise ? "󰑐 Auto L3: ON" : "󰑐 Auto L3"
+                    active: root.layer3AutoRandomise
+                    onClicked: {
+                        root.layer3AutoRandomise = !root.layer3AutoRandomise
+                        root.requestActionFeedback("Layer #3 Auto-Randomise: " + (root.layer3AutoRandomise ? "ON" : "OFF"))
+                    }
+                }
+            }
         }
     }
 
     // =========================================================================
-    // INTERACTIVE L2 / L3 3D TRACER SLIDER POPOVER (Instant 1x..16x Control)
+    // INTERACTIVE L2 / L3 3D TRACER SLIDER POPOVER (Clean Sliders Only)
     // =========================================================================
     Rectangle {
         id: tracerPopover
@@ -1563,42 +1829,6 @@ FocusScope {
                 }
 
                 Item { Layout.fillWidth: true }
-
-                VizPillButton {
-                    text: "−"
-                    horizontalPad: 8
-                    pillHeight: 22
-                    onClicked: {
-                        root.tracerCount = Math.max(1, root.tracerCount - 1)
-                        vizCanvas.requestPaint()
-                    }
-                }
-
-                Repeater {
-                    model: [1, 2, 4, 6, 8, 12, 16]
-                    delegate: VizPillButton {
-                        required property int modelData
-                        text: modelData === 1 ? "1x (Off)" : (modelData + "x")
-                        active: root.tracerCount === modelData
-                        horizontalPad: 7
-                        pillHeight: 22
-                        onClicked: {
-                            root.tracerCount = modelData
-                            vizCanvas.requestPaint()
-                            root.requestActionFeedback("L2 Visualiser Tracers: " + modelData + "x")
-                        }
-                    }
-                }
-
-                VizPillButton {
-                    text: "+"
-                    horizontalPad: 8
-                    pillHeight: 22
-                    onClicked: {
-                        root.tracerCount = Math.min(16, root.tracerCount + 1)
-                        vizCanvas.requestPaint()
-                    }
-                }
 
                 VizPillButton {
                     text: "3D Flow: " + (root.tracerDirection > 0 ? "Towards User" : (root.tracerDirection < 0 ? "To Endpoint" : "Breathe"))
@@ -1920,7 +2150,8 @@ FocusScope {
                                 active: root.layer1Enabled && root.layer1FieldEnabled
                                 onClicked: {
                                     root.layer1FieldEnabled = !root.layer1FieldEnabled
-                                    vizCanvas.requestPaint()
+                                    if (root.layer1FieldEnabled) root.layer1Enabled = true
+                                    root.clearCanvasImmediate()
                                     root.requestActionFeedback("L1 Field Sub-System: " + (root.layer1FieldEnabled ? "ON" : "OFF"))
                                 }
                             }
@@ -1930,7 +2161,8 @@ FocusScope {
                                 active: root.layer1Enabled && root.layer1EqEnabled
                                 onClicked: {
                                     root.layer1EqEnabled = !root.layer1EqEnabled
-                                    vizCanvas.requestPaint()
+                                    if (root.layer1EqEnabled) root.layer1Enabled = true
+                                    root.clearCanvasImmediate()
                                     root.requestActionFeedback("L1 Equaliser Sub-System: " + (root.layer1EqEnabled ? "ON" : "OFF"))
                                 }
                             }
@@ -1940,13 +2172,14 @@ FocusScope {
                                 active: root.layer1Enabled && root.layer1ShapesEnabled
                                 onClicked: {
                                     root.layer1ShapesEnabled = !root.layer1ShapesEnabled
-                                    vizCanvas.requestPaint()
+                                    if (root.layer1ShapesEnabled) root.layer1Enabled = true
+                                    root.clearCanvasImmediate()
                                     root.requestActionFeedback("L1 Beat Shapes Sub-System: " + (root.layer1ShapesEnabled ? "ON" : "OFF"))
                                 }
                             }
                         }
 
-                        // SUB-SYSTEM 1: L1 Ambient / Perspective Field (6 Modes + Sliders)
+                        // SUB-SYSTEM 1: L1 Ambient / Perspective Field (7 Modes + Sliders)
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: fieldSubCol.implicitHeight + 14
@@ -1971,7 +2204,8 @@ FocusScope {
                                         horizontalPad: 7
                                         onClicked: {
                                             root.layer1FieldEnabled = !root.layer1FieldEnabled
-                                            vizCanvas.requestPaint()
+                                            if (root.layer1FieldEnabled) root.layer1Enabled = true
+                                            root.clearCanvasImmediate()
                                         }
                                     }
 
@@ -1983,9 +2217,10 @@ FocusScope {
                                             active: root.layer1FieldEnabled && root.layer1Mode === index
                                             horizontalPad: 7
                                             onClicked: {
+                                                root.layer1Enabled = true
                                                 root.layer1FieldEnabled = true
                                                 root.layer1Mode = index
-                                                vizCanvas.requestPaint()
+                                                root.clearCanvasImmediate()
                                                 root.requestActionFeedback("L1 Field Mode: " + Engine.LAYER1_MODES[index])
                                             }
                                         }
@@ -2060,7 +2295,8 @@ FocusScope {
                                         horizontalPad: 8
                                         onClicked: {
                                             root.layer1EqEnabled = !root.layer1EqEnabled
-                                            vizCanvas.requestPaint()
+                                            if (root.layer1EqEnabled) root.layer1Enabled = true
+                                            root.clearCanvasImmediate()
                                             root.requestActionFeedback("L1 Equaliser: " + (root.layer1EqEnabled ? "ON" : "OFF"))
                                         }
                                     }
@@ -2073,9 +2309,10 @@ FocusScope {
                                             active: root.layer1EqEnabled && root.layer1EqStyle === index
                                             horizontalPad: 7
                                             onClicked: {
+                                                root.layer1Enabled = true
                                                 root.layer1EqEnabled = true
                                                 root.layer1EqStyle = index
-                                                vizCanvas.requestPaint()
+                                                root.clearCanvasImmediate()
                                                 root.requestActionFeedback("L1 Equaliser Style: " + Engine.LAYER1_EQ_STYLES[index])
                                             }
                                         }
@@ -2169,7 +2406,8 @@ FocusScope {
                                         horizontalPad: 8
                                         onClicked: {
                                             root.layer1ShapesEnabled = !root.layer1ShapesEnabled
-                                            vizCanvas.requestPaint()
+                                            if (root.layer1ShapesEnabled) root.layer1Enabled = true
+                                            root.clearCanvasImmediate()
                                             root.requestActionFeedback("L1 Beat Shapes: " + (root.layer1ShapesEnabled ? "ON" : "OFF"))
                                         }
                                     }
@@ -2182,9 +2420,10 @@ FocusScope {
                                             active: root.layer1ShapesEnabled && root.layer1ShapeStyle === index
                                             horizontalPad: 7
                                             onClicked: {
+                                                root.layer1Enabled = true
                                                 root.layer1ShapesEnabled = true
                                                 root.layer1ShapeStyle = index
-                                                vizCanvas.requestPaint()
+                                                root.clearCanvasImmediate()
                                                 root.requestActionFeedback("L1 Beat Shape Style: " + Engine.LAYER1_SHAPE_STYLES[index])
                                             }
                                         }
@@ -2412,11 +2651,54 @@ FocusScope {
                             }
 
                             VizPillButton {
-                                text: (!root.useAlbumArt || root.asciiMode === "banner")
-                                    ? "󰬴 Song Words (Stipple)"
-                                    : (root.asciiMode === "block" ? "█ Block Cover Art" : "⣿ Braille Cover Art (2×4 Dots)")
-                                active: true
-                                onClicked: root.requestToggleAsciiMode()
+                                text: "󰀥 Cover Art"
+                                active: root.useAlbumArt && root.asciiMode !== "banner"
+                                onClicked: {
+                                    root.layer3Enabled = true
+                                    root.useAlbumArt = true
+                                    if (root.asciiMode === "banner") root.asciiMode = "braille"
+                                    root.requestSetAsciiSourceMode("art")
+                                    vizCanvas.requestPaint()
+                                }
+                            }
+
+                            VizPillButton {
+                                text: "󰬴 Song Words"
+                                active: !root.useAlbumArt || root.asciiMode === "banner"
+                                onClicked: {
+                                    root.layer3Enabled = true
+                                    root.useAlbumArt = false
+                                    if (root.asciiMode === "banner") root.asciiMode = "braille"
+                                    root.requestSetAsciiSourceMode("words")
+                                    vizCanvas.requestPaint()
+                                }
+                            }
+
+                            VizPillButton {
+                                text: "⣿ Braille"
+                                active: root.asciiMode !== "block"
+                                onClicked: {
+                                    root.layer3Enabled = true
+                                    root.asciiMode = "braille"
+                                    root.requestSetAsciiSourceMode("braille")
+                                    vizCanvas.requestPaint()
+                                }
+                            }
+
+                            VizPillButton {
+                                text: "█ Block"
+                                active: root.asciiMode === "block"
+                                onClicked: {
+                                    root.layer3Enabled = true
+                                    root.asciiMode = "block"
+                                    root.requestSetAsciiSourceMode("block")
+                                    vizCanvas.requestPaint()
+                                }
+                            }
+
+                            VizPillButton {
+                                text: "󰒟 Randomise L3"
+                                onClicked: root.randomiseLayer3()
                             }
 
                             VizPillButton {
@@ -2484,6 +2766,7 @@ FocusScope {
                                     active: root.layer3Mode === index
                                     horizontalPad: 7
                                     onClicked: {
+                                        root.layer3Enabled = true
                                         root.layer3Mode = index
                                         vizCanvas.requestPaint()
                                         root.requestActionFeedback("Layer #3 Mode: " + Engine.LAYER3_MODES[index])
@@ -2553,6 +2836,7 @@ FocusScope {
 
     // =========================================================================
     // BOTTOM TRACK, INTERACTIVE PROGRESS SCRUBBER (0%->100%) & TRANSPORT HUD
+    // (Only shown in fullscreen visualiser mode; embedded view uses main footer)
     // =========================================================================
     Rectangle {
         id: bottomHud
@@ -2565,7 +2849,7 @@ FocusScope {
         color: Qt.rgba(0.04, 0.05, 0.08, 0.88)
         border.width: 1
         border.color: Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.30)
-        visible: root.showHud
+        visible: root.showHud && root.isFullscreen
 
         readonly property real trackRatio: root.duration > 0.5 ? Math.max(0.0, Math.min(1.0, root.position / root.duration)) : 0.0
         readonly property int trackPercent: Math.round(trackRatio * 100)

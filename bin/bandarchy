@@ -1804,27 +1804,109 @@ def build_unified_collection(
     if on_progress:
         on_progress("discovering", 0, 0)
 
+    def _merge_album_records(primary: dict, secondary: dict) -> dict:
+        if not primary.get("url") and secondary.get("url"):
+            primary["url"] = secondary["url"]
+        if not primary.get("artUrl") and secondary.get("artUrl"):
+            primary["artUrl"] = secondary["artUrl"]
+        if (not primary.get("artPath") or str(primary.get("artPath", "")).endswith(".svg")) and secondary.get("artPath"):
+            primary["artPath"] = secondary["artPath"]
+        if not primary.get("redownloadUrl") and secondary.get("redownloadUrl"):
+            primary["redownloadUrl"] = secondary["redownloadUrl"]
+        if secondary.get("itemType") == "album" and primary.get("itemType") == "track":
+            primary["itemType"] = "album"
+        if secondary.get("isLocal") and not primary.get("isLocal"):
+            primary["isLocal"] = True
+            primary["localPath"] = secondary.get("localPath") or ""
+            primary["audioFormat"] = secondary.get("audioFormat") or "Local Audio"
+        sec_tracks = secondary.get("tracks") or []
+        pri_tracks = primary.get("tracks") or []
+        if len(sec_tracks) > len(pri_tracks) or (secondary.get("isLocal") and any(t.get("localPath") for t in sec_tracks)):
+            pri_by_title = {fold(t.get("title", "")): t for t in pri_tracks}
+            merged_tr = []
+            for st in sec_tracks:
+                pt = pri_by_title.get(fold(st.get("title", "")))
+                m_t = dict(st)
+                if pt:
+                    if pt.get("streamUrl") and not m_t.get("streamUrl"):
+                        m_t["streamUrl"] = pt["streamUrl"]
+                    if pt.get("duration") and not m_t.get("duration"):
+                        m_t["duration"] = pt["duration"]
+                merged_tr.append(m_t)
+            primary["tracks"] = merged_tr
+            primary["numTracks"] = len(merged_tr)
+            primary["totalDuration"] = round(sum(float(t.get("duration") or 0.0) for t in merged_tr), 1)
+        return primary
+
+    def _album_priority(alb: dict) -> tuple:
+        aid = str(alb.get("id") or "")
+        return (
+            1 if aid.startswith("bc-album-") else (0 if aid.startswith("bc-browser-") else -1),
+            1 if alb.get("itemType") == "album" else 0,
+            len(alb.get("tracks") or []),
+            1 if alb.get("redownloadUrl") else 0,
+            1 if (alb.get("artPath") and not str(alb.get("artPath")).endswith(".svg")) else 0,
+        )
+
+    raw_remote_items: list[dict] = []
     if fetch_remote and username and not logged_out:
         try:
-            remote_items = fetch_fan_collection(username, api_base=api_base)
+            raw_remote_items = fetch_fan_collection(username, api_base=api_base)
         except Exception as exc:
             network_note = bounded_text(str(exc), 240)
     elif not fetch_remote and not logged_out:
         existing_store = read_json(INDEX_FILE, None) or {}
-        for prev_alb in existing_store.get("albums") or []:
+        existing_albums = existing_store.get("albums") or []
+        bc_album_keys = {
+            f"{fold(a.get('artist', ''))}::{fold(a.get('title', ''))}"
+            for a in existing_albums
+            if str(a.get("id", "")).startswith("bc-album-")
+        }
+        for prev_alb in existing_albums:
+            aid = str(prev_alb.get("id") or "")
+            if aid.startswith("local-"):
+                continue
+            akey = f"{fold(prev_alb.get('artist', ''))}::{fold(prev_alb.get('title', ''))}"
+            if aid.startswith("bc-browser-") and akey in bc_album_keys:
+                continue
             if prev_alb.get("purchased"):
                 copied = dict(prev_alb)
-                copied["audioFormat"] = copied.get("audioFormat") or ("Local Audio" if copied.get("isLocal") else "Bandcamp Stream")
+                copied["isLocal"] = False
+                copied["localPath"] = ""
+                copied["audioFormat"] = "Bandcamp Stream"
                 copied["totalDuration"] = round(sum(float(t.get("duration") or 0.0) for t in (copied.get("tracks") or [])), 1)
-                remote_items.append(copied)
+                raw_remote_items.append(copied)
+
+    remote_by_key: dict[str, dict] = {}
+    for item in raw_remote_items:
+        akey = f"{fold(item.get('artist', ''))}::{fold(item.get('title', ''))}"
+        if akey in remote_by_key:
+            existing = remote_by_key[akey]
+            if _album_priority(item) > _album_priority(existing):
+                remote_by_key[akey] = _merge_album_records(dict(item), existing)
+            else:
+                remote_by_key[akey] = _merge_album_records(existing, item)
+        else:
+            remote_by_key[akey] = dict(item)
+    remote_items = list(remote_by_key.values())
 
     seen_urls = {item.get("url"): item for item in remote_items if item.get("url")}
     seen_ids = {item.get("id"): item for item in remote_items if item.get("id")}
+    seen_artist_titles = {f"{fold(item.get('artist', ''))}::{fold(item.get('title', ''))}": item for item in remote_items}
     dl_urls = list(browser.get("downloads") or [])
     need_browser_detail_fetch = fetch_remote and len(remote_items) < 15
     for idx, b_item in enumerate(browser.get("albums") or []):
         u = b_item.get("url") or ""
         if not u or u in seen_urls:
+            continue
+        b_title_pre = b_item.get("title") or ""
+        b_artist_pre = b_item.get("artist") or ""
+        pre_key = f"{fold(b_artist_pre)}::{fold(b_title_pre)}"
+        if b_artist_pre and b_title_pre and pre_key in seen_artist_titles:
+            existing = seen_artist_titles[pre_key]
+            if b_item.get("itemType") == "album" and existing.get("itemType") == "track":
+                existing["url"] = u
+                existing["itemType"] = "album"
             continue
         det = None
         if need_browser_detail_fetch:
@@ -1835,10 +1917,12 @@ def build_unified_collection(
         title = (det or {}).get("title") or b_item.get("title") or "Untitled"
         artist = (det or {}).get("artist") or b_item.get("artist") or "Unknown Artist"
         album_id = (det or {}).get("id") or f"bc-browser-{slugify(artist)}-{slugify(title)}"
-        if album_id in seen_ids:
-            if b_item.get("itemType") == "album" and seen_ids[album_id].get("itemType") == "track":
-                seen_ids[album_id]["url"] = u
-                seen_ids[album_id]["itemType"] = "album"
+        akey = f"{fold(artist)}::{fold(title)}"
+        if album_id in seen_ids or akey in seen_artist_titles:
+            target = seen_ids.get(album_id) or seen_artist_titles.get(akey)
+            if target and b_item.get("itemType") == "album" and target.get("itemType") == "track":
+                target["url"] = u
+                target["itemType"] = "album"
             continue
         art_url = (det or {}).get("artUrl") or ""
         tracks = (det or {}).get("tracks") or [
@@ -1854,7 +1938,7 @@ def build_unified_collection(
                 "itemUrl": u,
             }
         ]
-        remote_items.append({
+        new_rem = {
             "id": album_id,
             "itemId": (det or {}).get("itemId") or "",
             "itemType": b_item.get("itemType") or "album",
@@ -1867,17 +1951,29 @@ def build_unified_collection(
             "purchased": True,
             "isLocal": False,
             "localPath": "",
+            "audioFormat": "Bandcamp Stream",
+            "totalDuration": round(sum(float(t.get("duration") or 0.0) for t in tracks), 1),
             "numTracks": len(tracks),
             "tracks": tracks,
             "fold": fold(f"{artist} {title}"),
-        })
-        seen_urls[u] = remote_items[-1]
-        seen_ids[album_id] = remote_items[-1]
+        }
+        remote_items.append(new_rem)
+        seen_urls[u] = new_rem
+        seen_ids[album_id] = new_rem
+        seen_artist_titles[akey] = new_rem
 
     if on_progress:
         on_progress("scanning-local", len(remote_items), 0)
     local_dirs = settings.get("localDirs") or DEFAULT_LOCAL_DIRS
-    local_albums = scan_local_directories(local_dirs)
+    raw_local_albums = scan_local_directories(local_dirs)
+
+    # Deduplicate local folders that share the exact same (artist, title, audioFormat)
+    dedup_local_map: dict[tuple[str, str, str], dict] = {}
+    for loc in raw_local_albums:
+        lkey = (fold(loc["artist"]), fold(loc["title"]), str(loc.get("audioFormat") or "Local Audio"))
+        if lkey not in dedup_local_map or len(loc.get("tracks") or []) > len(dedup_local_map[lkey].get("tracks") or []):
+            dedup_local_map[lkey] = loc
+    local_albums = list(dedup_local_map.values())
 
     local_by_key: dict[str, dict] = {}
     local_by_title: dict[str, dict] = {}
@@ -1938,10 +2034,26 @@ def build_unified_collection(
                 item["artPath"] = ensure_cover_svg(item["id"], item["artist"], item["title"])
 
     for loc in local_albums:
-        if logged_out:
+        if logged_out or remote_items:
             loc["purchased"] = False
         if loc["id"] not in matched_local_ids:
             unified.append(loc)
+
+    # Final canonical deduplication pass keyed by (fold(artist), fold(title), audioFormat if isLocal else "stream"),
+    # always retaining the Bandcamp bc-album-* record as the primary entry.
+    final_map: dict[tuple[str, str, str], dict] = {}
+    for alb in unified:
+        fmt_key = str(alb.get("audioFormat") or "Local Audio") if alb.get("isLocal") else "stream"
+        ukey = (fold(alb.get("artist") or ""), fold(alb.get("title") or ""), fmt_key)
+        if ukey in final_map:
+            existing = final_map[ukey]
+            if _album_priority(alb) > _album_priority(existing):
+                final_map[ukey] = _merge_album_records(dict(alb), existing)
+            else:
+                final_map[ukey] = _merge_album_records(existing, alb)
+        else:
+            final_map[ukey] = alb
+    unified = list(final_map.values())
 
     unified.sort(
         key=lambda a: (
@@ -2326,6 +2438,7 @@ def mpv_launch(playlist_path: str, shuffle: bool = False, start_index: int = 0, 
         "mpv",
         "--no-video",
         "--audio-display=no",
+        "--audio-client-name=Bandarchy",
         "--gapless-audio=yes",
         "--no-terminal",
         "--idle=no",
@@ -3353,10 +3466,15 @@ def cmd_ascii_art(args) -> None:
             banner_text = banner_text or target_album.get("artist") or target_album.get("title") or ""
 
     if not image_path and not banner_text:
-        hist = read_json(HISTORY_FILE, {}) or {}
-        last = hist.get("lastPlayedTrack") or {}
-        image_path = last.get("artPath") or ""
-        banner_text = last.get("artist") or last.get("title") or ""
+        pb = get_playback_state()
+        if pb.get("playing"):
+            image_path = pb.get("artPath") or ""
+            banner_text = pb.get("artist") or pb.get("title") or ""
+        if not image_path and not banner_text:
+            hist = read_json(HISTORY_FILE, {}) or {}
+            last = hist.get("lastPlayedTrack") or {}
+            image_path = last.get("artPath") or ""
+            banner_text = last.get("artist") or last.get("title") or ""
 
     if not image_path and use_album_art and albums:
         first_art = next((a for a in albums if a.get("artPath") and os.path.isfile(str(a.get("artPath")))), albums[0])
