@@ -156,6 +156,10 @@ FocusScope {
     property real layer3Evolution: 0.90
     property real layer3Scale: 1.0
     property int layer3Tracers: 3
+    property real turntableRpm: 33.3
+    property int turntableStyle: 0
+    onTurntableRpmChanged: stageTurntable.rpm = root.turntableRpm
+    onTurntableStyleChanged: stageTurntable.vinylStyle = root.turntableStyle
 
     // Individual Layer Saved Settings (`savedL1Configs`, `savedL2Configs`, `savedL3Configs`)
     // Applying a saved item for L1, L2, or L3 ONLY updates that single layer!
@@ -642,6 +646,8 @@ FocusScope {
             layer3Evolution: root.layer3Evolution,
             layer3Scale: root.layer3Scale,
             layer3Tracers: root.layer3Tracers,
+            turntableRpm: root.turntableRpm,
+            turntableStyle: root.turntableStyle,
             savedL1Configs: root.savedL1Configs,
             savedL2Configs: root.savedL2Configs,
             savedL3Configs: root.savedL3Configs,
@@ -737,6 +743,14 @@ FocusScope {
         if (cfg.layer3Evolution !== undefined) root.layer3Evolution = Number(cfg.layer3Evolution)
         if (cfg.layer3Scale !== undefined) root.layer3Scale = Number(cfg.layer3Scale)
         if (cfg.layer3Tracers !== undefined) root.layer3Tracers = Number(cfg.layer3Tracers)
+        if (cfg.turntableRpm !== undefined) {
+            root.turntableRpm = Math.max(16.0, Math.min(78.0, Number(cfg.turntableRpm) || 33.3))
+            stageTurntable.rpm = root.turntableRpm
+        }
+        if (cfg.turntableStyle !== undefined) {
+            root.turntableStyle = Math.max(0, Math.min(4, Math.round(Number(cfg.turntableStyle) || 0)))
+            stageTurntable.vinylStyle = root.turntableStyle
+        }
 
         if (Array.isArray(cfg.savedL1Configs)) root.savedL1Configs = cfg.savedL1Configs
         if (Array.isArray(cfg.savedL2Configs)) root.savedL2Configs = cfg.savedL2Configs
@@ -2246,7 +2260,10 @@ FocusScope {
                     id: cleanCoverImage
                     anchors.fill: parent
                     anchors.margins: 2
-                    source: root.artPath ? (root.artPath.indexOf("file://") === 0 ? root.artPath : "file://" + root.artPath) : ""
+                    source: (root.artPath && String(root.artPath).indexOf("/") === 0 && String(root.artPath).indexOf("..") < 0)
+                        ? ("file://" + root.artPath)
+                        : ""
+                    sourceSize: Qt.size(512, 512)
                     fillMode: Image.PreserveAspectCrop
                     asynchronous: true
                     mipmap: true
@@ -2298,6 +2315,8 @@ FocusScope {
                 spinning: root.playing
                 position: root.position
                 duration: root.duration
+                rpm: root.turntableRpm
+                vinylStyle: root.turntableStyle
                 accentColour: root.accentColour
                 urgentColour: root.urgentColour
                 foregroundColour: root.foregroundColour
@@ -2305,6 +2324,14 @@ FocusScope {
                 bassLevel: root.liveBass
                 midLevel: root.liveMid
                 highLevel: root.liveHigh
+                onRpmToggled: newRpm => {
+                    root.turntableRpm = Math.max(16.0, Math.min(78.0, Number(newRpm) || 33.3))
+                    root.scheduleSaveVisualiserConfig()
+                }
+                onVinylStyleCycled: newStyle => {
+                    root.turntableStyle = Math.max(0, Math.min(4, Math.round(Number(newStyle) || 0)))
+                    root.scheduleSaveVisualiserConfig()
+                }
                 onRequestTogglePlay: {
                     root.requestPlayPause()
                     root.requestActionFeedback(root.playing ? "Turntable Cued: Pause" : "Turntable Cued: Start Platter")

@@ -12,19 +12,25 @@ if [[ ! -f "${ROOT_DIR}/App.qml" ]]; then
     fi
 fi
 
-PKILL_BIN="/usr/bin/pkill"
-[[ -x "${PKILL_BIN}" ]] || PKILL_BIN="pkill"
-
 kill_bandarchy_ui() {
-    "${PKILL_BIN}" -f "(quickshell|bandarchy) -p .*/bandarchy/App\.qml" 2>/dev/null || true
-    "${PKILL_BIN}" -f "(quickshell|bandarchy) -p .*io\.github\.layolayo\.bandarchy/App\.qml" 2>/dev/null || true
-    "${PKILL_BIN}" -x bandarchy 2>/dev/null || true
+    local pid cmd0 fullcmd
+    for proc_dir in /proc/[0-9]*; do
+        pid="${proc_dir#/proc/}"
+        [[ "${pid}" == "$$" ]] && continue
+        [[ -O "${proc_dir}" && -r "${proc_dir}/cmdline" ]] || continue
+        cmd0="$(tr '\0' '\n' < "${proc_dir}/cmdline" 2>/dev/null | head -n 1 || true)"
+        cmd0="${cmd0##*/}"
+        [[ "${cmd0}" == "quickshell" || "${cmd0}" == "bandarchy" ]] || continue
+        fullcmd="$(tr '\0' ' ' < "${proc_dir}/cmdline" 2>/dev/null || true)"
+        if [[ "${fullcmd}" == *" -p "* && "${fullcmd}" == *"/App.qml"* && ( "${fullcmd}" == *"bandarchy"* || "${fullcmd}" == *"io.github.layolayo.bandarchy"* ) ]]; then
+            kill -TERM "${pid}" 2>/dev/null || true
+        fi
+    done
 }
 
 if [[ "${1:-}" == "--kill" || "${1:-}" == "kill" ]]; then
     kill_bandarchy_ui
-    "${PKILL_BIN}" -f "bandarchy\.sock" 2>/dev/null || true
-    "${PKILL_BIN}" -f "bandarchy.*cava" 2>/dev/null || true
+    "${SCRIPT_DIR}/bandarchy" kill >/dev/null 2>&1 || true
     echo "Stopped all Bandarchy processes."
     exit 0
 fi
@@ -38,13 +44,21 @@ fi
 kill_bandarchy_ui
 
 RUNTIME_BASE="${XDG_RUNTIME_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}}"
-mkdir -p -m 700 "${RUNTIME_BASE}"
-if [[ ! -O "${RUNTIME_BASE}" || -L "${RUNTIME_BASE}" ]]; then
+mkdir -p -m 700 "${RUNTIME_BASE}" 2>/dev/null || true
+if ! [[ -d "${RUNTIME_BASE}" && -O "${RUNTIME_BASE}" && ! -L "${RUNTIME_BASE}" ]]; then
     RUNTIME_BASE="${HOME}/.cache/bandarchy/run"
     mkdir -p -m 700 "${RUNTIME_BASE}"
 fi
+if ! [[ -d "${RUNTIME_BASE}" && -O "${RUNTIME_BASE}" && ! -L "${RUNTIME_BASE}" ]]; then
+    echo "Error: unsafe runtime base directory: ${RUNTIME_BASE}" >&2
+    exit 1
+fi
 RUNTIME_DIR="${RUNTIME_BASE}/bandarchy-runtime"
 mkdir -p -m 700 "${RUNTIME_DIR}"
+if ! [[ -d "${RUNTIME_DIR}" && -O "${RUNTIME_DIR}" && ! -L "${RUNTIME_DIR}" ]]; then
+    echo "Error: unsafe runtime directory: ${RUNTIME_DIR}" >&2
+    exit 1
+fi
 chmod 700 "${RUNTIME_DIR}"
 
 QS_BIN="/usr/bin/quickshell"
@@ -56,8 +70,7 @@ if [[ ! -x "${QS_BIN}" ]]; then
     exit 1
 fi
 
-rm -f "${RUNTIME_DIR}/bandarchy"
-ln -s "${QS_BIN}" "${RUNTIME_DIR}/bandarchy"
+ln -snf "${QS_BIN}" "${RUNTIME_DIR}/bandarchy"
 
 if [[ "${RESTART_MODE}" -eq 1 ]]; then
     setsid -f "${RUNTIME_DIR}/bandarchy" -p "${ROOT_DIR}/App.qml" "$@" >/dev/null 2>&1 </dev/null

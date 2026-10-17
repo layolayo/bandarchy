@@ -218,13 +218,52 @@ class BandarchyTestSuite(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp_root = tempfile.mkdtemp(prefix="bandarchy_test_")
+        cls.cfg_dir = os.path.join(cls.tmp_root, ".config", "bandarchy")
+        cls.data_dir = os.path.join(cls.tmp_root, ".local", "share", "bandarchy")
+        cls.cache_dir = os.path.join(cls.tmp_root, ".cache", "bandarchy")
+        cls.run_dir = os.path.join(cls.tmp_root, "run")
+        cls.mpv_sock = os.path.join(cls.run_dir, "bandarchy", "bandarchy.sock")
+        os.makedirs(cls.run_dir, mode=0o700, exist_ok=True)
+        os.makedirs(cls.cfg_dir, mode=0o700, exist_ok=True)
+        os.makedirs(cls.data_dir, mode=0o700, exist_ok=True)
+        os.makedirs(cls.cache_dir, mode=0o700, exist_ok=True)
+
+        cls._orig_env = {
+            k: os.environ.get(k)
+            for k in (
+                "HOME",
+                "XDG_CONFIG_HOME",
+                "XDG_CACHE_HOME",
+                "XDG_DATA_HOME",
+                "XDG_RUNTIME_DIR",
+                "BANDARCHY_CONFIG_DIR",
+                "BANDARCHY_DATA_DIR",
+                "BANDARCHY_CACHE_DIR",
+                "BANDARCHY_MPV_SOCKET",
+            )
+        }
         cls.env = os.environ.copy()
         cls.env["HOME"] = cls.tmp_root
         cls.env["XDG_CONFIG_HOME"] = os.path.join(cls.tmp_root, ".config")
         cls.env["XDG_CACHE_HOME"] = os.path.join(cls.tmp_root, ".cache")
         cls.env["XDG_DATA_HOME"] = os.path.join(cls.tmp_root, ".local", "share")
-        cls.env["XDG_RUNTIME_DIR"] = os.path.join(cls.tmp_root, "run")
-        os.makedirs(cls.env["XDG_RUNTIME_DIR"], mode=0o700, exist_ok=True)
+        cls.env["XDG_RUNTIME_DIR"] = cls.run_dir
+        cls.env["BANDARCHY_CONFIG_DIR"] = cls.cfg_dir
+        cls.env["BANDARCHY_DATA_DIR"] = cls.data_dir
+        cls.env["BANDARCHY_CACHE_DIR"] = cls.cache_dir
+        cls.env["BANDARCHY_MPV_SOCKET"] = cls.mpv_sock
+        for k in (
+            "HOME",
+            "XDG_CONFIG_HOME",
+            "XDG_CACHE_HOME",
+            "XDG_DATA_HOME",
+            "XDG_RUNTIME_DIR",
+            "BANDARCHY_CONFIG_DIR",
+            "BANDARCHY_DATA_DIR",
+            "BANDARCHY_CACHE_DIR",
+            "BANDARCHY_MPV_SOCKET",
+        ):
+            os.environ[k] = cls.env[k]
 
         # Create local music directory with 2 albums
         cls.music_dir = os.path.join(cls.tmp_root, "Music")
@@ -271,6 +310,11 @@ class BandarchyTestSuite(unittest.TestCase):
             subprocess.run([BIN_PATH, "cmd", "stop"], env=cls.env, capture_output=True, timeout=5)
         except Exception:
             pass
+        for k, v in getattr(cls, "_orig_env", {}).items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
         cls.httpd.shutdown()
         cls.httpd.server_close()
         shutil.rmtree(cls.tmp_root, ignore_errors=True)
@@ -1385,23 +1429,36 @@ console.log('OK');
         self.assertIn('"--no-load-scripts"', bin_src)
         self.assertIn('[xdg_bin, "--", target_url]', bin_src)
         self.assertIn('["/usr/bin/xdg-open", "--", s]', svc_src)
+        self.assertIn('["/usr/bin/cava", "-p", root.cavaConfPath]', svc_src)
         self.assertIn('s.indexOf("~/") === 0', svc_src)
         self.assertNotIn('s.indexOf("http://") === 0', svc_src)
         self.assertNotIn('"-c", runner_sh', bin_src)
         self.assertIn('"--tty-loop"', bin_src)
         self.assertIn("umask 077", player_src)
         self.assertNotIn(":-/tmp}", player_src)
+        self.assertIn('ln -snf "${QS_BIN}" "${RUNTIME_DIR}/bandarchy"', player_src)
         self.assertIn("## Your Credentials & Privacy", readme_src)
         self.assertIn('(am === "block" || am === "text") ? am : "braille"', viz_src)
+        self.assertIn("turntableRpm: root.turntableRpm", viz_src)
+        self.assertIn("turntableStyle: root.turntableStyle", viz_src)
 
-        # Verify unit-level security functions in bin/bandarchy via Python import
+        # Verify unit-level security functions in bin/bandarchy via isolated Python import
         import importlib.machinery
         import importlib.util
+
+        os.environ["HOME"] = self.tmp_root
+        os.environ["BANDARCHY_CONFIG_DIR"] = self.cfg_dir
+        os.environ["BANDARCHY_DATA_DIR"] = self.data_dir
+        os.environ["BANDARCHY_CACHE_DIR"] = self.cache_dir
+        os.environ["BANDARCHY_MPV_SOCKET"] = self.mpv_sock
 
         loader = importlib.machinery.SourceFileLoader("bandarchy_mod", BIN_PATH)
         spec = importlib.util.spec_from_loader("bandarchy_mod", loader)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
+
+        self.assertTrue(mod.AUTH_FILE.startswith(self.tmp_root))
+        self.assertTrue(mod.SETTINGS_FILE.startswith(self.tmp_root))
 
         # CRIT-5: Cookie header restricted to bandcamp.com and *.bandcamp.com
         mod.write_json(mod.AUTH_FILE, {"identity": "secret_test_cookie"}, mode=0o600)
@@ -1432,9 +1489,10 @@ console.log('OK');
             with self.assertRaises(mod.BandarchyError):
                 mod.validate_remote_url(bad_url)
 
-        # CRIT-4: safe_load_json refuses symlink targets
+        # CRIT-4 & HIGH-2: safe_load_json / safe_read_bytes refuses symlinks & user hardlinks, allows root system files
         sym_target = os.path.join(self.tmp_root, "real_secret.json")
         sym_link = os.path.join(self.tmp_root, "symlink_secret.json")
+        hard_link = os.path.join(self.tmp_root, "hardlink_secret.json")
         with open(sym_target, "w", encoding="utf-8") as f:
             f.write('{"secret": 1}')
         if os.path.lexists(sym_link):
@@ -1442,6 +1500,49 @@ console.log('OK');
         os.symlink(sym_target, sym_link)
         self.assertEqual(mod.safe_load_json(sym_link, {"fallback": True}), {"fallback": True})
         os.unlink(sym_link)
+
+        if os.path.lexists(hard_link):
+            os.unlink(hard_link)
+        os.link(sym_target, hard_link)
+        self.assertIsNone(mod.safe_read_bytes(hard_link))
+        # MEDIUM-NEW-3: take_lock refuses hardlinked files without truncating them
+        self.assertIsNone(mod.take_lock(hard_link))
+        with open(sym_target, "r", encoding="utf-8") as f:
+            self.assertEqual(f.read(), '{"secret": 1}')
+        os.unlink(hard_link)
+
+        # Root-owned system file is readable via safe_read_bytes
+        if os.path.isfile("/usr/share/omarchy/logo.txt"):
+            self.assertIsNotNone(mod.safe_read_text("/usr/share/omarchy/logo.txt"))
+        elif os.path.isfile("/etc/os-release") and not os.path.islink("/etc/os-release"):
+            self.assertIsNotNone(mod.safe_read_text("/etc/os-release"))
+
+        # HIGH-1: http_request and download_file enforce max_bytes and clean up temp file on overflow
+        with self.assertRaises(ValueError):
+            mod.http_request(f"{self.api_base}/stream/track1.wav", max_bytes=64)
+        dl_dest = os.path.join(self.tmp_root, "overflow_test.bin")
+        with self.assertRaises(mod.BandarchyError):
+            mod.download_file(f"{self.api_base}/stream/track1.wav", dl_dest, max_bytes=64)
+        self.assertFalse(os.path.exists(dl_dest))
+
+        # HIGH-2: probe_image_dimensions and is_valid_media_file use safe_read_bytes
+        self.assertEqual(mod.probe_image_dimensions(self.cover_path), (128, 128))
+        self.assertTrue(mod.is_valid_media_file(self.cover_path))
+
+        # HIGH-3: safe_extract_zip refuses symlinked zip_path and preserves multi-disc duplicate basenames
+        real_zip = os.path.join(self.tmp_root, "valid_test.zip")
+        sym_zip = os.path.join(self.tmp_root, "symlink_test.zip")
+        with zipfile.ZipFile(real_zip, "w") as zf:
+            zf.writestr("CD1/01.wav", b"RIFF0001WAVE")
+            zf.writestr("CD2/01.wav", b"RIFF0002WAVE")
+        if os.path.lexists(sym_zip):
+            os.unlink(sym_zip)
+        os.symlink(real_zip, sym_zip)
+        with self.assertRaises(mod.BandarchyError):
+            mod.safe_extract_zip(sym_zip, os.path.join(self.tmp_root, "zip_out"))
+        os.unlink(sym_zip)
+        extracted_multi = mod.safe_extract_zip(real_zip, os.path.join(self.tmp_root, "zip_multi_out"))
+        self.assertEqual(len(extracted_multi), 2)
 
 
 if __name__ == "__main__":

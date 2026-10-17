@@ -9,6 +9,7 @@ license=('MIT')
 depends=('python' 'mpv' 'cava' 'quickshell' 'curl' 'sqlite')
 optdepends=(
   'yt-dlp: Bandcamp stream fallback extraction'
+  'python-terminaltexteffects: Layer 3 TTE text animations'
   'ffmpeg: Audio duration probing and format conversion'
   'ttfx: Native Omarchy terminal screensaver effects'
   'imagemagick: Album art ASCII transcoding via omarchy-transcode-ascii'

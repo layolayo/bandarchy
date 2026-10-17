@@ -547,7 +547,7 @@ Item {
     // Cava 60 FPS 64-band live audio spectrum process
     Process {
         id: cavaProc
-        command: ["cava", "-p", root.cavaConfPath]
+        command: ["/usr/bin/cava", "-p", root.cavaConfPath]
         running: (root.activelyPlaying && root.topBarLedEnabled) || root.visualiserActive || root.fullscreenVisualiserOpen
         stdout: SplitParser {
             onRead: line => {

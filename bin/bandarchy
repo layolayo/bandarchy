@@ -45,8 +45,14 @@ if len(sys.argv) < 2 or sys.argv[1] not in ("status", "now", "cmd", "visualiser-
     import zipfile
 
 HOME = os.path.expanduser("~")
-CONFIG_DIR = os.environ.get("BANDARCHY_CONFIG_DIR") or os.path.join(HOME, ".config", "bandarchy")
-DATA_DIR = os.environ.get("BANDARCHY_DATA_DIR") or os.path.join(HOME, ".local", "share", "bandarchy")
+CONFIG_DIR = os.environ.get("BANDARCHY_CONFIG_DIR") or os.path.join(
+    os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config"),
+    "bandarchy",
+)
+DATA_DIR = os.environ.get("BANDARCHY_DATA_DIR") or os.path.join(
+    os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share"),
+    "bandarchy",
+)
 CACHE_DIR = os.environ.get("BANDARCHY_CACHE_DIR") or os.path.join(
     os.environ.get("XDG_CACHE_HOME") or os.path.join(HOME, ".cache"),
     "bandarchy",
@@ -86,20 +92,44 @@ def _resolve_runtime_dir() -> str:
     for cand in candidates:
         parent = os.path.dirname(os.path.abspath(cand))
         try:
-            if os.path.exists(parent):
+            if os.path.lexists(parent):
                 pst = os.lstat(parent)
                 if stat.S_ISLNK(pst.st_mode) or not stat.S_ISDIR(pst.st_mode) or pst.st_uid != uid:
                     continue
             os.makedirs(cand, mode=0o700, exist_ok=True)
+            pst = os.lstat(parent)
             st = os.lstat(cand)
-            if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode) or st.st_uid != uid:
+            if (
+                stat.S_ISLNK(pst.st_mode)
+                or not stat.S_ISDIR(pst.st_mode)
+                or pst.st_uid != uid
+                or stat.S_ISLNK(st.st_mode)
+                or not stat.S_ISDIR(st.st_mode)
+                or st.st_uid != uid
+            ):
                 continue
             os.chmod(cand, 0o700)
             return cand
         except OSError:
             continue
     fallback = os.path.join(CACHE_DIR, "runtime")
+    fb_parent = os.path.dirname(os.path.abspath(fallback))
+    if os.path.lexists(fb_parent):
+        pst = os.lstat(fb_parent)
+        if stat.S_ISLNK(pst.st_mode) or not stat.S_ISDIR(pst.st_mode) or pst.st_uid != uid:
+            raise RuntimeError("unsafe runtime directory")
     os.makedirs(fallback, mode=0o700, exist_ok=True)
+    pst = os.lstat(fb_parent)
+    st = os.lstat(fallback)
+    if (
+        stat.S_ISLNK(pst.st_mode)
+        or not stat.S_ISDIR(pst.st_mode)
+        or pst.st_uid != uid
+        or stat.S_ISLNK(st.st_mode)
+        or not stat.S_ISDIR(st.st_mode)
+        or st.st_uid != uid
+    ):
+        raise RuntimeError("unsafe runtime directory")
     os.chmod(fallback, 0o700)
     return fallback
 
@@ -147,19 +177,13 @@ def resolve_bin(name: str, extra_dirs: tuple[str, ...] = (), required: bool = Fa
     return ""
 
 
-TRANSCODE_ASCII_BIN = (
-    resolve_bin("omarchy-transcode-ascii")
-    or os.path.join(OMARCHY_BIN_DIR, "omarchy-transcode-ascii")
-)
-OMARCHY_ASCII_BIN = (
-    resolve_bin("omarchy-ascii")
-    or os.path.join(OMARCHY_BIN_DIR, "omarchy-ascii")
-)
-TTFX_BIN = resolve_bin("ttfx") or "/usr/bin/ttfx"
+TRANSCODE_ASCII_BIN = resolve_bin("omarchy-transcode-ascii")
+OMARCHY_ASCII_BIN = resolve_bin("omarchy-ascii")
+TTFX_BIN = resolve_bin("ttfx")
 
 # Safety ceilings on untrusted network/disk data
-MAX_HTTP_BYTES = 32 * 1024 * 1024
-MAX_ART_BYTES = 16 * 1024 * 1024
+MAX_HTTP_BYTES = 16 * 1024 * 1024
+MAX_ART_BYTES = 15 * 1024 * 1024
 MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB archive ceiling
 MAX_ARCHIVE_FILES = 500
 MAX_COLLECTION_ITEMS = 50_000
@@ -197,7 +221,7 @@ _sync_lock_fd = None
 _download_lock_fd = None
 
 
-class BandarchyError(Exception):
+class BandarchyError(ValueError):
     """Expected operational error reported cleanly as JSON."""
 
 
@@ -259,16 +283,16 @@ def slugify(text: str) -> str:
 
 def ensure_private_dir(path: str) -> str:
     os.makedirs(path, mode=0o700, exist_ok=True)
-    try:
-        st = os.lstat(path)
-        if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
-            raise BandarchyError(f"refusing symlinked or non-directory path: {path}")
-        if st.st_uid != os.getuid():
-            raise BandarchyError(f"refusing foreign-owned directory: {path}")
-        if (st.st_mode & 0o777) != 0o700:
+    st = os.lstat(path)
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode):
+        raise BandarchyError(f"refusing symlinked or non-directory path: {path}")
+    if st.st_uid != os.getuid():
+        raise BandarchyError(f"refusing foreign-owned directory: {path}")
+    if (st.st_mode & 0o777) != 0o700:
+        try:
             os.chmod(path, 0o700)
-    except OSError:
-        pass
+        except OSError:
+            pass
     return path
 
 
@@ -328,12 +352,15 @@ def safe_write_text(path: str, text: str, mode: int = 0o600, fatal: bool = True)
 
 
 def safe_read_bytes(path: str, max_bytes: int = MAX_HTTP_BYTES) -> bytes | None:
-    """Read regular file owned by current user with O_NOFOLLOW and size ceiling."""
+    """Read up to `max_bytes` from a regular file owned by current user or root with O_NOFOLLOW and hardlink check."""
+    uid = os.getuid()
     try:
         st_l = os.lstat(path)
         if stat.S_ISLNK(st_l.st_mode) or not stat.S_ISREG(st_l.st_mode):
             return None
-        if st_l.st_uid != os.getuid() or st_l.st_size > max_bytes:
+        if st_l.st_uid not in (uid, 0):
+            return None
+        if st_l.st_uid != 0 and st_l.st_nlink > 1:
             return None
         flags = os.O_RDONLY
         if hasattr(os, "O_NOFOLLOW"):
@@ -341,18 +368,22 @@ def safe_read_bytes(path: str, max_bytes: int = MAX_HTTP_BYTES) -> bytes | None:
         fd = os.open(path, flags)
         try:
             st_f = os.fstat(fd)
-            if not stat.S_ISREG(st_f.st_mode) or st_f.st_uid != os.getuid() or st_f.st_size > max_bytes:
+            if (
+                not stat.S_ISREG(st_f.st_mode)
+                or st_f.st_uid not in (uid, 0)
+                or (st_f.st_uid != 0 and st_f.st_nlink > 1)
+                or st_f.st_ino != st_l.st_ino
+                or st_f.st_dev != st_l.st_dev
+            ):
                 return None
             chunks: list[bytes] = []
             total = 0
-            while True:
-                chunk = os.read(fd, min(65536, max_bytes + 1 - total))
+            while total < max_bytes:
+                chunk = os.read(fd, min(65536, max_bytes - total))
                 if not chunk:
                     break
                 chunks.append(chunk)
                 total += len(chunk)
-                if total > max_bytes:
-                    return None
             return b"".join(chunks)
         finally:
             os.close(fd)
@@ -368,6 +399,12 @@ def safe_read_text(path: str, max_bytes: int = MAX_HTTP_BYTES) -> str | None:
 
 
 def safe_load_json(path: str, default=None, max_bytes: int = MAX_HTTP_BYTES):
+    try:
+        st = os.lstat(path)
+        if st.st_size > max_bytes:
+            return default
+    except OSError:
+        return default
     raw_text = safe_read_text(path, max_bytes=max_bytes)
     if raw_text is None:
         return default
@@ -428,8 +465,15 @@ def take_lock(lock_path: str) -> int | None:
     flags = os.O_RDWR | os.O_CREAT
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
-    fd = os.open(lock_path, flags, 0o600)
     try:
+        fd = os.open(lock_path, flags, 0o600)
+    except OSError:
+        return None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or st.st_nlink > 1:
+            os.close(fd)
+            return None
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         os.ftruncate(fd, 0)
         os.write(fd, f"{os.getpid()}\n".encode("ascii"))
@@ -450,6 +494,9 @@ def is_locked(lock_path: str) -> bool:
     except OSError:
         return False
     try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or st.st_nlink > 1:
+            return False
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         fcntl.flock(fd, fcntl.LOCK_UN)
         return False
@@ -968,7 +1015,7 @@ def _fastly_https_exchange(
                 if headers_only and not hdr_found and b"\r\n\r\n" in b"".join(chunks):
                     break
                 if total > max_bytes + 16384:
-                    raise BandarchyError(f"response from {host} exceeded {max_bytes} bytes")
+                    raise BandarchyError(f"HTTP response exceeded maximum size ({max_bytes} bytes)")
 
     raw_resp = b"".join(chunks)
     sep = raw_resp.find(b"\r\n\r\n")
@@ -994,7 +1041,7 @@ def _fastly_https_exchange(
         resp_body = _decode_chunked(resp_body)
 
     if len(resp_body) > max_bytes:
-        raise BandarchyError(f"response from {host} exceeded {max_bytes} bytes")
+        raise BandarchyError(f"HTTP response exceeded maximum size ({max_bytes} bytes)")
 
     return status_code, resp_headers, resp_body
 
@@ -1013,7 +1060,7 @@ def resolve_stream_redirect(url: str, timeout: float = 6.0) -> str:
     host = (parsed.hostname or "").lower()
     if not (host == "bandcamp.com" or host.endswith(".bandcamp.com")):
         return url
-    if "stream_redirect" not in (parsed.path or "") and "/download/track" not in (parsed.path or ""):
+    if "stream_redirect" not in (parsed.path or "") and "/download" not in (parsed.path or ""):
         return url
     try:
         cookie_hdr = build_cookie_header(host)
@@ -1148,7 +1195,7 @@ def http_request(
             except Exception:
                 content_len = 0
             if content_len > max_bytes:
-                raise BandarchyError(f"response from {parsed.netloc} exceeded {max_bytes} bytes")
+                raise BandarchyError("HTTP response exceeded maximum size")
             chunks = []
             total = 0
             last_report = 0.0
@@ -1159,7 +1206,7 @@ def http_request(
                 chunks.append(chunk)
                 total += len(chunk)
                 if total > max_bytes:
-                    raise BandarchyError(f"response from {parsed.netloc} exceeded {max_bytes} bytes")
+                    raise BandarchyError("HTTP response exceeded maximum size")
                 if on_chunk:
                     now_t = time.monotonic()
                     if now_t - last_report >= 0.15 or (content_len and total >= content_len):
@@ -1171,8 +1218,127 @@ def http_request(
             return b"".join(chunks)
     except BandarchyError:
         raise
+    except urllib.error.HTTPError as err:
+        try:
+            _ = err.read(65536)
+        except Exception:
+            pass
+        raise BandarchyError(f"HTTP {err.code} from {parsed.netloc}")
     except Exception as urllib_exc:
         raise BandarchyError(f"cannot reach {parsed.netloc}: {urllib_exc}")
+
+
+def download_file(
+    url: str,
+    dest_path: str,
+    timeout: float = 45.0,
+    max_bytes: int = MAX_DOWNLOAD_BYTES,
+    on_chunk=None,
+) -> str:
+    """Stream a remote URL to a private temporary file with strict `max_bytes` ceiling,
+    unlinking the temporary file immediately if `total_read > max_bytes`, then atomically
+    replacing `dest_path`.
+    """
+    parsed = validate_remote_url(url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme == "https" and (host == "bandcamp.com" or host.endswith(".bandcamp.com")):
+        url = resolve_stream_redirect(url, timeout=min(timeout, 8.0))
+        parsed = validate_remote_url(url)
+        host = (parsed.hostname or "").lower()
+
+    if parsed.scheme == "https":
+        addrs = socket.getaddrinfo(host, parsed.port or 443, socket.AF_INET, socket.SOCK_STREAM)
+        if not addrs:
+            raise BandarchyError(f"cannot resolve host: {host}")
+        _check_resolved_ip_public(addrs[0][4][0])
+
+    cookie_hdr = build_cookie_header(host)
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "*/*",
+        "Accept-Language": "en-GB,en;q=0.9",
+    }
+    if cookie_hdr and _is_bandcamp_cookie_host(host):
+        headers["Cookie"] = cookie_hdr
+
+    class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, hdrs, newurl):
+            p_new = validate_remote_url(newurl)
+            new_host = (p_new.hostname or "").lower()
+            if p_new.scheme == "https":
+                r_addrs = socket.getaddrinfo(new_host, p_new.port or 443, socket.AF_INET, socket.SOCK_STREAM)
+                if not r_addrs:
+                    raise BandarchyError(f"cannot resolve redirect host: {new_host}")
+                _check_resolved_ip_public(r_addrs[0][4][0])
+            new_req = super().redirect_request(req, fp, code, msg, hdrs, newurl)
+            if new_req is not None and not _is_bandcamp_cookie_host(new_host):
+                new_req.headers.pop("Cookie", None)
+                new_req.unredirected_hdrs.pop("Cookie", None)
+            return new_req
+
+    abs_dest = os.path.abspath(dest_path)
+    target_dir = os.path.dirname(abs_dest)
+    ensure_private_dir(target_dir)
+    if os.path.lexists(abs_dest):
+        st_existing = os.lstat(abs_dest)
+        if stat.S_ISLNK(st_existing.st_mode) or st_existing.st_uid != os.getuid():
+            raise BandarchyError(f"refusing unsafe destination file: {abs_dest}")
+
+    fd, tmp_path = tempfile.mkstemp(
+        prefix=f".{os.path.basename(abs_dest)}.",
+        suffix=".part",
+        dir=target_dir,
+    )
+    opener = urllib.request.build_opener(_SafeRedirectHandler)
+    try:
+        os.fchmod(fd, 0o600)
+        req = urllib.request.Request(url, headers=headers, method="GET")
+        with opener.open(req, timeout=timeout) as resp:
+            content_len = 0
+            try:
+                content_len = int(resp.headers.get("Content-Length") or 0)
+            except Exception:
+                content_len = 0
+            if content_len > max_bytes:
+                raise BandarchyError("Download exceeded maximum size")
+            total_read = 0
+            last_report = 0.0
+            while True:
+                chunk = resp.read(min(65536, max_bytes + 1 - total_read))
+                if not chunk:
+                    break
+                total_read += len(chunk)
+                if total_read > max_bytes:
+                    raise BandarchyError("Download exceeded maximum size")
+                os.write(fd, chunk)
+                if on_chunk:
+                    now_t = time.monotonic()
+                    if now_t - last_report >= 0.15 or (content_len and total_read >= content_len):
+                        last_report = now_t
+                        try:
+                            on_chunk(total_read, content_len)
+                        except Exception:
+                            pass
+        os.fsync(fd)
+        os.close(fd)
+        fd = -1
+        os.replace(tmp_path, abs_dest)
+        tmp_path = ""
+        return abs_dest
+    except Exception as exc:
+        if fd >= 0:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        if tmp_path and os.path.lexists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        if isinstance(exc, BandarchyError):
+            raise
+        raise BandarchyError(f"download failed for {parsed.netloc}: {exc}")
 
 
 def extract_attr_json(page_html: str, attr_name: str) -> dict | None:
@@ -1521,9 +1687,8 @@ def cache_remote_art(art_url: str, album_id: str, artist: str, title: str) -> st
         if os.path.exists(target) and os.path.getsize(target) > 0:
             return target
         try:
-            data = http_request(art_url, timeout=5.0, max_bytes=MAX_ART_BYTES)
-            if data and len(data) > 64:
-                atomic_write(target, data, 0o600, fatal=False)
+            download_file(art_url, target, timeout=5.0, max_bytes=MAX_ART_BYTES)
+            if os.path.isfile(target) and os.path.getsize(target) > 64:
                 return target
         except Exception:
             pass
@@ -1550,18 +1715,19 @@ def transcode_image_to_ascii(
     if not image_path or not os.path.isfile(image_path):
         return []
 
-    stat_sig = f"{image_path}:{os.path.getmtime(image_path):.0f}:{width}:{height}:{mode}:{threshold}:{invert}"
+    abs_image = os.path.abspath(image_path)
+    stat_sig = f"{abs_image}:{os.path.getmtime(abs_image):.0f}:{width}:{height}:{mode}:{threshold}:{invert}"
     cache_key = hashlib.sha256(stat_sig.encode("utf-8")).hexdigest()[:24]
-    cached_txt = os.path.join(ASCII_DIR, f"art_{cache_key}.txt")
+    cached_txt = os.path.abspath(os.path.join(ASCII_DIR, f"art_{cache_key}.txt"))
 
-    if os.path.isfile(cached_txt) and os.path.getsize(cached_txt) > 0:
-        with open(cached_txt, "r", encoding="utf-8", errors="replace") as f:
-            return [line.rstrip("\n") for line in f.readlines()]
+    cached_content = safe_read_text(cached_txt, max_bytes=2 * 1024 * 1024)
+    if cached_content:
+        return [line.rstrip("\n") for line in cached_content.splitlines()]
 
-    if os.path.isfile(TRANSCODE_ASCII_BIN):
+    if TRANSCODE_ASCII_BIN and os.path.isfile(TRANSCODE_ASCII_BIN):
         cmd = [
             TRANSCODE_ASCII_BIN,
-            image_path,
+            abs_image,
             cached_txt,
             "--width",
             str(width),
@@ -1576,11 +1742,12 @@ def transcode_image_to_ascii(
             cmd.append("--invert")
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            if r.returncode == 0 and os.path.isfile(cached_txt):
-                with open(cached_txt, "r", encoding="utf-8", errors="replace") as f:
-                    lines = [line.rstrip("\n") for line in f.readlines()]
-                if lines:
-                    return lines
+            if r.returncode == 0:
+                out_txt = safe_read_text(cached_txt, max_bytes=2 * 1024 * 1024)
+                if out_txt:
+                    lines = [line.rstrip("\n") for line in out_txt.splitlines()]
+                    if lines:
+                        return lines
         except Exception:
             pass
     return []
@@ -1632,15 +1799,22 @@ def _compress_ascii_block(lines: list[str], max_width: int = 68) -> list[str]:
 
 
 def _run_omarchy_ascii_raw(text_line: str) -> list[str]:
-    if not os.path.isfile(OMARCHY_ASCII_BIN):
+    if not OMARCHY_ASCII_BIN or not os.path.isfile(OMARCHY_ASCII_BIN):
         return []
     try:
         r = subprocess.run(
-            [OMARCHY_ASCII_BIN, text_line],
+            [OMARCHY_ASCII_BIN, "--", text_line],
             capture_output=True,
             text=True,
             timeout=5,
         )
+        if r.returncode != 0 or not r.stdout.strip():
+            r = subprocess.run(
+                [OMARCHY_ASCII_BIN, text_line],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
         if r.returncode == 0 and r.stdout.strip():
             return [l.rstrip("\r\n") for l in r.stdout.splitlines() if l.strip()]
     except Exception:
@@ -1660,9 +1834,9 @@ def render_omarchy_ascii_banner(text: str, max_width: int = 68) -> list[str]:
 
     cache_key = hashlib.sha256(f"v2:{max_width}:{clean_words}".encode("utf-8")).hexdigest()[:20]
     cached_txt = os.path.join(ASCII_DIR, f"banner_{cache_key}.txt")
-    if os.path.isfile(cached_txt) and os.path.getsize(cached_txt) > 0:
-        with open(cached_txt, "r", encoding="utf-8", errors="replace") as f:
-            return [line.rstrip("\n") for line in f.readlines()]
+    cached_content = safe_read_text(cached_txt, max_bytes=2 * 1024 * 1024)
+    if cached_content:
+        return [line.rstrip("\n") for line in cached_content.splitlines()]
 
     raw_single = _run_omarchy_ascii_raw(clean_words)
     if raw_single:
@@ -1705,13 +1879,10 @@ def render_omarchy_ascii_banner(text: str, max_width: int = 68) -> list[str]:
         os.path.join(HOME, "omarchy", "logo.txt"),
         "/usr/share/omarchy/logo.txt",
     ):
-        if os.path.isfile(candidate):
-            try:
-                with open(candidate, "r", encoding="utf-8", errors="replace") as f:
-                    raw_fb = [l.rstrip("\n") for l in f.readlines()]
-                return _compress_ascii_block(raw_fb, max_width=max_width) or raw_fb
-            except Exception:
-                pass
+        cand_txt = safe_read_text(candidate, max_bytes=512 * 1024)
+        if cand_txt:
+            raw_fb = [l.rstrip("\n") for l in cand_txt.splitlines()]
+            return _compress_ascii_block(raw_fb, max_width=max_width) or raw_fb
     return [clean_words]
 
 
@@ -1727,7 +1898,7 @@ def extract_ttfx_frames(
     album cover art (or Omarchy banner) and sample keyframes across the effect
     lifecycle so the QML visualiser manipulates genuine `ttfx` frames as the song plays.
     """
-    if not os.path.isfile(TTFX_BIN) or not os.path.isfile(screensaver_txt_path):
+    if not TTFX_BIN or not os.path.isfile(TTFX_BIN) or not os.path.isfile(screensaver_txt_path):
         return []
 
     effect = (effect or "random").lower()
@@ -1739,11 +1910,10 @@ def extract_ttfx_frames(
     height = bounded_int(height, 30, 10, 70)
     max_frames = bounded_int(max_frames, 28, 6, 64)
 
-    try:
-        with open(screensaver_txt_path, "rb") as f:
-            txt_hash = hashlib.sha256(f.read()).hexdigest()[:20]
-    except OSError:
+    raw_ss = safe_read_bytes(screensaver_txt_path, max_bytes=2 * 1024 * 1024)
+    if not raw_ss:
         return []
+    txt_hash = hashlib.sha256(raw_ss).hexdigest()[:20]
 
     ensure_private_dir(ASCII_DIR)
     cache_key = hashlib.sha256(
@@ -1758,7 +1928,7 @@ def extract_ttfx_frames(
     cmd = [
         TTFX_BIN,
         "-i",
-        screensaver_txt_path,
+        os.path.abspath(screensaver_txt_path),
         "--ignore-terminal-dimensions",
         "--canvas-width",
         str(width),
@@ -1875,6 +2045,36 @@ def infer_artist_album(folder_path: str, root_dir: str) -> tuple[str, str]:
     return "Local Artist", bounded_text(f"{leaf}{suffix_str}")
 
 
+def probe_image_dimensions(path: str) -> tuple[int, int]:
+    """Safely probe image dimensions from header bytes via safe_read_bytes(path, max_bytes=64)."""
+    header = safe_read_bytes(path, max_bytes=64)
+    if not header or len(header) < 10:
+        return (0, 0)
+    if header.startswith(b"\x89PNG\r\n\x1a\n") and len(header) >= 24:
+        return (int.from_bytes(header[16:20], "big"), int.from_bytes(header[20:24], "big"))
+    if header[:6] in (b"GIF87a", b"GIF89a"):
+        return (int.from_bytes(header[6:8], "little"), int.from_bytes(header[8:10], "little"))
+    if header.startswith(b"\xff\xd8"):
+        return (500, 500)
+    if header[:4] == b"RIFF" and header[8:12] == b"WEBP":
+        return (500, 500)
+    return (0, 0)
+
+
+def is_valid_media_file(path: str) -> bool:
+    """Safely verify a local media or artwork file header via safe_read_bytes(path, max_bytes=64)."""
+    header = safe_read_bytes(path, max_bytes=64)
+    if not header or len(header) < 4:
+        return False
+    if header.startswith((b"fLaC", b"RIFF", b"OggS", b"ID3", b"FORM", b"\x89PNG\r\n\x1a\n", b"\xff\xd8", b"<svg", b"<?xml")):
+        return True
+    if header[0] == 0xFF and (header[1] & 0xE0) == 0xE0:
+        return True
+    if len(header) >= 8 and header[4:8] == b"ftyp":
+        return True
+    return False
+
+
 def scan_local_directories(local_dirs: list[str]) -> list[dict]:
     albums_by_dir: dict[str, dict] = {}
     seen_real_dirs: set[str] = set()
@@ -1897,6 +2097,7 @@ def scan_local_directories(local_dirs: list[str]) -> list[dict]:
                 if not f.startswith(".")
                 and not f.startswith("._")
                 and f.lower().endswith(AUDIO_EXTENSIONS)
+                and not os.path.islink(os.path.join(root, f))
             )
             if not audio_files:
                 continue
@@ -1907,6 +2108,7 @@ def scan_local_directories(local_dirs: list[str]) -> list[dict]:
                 if not f.startswith(".")
                 and not f.startswith("._")
                 and f.lower().endswith(IMAGE_EXTENSIONS)
+                and not os.path.islink(os.path.join(root, f))
             )
             cover_path = ""
             if image_files:
@@ -1986,10 +2188,58 @@ def scan_local_directories(local_dirs: list[str]) -> list[dict]:
 
 
 def safe_extract_zip(zip_path: str, dest_dir: str) -> list[str]:
-    extracted: list[str] = []
+    uid = os.getuid()
+    try:
+        zst = os.lstat(zip_path)
+    except OSError as exc:
+        raise BandarchyError(f"cannot stat archive: {exc}")
+    if stat.S_ISLNK(zst.st_mode) or not stat.S_ISREG(zst.st_mode) or zst.st_uid != uid:
+        raise BandarchyError(f"refusing symlinked, non-regular, or foreign-owned archive: {zip_path}")
+    if zst.st_size > MAX_DOWNLOAD_BYTES:
+        raise BandarchyError("archive file exceeds maximum size ceiling")
+
     os.makedirs(dest_dir, mode=0o700, exist_ok=True)
-    real_dest = os.path.realpath(dest_dir)
-    with zipfile.ZipFile(zip_path, "r") as zf:
+    abs_dest = os.path.abspath(dest_dir)
+    cur = abs_dest
+    while cur and cur != os.sep:
+        st_d = os.lstat(cur)
+        if stat.S_ISLNK(st_d.st_mode) or not stat.S_ISDIR(st_d.st_mode) or st_d.st_uid not in (uid, 0):
+            raise BandarchyError(f"refusing unsafe destination directory component: {cur}")
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            break
+        cur = parent
+    st_dest = os.lstat(abs_dest)
+    if stat.S_ISLNK(st_dest.st_mode) or not stat.S_ISDIR(st_dest.st_mode) or st_dest.st_uid != uid:
+        raise BandarchyError(f"refusing unsafe destination directory: {abs_dest}")
+    os.chmod(abs_dest, 0o700)
+    real_dest = os.path.realpath(abs_dest)
+
+    zflags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        zflags |= os.O_NOFOLLOW
+    zfd = os.open(zip_path, zflags)
+    try:
+        zfst = os.fstat(zfd)
+        if (
+            not stat.S_ISREG(zfst.st_mode)
+            or zfst.st_uid != uid
+            or zfst.st_ino != zst.st_ino
+            or zfst.st_dev != zst.st_dev
+        ):
+            os.close(zfd)
+            raise BandarchyError(f"refusing modified or untrusted archive: {zip_path}")
+        zfile_obj = os.fdopen(zfd, "rb")
+    except Exception:
+        try:
+            os.close(zfd)
+        except OSError:
+            pass
+        raise
+
+    extracted: list[str] = []
+    used_basenames: set[str] = set()
+    with zfile_obj, zipfile.ZipFile(zfile_obj, "r") as zf:
         infos = zf.infolist()
         if len(infos) > MAX_ARCHIVE_FILES:
             raise BandarchyError("archive exceeds maximum member count ceiling")
@@ -2001,33 +2251,61 @@ def safe_extract_zip(zip_path: str, dest_dir: str) -> list[str]:
             name = info.filename
             if not name or name.endswith("/") or "__MACOSX" in name:
                 continue
+            mode = (info.external_attr >> 16) & 0o170000
+            if mode == stat.S_IFLNK:
+                continue
             norm_parts = name.replace("\\", "/").split("/")
             if ".." in norm_parts or name.startswith(("/", "\\")):
                 raise BandarchyError(f"refusing unsafe path in archive: {name}")
             base_name = os.path.basename(name)
             if base_name.startswith(".") or base_name.startswith("._"):
                 continue
+            if base_name in used_basenames:
+                sub_prefix = "-".join(
+                    re.sub(r"[^a-zA-Z0-9._ -]+", "_", p).strip(" .")
+                    for p in norm_parts[:-1]
+                    if p
+                )
+                cand_name = f"{sub_prefix} - {base_name}" if sub_prefix else base_name
+                if cand_name in used_basenames:
+                    stem, ext = os.path.splitext(cand_name)
+                    dup_idx = 2
+                    while f"{stem}_{dup_idx}{ext}" in used_basenames:
+                        dup_idx += 1
+                    cand_name = f"{stem}_{dup_idx}{ext}"
+                base_name = cand_name
+            used_basenames.add(base_name)
             target_path = os.path.join(real_dest, base_name)
-            if os.path.islink(target_path):
-                raise BandarchyError(f"refusing symlink target in archive destination: {base_name}")
+            if os.path.lexists(target_path):
+                st_t = os.lstat(target_path)
+                if stat.S_ISLNK(st_t.st_mode) or not stat.S_ISREG(st_t.st_mode) or st_t.st_uid != uid:
+                    raise BandarchyError(f"refusing symlink or unsafe target in archive destination: {base_name}")
+                os.unlink(target_path)
             resolved_target = os.path.realpath(target_path)
             if not resolved_target.startswith(real_dest + os.sep):
                 raise BandarchyError(f"refusing unsafe path in archive: {name}")
-            mode = (info.external_attr >> 16) & 0o170000
-            if mode == stat.S_IFLNK:
-                continue
+            out_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            if hasattr(os, "O_NOFOLLOW"):
+                out_flags |= os.O_NOFOLLOW
             with zf.open(info, "r") as src:
-                fd = os.open(resolved_target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-                with os.fdopen(fd, "wb") as dst:
-                    while True:
-                        chunk = src.read(65536)
-                        if not chunk:
-                            break
-                        bytes_written += len(chunk)
-                        if bytes_written > MAX_DOWNLOAD_BYTES:
-                            raise BandarchyError("archive stream exceeded maximum uncompressed byte ceiling")
-                        dst.write(chunk)
-            extracted.append(resolved_target)
+                fd = os.open(target_path, out_flags, 0o600)
+                try:
+                    with os.fdopen(fd, "wb") as dst:
+                        while True:
+                            chunk = src.read(65536)
+                            if not chunk:
+                                break
+                            bytes_written += len(chunk)
+                            if bytes_written > MAX_DOWNLOAD_BYTES:
+                                raise BandarchyError("archive stream exceeded maximum uncompressed byte ceiling")
+                            dst.write(chunk)
+                except Exception:
+                    try:
+                        os.unlink(target_path)
+                    except OSError:
+                        pass
+                    raise
+            extracted.append(target_path)
     return extracted
 
 
@@ -2035,6 +2313,7 @@ def find_bandcamp_zips_in_downloads() -> list[dict]:
     dl_dir = os.path.join(HOME, "Downloads")
     if not os.path.isdir(dl_dir):
         return []
+    uid = os.getuid()
     found = []
     for fname in sorted(os.listdir(dl_dir)):
         if not fname.lower().endswith(".zip") or fname.startswith("."):
@@ -2043,9 +2322,15 @@ def find_bandcamp_zips_in_downloads() -> list[dict]:
         if " - " not in stem:
             continue
         fpath = os.path.join(dl_dir, fname)
-        if not os.path.isfile(fpath) or os.path.islink(fpath):
-            continue
         try:
+            st = os.lstat(fpath)
+            if (
+                stat.S_ISLNK(st.st_mode)
+                or not stat.S_ISREG(st.st_mode)
+                or st.st_uid != uid
+                or st.st_size > MAX_DOWNLOAD_BYTES
+            ):
+                continue
             with zipfile.ZipFile(fpath, "r") as zf:
                 names = [n for n in zf.namelist() if not n.startswith("__MACOSX")]
                 has_audio = any(n.lower().endswith(AUDIO_EXTENSIONS) for n in names)
@@ -2697,7 +2982,7 @@ def mpv_request(command: list, timeout: float = 1.5):
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
             sock.settimeout(timeout)
             sock.connect(sock_path)
-            sock.sendall((json.dumps({"command": command}) + "\n").encode("utf-8"))
+            sock.sendall((json.dumps({"command": command, "request_id": 77}) + "\n").encode("utf-8"))
             buffer = b""
             deadline = time.monotonic() + timeout
             while time.monotonic() < deadline:
@@ -2707,17 +2992,16 @@ def mpv_request(command: list, timeout: float = 1.5):
                 buffer += chunk
                 if len(buffer) > MAX_IPC_BYTES:
                     return None
-                for line in buffer.split(b"\n"):
+                while b"\n" in buffer:
+                    line, buffer = buffer.split(b"\n", 1)
                     if not line.strip():
                         continue
                     try:
                         msg = json.loads(line)
                     except ValueError:
                         continue
-                    if "error" in msg:
+                    if isinstance(msg, dict) and "error" in msg:
                         return msg
-                if buffer.endswith(b"\n"):
-                    break
     except (OSError, socket.timeout):
         return None
     return None
@@ -2736,11 +3020,25 @@ def mpv_running() -> bool:
 
 def mpv_stop() -> None:
     sock_path = _active_ipc_socket()
+    pid = mpv_get("pid")
     mpv_request(["quit"])
-    for _ in range(20):
-        if not _active_ipc_socket():
+    for _ in range(10):
+        if not _active_ipc_socket() and not mpv_running():
             break
         time.sleep(0.05)
+    if isinstance(pid, int) and pid > 1:
+        try:
+            os.kill(pid, 0)
+            import signal
+            os.kill(pid, signal.SIGTERM)
+            for _ in range(10):
+                try:
+                    os.kill(pid, 0)
+                    time.sleep(0.05)
+                except OSError:
+                    break
+        except OSError:
+            pass
     for cand in {IPC_SOCKET, sock_path} - {None}:
         try:
             st = os.lstat(cand)
@@ -2760,6 +3058,7 @@ def mpv_launch(playlist_path: str, shuffle: bool = False, start_index: int = 0, 
         "--no-ytdl",
         "--no-load-scripts",
         "--no-video",
+        "--ao=pipewire,pulse,alsa,null",
         "--audio-display=no",
         "--audio-client-name=Bandarchy",
         "--gapless-audio=yes",
@@ -2767,7 +3066,7 @@ def mpv_launch(playlist_path: str, shuffle: bool = False, start_index: int = 0, 
         "--idle=no",
         "--force-window=no",
         f"--input-ipc-server={IPC_SOCKET}",
-        f"--playlist={playlist_path}",
+        f"--playlist={os.path.abspath(playlist_path)}",
         "--cache=yes",
         "--demuxer-max-bytes=64MiB",
         "--replaygain=track",
@@ -2778,6 +3077,7 @@ def mpv_launch(playlist_path: str, shuffle: bool = False, start_index: int = 0, 
         args.append(f"--playlist-start={start_index}")
     if loop:
         args.append("--loop-playlist=inf")
+    args.append("--")
     subprocess.Popen(
         args,
         stdin=subprocess.DEVNULL,
@@ -2785,13 +3085,14 @@ def mpv_launch(playlist_path: str, shuffle: bool = False, start_index: int = 0, 
         stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
-    for _ in range(20):
+    for _ in range(40):
         if os.path.exists(IPC_SOCKET):
             try:
                 os.chmod(IPC_SOCKET, 0o600)
             except OSError:
                 pass
-            break
+            if mpv_running():
+                break
         time.sleep(0.05)
 
 
@@ -3091,6 +3392,36 @@ def download_album_to_local(album: dict, preferred_format: str, settings: dict) 
             })
             publish_download_progress(state)
             raw = http_request(redownload_url, timeout=12.0)
+            if raw[:4] == b"PK\x03\x04":
+                tmp_zip = _make_private_temp_file("ba_dl_", ".zip")
+                try:
+                    safe_write_bytes(tmp_zip, raw, mode=0o600)
+                    state.update({
+                        "trackIndex": est_tracks,
+                        "trackTotal": est_tracks,
+                        "stage": f"extracting {est_tracks}/{est_tracks}",
+                        "percent": 90,
+                    })
+                    publish_download_progress(state)
+                    files = safe_extract_zip(tmp_zip, dest_dir)
+                finally:
+                    if os.path.lexists(tmp_zip):
+                        try:
+                            os.unlink(tmp_zip)
+                        except OSError:
+                            pass
+                final_count = len([f for f in files if f.lower().endswith(AUDIO_EXTENSIONS)]) or len(files) or est_tracks
+                state.update({
+                    "running": False,
+                    "trackIndex": final_count,
+                    "trackTotal": final_count,
+                    "stage": "done",
+                    "percent": 100,
+                    "fileCount": len(files),
+                })
+                publish_download_progress(state)
+                _mark_album_downloaded_in_index(album.get("id") or "", dest_dir)
+                return {"downloaded": True, "albumId": album.get("id"), "destDir": dest_dir, "method": "redownload", "fileCount": len(files)}
             page = raw.decode("utf-8", errors="replace")
             blob = extract_attr_json(page, "data-blob") or {}
             d_items = blob.get("digital_items") or blob.get("download_items") or []
@@ -3129,16 +3460,17 @@ def download_album_to_local(album: dict, preferred_format: str, settings: dict) 
                     })
                     publish_download_progress(state)
 
-                payload = http_request(
-                    archive_url,
-                    timeout=90.0,
-                    max_bytes=MAX_DOWNLOAD_BYTES,
-                    on_chunk=_on_archive_chunk,
-                )
-                if payload[:4] == b"PK\x03\x04":
-                    tmp_zip = _make_private_temp_file("ba_dl_", ".zip")
-                    try:
-                        safe_write_bytes(tmp_zip, payload, mode=0o600)
+                tmp_dl = _make_private_temp_file("ba_dl_", ".bin")
+                try:
+                    download_file(
+                        archive_url,
+                        tmp_dl,
+                        timeout=90.0,
+                        max_bytes=MAX_DOWNLOAD_BYTES,
+                        on_chunk=_on_archive_chunk,
+                    )
+                    magic = safe_read_bytes(tmp_dl, max_bytes=4) or b""
+                    if magic == b"PK\x03\x04":
                         state.update({
                             "trackIndex": est_tracks,
                             "trackTotal": est_tracks,
@@ -3146,16 +3478,18 @@ def download_album_to_local(album: dict, preferred_format: str, settings: dict) 
                             "percent": 90,
                         })
                         publish_download_progress(state)
-                        files = safe_extract_zip(tmp_zip, dest_dir)
-                    finally:
+                        files = safe_extract_zip(tmp_dl, dest_dir)
+                    else:
+                        out_file = os.path.join(dest_dir, f"{artist} - {title} - 01 {title}.mp3")
+                        os.replace(tmp_dl, out_file)
+                        tmp_dl = ""
+                        files = [out_file]
+                finally:
+                    if tmp_dl and os.path.lexists(tmp_dl):
                         try:
-                            os.unlink(tmp_zip)
+                            os.unlink(tmp_dl)
                         except OSError:
                             pass
-                else:
-                    out_file = os.path.join(dest_dir, f"{artist} - {title} - 01 {title}.mp3")
-                    atomic_write(out_file, payload, 0o600)
-                    files = [out_file]
 
                 final_count = len([f for f in files if f.lower().endswith(AUDIO_EXTENSIONS)]) or len(files) or est_tracks
                 state.update({
@@ -3186,9 +3520,7 @@ def download_album_to_local(album: dict, preferred_format: str, settings: dict) 
         art_url = (det or {}).get("artUrl") or album.get("artUrl") or ""
         if art_url:
             try:
-                art_bytes = http_request(art_url, timeout=8.0, max_bytes=MAX_ART_BYTES)
-                if art_bytes:
-                    atomic_write(os.path.join(dest_dir, "cover.jpg"), art_bytes, 0o600, fatal=False)
+                download_file(art_url, os.path.join(dest_dir, "cover.jpg"), timeout=8.0, max_bytes=MAX_ART_BYTES)
             except Exception:
                 pass
         total = len(streamable)
@@ -3225,13 +3557,13 @@ def download_album_to_local(album: dict, preferred_format: str, settings: dict) 
                 })
                 publish_download_progress(state)
 
-            audio_bytes = http_request(
+            download_file(
                 direct_url,
+                out_path,
                 timeout=45.0,
                 max_bytes=MAX_DOWNLOAD_BYTES,
                 on_chunk=_on_track_chunk,
             )
-            atomic_write(out_path, audio_bytes, 0o600)
             saved_files.append(out_path)
 
         state.update({
@@ -3368,7 +3700,7 @@ def _visualiser_settings_payload(settings: dict) -> dict:
         "layer3Scale": bounded_float(settings.get("layer3Scale"), 1.0, 0.5, 2.5),
         "layer3AsciiMode": settings.get("layer3AsciiMode") or settings.get("asciiMode") or "braille",
         "turntableRpm": bounded_float(settings.get("turntableRpm"), 33.3, 16.0, 78.0),
-        "turntableStyle": bounded_int(settings.get("turntableStyle"), 0, 0, 6),
+        "turntableStyle": bounded_int(settings.get("turntableStyle"), 0, 0, 4),
     }
 
 
@@ -4490,14 +4822,53 @@ def _kill_bandarchy_processes() -> None:
         mpv_stop()
     except Exception:
         pass
-    pkill_bin = resolve_bin("pkill") or "pkill"
-    for pat in (
-        r"(quickshell|bandarchy) -p .*/bandarchy/App\.qml",
-        r"(quickshell|bandarchy) -p .*io\.github\.layolayo\.bandarchy/App\.qml",
-        r"cava -p .*(bandarchy|io\.github\.layolayo\.bandarchy)(/share)?/cava\.conf",
-        r"mpv .*--audio-client-name=Bandarchy",
-    ):
-        subprocess.run([pkill_bin, "-f", pat], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    import signal
+
+    uid = os.getuid()
+    my_pid = os.getpid()
+    allowed_exes = ("mpv", "cava", "quickshell", "bandarchy", "bandarchy-player", "python", "python3")
+    try:
+        proc_entries = os.listdir("/proc")
+    except OSError:
+        proc_entries = []
+    for entry in proc_entries:
+        if not entry.isdigit():
+            continue
+        pid = int(entry)
+        if pid == my_pid:
+            continue
+        proc_dir = f"/proc/{pid}"
+        try:
+            st = os.lstat(proc_dir)
+            if st.st_uid != uid:
+                continue
+            raw_cmd = safe_read_bytes(f"{proc_dir}/cmdline", max_bytes=65536)
+            if not raw_cmd:
+                continue
+            parts = [p.decode("utf-8", errors="replace") for p in raw_cmd.split(b"\x00") if p]
+            if not parts:
+                continue
+            exe_name = os.path.basename(parts[0])
+            if exe_name not in allowed_exes:
+                continue
+            is_bandarchy_ui = (
+                exe_name in ("quickshell", "bandarchy", "bandarchy-player")
+                and "-p" in parts
+                and any(p.endswith("/App.qml") and ("bandarchy" in p or "io.github.layolayo.bandarchy" in p) for p in parts)
+            )
+            is_bandarchy_cava = (
+                exe_name == "cava"
+                and "-p" in parts
+                and any(("bandarchy" in p or "io.github.layolayo.bandarchy" in p) and p.endswith("cava.conf") for p in parts)
+            )
+            is_bandarchy_mpv = (
+                exe_name == "mpv"
+                and ("--audio-client-name=Bandarchy" in parts or any("bandarchy.sock" in p for p in parts))
+            )
+            if is_bandarchy_ui or is_bandarchy_cava or is_bandarchy_mpv:
+                os.kill(pid, signal.SIGTERM)
+        except OSError:
+            continue
 
 
 def cmd_kill(args) -> None:

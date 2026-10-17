@@ -319,9 +319,11 @@ Item {
                     id: cover
                     anchors.fill: parent
                     source: {
-                        var p = root.artPath || root.art || ""
-                        if (!p) return ""
-                        return p.indexOf("file://") === 0 ? p : ("file://" + p)
+                        var p = String(root.artPath || root.art || "")
+                        if (!p || p.indexOf("..") >= 0) return ""
+                        if (p.indexOf("file:///") === 0) return p
+                        if (p.indexOf("/") === 0) return "file://" + p
+                        return ""
                     }
                     fillMode: Image.PreserveAspectCrop
                     cache: true

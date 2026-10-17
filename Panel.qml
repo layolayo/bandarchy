@@ -1048,7 +1048,10 @@ Item {
                                                 Image {
                                                     id: artThumb
                                                     anchors.fill: parent
-                                                    source: modelData.artPath ? ("file://" + modelData.artPath) : ""
+                                                    source: (modelData.artPath && String(modelData.artPath).indexOf("/") === 0 && String(modelData.artPath).indexOf("..") < 0)
+                                                        ? ("file://" + modelData.artPath)
+                                                        : ""
+                                                    sourceSize: Qt.size(88, 88)
                                                     fillMode: Image.PreserveAspectCrop
                                                     asynchronous: true
                                                     visible: status === Image.Ready

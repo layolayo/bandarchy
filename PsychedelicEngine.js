@@ -6854,7 +6854,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     var cx = w * 0.5
     var cy = h * 0.5
     var scale = clamp(Number(cfg.layer3Scale !== undefined ? cfg.layer3Scale : 1.0), 0.5, 2.5)
-    var l3Tracers = clamp(Math.round(Number(cfg.layer3Tracers !== undefined ? cfg.layer3Tracers : 3)), 1, 6)
+    var l3Tracers = clamp(Math.round(Number(cfg.layer3Tracers !== undefined ? cfg.layer3Tracers : 3)), 1, 8)
     var tracerSpeed = state.liveTracerSpeed !== undefined
         ? state.liveTracerSpeed
         : clamp(Number(cfg.tracerSpeed !== undefined ? cfg.tracerSpeed : 1.15), 0.15, 3.0)
@@ -7363,7 +7363,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer3Rebuild: Number(c.layer3Rebuild !== undefined ? c.layer3Rebuild : 1.0),
         layer3Evolution: Number(c.layer3Evolution !== undefined ? c.layer3Evolution : 0.85),
         layer3Scale: Number(c.layer3Scale !== undefined ? c.layer3Scale : 1.0),
-        layer3Tracers: c.layer3Tracers !== undefined ? clamp(Math.round(Number(c.layer3Tracers)), 1, 6) : 3,
+        layer3Tracers: c.layer3Tracers !== undefined ? clamp(Math.round(Number(c.layer3Tracers)), 1, 8) : 3,
         layer3AsciiMode: c.layer3AsciiMode || c.asciiMode || "braille",
         asciiMode: c.asciiMode || c.layer3AsciiMode || "braille",
         useAlbumArt: c.useAlbumArt !== undefined ? Boolean(c.useAlbumArt) : true,
