@@ -116,9 +116,10 @@ void main() {
             }
         } else if (l1m == 5) {
             // Mode 5: 1983 Atari Star Wars Death Star Trench Run Backing
-            vec2 tp = p - vec2(drift.x * 0.35, drift.y * 0.25);
-            float trenchGlow = exp(-abs(tp.x) * 5.8) * step(-0.78, tp.y) * (0.18 + 0.16 * uBass);
-            float targetGlow = exp(-length(tp) * 6.5) * (0.28 + 0.24 * uBeat);
+            float camAlt = sin(uL1Time * 0.82 + uTime * 0.35) * 0.24 + cos(uL1Time * 0.41 - uTime * 0.28) * 0.10;
+            vec2 tp = p - vec2(drift.x * 0.35, camAlt);
+            float trenchGlow = exp(-abs(tp.x) * 4.2) * (0.18 + 0.16 * uBass);
+            float targetGlow = exp(-length(tp) * 5.8) * (0.28 + 0.24 * uBeat);
             col += (uCol0.rgb * trenchGlow + uCol1.rgb * targetGlow) * l1Bright;
         } else {
             // Mode 6: Black Hole Event Horizon & Gravitational Lensing Corona

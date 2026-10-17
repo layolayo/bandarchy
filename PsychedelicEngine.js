@@ -1877,21 +1877,25 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             var bankAngle = Math.sin(driftT * 0.48) * 0.06
             var trenchVX = Math.sin(driftT * 0.42) * w * 0.06
             // Vertical camera motion weaving smoothly up and down through the vertical depth of the tunnel
-            var camAlt = Math.sin(l1T * 0.82 + driftT * 0.35) * 0.62
-                       + Math.cos(l1T * 0.41 - driftT * 0.28) * 0.24
-                       + (state.bassSmooth - state.midSmooth) * 0.22
+            var camAlt = clamp(
+                Math.sin(l1T * 0.82 + driftT * 0.35) * 0.60
+                + Math.cos(l1T * 0.41 - driftT * 0.28) * 0.22
+                + (state.bassSmooth - state.midSmooth) * 0.20,
+                -0.88,
+                0.88
+            )
 
             ctx.translate(cx, cy)
             ctx.rotate(bankAngle)
 
-            // Single-wall trench opening all the way to the left and right limits of the screen (`±w * 0.54`)
+            // Single-wall trench opening all the way to the left, right, top, and bottom limits of the screen
             var halfWFar = w * 0.032
             var halfWNear = w * 0.54
             var halfHFar = h * 0.068
-            var halfHNear = h * 0.88
+            var halfHNear = h * 1.12
 
-            var vyFar = camAlt * h * 0.22
-            var vyNear = camAlt * h * 0.62
+            var vyFar = camAlt * h * 0.24
+            var vyNear = camAlt * h * 0.50
             var yTFar = vyFar - halfHFar
             var yBFar = vyFar + halfHFar
             var yTNear = vyNear - halfHNear
@@ -1939,8 +1943,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             ctx.strokeStyle = colourWithAlpha(palette[0 % palette.length], (0.68 + state.bass * 0.30) * (1.0 - dim))
             ctx.lineWidth = 1.8 + state.bass * 1.4
             ctx.beginPath()
-            for (var wl = 0; wl <= 4; wl++) {
-                var wf = wl / 4.0
+            for (var wl = 0; wl <= 6; wl++) {
+                var wf = wl / 6.0
                 var yFarRail = lerp(yTFar, yBFar, wf)
                 var yNearRail = lerp(yTNear, yBNear, wf)
                 ctx.moveTo(trenchVX - halfWFar, yFarRail)
@@ -1978,10 +1982,11 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
 
                 var wSlice = baseWorldSlice - sf
                 if (((wSlice % blockadeStride) + blockadeStride) % blockadeStride === 0 && uS > 0.10) {
-                    var blkSlot = Math.abs(Math.floor(wSlice / blockadeStride)) % 3
+                    var blkIdx = Math.floor(wSlice / blockadeStride)
+                    var blkSlot = ((blkIdx % 3) + 3) % 3
                     // Alternate horizontal blockades between upper, mid, and lower tunnel heights
-                    var bFrac0 = blkSlot === 0 ? 0.14 : (blkSlot === 1 ? 0.41 : 0.64)
-                    var bFrac1 = blkSlot === 0 ? 0.34 : (blkSlot === 1 ? 0.59 : 0.84)
+                    var bFrac0 = blkSlot === 0 ? 0.16 : (blkSlot === 1 ? 0.42 : 0.66)
+                    var bFrac1 = blkSlot === 0 ? 0.34 : (blkSlot === 1 ? 0.58 : 0.84)
                     blockades.push({
                         xL: xL,
                         xR: xR,
