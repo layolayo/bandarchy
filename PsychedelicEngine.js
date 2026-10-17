@@ -1867,171 +1867,164 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
         } else if (l1Mode === 5) {
             // Mode 5: 1983 Atari Star Wars 3D Vector Death Star Trench Run!
             // Features:
-            //   1. Tall-and-narrow vertical U-shaped canyon (`halfWNear < Math.abs(topYNear)` — taller than wide, just like the arcade game!)
-            //   2. Clean, open upper trench top (zero crossed diagonal top lines or cluttered top X-truss!) with horizontal Death Star surface lips
-            //   3. High-velocity trench run (`tFlow = l1T * 1.95`) with full Towards / Away / Breathe direction support
-            //   4. Fixed clean canyon frame spacing (`sliceCount = 10`), while `density` controls the amount of 3D catwalks, turbolaser towers & fireballs!
+            //   1. Single-plane left & right vertical trench walls (NOT 3D cuboids — zero outer lip rails or cuboid tower blocks!)
+            //   2. Opens wide to the full horizontal limits of the screen (`halfWNear = w * 0.54`, reaching past `±w * 0.50`)
+            //   3. Smooth vertical altitude motion (`camAlt`) diving down to the trench floor and climbing up through the tunnel
+            //   4. Horizontal blockades spanning across the tunnel (`xL` to `xR`) at upper, middle & lower vertical levels, scaled by `density`
             ctx.save()
             ctx.globalCompositeOperation = "source-over"
 
-            var bankAngle = Math.sin(driftT * 0.52) * 0.08
-            var trenchVX = Math.sin(driftT * 0.45) * minDim * 0.08
-            var trenchVY = -h * 0.04 + Math.cos(driftT * 0.38) * h * 0.04
+            var bankAngle = Math.sin(driftT * 0.48) * 0.06
+            var trenchVX = Math.sin(driftT * 0.42) * w * 0.06
+            // Vertical camera motion weaving smoothly up and down through the vertical depth of the tunnel
+            var camAlt = Math.sin(l1T * 0.82 + driftT * 0.35) * 0.62
+                       + Math.cos(l1T * 0.41 - driftT * 0.28) * 0.24
+                       + (state.bassSmooth - state.midSmooth) * 0.22
 
             ctx.translate(cx, cy)
             ctx.rotate(bankAngle)
 
-            // Taller-than-wide vertical canyon proportions (height is ~2.1x width!)
-            var halfWFar = minDim * 0.022
-            var halfWNear = minDim * 0.38
-            var topYFar = -minDim * 0.048
-            var topYNear = -h * 0.82
-            var botYFar = minDim * 0.052
-            var botYNear = h * 0.84
+            // Single-wall trench opening all the way to the left and right limits of the screen (`±w * 0.54`)
+            var halfWFar = w * 0.032
+            var halfWNear = w * 0.54
+            var halfHFar = h * 0.068
+            var halfHNear = h * 0.88
 
-            var sliceCount = 10
-            var catwalkMod = density >= 1.35 ? 3 : (density <= 0.65 ? 5 : 4)
-            var towerMod = density >= 1.35 ? 2 : (density <= 0.65 ? 4 : 3)
+            var vyFar = camAlt * h * 0.22
+            var vyNear = camAlt * h * 0.62
+            var yTFar = vyFar - halfHFar
+            var yBFar = vyFar + halfHFar
+            var yTNear = vyNear - halfHNear
+            var yBNear = vyNear + halfHNear
+
+            var sliceCount = 12
+            var blockadeStride = density >= 1.55 ? 2 : (density <= 0.65 ? 4 : 3)
             var tFlow = l1T * 1.95
             var tScroll = ((tFlow % 1.0) + 1.0) % 1.0
             var baseWorldSlice = Math.floor(tFlow)
 
-            // 1. Alternating illuminated Atari vector trench wall & floor panels (back-to-front)
+            // 1. Alternating illuminated single-wall & floor bay panels (back-to-front)
             ctx.fillStyle = colourWithAlpha(palette[2 % palette.length], (0.08 + state.bass * 0.10) * (1.0 - dim) * (gpuOn ? 0.5 : 1.0))
             ctx.beginPath()
             for (var sIdx = 0; sIdx < sliceCount - 1; sIdx++) {
                 var u0 = (sIdx + tScroll) / sliceCount
                 var u1 = (sIdx + 1 + tScroll) / sliceCount
-                var p0 = Math.pow(u0, 1.90)
-                var p1 = Math.pow(u1, 1.90)
-                var vx0 = trenchVX * (1.0 - p0), vy0 = trenchVY * (1.0 - p0)
-                var vx1 = trenchVX * (1.0 - p1), vy1 = trenchVY * (1.0 - p1)
+                var p0 = Math.pow(u0, 1.85)
+                var p1 = Math.pow(u1, 1.85)
+                var vx0 = trenchVX * (1.0 - p0)
+                var vx1 = trenchVX * (1.0 - p1)
                 var xL0 = vx0 - lerp(halfWFar, halfWNear, p0), xR0 = vx0 + lerp(halfWFar, halfWNear, p0)
                 var xL1 = vx1 - lerp(halfWFar, halfWNear, p1), xR1 = vx1 + lerp(halfWFar, halfWNear, p1)
-                var yT0 = vy0 + lerp(topYFar, topYNear, p0), yB0 = vy0 + lerp(botYFar, botYNear, p0)
-                var yT1 = vy1 + lerp(topYFar, topYNear, p1), yB1 = vy1 + lerp(botYFar, botYNear, p1)
+                var yT0 = lerp(yTFar, yTNear, p0), yB0 = lerp(yBFar, yBNear, p0)
+                var yT1 = lerp(yTFar, yTNear, p1), yB1 = lerp(yBFar, yBNear, p1)
 
                 var worldS = baseWorldSlice - sIdx
                 if ((worldS & 1) === 0) {
-                    // Left & right vertical wall armour bay panels
-                    var ym0a = lerp(yT0, yB0, 0.28), ym0b = lerp(yT0, yB0, 0.72)
-                    var ym1a = lerp(yT1, yB1, 0.28), ym1b = lerp(yT1, yB1, 0.72)
+                    // Single left & right wall bay panels
+                    var ym0a = lerp(yT0, yB0, 0.25), ym0b = lerp(yT0, yB0, 0.75)
+                    var ym1a = lerp(yT1, yB1, 0.25), ym1b = lerp(yT1, yB1, 0.75)
                     ctx.moveTo(xL0, ym0a); ctx.lineTo(xL1, ym1a); ctx.lineTo(xL1, ym1b); ctx.lineTo(xL0, ym0b); ctx.closePath()
                     ctx.moveTo(xR0, ym0a); ctx.lineTo(xR1, ym1a); ctx.lineTo(xR1, ym1b); ctx.lineTo(xR0, ym0b); ctx.closePath()
                 } else {
-                    // Central trench floor grating bay
-                    var xfL0 = lerp(xL0, xR0, 0.22), xfR0 = lerp(xL0, xR0, 0.78)
-                    var xfL1 = lerp(xL1, xR1, 0.22), xfR1 = lerp(xL1, xR1, 0.78)
+                    // Trench floor bay panel
+                    var xfL0 = lerp(xL0, xR0, 0.20), xfR0 = lerp(xL0, xR0, 0.80)
+                    var xfL1 = lerp(xL1, xR1, 0.20), xfR1 = lerp(xL1, xR1, 0.80)
                     ctx.moveTo(xfL0, yB0); ctx.lineTo(xfR0, yB0); ctx.lineTo(xfR1, yB1); ctx.lineTo(xfL1, yB1); ctx.closePath()
                 }
             }
             ctx.fill()
 
-            // 2. Clean Longitudinal Trench Rails (Left Wall, Right Wall, Floor Lanes, and Outer Death Star Surface Lips)
-            //    Every longitudinal rail stays strictly aligned with `(xL, yT)..(xR, yB)` so the open top is 100% clean!
+            // 2. Clean Single-Wall Longitudinal Perspective Rails (Left Wall, Right Wall, and Trench Floor)
+            //    No outer cuboid rim rails — purely a single left wall plane, a single right wall plane, and floor lanes!
             ctx.strokeStyle = colourWithAlpha(palette[0 % palette.length], (0.68 + state.bass * 0.30) * (1.0 - dim))
             ctx.lineWidth = 1.8 + state.bass * 1.4
             ctx.beginPath()
             for (var wl = 0; wl <= 4; wl++) {
                 var wf = wl / 4.0
-                var yFar = trenchVY + lerp(topYFar, botYFar, wf)
-                var yNear = lerp(topYNear, botYNear, wf)
-                ctx.moveTo(trenchVX - halfWFar, yFar)
-                ctx.lineTo(-halfWNear, yNear)
-                ctx.moveTo(trenchVX + halfWFar, yFar)
-                ctx.lineTo(halfWNear, yNear)
+                var yFarRail = lerp(yTFar, yBFar, wf)
+                var yNearRail = lerp(yTNear, yBNear, wf)
+                ctx.moveTo(trenchVX - halfWFar, yFarRail)
+                ctx.lineTo(-halfWNear, yNearRail)
+                ctx.moveTo(trenchVX + halfWFar, yFarRail)
+                ctx.lineTo(halfWNear, yNearRail)
             }
             for (var fl = 1; fl <= 3; fl++) {
                 var ff = fl / 4.0
-                ctx.moveTo(trenchVX + lerp(-halfWFar, halfWFar, ff), trenchVY + botYFar)
-                ctx.lineTo(lerp(-halfWNear, halfWNear, ff), botYNear)
+                ctx.moveTo(trenchVX + lerp(-halfWFar, halfWFar, ff), yBFar)
+                ctx.lineTo(lerp(-halfWNear, halfWNear, ff), yBNear)
             }
-            // Outer horizontal Death Star surface rim rails outside the top canyon edge
-            ctx.moveTo(trenchVX - halfWFar * 1.55, trenchVY + topYFar)
-            ctx.lineTo(-halfWNear * 1.55, topYNear)
-            ctx.moveTo(trenchVX + halfWFar * 1.55, trenchVY + topYFar)
-            ctx.lineTo(halfWNear * 1.55, topYNear)
             ctx.stroke()
 
-            // 3. Scrolling Cross-Sectional Tall U-Frames, Clean Mid-Trench Catwalk Girders & Turbolaser Towers
-            ctx.strokeStyle = colourWithAlpha(palette[1 % palette.length], (0.78 + state.high * 0.22) * (1.0 - dim))
-            ctx.lineWidth = 1.9 + state.beatPulse * 1.2
+            // 3. Scrolling Single-Wall Cross-Sectional U-Ribs & Horizontal Blockades Across the Tunnel
+            var blockades = []
+            ctx.strokeStyle = colourWithAlpha(palette[1 % palette.length], (0.76 + state.high * 0.24) * (1.0 - dim))
+            ctx.lineWidth = 1.8 + state.beatPulse * 1.1
             ctx.beginPath()
-            var fireballs = []
 
             for (var sf = 0; sf < sliceCount; sf++) {
                 var uS = (sf + tScroll) / sliceCount
-                var pS = Math.pow(uS, 1.90)
-                var vxs = trenchVX * (1.0 - pS), vys = trenchVY * (1.0 - pS)
+                var pS = Math.pow(uS, 1.85)
+                var vxs = trenchVX * (1.0 - pS)
                 var xL = vxs - lerp(halfWFar, halfWNear, pS)
                 var xR = vxs + lerp(halfWFar, halfWNear, pS)
-                var yT = vys + lerp(topYFar, topYNear, pS)
-                var yB = vys + lerp(botYFar, botYNear, pS)
-                var lipW = (xR - xL) * 0.28
+                var yT = lerp(yTFar, yTNear, pS)
+                var yB = lerp(yBFar, yBNear, pS)
 
-                // Open-top tall U-frame + horizontal upper surface lips
-                ctx.moveTo(xL - lipW, yT)
-                ctx.lineTo(xL, yT)
+                // Pure single-wall U-frame rib (left wall vertical rib -> floor horizontal rib -> right wall vertical rib)
+                ctx.moveTo(xL, yT)
                 ctx.lineTo(xL, yB)
                 ctx.lineTo(xR, yB)
                 ctx.lineTo(xR, yT)
-                ctx.lineTo(xR + lipW, yT)
 
                 var wSlice = baseWorldSlice - sf
-                // Clean horizontal Atari catwalk beam across mid-lower canyon (leaves top 100% open and uncluttered!)
-                if (((wSlice % catwalkMod) + catwalkMod) % catwalkMod === 0 && uS > 0.14) {
-                    var beamY0 = lerp(yT, yB, 0.52)
-                    var beamY1 = lerp(yT, yB, 0.60)
-                    ctx.moveTo(xL, beamY0); ctx.lineTo(xR, beamY0)
-                    ctx.moveTo(xL, beamY1); ctx.lineTo(xR, beamY1)
-                    for (var vs = 1; vs <= 3; vs++) {
-                        var vxStrut = lerp(xL, xR, vs / 4.0)
-                        ctx.moveTo(vxStrut, beamY0); ctx.lineTo(vxStrut, beamY1)
-                    }
-                }
-
-                if (((wSlice % towerMod) + towerMod) % towerMod === 1 && uS > 0.18) {
-                    var sideT = (wSlice & 1) ? -1.0 : 1.0
-                    var towX = sideT < 0 ? lerp(xL, xR, 0.16) : lerp(xL, xR, 0.84)
-                    var towW = (xR - xL) * 0.10
-                    var towTopY = lerp(yT, yB, 0.44)
-                    ctx.rect(towX - towW * 0.5, towTopY, towW, yB - towTopY)
-                    fireballs.push({
-                        x: lerp(towX, 0, 0.35),
-                        y: lerp(towTopY, 0, 0.35),
-                        r: clamp(pS * minDim * 0.065 * (1.0 + state.bass * 0.35), 4.0, minDim * 0.09)
+                if (((wSlice % blockadeStride) + blockadeStride) % blockadeStride === 0 && uS > 0.10) {
+                    var blkSlot = Math.abs(Math.floor(wSlice / blockadeStride)) % 3
+                    // Alternate horizontal blockades between upper, mid, and lower tunnel heights
+                    var bFrac0 = blkSlot === 0 ? 0.14 : (blkSlot === 1 ? 0.41 : 0.64)
+                    var bFrac1 = blkSlot === 0 ? 0.34 : (blkSlot === 1 ? 0.59 : 0.84)
+                    blockades.push({
+                        xL: xL,
+                        xR: xR,
+                        y0: lerp(yT, yB, bFrac0),
+                        y1: lerp(yT, yB, bFrac1),
+                        p: pS,
+                        slot: blkSlot
                     })
                 }
             }
             ctx.stroke()
 
-            // 4. 1983 Atari Star Wars 8-Spoke Vector Fireballs hurtling towards the user
-            if (fireballs.length > 0) {
-                ctx.strokeStyle = colourWithAlpha(palette[4 % palette.length], 0.92 * (1.0 - dim))
-                ctx.lineWidth = 2.0 + state.beatPulse * 1.2
+            // 4. Horizontal Blockades Spanning Across the Tunnel (`xL` to `xR`)
+            if (blockades.length > 0) {
+                // Translucent horizontal barrier fill across the tunnel width
+                ctx.fillStyle = colourWithAlpha(palette[4 % palette.length], (0.16 + state.bass * 0.14) * (1.0 - dim) * (gpuOn ? 0.65 : 1.0))
                 ctx.beginPath()
-                for (var fb = 0; fb < fireballs.length; fb++) {
-                    var fObj = fireballs[fb]
-                    for (var spk = 0; spk < 4; spk++) {
-                        var fa = (spk / 4.0) * Math.PI + l1T * 3.5
-                        var fr = fObj.r
-                        ctx.moveTo(fObj.x - Math.cos(fa) * fr, fObj.y - Math.sin(fa) * fr)
-                        ctx.lineTo(fObj.x + Math.cos(fa) * fr, fObj.y + Math.sin(fa) * fr)
+                for (var bi = 0; bi < blockades.length; bi++) {
+                    var blkF = blockades[bi]
+                    ctx.rect(blkF.xL, blkF.y0, blkF.xR - blkF.xL, blkF.y1 - blkF.y0)
+                }
+                ctx.fill()
+
+                // Crisp vector horizontal blockade beams & internal X-truss bracing spanning left wall to right wall
+                ctx.strokeStyle = colourWithAlpha(palette[4 % palette.length], (0.88 + state.beatPulse * 0.12) * (1.0 - dim))
+                ctx.lineWidth = 2.0 + state.bass * 1.3
+                ctx.beginPath()
+                for (var bj = 0; bj < blockades.length; bj++) {
+                    var blk = blockades[bj]
+                    var yMid = (blk.y0 + blk.y1) * 0.5
+                    ctx.moveTo(blk.xL, blk.y0); ctx.lineTo(blk.xR, blk.y0)
+                    ctx.moveTo(blk.xL, blk.y1); ctx.lineTo(blk.xR, blk.y1)
+                    ctx.moveTo(blk.xL, yMid);   ctx.lineTo(blk.xR, yMid)
+                    var trussSegs = 6
+                    for (var ts = 0; ts < trussSegs; ts++) {
+                        var tx0 = lerp(blk.xL, blk.xR, ts / trussSegs)
+                        var tx1 = lerp(blk.xL, blk.xR, (ts + 1) / trussSegs)
+                        ctx.moveTo(tx0, blk.y0); ctx.lineTo(tx0, blk.y1)
+                        ctx.moveTo(tx0, blk.y0); ctx.lineTo(tx1, blk.y1)
                     }
                 }
                 ctx.stroke()
             }
-
-            // 5. Atari Star Wars Amber Targeting Computer Sight Brackets
-            var hudR = minDim * 0.14
-            ctx.strokeStyle = colourWithAlpha("#ffd147", (0.58 + state.beatPulse * 0.32) * (1.0 - dim))
-            ctx.lineWidth = 1.6
-            ctx.beginPath()
-            ctx.moveTo(-hudR * 1.1, -hudR * 0.95); ctx.lineTo(-hudR * 0.40, -hudR * 0.32)
-            ctx.moveTo(hudR * 1.1, -hudR * 0.95);  ctx.lineTo(hudR * 0.40, -hudR * 0.32)
-            ctx.moveTo(-hudR * 1.1, hudR * 0.95);  ctx.lineTo(-hudR * 0.40, hudR * 0.32)
-            ctx.moveTo(hudR * 1.1, hudR * 0.95);   ctx.lineTo(hudR * 0.40, hudR * 0.32)
-            ctx.stroke()
 
             ctx.restore()
         } else if (l1Mode === 6) {

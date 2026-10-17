@@ -1226,11 +1226,19 @@ if (cfgTrOff.tracerCount !== 1) {
 function makeMockCtx() {
     return {
         fillCount: 0, strokeCount: 0, rectCount: 0, lineCount: 0,
+        minX: Infinity, maxX: -Infinity, firstMoveY: null, rects: [],
         fillStyle: '', strokeStyle: '', lineWidth: 1, globalAlpha: 1, globalCompositeOperation: 'source-over',
         save() {}, restore() {}, translate() {}, rotate() {}, scale() {},
-        beginPath() {}, closePath() {}, moveTo() {},
-        lineTo() { this.lineCount++; },
-        rect() { this.rectCount++; },
+        beginPath() {}, closePath() {},
+        moveTo(x, y) {
+            if (Number.isFinite(x)) { this.minX = Math.min(this.minX, x); this.maxX = Math.max(this.maxX, x); }
+            if (this.firstMoveY === null && Number.isFinite(y)) this.firstMoveY = y;
+        },
+        lineTo(x, y) {
+            this.lineCount++;
+            if (Number.isFinite(x)) { this.minX = Math.min(this.minX, x); this.maxX = Math.max(this.maxX, x); }
+        },
+        rect(x, y, w, h) { this.rectCount++; this.rects.push({ x, y, w, h }); },
         arc() {},
         fill() { this.fillCount++; },
         stroke() { this.strokeCount++; },
@@ -1268,6 +1276,42 @@ renderFrame(ctxHighDen, 640, 360, stTowards, 0, theme, [], 'album-art', [], norm
 }, 0, []), null);
 if (!(ctxHighDen.lineCount > ctxLowDen.lineCount + 80)) {
     throw new Error('Battlezone model density did not scale lineCount: low=' + ctxLowDen.lineCount + ' high=' + ctxHighDen.lineCount);
+}
+
+// Verify Death Star Trench Run (l1Mode === 5):
+//   1. Single-wall trench opens wide to screen limits (minX === -640 * 0.54, maxX === 640 * 0.54 — no outer cuboid lip rails!)
+//   2. Vertical movement up and down through the tunnel across time steps
+//   3. Horizontal blockades spanning across the tunnel (w > h) scaling with layer1Density
+const stTrench = createState();
+const cfgTrenchLow = normaliseConfig({
+    layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: 5, layer1Density: 0.5,
+    layer1EqEnabled: false, layer1ShapesEnabled: false, layer2Enabled: false, layer3Enabled: false
+}, 0, []);
+const cfgTrenchHigh = normaliseConfig({
+    layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: 5, layer1Density: 2.0,
+    layer1EqEnabled: false, layer1ShapesEnabled: false, layer2Enabled: false, layer3Enabled: false
+}, 0, []);
+stepState(stTrench, bands, true, cfgTrenchLow, 0.1);
+const ctxTr0 = makeMockCtx();
+renderFrame(ctxTr0, 640, 360, stTrench, 0, theme, [], 'album-art', [], cfgTrenchLow, null);
+if (Math.abs(ctxTr0.minX - (-640 * 0.54)) > 1.0 || Math.abs(ctxTr0.maxX - (640 * 0.54)) > 1.0) {
+    throw new Error('Death Star trench must open cleanly to single-wall screen limits ±0.54*w: minX=' + ctxTr0.minX + ' maxX=' + ctxTr0.maxX);
+}
+for (const r of ctxTr0.rects) {
+    if (!(r.w > r.h)) {
+        throw new Error('Death Star trench blockades must span horizontally across the tunnel (w > h), got ' + JSON.stringify(r));
+    }
+}
+const ctxTrHigh = makeMockCtx();
+renderFrame(ctxTrHigh, 640, 360, stTrench, 0, theme, [], 'album-art', [], cfgTrenchHigh, null);
+if (!(ctxTrHigh.rectCount > ctxTr0.rectCount)) {
+    throw new Error('Death Star horizontal blockades must scale with density: low=' + ctxTr0.rectCount + ' high=' + ctxTrHigh.rectCount);
+}
+for (let step = 0; step < 15; step++) stepState(stTrench, bands, true, cfgTrenchLow, 0.08);
+const ctxTr1 = makeMockCtx();
+renderFrame(ctxTr1, 640, 360, stTrench, 0, theme, [], 'album-art', [], cfgTrenchLow, null);
+if (Math.abs(ctxTr1.firstMoveY - ctxTr0.firstMoveY) < 5.0) {
+    throw new Error('Death Star trench must move vertically up and down through the tunnel over time: y0=' + ctxTr0.firstMoveY + ' y1=' + ctxTr1.firstMoveY);
 }
 console.log('OK');
 """
