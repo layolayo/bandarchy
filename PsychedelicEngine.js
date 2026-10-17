@@ -70,7 +70,13 @@ var LAYER1_EQ_STYLES = [
     "3D Waterfall Ridges",
     "Sun Rays",
     "Centre Twin Wave",
-    "Horizon Spotlights"
+    "Horizon Spotlights",
+    "3D Sonic Orb",
+    "3D Torus Reactor",
+    "Cymatic Chladni",
+    "3D Helix Vortex",
+    "Tesla Plasma Arcs",
+    "Tralis Voxel City"
 ]
 
 var LAYER1_EQ_LAYOUTS = [
@@ -300,6 +306,18 @@ function createState() {
         })
     }
 
+    var eqRidgeHist = []
+    for (var rh = 0; rh < 24; rh++) {
+        var rBins = []
+        for (var rb = 0; rb < 36; rb++) rBins.push(0.05)
+        eqRidgeHist.push({
+            bins: rBins,
+            bass: 0.05,
+            energy: 0.05,
+            hue: (rh * 15) % 360
+        })
+    }
+
     var stars = []
     for (var s = 0; s < 140; s++) {
         stars.push({
@@ -339,6 +357,8 @@ function createState() {
         smoothBands: smooth,
         peakBands: peaks,
         waveHistory: waveHist,
+        eqRidgeHistory: eqRidgeHist,
+        eqRidgeStepIdx: 0,
         waveform: [],
         bass: 0.0,
         mid: 0.0,
@@ -541,6 +561,7 @@ function randomiseState(state) {
         style: Math.floor(Math.random() * 3)
     }
     state.fractalPoiIndex = ((state.fractalPoiIndex || 0) + 1 + Math.floor(Math.random() * (FRACTAL_POIS.length - 1))) % FRACTAL_POIS.length
+    state.shockwaves = []
     triggerArtBurst(state, 1.15)
 }
 
@@ -666,13 +687,22 @@ function stepState(state, rawBands, active, cfg, dt) {
         if (state.beatCount % 16 === 0) {
             state.fractalPoiIndex = ((state.fractalPoiIndex || 0) + 1 + (state.beatCount % 3)) % FRACTAL_POIS.length
         }
-        if (state.shockwaves.length < 6) {
+        var shapeDenBeat = clamp(Number(cfg && cfg.layer1ShapeDensity !== undefined ? cfg.layer1ShapeDensity : 1.0), 0.25, 2.5)
+        var maxBeatShapes = Math.max(1, Math.min(18, Math.round(6 * shapeDenBeat)))
+        if (state.shockwaves.length < maxBeatShapes) {
             state.shockwaves.push({
                 r: l1Dir < 0 ? 1.38 : 0.02,
                 alpha: 0.88,
-                speed: 0.52 + state.bassSmooth * 0.65,
-                hueOffset: (state.hueShift + state.beatCount * 35) % 360,
-                sides: 3 + (state.beatCount % 7)
+                sizeMul: 0.50 + Math.random() * 1.30,
+                speed: 0.36 + Math.random() * 0.68 + state.bassSmooth * 0.45,
+                laneX: (Math.random() * 2.0 - 1.0) * 0.42,
+                laneY: (Math.random() * 2.0 - 1.0) * 0.34,
+                spinX: (Math.random() * 2.0 - 1.0) * 1.5,
+                spinY: (Math.random() * 2.0 - 1.0) * 1.5,
+                spinZ: (Math.random() * 2.0 - 1.0) * 1.5,
+                variant: Math.floor(Math.random() * 6),
+                hueOffset: (state.hueShift + state.beatCount * 35 + Math.random() * 50) % 360,
+                sides: 3 + Math.floor(Math.random() * 7)
             })
         }
     } else {
@@ -794,7 +824,7 @@ function stepState(state, rawBands, active, cfg, dt) {
         state.fractalPoiIndex = ((state.fractalPoiIndex || 0) + 1 + Math.floor(Math.random() * (FRACTAL_POIS.length - 1))) % FRACTAL_POIS.length
     }
 
-    // Record 32-band snapshot into state.waveHistory ring buffer (for Cthugha 3D Plasma Tunnel & L1 3D Waterfall EQ)
+    // Record 32-band snapshot into state.waveHistory ring buffer (for Cthugha 3D Plasma Tunnel)
     if (!state.waveHistory) state.waveHistory = []
     var snapBands = []
     for (var wb = 0; wb < 32; wb++) {
@@ -811,17 +841,66 @@ function stepState(state, rawBands, active, cfg, dt) {
         state.waveHistory.length = 18
     }
 
-    // Step Layer #1 Beat Shapes (obeying Tri-State l1Dir: Towards, Away, or Breathe!)
-    var shapeSpeed = clamp(Number(cfg && cfg.layer1ShapeSpeed !== undefined ? cfg.layer1ShapeSpeed : 1.0), 0.2, 3.0)
-    var shapesOn = cfg ? (cfg.layer1ShapesEnabled !== false) : true
-    if (shapesOn && active && state.shockwaves.length === 0) {
-        state.shockwaves.push({
-            r: l1Dir < 0 ? 1.35 : 0.08,
-            alpha: 0.85,
-            speed: 0.48 + state.bassSmooth * 0.55,
-            hueOffset: (state.hueShift + state.beatCount * 35) % 360,
-            sides: 3 + (state.beatCount % 6)
+    // Record 36-bin snapshot into state.eqRidgeHistory synchronised with state.l1Time * 2.8 depth advection
+    if (!state.eqRidgeHistory) state.eqRidgeHistory = []
+    var liveBins36 = []
+    for (var rb36 = 0; rb36 < 36; rb36++) {
+        var bIdx36 = Math.min(63, Math.floor((rb36 / 35.0) * 63))
+        liveBins36.push(state.smoothBands[bIdx36] || 0.04)
+    }
+    var curRidgeStep = Math.floor((state.l1Time || 0.0) * 2.8)
+    if (state.eqRidgeHistory.length < 24 || curRidgeStep !== state.eqRidgeStepIdx) {
+        state.eqRidgeStepIdx = curRidgeStep
+        state.eqRidgeHistory.unshift({
+            bins: liveBins36,
+            bass: state.bass,
+            energy: state.energy,
+            hue: state.hueShift
         })
+        if (state.eqRidgeHistory.length > 24) {
+            state.eqRidgeHistory.length = 24
+        }
+    } else if (state.eqRidgeHistory.length > 0) {
+        state.eqRidgeHistory[0] = {
+            bins: liveBins36,
+            bass: state.bass,
+            energy: state.energy,
+            hue: state.hueShift
+        }
+    }
+
+    // Step Layer #1 Beat Shapes (obeying Tri-State l1Dir and scaling count with cfg.layer1ShapeDensity!)
+    var shapeSpeed = clamp(Number(cfg && cfg.layer1ShapeSpeed !== undefined ? cfg.layer1ShapeSpeed : 1.0), 0.2, 3.0)
+    var shapeDensity = clamp(Number(cfg && cfg.layer1ShapeDensity !== undefined ? cfg.layer1ShapeDensity : 1.0), 0.25, 2.5)
+    var shapesOn = cfg ? (cfg.layer1ShapesEnabled !== false) : true
+    var targetShapeCount = Math.max(1, Math.min(16, Math.round(4 * shapeDensity)))
+    var maxShapeCount = Math.max(targetShapeCount, Math.min(18, Math.round(6 * shapeDensity)))
+    if (state.shockwaves.length > maxShapeCount) {
+        state.shockwaves.length = maxShapeCount
+    }
+    if (shapesOn && active && state.shockwaves.length < targetShapeCount) {
+        var missing = targetShapeCount - state.shockwaves.length
+        for (var ms = 0; ms < missing; ms++) {
+            var idxS = state.shockwaves.length
+            var staggerFrac = targetShapeCount > 1 ? (idxS / targetShapeCount) : 0.0
+            var spawnR = l1Dir < 0
+                ? clamp(1.35 - staggerFrac * 1.10, 0.12, 1.38)
+                : clamp(0.08 + staggerFrac * 1.10, 0.06, 1.28)
+            state.shockwaves.push({
+                r: spawnR,
+                alpha: clamp(0.92 - staggerFrac * 0.32, 0.35, 0.92),
+                sizeMul: 0.50 + Math.random() * 1.30,
+                speed: 0.36 + Math.random() * 0.68 + state.bassSmooth * 0.45,
+                laneX: (Math.random() * 2.0 - 1.0) * 0.42,
+                laneY: (Math.random() * 2.0 - 1.0) * 0.34,
+                spinX: (Math.random() * 2.0 - 1.0) * 1.5,
+                spinY: (Math.random() * 2.0 - 1.0) * 1.5,
+                spinZ: (Math.random() * 2.0 - 1.0) * 1.5,
+                variant: Math.floor(Math.random() * 6),
+                hueOffset: (state.hueShift + (state.beatCount + idxS) * 35 + Math.random() * 50) % 360,
+                sides: 3 + Math.floor(Math.random() * 7)
+            })
+        }
     }
     for (var sw = state.shockwaves.length - 1; sw >= 0; sw--) {
         var wave = state.shockwaves[sw]
@@ -1148,6 +1227,131 @@ function append3DWireframeTank(ctx, cx, cy, scale, rx, ry, rz, turretYawRel, gun
     }
 }
 
+// Appends a 1983 Atari Color-QuadraScan XY Vector Star Wars spacecraft to the active ctx path:
+//   variant 0: Standard TIE Fighter (3D octahedron/hexagon central ball cockpit + smaller front octagon window +
+//              horizontal axle struts + vertical elongated hexagonal wings divided into 6 triangular segments by radial spokes)
+//   variant 1: Darth Vader's TIE Advanced x1 (central ball cockpit + front octagon window + horizontal axle struts +
+//              angled/bent [ ] bracket solar wings with radial internal spokes)
+//   variant 2: Rebel X-Wing Starfighter (tapered hexagonal fuselage + canopy ridge + 4 S-Foil wings + 4 wingtip laser cannons)
+function append3DStarWarsFighter(ctx, variant, cx, cy, scale, rx, ry, rz) {
+    var vMode = ((variant % 3) + 3) % 3
+    if (vMode === 2) {
+        var xwFus = [
+            [ 0.0,  -0.14,  0.88], // 0: Nose cone tip
+            [ 0.18, -0.10, -0.15], // 1: Right cockpit shoulder
+            [ 0.14,  0.10, -0.68], // 2: Right rear engine block
+            [-0.14,  0.10, -0.68], // 3: Left rear engine block
+            [-0.18, -0.10, -0.15], // 4: Left cockpit shoulder
+            [ 0.0,  -0.26, -0.22]  // 5: Canopy dorsal ridge
+        ]
+        var xp = []
+        for (var xfi = 0; xfi < xwFus.length; xfi++) {
+            xp.push(project3DPoint(xwFus[xfi][0], xwFus[xfi][1], xwFus[xfi][2], rx, ry, rz, cx, cy, scale, 3.6))
+        }
+        var xFusEdges = [0, 1,  1, 2,  2, 3,  3, 4,  4, 0,  0, 5,  5, 2,  5, 3,  1, 5,  4, 5]
+        for (var xfe = 0; xfe < xFusEdges.length; xfe += 2) {
+            ctx.moveTo(xp[xFusEdges[xfe]].x, xp[xFusEdges[xfe]].y)
+            ctx.lineTo(xp[xFusEdges[xfe + 1]].x, xp[xFusEdges[xfe + 1]].y)
+        }
+        for (var wxS = -1; wxS <= 1; wxS += 2) {
+            for (var wyS = -1; wyS <= 1; wyS += 2) {
+                var rF = project3DPoint(wxS * 0.15, wyS * 0.06, -0.18, rx, ry, rz, cx, cy, scale, 3.6)
+                var rR = project3DPoint(wxS * 0.14, wyS * 0.08, -0.58, rx, ry, rz, cx, cy, scale, 3.6)
+                var tF = project3DPoint(wxS * 0.96, wyS * 0.44, -0.14, rx, ry, rz, cx, cy, scale, 3.6)
+                var tR = project3DPoint(wxS * 0.96, wyS * 0.52, -0.48, rx, ry, rz, cx, cy, scale, 3.6)
+                var cT = project3DPoint(wxS * 0.96, wyS * 0.44,  0.50, rx, ry, rz, cx, cy, scale, 3.6)
+                ctx.moveTo(rF.x, rF.y); ctx.lineTo(tF.x, tF.y); ctx.lineTo(tR.x, tR.y); ctx.lineTo(rR.x, rR.y); ctx.closePath()
+                ctx.moveTo(tR.x, tR.y); ctx.lineTo(cT.x, cT.y)
+            }
+        }
+        return
+    }
+
+    // 1. Central 3D wireframe octahedron/octagon ball cockpit + smaller front octagon viewport window + radial viewport spokes
+    var ballR = 0.28
+    var winR = 0.14
+    var outerRing = []
+    var innerWin = []
+    for (var bi = 0; bi < 8; bi++) {
+        var ba = (bi / 8.0) * Math.PI * 2 + (Math.PI / 8.0)
+        var ca = Math.cos(ba), sa = Math.sin(ba)
+        outerRing.push(project3DPoint(ca * ballR, sa * ballR, 0.0, rx, ry, rz, cx, cy, scale, 3.6))
+        innerWin.push(project3DPoint(ca * winR, sa * winR, 0.20, rx, ry, rz, cx, cy, scale, 3.6))
+    }
+    for (var b0 = 0; b0 < 8; b0++) {
+        var b1 = (b0 + 1) & 7
+        ctx.moveTo(outerRing[b0].x, outerRing[b0].y); ctx.lineTo(outerRing[b1].x, outerRing[b1].y)
+        ctx.moveTo(innerWin[b0].x, innerWin[b0].y);   ctx.lineTo(innerWin[b1].x, innerWin[b1].y)
+        ctx.moveTo(innerWin[b0].x, innerWin[b0].y);   ctx.lineTo(outerRing[b0].x, outerRing[b0].y)
+    }
+
+    // 2. Horizontal axle struts connecting the central cockpit ball to left and right wing hubs
+    var wingX = (vMode === 1) ? 0.78 : 0.74
+    var pL0 = project3DPoint(-ballR, 0.0, 0.0, rx, ry, rz, cx, cy, scale, 3.6)
+    var pL1 = project3DPoint(-wingX, 0.0, 0.0, rx, ry, rz, cx, cy, scale, 3.6)
+    var pR0 = project3DPoint( ballR, 0.0, 0.0, rx, ry, rz, cx, cy, scale, 3.6)
+    var pR1 = project3DPoint( wingX, 0.0, 0.0, rx, ry, rz, cx, cy, scale, 3.6)
+    ctx.moveTo(pL0.x, pL0.y); ctx.lineTo(pL1.x, pL1.y)
+    ctx.moveTo(pR0.x, pR0.y); ctx.lineTo(pR1.x, pR1.y)
+
+    // 3. Solar array wings with internal radiating spokes from the centre hub
+    for (var side = -1; side <= 1; side += 2) {
+        var hubPt = (side < 0) ? pL1 : pR1
+        if (vMode === 0) {
+            // Standard TIE Fighter: Flat, vertical elongated hexagon divided into 6 triangular segments by internal spokes
+            var hexV = [
+                [side * wingX,  0.00,  0.54], // 0: Front middle apex
+                [side * wingX, -0.76,  0.34], // 1: Top-front corner
+                [side * wingX, -0.76, -0.34], // 2: Top-rear corner
+                [side * wingX,  0.00, -0.54], // 3: Rear middle apex
+                [side * wingX,  0.76, -0.34], // 4: Bottom-rear corner
+                [side * wingX,  0.76,  0.34]  // 5: Bottom-front corner
+            ]
+            var hp = []
+            for (var hi = 0; hi < 6; hi++) {
+                hp.push(project3DPoint(hexV[hi][0], hexV[hi][1], hexV[hi][2], rx, ry, rz, cx, cy, scale, 3.6))
+            }
+            for (var h0 = 0; h0 < 6; h0++) {
+                var h1 = (h0 + 1) % 6
+                // Outer hexagon perimeter segment
+                ctx.moveTo(hp[h0].x, hp[h0].y); ctx.lineTo(hp[h1].x, hp[h1].y)
+                // Internal spoke radiating from centre wing hub (dividing wing into 6 triangular segments)
+                ctx.moveTo(hubPt.x, hubPt.y);   ctx.lineTo(hp[h0].x, hp[h0].y)
+            }
+        } else {
+            // Darth Vader's TIE Advanced x1: Angled/bent top and bottom panels forming a [ ] bracket profile head-on
+            var vadV = [
+                [side * wingX,  0.00,  0.56], // 0: Centre-front apex
+                [side * wingX, -0.32,  0.44], // 1: Upper-knuckle front
+                [side * 0.50,  -0.74,  0.36], // 2: Bent top-tip front
+                [side * 0.50,  -0.74, -0.36], // 3: Bent top-tip rear
+                [side * wingX, -0.32, -0.44], // 4: Upper-knuckle rear
+                [side * wingX,  0.00, -0.56], // 5: Centre-rear apex
+                [side * wingX,  0.32, -0.44], // 6: Lower-knuckle rear
+                [side * 0.50,   0.74, -0.36], // 7: Bent bottom-tip rear
+                [side * 0.50,   0.74,  0.36], // 8: Bent bottom-tip front
+                [side * wingX,  0.32,  0.44]  // 9: Lower-knuckle front
+            ]
+            var vp = []
+            for (var vi = 0; vi < vadV.length; vi++) {
+                vp.push(project3DPoint(vadV[vi][0], vadV[vi][1], vadV[vi][2], rx, ry, rz, cx, cy, scale, 3.6))
+            }
+            for (var v0 = 0; v0 < vadV.length; v0++) {
+                var v1 = (v0 + 1) % vadV.length
+                ctx.moveTo(vp[v0].x, vp[v0].y); ctx.lineTo(vp[v1].x, vp[v1].y)
+            }
+            // Internal fold ribs + radial hub spokes
+            ctx.moveTo(vp[1].x, vp[1].y); ctx.lineTo(vp[4].x, vp[4].y)
+            ctx.moveTo(vp[9].x, vp[9].y); ctx.lineTo(vp[6].x, vp[6].y)
+            var spokeIdx = [0, 1, 4, 5, 6, 9]
+            for (var si = 0; si < spokeIdx.length; si++) {
+                var spP = vp[spokeIdx[si]]
+                ctx.moveTo(hubPt.x, hubPt.y); ctx.lineTo(spP.x, spP.y)
+            }
+        }
+    }
+}
+
 function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg) {
     var bgHex = (theme && theme.background) ? theme.background.toString() : "#06080e"
     var enabled = cfg ? Boolean(cfg.layer1Enabled) : true
@@ -1198,6 +1402,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
     var dim = cfg && cfg.layer1Dim !== undefined ? clamp(Number(cfg.layer1Dim), 0.0, 0.92) : 0.16
     var density = cfg && cfg.layer1Density !== undefined ? clamp(Number(cfg.layer1Density), 0.2, 3.0) : 1.0
     var l1T = state.l1Time !== undefined ? state.l1Time : state.t
+    var l1Dir = (cfg && cfg.layer1Direction !== undefined) ? Number(cfg.layer1Direction) : 1
     var driftT = state.driftTime !== undefined ? state.driftTime : state.t
 
     var cx = w * 0.5
@@ -1584,12 +1789,13 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             }
             ctx.stroke()
 
-            // 3. Full 3-Axis 3D Wireframe Landscape Models scaled by Field Density (`density`)!
-            //    - When `shapesOn` (`cfg.layer1ShapesEnabled`) is ON and `activeShapeStyle > 0`: landscape models strictly match the selected `layer1ShapeStyle` (`1..5`)!
-            //    - When `shapesOn` is OFF ("if none selected just use tanks") or `activeShapeStyle === 0` ("Battlezone Tanks"): `obsCount = 0` and only 3D wireframe tanks populate the landscape!
+            // 3. Full 3-Axis 3D Wireframe Landscape & Airborne Models scaled by Field Density (`density`) and Shape Density (`shapeDenBz`)!
+            //    - Shapes in Battlezone appear BOTH on the terrain AND flying/floating OFF the land in the 3D sky above the landscape!
+            //    - 3D wireframe Battlezone tanks simultaneously roll across the ground plane firing vector shells!
             var activeShapeStyle = cfg && cfg.layer1ShapeStyle !== undefined ? ((Number(cfg.layer1ShapeStyle) || 0) % LAYER1_SHAPE_STYLES.length) : 0
             var shapeScaleBz = cfg && cfg.layer1ShapeScale !== undefined ? clamp(Number(cfg.layer1ShapeScale), 0.3, 2.5) : 1.0
-            var obsCount = (shapesOn && activeShapeStyle > 0) ? Math.max(2, Math.min(14, Math.round(5 * density))) : 0
+            var shapeDenBz = cfg && cfg.layer1ShapeDensity !== undefined ? clamp(Number(cfg.layer1ShapeDensity), 0.25, 2.5) : 1.0
+            var obsCount = Math.max(2, Math.min(18, Math.round((shapesOn ? 6 : 4) * density * shapeDenBz)))
             var objSpinCfg = cfg && cfg.layer1ShapeSpin !== undefined ? clamp(Number(cfg.layer1ShapeSpin), -2.5, 2.5) : 1.0
             for (var ob = 0; ob < obsCount; ob++) {
                 var obProg = ((((ob / obsCount) + worldScroll) % 1.0) + 1.0) % 1.0
@@ -1597,84 +1803,34 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 if (horizonFade < 0.02) continue
                 var perspOb = Math.pow(obProg, 2.05) // 0 at horizon -> 1 at foreground bottom
                 var sideSign = (ob % 2 === 0) ? -1.0 : 1.0
-                var laneSpread = 0.22 + ((ob * 3) % 5) * 0.13
+                var laneSpread = 0.20 + ((ob * 3) % 5) * 0.13
                 var obX = vanishX + sideSign * laneSpread * w * (0.03 + perspOb * 0.88)
                 var obY = horizonY + perspOb * groundH * 1.05
-                var obScale = (5.5 + perspOb * minDim * 0.115) * (1.0 + state.bass * 0.16) * Math.sqrt(shapeScaleBz)
-                var hoverY = obY - obScale * (0.85 + 0.18 * Math.sin(l1T * 1.8 + ob * 2.1))
+                var obSizeMul = 0.55 + ((ob * 37) % 11) * 0.095
+                var obScale = (5.5 + perspOb * minDim * 0.115) * (1.0 + state.bass * 0.16) * Math.sqrt(shapeScaleBz) * obSizeMul
+                // Allow a portion of Battlezone shapes to fly/float OFF the land in the 3D sky above the terrain & horizon!
+                var isAirborne = shapesOn ? (ob % 2 === 0 || activeShapeStyle === 1) : (ob % 3 === 2)
+                var skyAltitude = isAirborne
+                    ? (minDim * (0.16 + 0.13 * ((ob * 3) % 3)) + Math.sin(l1T * 1.6 + ob * 1.9) * minDim * 0.05) * (0.42 + perspOb * 0.85)
+                    : 0.0
+                var hoverY = obY - obScale * (0.85 + 0.18 * Math.sin(l1T * 1.8 + ob * 2.1)) - skyAltitude
 
-                // Full 3-axis 3D rotation angles (rx, ry, rz)
-                var ry = l1T * (0.95 + (ob % 3) * 0.28) * (objSpinCfg !== 0 ? objSpinCfg : 0.6) + ob * 1.57
-                var rx = Math.sin(l1T * 0.72 + ob * 1.9) * 0.38 + (ob % 3 === 2 ? l1T * 0.55 : 0.18)
-                var rz = Math.cos(l1T * 0.64 + ob * 1.3) * 0.28
+                // Full 3-axis 3D rotation angles (rx, ry, rz) with per-object polarity and speed variation
+                var obSpinDir = (ob % 3 === 1) ? -1.0 : 1.0
+                var ry = l1T * (0.75 + ((ob * 7) % 5) * 0.28) * obSpinDir * (objSpinCfg !== 0 ? objSpinCfg : 0.6) + ob * 1.57
+                var rx = Math.sin(l1T * 0.72 + ob * 1.9) * 0.42 + (ob % 3 === 2 ? l1T * 0.65 * obSpinDir : 0.18)
+                var rz = Math.cos(l1T * 0.64 + ob * 1.3) * 0.34
 
                 ctx.strokeStyle = colourWithAlpha(palette[(1 + ob) % palette.length], (0.78 + state.high * 0.22) * horizonFade * (1.0 - dim))
                 ctx.lineWidth = (1.5 + perspOb * 1.2 + state.bass * 0.8)
                 ctx.beginPath()
 
-                if (activeShapeStyle === 1) {
-                    // Style 1: 3D Star Wars Fighters (X-Wing Starfighters & TIE Fighters skimming over the Battlezone terrain)
+                if (shapesOn && activeShapeStyle === 1) {
+                    // Style 1: 1983 Atari Color-QuadraScan XY Vector Star Wars Craft (Standard TIE, Vader TIE Advanced x1, X-Wing)
                     var csBz = Math.max(7.0, obScale * 1.15)
-                    if ((ob & 1) === 0) {
-                        var xwFusBz = [
-                            [ 0.0,  -0.14,  0.85],
-                            [ 0.18, -0.10, -0.15],
-                            [ 0.14,  0.10, -0.68],
-                            [-0.14,  0.10, -0.68],
-                            [-0.18, -0.10, -0.15],
-                            [ 0.0,  -0.26, -0.22]
-                        ]
-                        var xpBz = []
-                        for (var xfiB = 0; xfiB < xwFusBz.length; xfiB++) {
-                            xpBz.push(project3DPoint(xwFusBz[xfiB][0], xwFusBz[xfiB][1], xwFusBz[xfiB][2], rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6))
-                        }
-                        var xEdgesBz = [0, 1,  1, 2,  2, 3,  3, 4,  4, 0,  0, 5,  5, 2,  5, 3,  1, 5,  4, 5]
-                        for (var xfeB = 0; xfeB < xEdgesBz.length; xfeB += 2) {
-                            ctx.moveTo(xpBz[xEdgesBz[xfeB]].x, xpBz[xEdgesBz[xfeB]].y)
-                            ctx.lineTo(xpBz[xEdgesBz[xfeB + 1]].x, xpBz[xEdgesBz[xfeB + 1]].y)
-                        }
-                        for (var wxSB = -1; wxSB <= 1; wxSB += 2) {
-                            for (var wySB = -1; wySB <= 1; wySB += 2) {
-                                var rFB = project3DPoint(wxSB * 0.15, wySB * 0.06, -0.18, rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
-                                var rRB = project3DPoint(wxSB * 0.14, wySB * 0.08, -0.58, rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
-                                var tFB = project3DPoint(wxSB * 0.96, wySB * 0.44, -0.14, rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
-                                var tRB = project3DPoint(wxSB * 0.96, wySB * 0.52, -0.48, rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
-                                var cTB = project3DPoint(wxSB * 0.96, wySB * 0.44,  0.48, rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
-                                ctx.moveTo(rFB.x, rFB.y); ctx.lineTo(tFB.x, tFB.y); ctx.lineTo(tRB.x, tRB.y); ctx.lineTo(rRB.x, rRB.y); ctx.closePath()
-                                ctx.moveTo(tRB.x, tRB.y); ctx.lineTo(cTB.x, cTB.y)
-                            }
-                        }
-                    } else {
-                        var ballRBz = 0.28
-                        for (var biBz = 0; biBz <= 8; biBz++) {
-                            var baBz = (biBz / 8.0) * Math.PI * 2
-                            var bpBz = project3DPoint(Math.cos(baBz) * ballRBz, Math.sin(baBz) * ballRBz, 0.08, rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
-                            if (biBz === 0) ctx.moveTo(bpBz.x, bpBz.y)
-                            else ctx.lineTo(bpBz.x, bpBz.y)
-                        }
-                        var pL0B = project3DPoint(-ballRBz, 0, 0, rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
-                        var pL1B = project3DPoint(-0.74,    0, 0, rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
-                        var pR0B = project3DPoint( ballRBz, 0, 0, rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
-                        var pR1B = project3DPoint( 0.74,    0, 0, rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
-                        ctx.moveTo(pL0B.x, pL0B.y); ctx.lineTo(pL1B.x, pL1B.y)
-                        ctx.moveTo(pR0B.x, pR0B.y); ctx.lineTo(pR1B.x, pR1B.y)
-                        for (var tSideB = -1; tSideB <= 1; tSideB += 2) {
-                            var wPtsBz = [
-                                [tSideB * 0.56, -0.68,  0.42], [tSideB * 0.76, -0.28,  0.48],
-                                [tSideB * 0.76,  0.28,  0.48], [tSideB * 0.56,  0.68,  0.42],
-                                [tSideB * 0.56,  0.68, -0.42], [tSideB * 0.76,  0.28, -0.48],
-                                [tSideB * 0.76, -0.28, -0.48], [tSideB * 0.56, -0.68, -0.42]
-                            ]
-                            for (var wpiB = 0; wpiB < wPtsBz.length; wpiB++) {
-                                var wpPB = project3DPoint(wPtsBz[wpiB][0], wPtsBz[wpiB][1], wPtsBz[wpiB][2], rx * 0.6, ry, rz * 0.6, obX, hoverY, csBz, 3.6)
-                                if (wpiB === 0) ctx.moveTo(wpPB.x, wpPB.y)
-                                else ctx.lineTo(wpPB.x, wpPB.y)
-                            }
-                            ctx.closePath()
-                        }
-                    }
-                } else if (activeShapeStyle === 2) {
-                    // Style 2: 3D TRON Recognizers marching across the Battlezone grid
+                    append3DStarWarsFighter(ctx, ob % 3, obX, hoverY, csBz, rx * 0.6, ry, rz * 0.6)
+                } else if (shapesOn && activeShapeStyle === 2) {
+                    // Style 2: 3D TRON Recognizers marching & flying across the Battlezone grid
                     var rsBz = Math.max(8.0, obScale * 1.15)
                     var recBoxes = [
                         [-0.48, -0.88, -0.22,  0.48, -0.72, 0.22],
@@ -1700,8 +1856,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                             ctx.lineTo(bpRec[bEdgesBz[bei + 1]].x, bpRec[bEdgesBz[bei + 1]].y)
                         }
                     }
-                } else if (activeShapeStyle === 3) {
-                    // Style 3: 3D Sacred Polyhedra (Dual-Ring 3D Hexagonal/Octagonal Prism Monoliths + Pyramids + Cubes on the terrain)
+                } else if (!shapesOn || activeShapeStyle === 0 || activeShapeStyle === 3) {
+                    // Style 0/3 or Default Battlezone Obstacles: 3D Sacred Polyhedra (Pyramids, Monolith Cubes & Octahedra/Prisms)
                     if (ob % 3 === 1) {
                         var pyrV = [
                             [-1.0,  0.75, -1.0],
@@ -1754,7 +1910,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                         }
                     }
                 } else if (activeShapeStyle === 4) {
-                    // Style 4: 3D Merkaba Starbursts (Dual-Apex 3D Star Tetrahedra hovering over the terrain)
+                    // Style 4: 3D Merkaba Starbursts (Dual-Apex 3D Star Tetrahedra hovering & flying over the terrain)
                     var pts2Bz = 12
                     var starRingBz = []
                     for (var svB = 0; svB < pts2Bz; svB++) {
@@ -1773,7 +1929,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                         ctx.moveTo(starRingBz[sv2B].x, starRingBz[sv2B].y); ctx.lineTo(apexBB.x, apexBB.y)
                     }
                 } else {
-                    // Style 5: 3D Sonic Boom Rings (3D Gyroscopic Harmonic Portal Rings across the landscape)
+                    // Style 5: 3D Sonic Boom Rings (3D Gyroscopic Harmonic Portal Rings across the landscape & sky)
                     var ringSegsBz = 24
                     for (var rs2B = 0; rs2B <= ringSegsBz; rs2B++) {
                         var ang1B = (rs2B / ringSegsBz) * Math.PI * 2
@@ -1788,10 +1944,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             }
 
             // 4. 3D Wireframe 1980 Atari Battlezone Tanks Rolling on the Landscape + Cannon Shells!
-            //    When Shapes is OFF ("if none selected just use tanks") or Shapes Style 0 ("Battlezone Tanks"), only 3D wireframe tanks populate the landscape, scaled by `density`!
-            var tankCount = (!shapesOn || activeShapeStyle === 0)
-                ? Math.max(2, Math.min(12, Math.round(5 * density)))
-                : 0
+            var tankCount = Math.max(2, Math.min(10, Math.round(4 * density)))
             var shellMuzzles = []
             for (var tk = 0; tk < tankCount; tk++) {
                 var tkProg = ((((tk / tankCount) + worldScroll + 0.12) % 1.0) + 1.0) % 1.0
@@ -1865,18 +2018,17 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             }
             ctx.restore()
         } else if (l1Mode === 5) {
-            // Mode 5: 1983 Atari Star Wars 3D Vector Death Star Trench Run!
-            // Features:
-            //   1. Single-plane left & right vertical trench walls (NOT 3D cuboids — zero outer lip rails or cuboid tower blocks!)
-            //   2. Opens wide to the full horizontal limits of the screen (`halfWNear = w * 0.54`, reaching past `±w * 0.50`)
-            //   3. Smooth vertical altitude motion (`camAlt`) diving down to the trench floor and climbing up through the tunnel
-            //   4. Horizontal blockades spanning across the tunnel (`xL` to `xR`) at upper, middle & lower vertical levels, scaled by `density`
+            // Mode 5: 1983 Atari Star Wars Color-QuadraScan XY Vector Death Star Trench Run (Open Viewport, Zero Cockpit)
+            //   - Zero solid polygon fills on trench walls, floor, or catwalk blockades (100% transparent wireframe strokes)
+            //   - Strict 8-Colour RGB QuadraScan Vector Palette (#FFFF11 Yellow, #00FFFF Cyan, #11FF11 Green, #FF1111 Red, #FF00FF Magenta, #FFFFFF White)
+            //   - Single-wall left & right vertical trench walls opening wide to screen limits (±halfWNear = ±w * 0.54)
+            //   - Smooth vertical altitude motion (`camAlt`) weaving under and over 3D wireframe girder catwalk blockades
+            //   - Trench rim 3D wireframe box gun turrets, rotating 8-pointed star plasma fireballs, Thermal Exhaust Port & CRT Vertex Bloom dots
             ctx.save()
             ctx.globalCompositeOperation = "source-over"
 
             var bankAngle = Math.sin(driftT * 0.48) * 0.06
             var trenchVX = Math.sin(driftT * 0.42) * w * 0.06
-            // Vertical camera motion weaving smoothly up and down through the vertical depth of the tunnel
             var camAlt = clamp(
                 Math.sin(l1T * 0.82 + driftT * 0.35) * 0.60
                 + Math.cos(l1T * 0.41 - driftT * 0.28) * 0.22
@@ -1888,7 +2040,6 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             ctx.translate(cx, cy)
             ctx.rotate(bankAngle)
 
-            // Single-wall trench opening all the way to the left, right, top, and bottom limits of the screen
             var halfWFar = w * 0.032
             var halfWNear = w * 0.54
             var halfHFar = h * 0.068
@@ -1906,44 +2057,18 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             var tFlow = l1T * 1.95
             var tScroll = ((tFlow % 1.0) + 1.0) % 1.0
             var baseWorldSlice = Math.floor(tFlow)
+            var visAlpha = 1.0 - dim
+            var strokeW = 1.7 + state.bass * 0.9
 
-            // 1. Alternating illuminated single-wall & floor bay panels (back-to-front)
-            ctx.fillStyle = colourWithAlpha(palette[2 % palette.length], (0.08 + state.bass * 0.10) * (1.0 - dim) * (gpuOn ? 0.5 : 1.0))
+            var blockades = []
+            var rimTurrets = []
+            var bloomDots = []
+
+            // 1. Yellow (#FFFF11) Single-Wall Longitudinal Rails & Scrolling Vertical Wall Panels (Left & Right Walls)
+            ctx.strokeStyle = colourWithAlpha("#FFFF11", (0.82 + state.bass * 0.18) * visAlpha)
+            ctx.lineWidth = strokeW
             ctx.beginPath()
-            for (var sIdx = 0; sIdx < sliceCount - 1; sIdx++) {
-                var u0 = (sIdx + tScroll) / sliceCount
-                var u1 = (sIdx + 1 + tScroll) / sliceCount
-                var p0 = Math.pow(u0, 1.85)
-                var p1 = Math.pow(u1, 1.85)
-                var vx0 = trenchVX * (1.0 - p0)
-                var vx1 = trenchVX * (1.0 - p1)
-                var xL0 = vx0 - lerp(halfWFar, halfWNear, p0), xR0 = vx0 + lerp(halfWFar, halfWNear, p0)
-                var xL1 = vx1 - lerp(halfWFar, halfWNear, p1), xR1 = vx1 + lerp(halfWFar, halfWNear, p1)
-                var yT0 = lerp(yTFar, yTNear, p0), yB0 = lerp(yBFar, yBNear, p0)
-                var yT1 = lerp(yTFar, yTNear, p1), yB1 = lerp(yBFar, yBNear, p1)
-
-                var worldS = baseWorldSlice - sIdx
-                if ((worldS & 1) === 0) {
-                    // Single left & right wall bay panels
-                    var ym0a = lerp(yT0, yB0, 0.25), ym0b = lerp(yT0, yB0, 0.75)
-                    var ym1a = lerp(yT1, yB1, 0.25), ym1b = lerp(yT1, yB1, 0.75)
-                    ctx.moveTo(xL0, ym0a); ctx.lineTo(xL1, ym1a); ctx.lineTo(xL1, ym1b); ctx.lineTo(xL0, ym0b); ctx.closePath()
-                    ctx.moveTo(xR0, ym0a); ctx.lineTo(xR1, ym1a); ctx.lineTo(xR1, ym1b); ctx.lineTo(xR0, ym0b); ctx.closePath()
-                } else {
-                    // Trench floor bay panel
-                    var xfL0 = lerp(xL0, xR0, 0.20), xfR0 = lerp(xL0, xR0, 0.80)
-                    var xfL1 = lerp(xL1, xR1, 0.20), xfR1 = lerp(xL1, xR1, 0.80)
-                    ctx.moveTo(xfL0, yB0); ctx.lineTo(xfR0, yB0); ctx.lineTo(xfR1, yB1); ctx.lineTo(xfL1, yB1); ctx.closePath()
-                }
-            }
-            ctx.fill()
-
-            // 2. Clean Single-Wall Longitudinal Perspective Rails (Left Wall, Right Wall, and Trench Floor)
-            //    No outer cuboid rim rails — purely a single left wall plane, a single right wall plane, and floor lanes!
-            ctx.strokeStyle = colourWithAlpha(palette[0 % palette.length], (0.68 + state.bass * 0.30) * (1.0 - dim))
-            ctx.lineWidth = 1.8 + state.bass * 1.4
-            ctx.beginPath()
-            for (var wl = 0; wl <= 6; wl++) {
+            for (var wl = 1; wl <= 6; wl++) {
                 var wf = wl / 6.0
                 var yFarRail = lerp(yTFar, yBFar, wf)
                 var yNearRail = lerp(yTNear, yBNear, wf)
@@ -1952,19 +2077,6 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.moveTo(trenchVX + halfWFar, yFarRail)
                 ctx.lineTo(halfWNear, yNearRail)
             }
-            for (var fl = 1; fl <= 3; fl++) {
-                var ff = fl / 4.0
-                ctx.moveTo(trenchVX + lerp(-halfWFar, halfWFar, ff), yBFar)
-                ctx.lineTo(lerp(-halfWNear, halfWNear, ff), yBNear)
-            }
-            ctx.stroke()
-
-            // 3. Scrolling Single-Wall Cross-Sectional U-Ribs & Horizontal Blockades Across the Tunnel
-            var blockades = []
-            ctx.strokeStyle = colourWithAlpha(palette[1 % palette.length], (0.76 + state.high * 0.24) * (1.0 - dim))
-            ctx.lineWidth = 1.8 + state.beatPulse * 1.1
-            ctx.beginPath()
-
             for (var sf = 0; sf < sliceCount; sf++) {
                 var uS = (sf + tScroll) / sliceCount
                 var pS = Math.pow(uS, 1.85)
@@ -1974,62 +2086,227 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 var yT = lerp(yTFar, yTNear, pS)
                 var yB = lerp(yBFar, yBNear, pS)
 
-                // Pure single-wall U-frame rib (left wall vertical rib -> floor horizontal rib -> right wall vertical rib)
-                ctx.moveTo(xL, yT)
-                ctx.lineTo(xL, yB)
-                ctx.lineTo(xR, yB)
-                ctx.lineTo(xR, yT)
+                // Left & right vertical wall rib lines
+                ctx.moveTo(xL, yT); ctx.lineTo(xL, yB)
+                ctx.moveTo(xR, yT); ctx.lineTo(xR, yB)
 
-                var wSlice = baseWorldSlice - sf
-                if (((wSlice % blockadeStride) + blockadeStride) % blockadeStride === 0 && uS > 0.10) {
-                    var blkIdx = Math.floor(wSlice / blockadeStride)
-                    var blkSlot = ((blkIdx % 3) + 3) % 3
-                    // Alternate horizontal blockades between upper, mid, and lower tunnel heights
-                    var bFrac0 = blkSlot === 0 ? 0.16 : (blkSlot === 1 ? 0.42 : 0.66)
-                    var bFrac1 = blkSlot === 0 ? 0.34 : (blkSlot === 1 ? 0.58 : 0.84)
-                    blockades.push({
-                        xL: xL,
-                        xR: xR,
-                        y0: lerp(yT, yB, bFrac0),
-                        y1: lerp(yT, yB, bFrac1),
-                        p: pS,
-                        slot: blkSlot
-                    })
+                if (sf + 1 < sliceCount) {
+                    var uNext = (sf + 1 + tScroll) / sliceCount
+                    var pNext = Math.pow(uNext, 1.85)
+                    var vxNext = trenchVX * (1.0 - pNext)
+                    var xLNext = vxNext - lerp(halfWFar, halfWNear, pNext)
+                    var xRNext = vxNext + lerp(halfWFar, halfWNear, pNext)
+                    var yTNext = lerp(yTFar, yTNear, pNext)
+                    var yBNext = lerp(yBFar, yBNear, pNext)
+
+                    var wSlice = baseWorldSlice - sf
+                    // Inner rectangular detail panels on the single left & right trench walls (pure wireframe, zero fill)
+                    if ((wSlice & 1) === 0) {
+                        var yp0a = lerp(yT, yB, 0.20), yp0b = lerp(yT, yB, 0.80)
+                        var yp1a = lerp(yTNext, yBNext, 0.20), yp1b = lerp(yTNext, yBNext, 0.80)
+                        ctx.moveTo(xL, yp0a); ctx.lineTo(xLNext, yp1a); ctx.lineTo(xLNext, yp1b); ctx.lineTo(xL, yp0b); ctx.closePath()
+                        ctx.moveTo(xR, yp0a); ctx.lineTo(xRNext, yp1a); ctx.lineTo(xRNext, yp1b); ctx.lineTo(xR, yp0b); ctx.closePath()
+                    }
+
+                    // Collect 3D wireframe girder catwalk blockades (with front face at pS and recessed 3D back face at pBack)
+                    if (((wSlice % blockadeStride) + blockadeStride) % blockadeStride === 0 && uS > 0.10) {
+                        var blkIdx = Math.floor(wSlice / blockadeStride)
+                        var blkSlot = ((blkIdx % 3) + 3) % 3
+                        var bFrac0 = blkSlot === 0 ? 0.16 : (blkSlot === 1 ? 0.42 : 0.66)
+                        var bFrac1 = blkSlot === 0 ? 0.32 : (blkSlot === 1 ? 0.58 : 0.82)
+                        var pBack = lerp(pS, pNext, 0.34)
+                        var vxBack = trenchVX * (1.0 - pBack)
+                        var xLBack = vxBack - lerp(halfWFar, halfWNear, pBack)
+                        var xRBack = vxBack + lerp(halfWFar, halfWNear, pBack)
+                        var yTBack = lerp(yTFar, yTNear, pBack)
+                        var yBBack = lerp(yBFar, yBNear, pBack)
+                        blockades.push({
+                            xL: xL,
+                            xR: xR,
+                            y0: lerp(yT, yB, bFrac0),
+                            y1: lerp(yT, yB, bFrac1),
+                            xLBack: xLBack,
+                            xRBack: xRBack,
+                            y0Back: lerp(yTBack, yBBack, bFrac0),
+                            y1Back: lerp(yTBack, yBBack, bFrac1),
+                            p: pS,
+                            slot: blkSlot
+                        })
+                    }
+
+                    // Collect top-ledge 3D wireframe gun turrets along the left & right trench rims
+                    if ((wSlice & 1) === 1 && uS > 0.16 && uS < 0.72) {
+                        var pTurRear = lerp(pS, pNext, 0.42)
+                        var vxTurRear = trenchVX * (1.0 - pTurRear)
+                        var xLTurRear = vxTurRear - lerp(halfWFar, halfWNear, pTurRear)
+                        var xRTurRear = vxTurRear + lerp(halfWFar, halfWNear, pTurRear)
+                        var yTTurRear = lerp(yTFar, yTNear, pTurRear)
+                        rimTurrets.push({
+                            xL0: xL, xR0: xR, yT0: yT,
+                            xL1: xLTurRear, xR1: xRTurRear, yT1: yTTurRear,
+                            p: pS, wSlice: wSlice
+                        })
+                    }
+                }
+
+                if (uS > 0.18 && uS < 0.80) {
+                    bloomDots.push({ x: xL, y: yT }, { x: xR, y: yT }, { x: xL, y: yB }, { x: xR, y: yB })
                 }
             }
             ctx.stroke()
 
-            // 4. Horizontal Blockades Spanning Across the Tunnel (`xL` to `xR`)
-            if (blockades.length > 0) {
-                // Translucent horizontal barrier fill across the tunnel width
-                ctx.fillStyle = colourWithAlpha(palette[4 % palette.length], (0.16 + state.bass * 0.14) * (1.0 - dim) * (gpuOn ? 0.65 : 1.0))
-                ctx.beginPath()
-                for (var bi = 0; bi < blockades.length; bi++) {
-                    var blkF = blockades[bi]
-                    ctx.rect(blkF.xL, blkF.y0, blkF.xR - blkF.xL, blkF.y1 - blkF.y0)
-                }
-                ctx.fill()
-
-                // Crisp vector horizontal blockade beams & internal X-truss bracing spanning left wall to right wall
-                ctx.strokeStyle = colourWithAlpha(palette[4 % palette.length], (0.88 + state.beatPulse * 0.12) * (1.0 - dim))
-                ctx.lineWidth = 2.0 + state.bass * 1.3
-                ctx.beginPath()
-                for (var bj = 0; bj < blockades.length; bj++) {
-                    var blk = blockades[bj]
-                    var yMid = (blk.y0 + blk.y1) * 0.5
-                    ctx.moveTo(blk.xL, blk.y0); ctx.lineTo(blk.xR, blk.y0)
-                    ctx.moveTo(blk.xL, blk.y1); ctx.lineTo(blk.xR, blk.y1)
-                    ctx.moveTo(blk.xL, yMid);   ctx.lineTo(blk.xR, yMid)
-                    var trussSegs = 6
-                    for (var ts = 0; ts < trussSegs; ts++) {
-                        var tx0 = lerp(blk.xL, blk.xR, ts / trussSegs)
-                        var tx1 = lerp(blk.xL, blk.xR, (ts + 1) / trussSegs)
-                        ctx.moveTo(tx0, blk.y0); ctx.lineTo(tx0, blk.y1)
-                        ctx.moveTo(tx0, blk.y0); ctx.lineTo(tx1, blk.y1)
-                    }
-                }
-                ctx.stroke()
+            // 2. Cyan (#00FFFF) Top Trench Rim Lip Edges, Catwalk End-Caps & Rim Turret Wireframe Bases
+            ctx.strokeStyle = colourWithAlpha("#00FFFF", (0.90 + state.high * 0.10) * visAlpha)
+            ctx.lineWidth = strokeW * 1.15
+            ctx.beginPath()
+            // Distinct cyan top lip/rim line on left and right walls
+            ctx.moveTo(trenchVX - halfWFar, yTFar); ctx.lineTo(-halfWNear, yTNear)
+            ctx.moveTo(trenchVX + halfWFar, yTFar); ctx.lineTo(halfWNear, yTNear)
+            // Catwalk wall-attachment end-caps & 3D depth edges
+            for (var bc = 0; bc < blockades.length; bc++) {
+                var blkC = blockades[bc]
+                ctx.moveTo(blkC.xL, blkC.y0); ctx.lineTo(blkC.xLBack, blkC.y0Back)
+                ctx.moveTo(blkC.xL, blkC.y1); ctx.lineTo(blkC.xLBack, blkC.y1Back)
+                ctx.moveTo(blkC.xR, blkC.y0); ctx.lineTo(blkC.xRBack, blkC.y0Back)
+                ctx.moveTo(blkC.xR, blkC.y1); ctx.lineTo(blkC.xRBack, blkC.y1Back)
             }
+            // 3D wireframe box bases of the trench rim gun turrets (mounted along the top ledges)
+            for (var rt = 0; rt < rimTurrets.length; rt++) {
+                var tur = rimTurrets[rt]
+                var tw0 = (tur.xR0 - tur.xL0) * 0.085
+                var tw1 = (tur.xR1 - tur.xL1) * 0.085
+                var th0 = tw0 * 0.85
+                var th1 = tw1 * 0.85
+                // Left rim 3D box turret base (protruding inward onto the top ledge so it stays strictly inside ±halfWNear)
+                var lx0 = tur.xL0, lx0In = tur.xL0 + tw0, ly0 = tur.yT0, ly0Top = tur.yT0 - th0
+                var lx1 = tur.xL1, lx1In = tur.xL1 + tw1, ly1 = tur.yT1, ly1Top = tur.yT1 - th1
+                ctx.moveTo(lx0, ly0);    ctx.lineTo(lx0In, ly0);    ctx.lineTo(lx0In, ly0Top); ctx.lineTo(lx0, ly0Top); ctx.closePath()
+                ctx.moveTo(lx1, ly1);    ctx.lineTo(lx1In, ly1);    ctx.lineTo(lx1In, ly1Top); ctx.lineTo(lx1, ly1Top); ctx.closePath()
+                ctx.moveTo(lx0, ly0Top); ctx.lineTo(lx1, ly1Top);   ctx.moveTo(lx0In, ly0Top); ctx.lineTo(lx1In, ly1Top)
+                // Right rim 3D box turret base
+                var rx0 = tur.xR0, rx0In = tur.xR0 - tw0, ry0 = tur.yT0, ry0Top = tur.yT0 - th0
+                var rx1 = tur.xR1, rx1In = tur.xR1 - tw1, ry1 = tur.yT1, ry1Top = tur.yT1 - th1
+                ctx.moveTo(rx0, ry0);    ctx.lineTo(rx0In, ry0);    ctx.lineTo(rx0In, ry0Top); ctx.lineTo(rx0, ry0Top); ctx.closePath()
+                ctx.moveTo(rx1, ry1);    ctx.lineTo(rx1In, ry1);    ctx.lineTo(rx1In, ry1Top); ctx.lineTo(rx1, ry1Top); ctx.closePath()
+                ctx.moveTo(rx0, ry0Top); ctx.lineTo(rx1, ry1Top);   ctx.moveTo(rx0In, ry0Top); ctx.lineTo(rx1In, ry1Top)
+            }
+            ctx.stroke()
+
+            // 3. Green (#11FF11) Trench Floor Grid & Distant Thermal Exhaust Port Trench Extension Frame
+            ctx.strokeStyle = colourWithAlpha("#11FF11", (0.84 + state.bass * 0.16) * visAlpha)
+            ctx.lineWidth = strokeW
+            ctx.beginPath()
+            // Longitudinal trench floor grid lanes
+            for (var fl = 1; fl <= 3; fl++) {
+                var ff = fl / 4.0
+                ctx.moveTo(trenchVX + lerp(-halfWFar, halfWFar, ff), yBFar)
+                ctx.lineTo(lerp(-halfWNear, halfWNear, ff), yBNear)
+            }
+            // Scrolling horizontal floor cross-lines rushing underneath the player
+            for (var sfFloor = 0; sfFloor < sliceCount; sfFloor++) {
+                var uF = (sfFloor + tScroll) / sliceCount
+                var pF = Math.pow(uF, 1.85)
+                var vxF = trenchVX * (1.0 - pF)
+                var xLF = vxF - lerp(halfWFar, halfWNear, pF)
+                var xRF = vxF + lerp(halfWFar, halfWNear, pF)
+                var yBF = lerp(yBFar, yBNear, pF)
+                ctx.moveTo(xLF, yBF); ctx.lineTo(xRF, yBF)
+            }
+            // Far back-wall terminator & recessed square wireframe frame of the Thermal Exhaust Port
+            ctx.moveTo(trenchVX - halfWFar, yTFar); ctx.lineTo(trenchVX + halfWFar, yTFar)
+            ctx.lineTo(trenchVX + halfWFar, yBFar); ctx.lineTo(trenchVX - halfWFar, yBFar); ctx.closePath()
+            var portFrameW = halfWFar * 0.56
+            var portFrameY = lerp(yTFar, yBFar, 0.68)
+            ctx.moveTo(trenchVX - portFrameW, portFrameY - portFrameW); ctx.lineTo(trenchVX + portFrameW, portFrameY - portFrameW)
+            ctx.lineTo(trenchVX + portFrameW, portFrameY + portFrameW); ctx.lineTo(trenchVX - portFrameW, portFrameY + portFrameW); ctx.closePath()
+            ctx.stroke()
+
+            // 4. Red (#FF1111) 3D Wireframe Girder Catwalks (Horizontal Blockades), Turret Gun Tops & Rotating 8-Pointed Star Fireballs
+            ctx.strokeStyle = colourWithAlpha("#FF1111", (0.90 + state.beatPulse * 0.10) * visAlpha)
+            ctx.lineWidth = strokeW * 1.15
+            ctx.beginPath()
+            for (var bj = 0; bj < blockades.length; bj++) {
+                var blk = blockades[bj]
+                // Front & back 3D cuboid wireframe faces of the horizontal catwalk girder (pure stroke, w > h!)
+                ctx.rect(blk.xL, blk.y0, blk.xR - blk.xL, blk.y1 - blk.y0)
+                ctx.rect(blk.xLBack, blk.y0Back, blk.xRBack - blk.xLBack, blk.y1Back - blk.y0Back)
+                // Internal 3D vector X-bracing struts across the girder bays
+                var trussSegs = 6
+                for (var ts = 0; ts < trussSegs; ts++) {
+                    var f0 = ts / trussSegs
+                    var f1 = (ts + 1) / trussSegs
+                    var tx0 = lerp(blk.xL, blk.xR, f0)
+                    var tx1 = lerp(blk.xL, blk.xR, f1)
+                    var tx0B = lerp(blk.xLBack, blk.xRBack, f0)
+                    ctx.moveTo(tx0, blk.y0); ctx.lineTo(tx0, blk.y1)
+                    ctx.moveTo(tx0, blk.y0); ctx.lineTo(tx1, blk.y1)
+                    ctx.moveTo(tx1, blk.y0); ctx.lineTo(tx0, blk.y1)
+                    ctx.moveTo(tx0, blk.y0); ctx.lineTo(tx0B, blk.y0Back)
+                }
+                if (blk.p < 0.78) {
+                    bloomDots.push(
+                        { x: blk.xL, y: blk.y0 }, { x: blk.xR, y: blk.y0 },
+                        { x: blk.xL, y: blk.y1 }, { x: blk.xR, y: blk.y1 }
+                    )
+                }
+            }
+            // Angled gun turret tops & laser barrels on the trench rim turrets
+            for (var rt2 = 0; rt2 < rimTurrets.length; rt2++) {
+                var tur2 = rimTurrets[rt2]
+                var tw2 = (tur2.xR0 - tur2.xL0) * 0.085
+                var th2 = tw2 * 0.85
+                var lGunX = tur2.xL0 + tw2 * 0.5, lGunY = tur2.yT0 - th2
+                var rGunX = tur2.xR0 - tw2 * 0.5, rGunY = tur2.yT0 - th2
+                ctx.moveTo(lGunX, lGunY); ctx.lineTo(lGunX + tw2 * 0.75, lGunY + th2 * 0.45)
+                ctx.moveTo(rGunX, rGunY); ctx.lineTo(rGunX - tw2 * 0.75, rGunY + th2 * 0.45)
+                bloomDots.push({ x: lGunX, y: lGunY }, { x: rGunX, y: rGunY })
+            }
+            // Incoming rotating 8-pointed star/asterisk wireframe plasma fireballs (* in 3D)
+            var fbCount = Math.max(1, Math.min(4, Math.round(2 * density)))
+            for (var fbi = 0; fbi < fbCount; fbi++) {
+                var fbU = (((l1T * 0.72 + fbi * (1.0 / fbCount)) % 1.0) + 1.0) % 1.0
+                if (fbU < 0.12 || fbU > 0.88) continue
+                var fbP = Math.pow(fbU, 1.85)
+                var fbSide = (fbi % 2 === 0) ? -1.0 : 1.0
+                var fbX = trenchVX * (1.0 - fbP) + fbSide * lerp(halfWFar, halfWNear, fbP) * 0.34
+                var fbY = lerp(lerp(yTFar, yBFar, 0.45), lerp(yTNear, yBNear, 0.48), fbP)
+                var fbR = Math.max(3.5, (4.0 + fbP * minDim * 0.065) * (1.0 + state.beatPulse * 0.25))
+                var fbRot = l1T * 6.5 + fbi * 1.1
+                for (var spk = 0; spk < 8; spk++) {
+                    var spkA = fbRot + (spk / 8.0) * Math.PI * 2
+                    var spkNext = fbRot + (((spk + 3) % 8) / 8.0) * Math.PI * 2
+                    ctx.moveTo(fbX, fbY)
+                    ctx.lineTo(fbX + Math.cos(spkA) * fbR, fbY + Math.sin(spkA) * fbR)
+                    ctx.moveTo(fbX + Math.cos(spkA) * fbR * 0.82, fbY + Math.sin(spkA) * fbR * 0.82)
+                    ctx.lineTo(fbX + Math.cos(spkNext) * fbR * 0.42, fbY + Math.sin(spkNext) * fbR * 0.42)
+                }
+                bloomDots.push({ x: fbX, y: fbY })
+            }
+            ctx.stroke()
+
+            // 5. Magenta (#FF00FF) & White (#FFFFFF) Flashing Thermal Exhaust Port Octagon + Proton Torpedo Star-Bursts
+            ctx.strokeStyle = colourWithAlpha((Math.floor(l1T * 10.0) & 1) === 0 ? "#FF00FF" : "#FFFFFF", (0.92 + state.beatPulse * 0.08) * visAlpha)
+            ctx.lineWidth = strokeW * 1.1
+            ctx.beginPath()
+            var octR = portFrameW * (0.62 + state.beatPulse * 0.18)
+            for (var oi = 0; oi <= 8; oi++) {
+                var oa = (oi / 8.0) * Math.PI * 2 + (Math.PI / 8.0)
+                var ox = trenchVX + Math.cos(oa) * octR
+                var oy = portFrameY + Math.sin(oa) * octR
+                if (oi === 0) ctx.moveTo(ox, oy); else ctx.lineTo(ox, oy)
+            }
+            ctx.stroke()
+
+            // 6. CRT Electron-Beam Vertex Bloom ("Vector Dots" at line intersections + space stars above trench rim)
+            ctx.fillStyle = colourWithAlpha("#FFFFFF", (0.88 + state.high * 0.12) * visAlpha)
+            ctx.beginPath()
+            var dotR = 1.6 + state.beatPulse * 0.7
+            for (var di = 0; di < bloomDots.length; di++) {
+                var bd = bloomDots[di]
+                ctx.moveTo(bd.x + dotR, bd.y)
+                ctx.arc(bd.x, bd.y, dotR, 0, Math.PI * 2)
+            }
+            ctx.fill()
 
             ctx.restore()
         } else if (l1Mode === 6) {
@@ -2150,7 +2427,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.stroke()
             }
         } else if (eqStyle === 1) {
-            // Style 1: LED Bars & Floating Peak-Hold Indicators
+            // Style 1: LED Bars & Floating Peak-Hold Indicators (clean floating bars + peak caps without a dividing horizon line)
             var barCount = 32
             var slotW = w / barCount
             var barW = slotW * 0.72
@@ -2166,10 +2443,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 }
                 ctx.fill()
             }
-            // Floating Peak-Hold caps + horizon baseline stroke
+            // Floating Peak-Hold caps
             ctx.fillStyle = colourWithAlpha(palette[7 % palette.length], 0.92 * (1.0 - dim))
-            ctx.strokeStyle = colourWithAlpha(palette[0], 0.55 * (1.0 - dim))
-            ctx.lineWidth = 1.4
             ctx.beginPath()
             for (var pi = 0; pi < barCount; pi++) {
                 var idxP = mapEqBandIndex(pi, barCount, eqLayout)
@@ -2179,12 +2454,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.rect(pX, pY, barW, 3.0)
             }
             ctx.fill()
-            ctx.beginPath()
-            ctx.moveTo(0, horizonY)
-            ctx.lineTo(w, horizonY)
-            ctx.stroke()
         } else if (eqStyle === 2) {
-            // Style 2: Mirrored Horizon Reflection (Upward bars + downward translucent water reflection)
+            // Style 2: Mirrored Horizon Reflection (Upward bars + downward translucent water reflection without a dividing horizon line)
             var mBars = 40
             var mSlot = w / mBars
             var mBarW = mSlot * 0.74
@@ -2210,33 +2481,58 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 }
                 ctx.fill()
             }
-            ctx.strokeStyle = colourWithAlpha(palette[1], 0.62 * (1.0 - dim))
-            ctx.lineWidth = 1.5
-            ctx.beginPath()
-            ctx.moveTo(0, horizonY)
-            ctx.lineTo(w, horizonY)
-            ctx.stroke()
         } else if (eqStyle === 3) {
-            // Style 3: 3D Waterfall Spectrum Ridges marching down towards the user!
-            var histEq = state.waveHistory || []
-            var ridgeCount = Math.min(10, histEq.length)
-            for (var rg = ridgeCount - 1; rg >= 0; rg--) {
-                var snapEq = histEq[rg]
-                var rFrac = rg / Math.max(1, ridgeCount - 1)
-                var ridgeBaseY = lerp(horizonY, h * 0.92, Math.pow(1.0 - rFrac, 1.35))
-                var ridgeW = lerp(w * 0.42, w * 0.98, 1.0 - rFrac)
-                var leftXEq = vanishX * rFrac + (w - ridgeW) * 0.5 * (1.0 - rFrac)
-                ctx.fillStyle = colourWithAlpha(palette[(rg * 2 + 1) % palette.length], (0.14 - rFrac * 0.08) * (1.0 - dim))
-                ctx.strokeStyle = colourWithAlpha(palette[(rg * 2) % palette.length], (0.85 - rFrac * 0.58) * (1.0 - dim))
-                ctx.lineWidth = 2.4 - rFrac * 1.2
+            // Style 3: 3D Waterfall Ridges — Joy Division / Plexamp 3D Pulsar Spectrum Ridges
+            // Clean horizontal pulsar waveform ridges (`ctx.fill()` occlusion mask + crisp `ctx.stroke()` crest line)
+            // marching Towards Us (`l1Dir >= 0`), Away From Us (`l1Dir < 0`), or Breathing (`l1Dir === 0`)
+            // across the 3D horizon landscape using `state.eqRidgeHistory` + continuous fractional advection `zPhase`!
+            var ridgeHist = (state.eqRidgeHistory && state.eqRidgeHistory.length > 0) ? state.eqRidgeHistory : null
+            var ridgeCount = 16
+            var binCount3 = 36
+            var zPhase = (((l1T * 2.8) % 1.0) + 1.0) % 1.0
+
+            // Render back-to-front (from horizonY at depthSlot=0 down to foreground at depthSlot=ridgeCount-1)
+            for (var depthSlot = 0; depthSlot < ridgeCount; depthSlot++) {
+                var uDepth = clamp((depthSlot + zPhase) / ridgeCount, 0.01, 0.999)
+                // Map depthSlot to the historical frequency slice so ridges carry their recorded waveform as they travel in Z!
+                var histIdx = l1Dir >= 0
+                    ? Math.min((ridgeHist ? ridgeHist.length : 1) - 1, depthSlot)
+                    : Math.min((ridgeHist ? ridgeHist.length : 1) - 1, (ridgeCount - 1) - depthSlot)
+                var sliceObj = ridgeHist ? ridgeHist[histIdx] : null
+
+                // Perspective depth mapping (`z` from 3.4 at horizon to 0.45 in foreground, `persp = 1.0 / z`)
+                var zDist = lerp(3.4, 0.45, uDepth)
+                var persp = 1.0 / zDist
+                var perspNorm = clamp((persp - (1.0 / 3.4)) / ((1.0 / 0.45) - (1.0 / 3.4)), 0.0, 1.0)
+                var ridgeBaseY = horizonY + (h * 0.96 - horizonY) * perspNorm
+                var ridgeW = w * lerp(0.34, 1.16, Math.pow(perspNorm, 0.78))
+                var leftXEq = vanishX - ridgeW * 0.5
+                var edgeFade = Math.sin(uDepth * Math.PI)
+
+                var curCoords = []
+                for (var sb3 = 0; sb3 < binCount3; sb3++) {
+                    var uBin = sb3 / (binCount3 - 1)
+                    var bMapped3 = mapEqBandIndex(sb3, binCount3, eqLayout)
+                    var bin36Idx = Math.min(35, Math.floor((bMapped3 / 63.0) * 35))
+                    var rawVal = sliceObj && sliceObj.bins ? (sliceObj.bins[bin36Idx] || 0.05) : (state.smoothBands[bMapped3] || 0.05)
+                    // Pulsar/terrain envelope: prominent central sculpture + full-width stereo wings
+                    var pulsarEnv = 0.42 + 0.58 * Math.pow(Math.sin(uBin * Math.PI), 0.65)
+                    var ripple3D = 0.88 + 0.16 * Math.sin(uBin * 12.0 + (depthSlot - zPhase) * 0.7)
+                    var bv3 = rawVal * eqGain * pulsarEnv * ripple3D * (0.45 + 0.85 * perspNorm)
+                    var rx = leftXEq + uBin * ridgeW
+                    var ry = ridgeBaseY - bv3 * maxEqH * 0.74
+                    curCoords.push({ x: rx, y: ry })
+                }
+
+                // Occluding dark-tinted 3D terrain skirt + glowing neon frequency ridge crest (no cross-grid clutter!)
+                var ridgeCol = palette[(depthSlot + Math.floor((state.hueShift || 0) / 30)) % palette.length]
+                ctx.fillStyle = colourWithAlpha("#060812", (0.58 + 0.28 * perspNorm) * (1.0 - dim))
+                ctx.strokeStyle = colourWithAlpha(ridgeCol, clamp((0.35 + 0.65 * perspNorm) * (0.35 + 0.65 * edgeFade) * (1.0 - dim), 0.08, 1.0))
+                ctx.lineWidth = 1.2 + 1.8 * perspNorm
                 ctx.beginPath()
                 ctx.moveTo(leftXEq, ridgeBaseY)
-                for (var sb3 = 0; sb3 < 32; sb3++) {
-                    var bMapped = Math.floor(mapEqBandIndex(sb3, 32, eqLayout) / 2)
-                    var bv3 = (snapEq.bands[bMapped] || 0.05) * eqGain * (1.15 - rFrac * 0.45)
-                    var rx = leftXEq + (sb3 / 31.0) * ridgeW
-                    var ry = ridgeBaseY - bv3 * maxEqH * 0.65
-                    ctx.lineTo(rx, ry)
+                for (var ptIdx = 0; ptIdx < binCount3; ptIdx++) {
+                    ctx.lineTo(curCoords[ptIdx].x, curCoords[ptIdx].y)
                 }
                 ctx.lineTo(leftXEq + ridgeW, ridgeBaseY)
                 ctx.closePath()
@@ -2297,13 +2593,9 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.fill()
                 ctx.stroke()
             }
-        } else {
-            // Style 6: Horizon Spotlights — Professional Concert Moving-Head Sky-Tracker Rig
-            //   - True longitudinal atmospheric falloff (createLinearGradient dissolving to 0 alpha in the upper sky — zero flat cut-off!)
-            //   - Perpendicular cone geometry (nx = cos(tilt), ny = sin(tilt))
-            //   - 3 coaxial volumetric layers per fixture: (1) Outer Atmospheric Haze, (2) Main Collimated Beam, (3) White-Hot Xenon Core
-            //   - Symmetrical lighting-desk choreography (cathedral X-crossings, fan-outs & figure-8 ballyhoo sweeps) + 3-facet prism splits
-            //   - Downward stage floor spill, metallic moving-head yoke housings, horizontal anamorphic lens flares & aerial haze motes
+        } else if (eqStyle === 6) {
+            // Style 6: Horizon Spotlights — Pure Volumetric Concert Searchlight Cones & Hot Emitter Cores
+            // (No floating dust-mote squares, no dark fixture boxes, and no horizontal baseline bars!)
             var spotCount = 12
             var maxReach = Math.max(horizonY * 1.38, h * 0.96)
             var palShiftSpot = Math.floor((state.hueShift || 0) / 45)
@@ -2317,23 +2609,31 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 var spotCol = palette[(sp + palShiftSpot) % palette.length]
                 var coreCol = palette[(sp + 2 + palShiftSpot) % palette.length]
 
-                // Symmetrical concert wing choreography (paired left/right mirror wings)
-                var mirrorPair = sp < 6 ? sp : (11 - sp)
-                var wingSign = sp < 6 ? -1.0 : 1.0
-                var tilt = Math.sin(l1T * 0.55 + mirrorPair * 0.52) * wingSign * 0.44
-                         + Math.cos(l1T * 0.31 - sp * 0.40) * 0.18
-                         + (uSp - 0.5) * -0.22
+                // Independent, non-repeating 3-harmonic pseudo-random searchlight sweep per fixture
+                var f1 = 0.41 + ((sp * 7) % 11) * 0.093
+                var f2 = 0.27 + ((sp * 5 + 3) % 13) * 0.071
+                var f3 = 0.68 + ((sp * 11 + 1) % 9) * 0.117
+                var p1 = sp * 2.39996 // golden angle (~137.5°)
+                var p2 = sp * 4.18879 + 1.13
+                var p3 = sp * 1.71828 + 2.47
+                var tilt = Math.sin(l1T * f1 + p1) * 0.38
+                         + Math.cos(l1T * f2 - p2) * 0.26
+                         + Math.sin(l1T * f3 + p3 + v6 * 0.85) * 0.19
+                         + (uSp - 0.5) * -0.18
                 var dirX = Math.sin(tilt)
                 var dirY = -Math.cos(tilt)
                 // Perpendicular normal to beam axis so cone width is never skewed when tilted
                 var nx = Math.cos(tilt)
                 var ny = Math.sin(tilt)
 
+                // Beam width strongly linked to both frequency pitch (bass = wide floodlight, treble = tight laser pencil) and live band energy v6
+                var freqNorm = clamp(bIdx6 / 63.0, 0.0, 1.0)
+                var freqWidthMul = 1.75 - freqNorm * 1.25
                 var reach = maxReach * (0.76 + v6 * 0.44)
                 var topX = baseX + dirX * reach
                 var topY = horizonY + dirY * reach
-                var baseHalfW = w * 0.0045
-                var topHalfW = w * (0.024 + v6 * 0.036)
+                var baseHalfW = w * (0.0018 + v6 * 0.0048) * freqWidthMul
+                var topHalfW = w * (0.006 + Math.pow(v6, 1.15) * 0.064) * freqWidthMul
 
                 // 0. Soft downward Stage Floor Reflection Spill below horizonY
                 var spillLen = Math.min(h - horizonY, h * (0.06 + v6 * 0.06))
@@ -2419,8 +2719,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.closePath()
                 ctx.fill()
 
-                // 4. 3-Facet Internal Prism-Split Laser Shafts on active frequency peaks (v6 > 0.38)
-                if (v6 > 0.38) {
+                // 4. 3-Facet Internal Prism-Split Laser Shafts on active frequency peaks
+                if (v6 > 0.22) {
                     var prismSpread = 0.042 + v6 * 0.035
                     if (hasGrad) {
                         var shaftGrad = ctx.createLinearGradient(baseX, horizonY, coreTopX, coreTopY)
@@ -2442,52 +2742,470 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                     ctx.stroke()
                 }
 
-                // 5. Illuminated Aerial Dust / Haze Motes drifting inside the beam cone
-                ctx.fillStyle = colourWithAlpha("#ffffff", clamp((0.35 + v6 * 0.40) * (1.0 - dim), 0.0, 0.85))
+                // 5. Pure Hot Stage Emitter Core Orb (no housing boxes or horizontal lines)
+                ctx.fillStyle = colourWithAlpha("#ffffff", clamp((0.88 + v6 * 0.12) * (1.0 - dim), 0.0, 1.0))
                 ctx.beginPath()
-                for (var mIdx = 0; mIdx < 3; mIdx++) {
-                    var mProg = ((l1T * 0.18 + sp * 0.23 + mIdx * 0.31) % 0.82) + 0.06
-                    var mDist = reach * mProg
-                    var mSpread = (Math.sin(l1T * 1.3 + sp * 2.1 + mIdx * 4.0) * 0.65) * lerp(baseHalfW, topHalfW, mProg)
-                    var mx = baseX + dirX * mDist + nx * mSpread
-                    var my = horizonY + dirY * mDist + ny * mSpread
-                    var mr = (1.2 + v6 * 1.4) * (1.0 - mProg * 0.5)
-                    ctx.rect(mx - mr * 0.5, my - mr * 0.5, mr, mr)
-                }
+                ctx.arc(baseX, horizonY, 2.2 + v6 * 1.8, 0, Math.PI * 2)
                 ctx.fill()
             }
+        } else if (eqStyle === 7) {
+            // Style 7: 3D Sonic Orb — Floating, Tumbling 3D Geodesic Harmonic Polyhedron in 3D Space (`project3DPoint`)
+            // Depth-sorted 3D triangular/quad facets and smooth radial frequency lobes (zero `ctx.rect` squares!)
+            var orbCX = vanishX + Math.sin(driftT * 0.65) * w * 0.14
+            var orbCY = clamp(horizonY - minDim * 0.12 + Math.cos(driftT * 0.52) * h * 0.08, h * 0.24, h * 0.72)
+            var orbBaseScale = minDim * (0.22 + state.bassSmooth * 0.08)
+            var orbRx = l1T * 0.52 + Math.sin(driftT * 0.4) * 0.38
+            var orbRy = l1T * 0.76
+            var orbRz = Math.cos(l1T * 0.35) * 0.32
+            var latRings = 7
+            var lonSegs = 14
+            var orbGrid = []
+            var spineSegments = [[], [], [], []]
 
-            // 6. Moving-Head Fixture Yoke Housings, Collimator Lenses & Horizontal Anamorphic Lens-Flare Streaks
-            for (var spLamp = 0; spLamp < spotCount; spLamp++) {
-                var lx = ((spLamp + 0.5) / spotCount) * w
-                var bIdxL = mapEqBandIndex(spLamp, spotCount, eqLayout)
-                var vL = clamp(sampleEqBandValue(state, bIdxL, eqDamping, eqGain), 0.05, 1.65)
-                var lampCol = palette[(spLamp + palShiftSpot) % palette.length]
-                var yokeW = Math.max(8.0, w * 0.014)
-                var yokeH = Math.max(5.0, h * 0.012)
+            for (var rLat = 0; rLat < latRings; rLat++) {
+                var vLat = rLat / (latRings - 1)
+                var phi = (vLat - 0.5) * Math.PI * 0.88
+                var cosPhi = Math.cos(phi)
+                var sinPhi = Math.sin(phi)
+                var ringPts = []
 
-                // Dark metallic moving-head base pod
-                ctx.fillStyle = "#0a0d16"
-                ctx.strokeStyle = colourWithAlpha(lampCol, 0.55 * (1.0 - dim))
-                ctx.lineWidth = 1.1
+                for (var cLon = 0; cLon < lonSegs; cLon++) {
+                    var theta = (cLon / lonSegs) * Math.PI * 2.0
+                    var slotIdx = rLat * lonSegs + cLon
+                    var bIdx7 = mapEqBandIndex(slotIdx, latRings * lonSegs, eqLayout)
+                    var v7 = sampleEqBandValue(state, bIdx7, eqDamping, eqGain)
+
+                    var nx3 = cosPhi * Math.cos(theta)
+                    var ny3 = sinPhi
+                    var nz3 = cosPhi * Math.sin(theta)
+
+                    // Harmonic spherical lobe modulation + live band extrusion
+                    var lobeHarm = 1.0 + 0.18 * Math.sin(theta * 3.0 + l1T * 1.8) * Math.cos(phi * 2.0)
+                    var rInner3 = 0.42
+                    var rOuter3 = (0.54 + v7 * 0.82) * lobeHarm
+
+                    var pIn = project3DPoint(nx3 * rInner3, ny3 * rInner3, nz3 * rInner3, orbRx, orbRy, orbRz, orbCX, orbCY, orbBaseScale, 3.6)
+                    var pOut = project3DPoint(nx3 * rOuter3, ny3 * rOuter3, nz3 * rOuter3, orbRx, orbRy, orbRz, orbCX, orbCY, orbBaseScale, 3.6)
+                    pOut.v = v7
+
+                    ringPts.push(pOut)
+                    spineSegments[(rLat + cLon) & 3].push({ p0: pIn, p1: pOut })
+                }
+                orbGrid.push(ringPts)
+            }
+
+            // 1. Translucent 3D geodesic quad facets + glowing wireframe lattice on the deformed outer frequency surface
+            for (var rl = 0; rl < latRings - 1; rl++) {
+                var facetCol = palette[(rl * 2 + 1) % palette.length]
+                var wireCol = palette[(rl * 2) % palette.length]
+                ctx.fillStyle = colourWithAlpha(facetCol, (0.12 + state.energy * 0.14) * (1.0 - dim))
+                ctx.strokeStyle = colourWithAlpha(wireCol, (0.62 + state.bass * 0.30) * (1.0 - dim))
+                ctx.lineWidth = 1.35 + state.bass * 0.85
                 ctx.beginPath()
-                ctx.rect(lx - yokeW * 0.5, horizonY - yokeH * 0.35, yokeW, yokeH)
+                for (var cl = 0; cl < lonSegs; cl++) {
+                    var nextCl = (cl + 1) % lonSegs
+                    var pt00 = orbGrid[rl][cl]
+                    var pt01 = orbGrid[rl][nextCl]
+                    var pt11 = orbGrid[rl + 1][nextCl]
+                    var pt10 = orbGrid[rl + 1][cl]
+                    ctx.moveTo(pt00.x, pt00.y)
+                    ctx.lineTo(pt01.x, pt01.y)
+                    ctx.lineTo(pt11.x, pt11.y)
+                    ctx.lineTo(pt10.x, pt10.y)
+                    ctx.closePath()
+                }
+                ctx.fill()
+                ctx.stroke()
+            }
+
+            // 2. Radial 3D frequency spines extruding from the inner core to the deformed outer vertices
+            for (var sbk = 0; sbk < 4; sbk++) {
+                var segList = spineSegments[sbk]
+                ctx.strokeStyle = colourWithAlpha(palette[(sbk * 3 + 2) % palette.length], (0.76 + state.beatPulse * 0.24) * (1.0 - dim))
+                ctx.lineWidth = 1.7 + state.bass * 1.0
+                ctx.beginPath()
+                for (var si = 0; si < segList.length; si++) {
+                    ctx.moveTo(segList[si].p0.x, segList[si].p0.y)
+                    ctx.lineTo(segList[si].p1.x, segList[si].p1.y)
+                }
+                ctx.stroke()
+            }
+        } else if (eqStyle === 8) {
+            // Style 8: 3D Torus Reactor — Giant Tumbling 3D Toroidal Tokamak / Wormhole Ring in 3D Space (`project3DPoint`)
+            // Frequency bands wrap around the 3D major ring azimuth (`u = 0..2π`) while amplitude dynamically
+            // inflates and twists the minor tube radius (`r = rBase + eqVal * rAudio`), plus spiralling helical plasma coils!
+            var torCX = vanishX + Math.sin(driftT * 0.55) * w * 0.10
+            var torCY = clamp(horizonY - minDim * 0.08 + Math.cos(driftT * 0.48) * h * 0.06, h * 0.25, h * 0.72)
+            var torScale = minDim * (0.24 + state.bassSmooth * 0.06)
+            var torRx = 0.68 + Math.sin(l1T * 0.42) * 0.35
+            var torRy = l1T * 0.64
+            var torRz = Math.cos(l1T * 0.38) * 0.40
+            var majorSegs = 24
+            var minorSegs = 8
+            var Rmajor = 0.92
+            var torRings = []
+
+            for (var uIdx = 0; uIdx < majorSegs; uIdx++) {
+                var uAng = (uIdx / majorSegs) * Math.PI * 2.0
+                var cosU = Math.cos(uAng)
+                var sinU = Math.sin(uAng)
+                var bIdx8 = mapEqBandIndex(uIdx, majorSegs, eqLayout)
+                var v8 = sampleEqBandValue(state, bIdx8, eqDamping, eqGain)
+                var rMinor = 0.16 + v8 * 0.38
+                var tubePts = []
+
+                for (var vIdx = 0; vIdx < minorSegs; vIdx++) {
+                    var vAng = (vIdx / minorSegs) * Math.PI * 2.0 + uAng * 1.5 + l1T * 1.8
+                    var rLocal = rMinor * (1.0 + 0.18 * Math.cos(vAng * 2.0 - l1T * 2.4))
+                    var radXY = Rmajor + rLocal * Math.cos(vAng)
+                    var tx3 = radXY * cosU
+                    var ty3 = rLocal * Math.sin(vAng)
+                    var tz3 = radXY * sinU
+                    tubePts.push(project3DPoint(tx3, ty3, tz3, torRx, torRy, torRz, torCX, torCY, torScale, 3.8))
+                }
+                torRings.push({ pts: tubePts, v: v8 })
+            }
+
+            // 1. Poloidal plasma containment rings around each frequency slice of the torus
+            for (var ur = 0; ur < majorSegs; ur++) {
+                var ringObj = torRings[ur]
+                var rPts = ringObj.pts
+                var col8 = palette[(ur + Math.floor((state.hueShift || 0) / 30)) % palette.length]
+                ctx.fillStyle = colourWithAlpha(col8, (0.10 + ringObj.v * 0.14) * (1.0 - dim))
+                ctx.strokeStyle = colourWithAlpha(col8, (0.62 + ringObj.v * 0.34) * (1.0 - dim))
+                ctx.lineWidth = 1.3 + ringObj.v * 1.1
+                ctx.beginPath()
+                for (var vr = 0; vr < minorSegs; vr++) {
+                    if (vr === 0) ctx.moveTo(rPts[vr].x, rPts[vr].y)
+                    else ctx.lineTo(rPts[vr].x, rPts[vr].y)
+                }
+                ctx.closePath()
+                ctx.fill()
+                ctx.stroke()
+            }
+
+            // 2. Helical Tokamak Magnetic Flux Coils spiralling around the 3D torus
+            for (var coil = 0; coil < minorSegs; coil += 2) {
+                ctx.strokeStyle = colourWithAlpha(palette[(coil * 2 + 1) % palette.length], (0.78 + state.beatPulse * 0.22) * (1.0 - dim))
+                ctx.lineWidth = 1.8 + state.bass * 1.0
+                ctx.beginPath()
+                for (var uc = 0; uc <= majorSegs; uc++) {
+                    var uWrap = uc % majorSegs
+                    var vWrap = (coil + Math.floor(uc / 2)) % minorSegs
+                    var pCoil = torRings[uWrap].pts[vWrap]
+                    if (uc === 0) ctx.moveTo(pCoil.x, pCoil.y)
+                    else ctx.lineTo(pCoil.x, pCoil.y)
+                }
+                ctx.stroke()
+            }
+        } else if (eqStyle === 9) {
+            // Style 9: Cymatic Chladni — 3D Acoustic Cymatics / Chladni Standing-Wave Resonance Plate in 3D Space
+            // Concentric and petal-shaped 3D nodal standing-wave interference contours (`cos(n·θ + phase) * sin(m·r)`)
+            // where bass/mid/treble dominant frequencies dynamically shift harmonic integers `(n, m)` and warp elevation in 3D!
+            var cymCX = vanishX
+            var cymCY = clamp(horizonY - minDim * 0.05, h * 0.28, h * 0.70)
+            var cymScale = minDim * (0.34 + state.bassSmooth * 0.06)
+            var cymRx = 0.78 + Math.sin(driftT * 0.45) * 0.22
+            var cymRy = l1T * 0.38
+            var cymRz = Math.sin(l1T * 0.28) * 0.25
+
+            // Harmonic mode numbers driven by live frequency distribution
+            var modeN = 3.0 + Math.floor(((state.bassSmooth * 3.0 + state.midSmooth * 4.0) % 4.0))
+            var modeM = 2.0 + Math.floor(((state.highSmooth * 4.0 + state.energySmooth * 3.0) % 4.0))
+            var ringContours = 7
+            var angSteps = 48
+            var contourRings = []
+
+            for (var rc = 1; rc <= ringContours; rc++) {
+                var rNorm = rc / ringContours
+                var ringCol = palette[(rc * 2) % palette.length]
+                var cPts = []
+
+                for (var aStep = 0; aStep < angSteps; aStep++) {
+                    var theta9 = (aStep / angSteps) * Math.PI * 2.0
+                    var bIdx9 = mapEqBandIndex((aStep + rc * 5) % angSteps, angSteps, eqLayout)
+                    var v9 = sampleEqBandValue(state, bIdx9, eqDamping, eqGain)
+
+                    // Chladni standing-wave nodal interference equation: cos(n*theta)*sin(m*pi*r) - cos(m*theta)*sin(n*pi*r)
+                    var chladni = Math.cos(modeN * theta9 + l1T * 1.2) * Math.sin(modeM * Math.PI * rNorm)
+                                - Math.cos(modeM * theta9 - l1T * 0.9) * Math.sin(modeN * Math.PI * rNorm)
+                    var rDisplaced = rNorm * (0.78 + 0.26 * chladni * (0.45 + v9 * 0.85))
+                    var zElev = chladni * v9 * 0.48 + Math.sin(rNorm * Math.PI * 3.0 - l1T * 2.4) * v9 * 0.22
+                    var cx3 = rDisplaced * Math.cos(theta9)
+                    var cy3 = zElev
+                    var cz3 = rDisplaced * Math.sin(theta9)
+                    cPts.push(project3DPoint(cx3, cy3, cz3, cymRx, cymRy, cymRz, cymCX, cymCY, cymScale, 3.4))
+                }
+                contourRings.push(cPts)
+
+                // Draw closed 3D nodal standing-wave contour ring + translucent harmonic membrane
+                ctx.fillStyle = colourWithAlpha(ringCol, (0.07 + (1.0 - rNorm) * 0.08 + state.energy * 0.06) * (1.0 - dim))
+                ctx.strokeStyle = colourWithAlpha(ringCol, (0.68 + state.bass * 0.28) * (1.0 - dim))
+                ctx.lineWidth = 1.4 + (1.0 - rNorm * 0.4) * 1.2
+                ctx.beginPath()
+                for (var cp = 0; cp < angSteps; cp++) {
+                    if (cp === 0) ctx.moveTo(cPts[cp].x, cPts[cp].y)
+                    else ctx.lineTo(cPts[cp].x, cPts[cp].y)
+                }
+                ctx.closePath()
+                ctx.fill()
+                ctx.stroke()
+            }
+
+            // Radial standing-wave antinode filaments linking inner and outer Chladni harmonic shells
+            ctx.strokeStyle = colourWithAlpha("#ffffff", (0.46 + state.beatPulse * 0.34) * (1.0 - dim))
+            ctx.lineWidth = 1.2
+            ctx.beginPath()
+            for (var spk = 0; spk < angSteps; spk += 3) {
+                for (var rLink = 0; rLink < contourRings.length - 1; rLink++) {
+                    var pA9 = contourRings[rLink][spk]
+                    var pB9 = contourRings[rLink + 1][spk]
+                    ctx.moveTo(pA9.x, pA9.y)
+                    ctx.lineTo(pB9.x, pB9.y)
+                }
+            }
+            ctx.stroke()
+        } else if (eqStyle === 10) {
+            // Style 10: 3D Helix Vortex — Full-3D Spiralling Triple-Helix Tornado Vortex Plunging Through 3D Depth
+            // Three intertwined 3D phase-strands and triangular base-pair energy bridges plunge from deep space
+            // right towards/away from the viewer (`project3DPoint`), twisting and expanding radially in 360°!
+            var vorCX = vanishX
+            var vorCY = clamp(horizonY - minDim * 0.04, h * 0.26, h * 0.72)
+            var vorScale = minDim * 0.36
+            var vorRx = Math.sin(driftT * 0.5) * 0.24
+            var vorRy = Math.cos(driftT * 0.4) * 0.24
+            var vorRz = l1T * 0.45
+            var depthNodes = 28
+            var strandCount = 3
+            var strands3D = [[], [], []]
+            var zAdvect = (((l1T * 2.2) % 1.0) + 1.0) % 1.0
+
+            for (var dn = 0; dn < depthNodes; dn++) {
+                var uZ = clamp((dn + zAdvect) / depthNodes, 0.02, 0.99)
+                // Z depth from far (+2.6) to near (-1.0) relative to camera at camDist = 3.2
+                var z3 = lerp(2.2, -1.1, uZ)
+                var bIdx10 = mapEqBandIndex(dn, depthNodes, eqLayout)
+                var v10 = sampleEqBandValue(state, bIdx10, eqDamping, eqGain)
+                var funnelRad = (0.14 + uZ * 0.62) * (0.65 + v10 * 0.85)
+                var baseTwist = uZ * Math.PI * 5.0 - l1T * 2.6
+
+                for (var stIdx = 0; stIdx < strandCount; stIdx++) {
+                    var sAng = baseTwist + (stIdx * Math.PI * 2.0) / strandCount
+                    var hx3 = Math.cos(sAng) * funnelRad + Math.sin(uZ * Math.PI * 2.0 + l1T) * 0.08
+                    var hy3 = Math.sin(sAng) * funnelRad + Math.cos(uZ * Math.PI * 2.0 - l1T) * 0.08
+                    var projH = project3DPoint(hx3, hy3, z3, vorRx, vorRy, vorRz, vorCX, vorCY, vorScale, 2.8)
+                    projH.v = v10
+                    projH.uZ = uZ
+                    strands3D[stIdx].push(projH)
+                }
+            }
+
+            // 1. Triangular 3D base-pair energy bridges across the vortex core at each depth ring
+            for (var br = 0; br < depthNodes; br++) {
+                var p0 = strands3D[0][br]
+                var p1 = strands3D[1][br]
+                var p2 = strands3D[2][br]
+                var brCol = palette[(br + 2) % palette.length]
+                ctx.fillStyle = colourWithAlpha(brCol, (0.06 + p0.uZ * 0.10 + p0.v * 0.08) * (1.0 - dim))
+                ctx.strokeStyle = colourWithAlpha(brCol, (0.35 + p0.uZ * 0.55) * (1.0 - dim))
+                ctx.lineWidth = 1.0 + p0.uZ * 1.4
+                ctx.beginPath()
+                ctx.moveTo(p0.x, p0.y)
+                ctx.lineTo(p1.x, p1.y)
+                ctx.lineTo(p2.x, p2.y)
+                ctx.closePath()
+                ctx.fill()
+                ctx.stroke()
+            }
+
+            // 2. Three intertwined 3D helical vortex backbone strands plunging towards the viewer
+            for (var sPass = 0; sPass < strandCount; sPass++) {
+                var sPts = strands3D[sPass]
+                ctx.strokeStyle = colourWithAlpha(palette[(sPass * 3 + 1) % palette.length], (0.86 + state.bass * 0.14) * (1.0 - dim))
+                ctx.lineWidth = 2.2 + state.bass * 1.2
+                ctx.beginPath()
+                for (var sp10 = 0; sp10 < sPts.length; sp10++) {
+                    if (sp10 === 0) ctx.moveTo(sPts[sp10].x, sPts[sp10].y)
+                    else ctx.lineTo(sPts[sp10].x, sPts[sp10].y)
+                }
+                ctx.stroke()
+            }
+        } else if (eqStyle === 11) {
+            // Style 11: Tesla Plasma Arcs — High-Voltage Branching 3D Tesla Coil Plasma Globe
+            // A levitating central 3D high-voltage electrode core firing jagged, branching fractal lightning
+            // filaments out in 360° / 3D space towards frequency-tuned orbital attractors!
+            var teslaCX = vanishX
+            var teslaCY = clamp(horizonY - minDim * 0.06, h * 0.26, h * 0.72)
+            var maxPlasmaR = minDim * (0.42 + state.bassSmooth * 0.08)
+            var coreR = minDim * (0.055 + state.bass * 0.025)
+            var boltCount = 24
+
+            // 1. Outer translucent plasma containment shell & corona rings
+            ctx.strokeStyle = colourWithAlpha(palette[2 % palette.length], (0.32 + state.energy * 0.28) * (1.0 - dim))
+            ctx.lineWidth = 1.4
+            ctx.beginPath()
+            ctx.arc(teslaCX, teslaCY, maxPlasmaR, 0, Math.PI * 2)
+            ctx.stroke()
+
+            // 2. Multi-pass 360° jagged fractal lightning bolts + forked sub-branches driven by frequency bands
+            for (var passT = 0; passT < 2; passT++) {
+                // Pass 0 = wide outer plasma ionized glow; Pass 1 = crisp white-hot inner lightning core
+                for (var bBolt = 0; bBolt < boltCount; bBolt++) {
+                    var bIdx11 = mapEqBandIndex(bBolt, boltCount, eqLayout)
+                    var v11 = sampleEqBandValue(state, bIdx11, eqDamping, eqGain)
+                    var baseAng = (bBolt / boltCount) * Math.PI * 2.0 + Math.sin(l1T * 0.85 + bBolt * 1.7) * 0.16
+                    var boltReach = coreR + (maxPlasmaR - coreR) * clamp(0.28 + v11 * 0.78, 0.20, 1.12)
+                    var boltCol = passT === 0
+                        ? palette[(bBolt + Math.floor((state.hueShift || 0) / 30)) % palette.length]
+                        : "#ffffff"
+
+                    ctx.strokeStyle = colourWithAlpha(boltCol, (passT === 0 ? (0.48 + v11 * 0.36) : (0.78 + v11 * 0.22)) * (1.0 - dim))
+                    ctx.lineWidth = passT === 0 ? (2.6 + v11 * 2.2) : (1.1 + v11 * 0.8)
+                    ctx.beginPath()
+
+                    var segSteps = 7
+                    var prevBX = teslaCX + Math.cos(baseAng) * coreR
+                    var prevBY = teslaCY + Math.sin(baseAng) * coreR
+                    ctx.moveTo(prevBX, prevBY)
+
+                    var perpX = -Math.sin(baseAng)
+                    var perpY = Math.cos(baseAng)
+
+                    for (var sStep = 1; sStep <= segSteps; sStep++) {
+                        var uStep = sStep / segSteps
+                        var rDist = lerp(coreR, boltReach, uStep)
+                        // High-frequency deterministic fractal crackle displacement (zero at endpoints, maximum mid-arc)
+                        var envJit = Math.sin(uStep * Math.PI)
+                        var crackle = (Math.sin(l1T * 19.0 + bBolt * 5.3 + sStep * 3.7)
+                                     + 0.6 * Math.cos(l1T * 31.0 - bBolt * 2.9 + sStep * 6.1)) * minDim * (0.018 + v11 * 0.032) * envJit
+                        var curBX = teslaCX + Math.cos(baseAng) * rDist + perpX * crackle
+                        var curBY = teslaCY + Math.sin(baseAng) * rDist + perpY * crackle
+                        ctx.lineTo(curBX, curBY)
+
+                        // Forked lightning sub-branch on active mid-arc nodes
+                        if (sStep === 4 && v11 > 0.24) {
+                            var forkSign = (bBolt & 1) ? 1.0 : -1.0
+                            var forkAng = baseAng + forkSign * (0.38 + 0.18 * Math.sin(l1T * 7.0 + bBolt))
+                            var forkLen = (boltReach - rDist) * (0.55 + v11 * 0.35)
+                            var midFX = curBX + Math.cos(forkAng) * forkLen * 0.52 + perpX * crackle * 0.4
+                            var midFY = curBY + Math.sin(forkAng) * forkLen * 0.52 + perpY * crackle * 0.4
+                            var tipFX = curBX + Math.cos(forkAng + forkSign * 0.18) * forkLen
+                            var tipFY = curBY + Math.sin(forkAng + forkSign * 0.18) * forkLen
+                            ctx.moveTo(curBX, curBY)
+                            ctx.lineTo(midFX, midFY)
+                            ctx.lineTo(tipFX, tipFY)
+                            ctx.moveTo(curBX, curBY)
+                        }
+                    }
+                    ctx.stroke()
+                }
+            }
+
+            // 3. Central High-Voltage 3D Electrode Core
+            ctx.fillStyle = colourWithAlpha(palette[0], (0.45 + state.bass * 0.35) * (1.0 - dim))
+            ctx.strokeStyle = colourWithAlpha("#ffffff", (0.90 + state.beatPulse * 0.10) * (1.0 - dim))
+            ctx.lineWidth = 2.0 + state.bass * 1.2
+            ctx.beginPath()
+            ctx.arc(teslaCX, teslaCY, coreR, 0, Math.PI * 2)
+            ctx.fill()
+            ctx.stroke()
+        } else {
+            // Style 12: Tralis Voxel City — Plexamp *Tralis* 16 × 5 Matrix of 3D Wireframe Skyscrapers (`project3DPoint`)
+            // Sitting on the 3D perspective ground grid and marching towards/away from the viewer while extruding
+            // upward with bass, mid, and treble across historical spectrum rows (zero 2D `ctx.rect` squares!).
+            var cityHist = (state.eqRidgeHistory && state.eqRidgeHistory.length > 0) ? state.eqRidgeHistory : null
+            var cityCols = 16
+            var cityRows = 5
+            var zPhaseCity = (((l1T * 1.65) % 1.0) + 1.0) % 1.0
+            var cityCX = vanishX
+            var cityCY = horizonY
+            var cityScale = minDim * 0.62
+            var cityRx = 0.24 // subtle downward camera pitch onto the 3D voxel metropolis
+            var cityRy = Math.sin(driftT * 0.35) * 0.10
+            var cityRz = 0.0
+
+            // Render back-to-front (from farthest horizon row `rCity = 0` to nearest foreground row `rCity = cityRows - 1`)
+            for (var rCity = 0; rCity < cityRows; rCity++) {
+                var uRow = clamp((rCity + zPhaseCity) / cityRows, 0.02, 0.995)
+                var histRowIdx = l1Dir >= 0
+                    ? Math.min((cityHist ? cityHist.length : 1) - 1, rCity * 3)
+                    : Math.min((cityHist ? cityHist.length : 1) - 1, (cityRows - 1 - rCity) * 3)
+                var rowSlice = cityHist ? cityHist[histRowIdx] : null
+                var rowFade = Math.sin(uRow * Math.PI)
+
+                // World Z from far horizon (+2.8) to near foreground (-0.8) with camDist = 2.6
+                var zCenter = lerp(2.6, -0.75, uRow)
+                var halfDepthZ = 0.16
+                var zBack = zCenter + halfDepthZ
+                var zFront = zCenter - halfDepthZ
+                var groundY3 = 0.68 // ground plane below horizonY in 3D space
+
+                var rowCol = palette[(rCity * 2 + Math.floor((state.hueShift || 0) / 30)) % palette.length]
+                var roofCol = palette[(rCity * 2 + 2 + Math.floor((state.hueShift || 0) / 30)) % palette.length]
+
+                // Batch wireframe tower edges and glowing 3D rooftop quads per row for blazing-fast 60 FPS rendering
+                ctx.fillStyle = colourWithAlpha(roofCol, clamp((0.18 + 0.28 * uRow) * rowFade * (1.0 - dim), 0.04, 0.85))
+                ctx.strokeStyle = colourWithAlpha(rowCol, clamp((0.40 + 0.58 * uRow) * (0.35 + 0.65 * rowFade) * (1.0 - dim), 0.10, 1.0))
+                ctx.lineWidth = 1.0 + 1.4 * uRow
+
+                // 1. Translucent 3D Rooftop Quads & Front Facades (occluding background geometry cleanly)
+                ctx.beginPath()
+                var rowTowers = []
+                for (var cCity = 0; cCity < cityCols; cCity++) {
+                    var uCol = (cCity + 0.5) / cityCols
+                    var xCenter = (uCol - 0.5) * 3.4
+                    var halfW = 0.072
+
+                    var bIdx12 = mapEqBandIndex(cCity, cityCols, eqLayout)
+                    var bin36City = Math.min(35, Math.floor((bIdx12 / 63.0) * 35))
+                    var rawBandVal = rowSlice && rowSlice.bins ? (rowSlice.bins[bin36City] || 0.06) : sampleEqBandValue(state, bIdx12, eqDamping, eqGain)
+                    // Modulate with bass (inner columns), mid (mid columns), and treble (outer wings)
+                    var colDist = Math.abs(uCol - 0.5) * 2.0
+                    var bmtBoost = colDist < 0.35 ? (0.85 + state.bassSmooth * 0.55) : (colDist < 0.70 ? (0.85 + state.midSmooth * 0.55) : (0.85 + state.highSmooth * 0.55))
+                    var towerH = clamp(rawBandVal * eqGain * bmtBoost * 1.15, 0.06, 1.55)
+                    var topY3 = groundY3 - towerH
+
+                    var xL = xCenter - halfW
+                    var xR = xCenter + halfW
+
+                    // 8 corners of the 3D skyscraper box
+                    var bFL = project3DPoint(xL, groundY3, zFront, cityRx, cityRy, cityRz, cityCX, cityCY, cityScale, 2.5)
+                    var bFR = project3DPoint(xR, groundY3, zFront, cityRx, cityRy, cityRz, cityCX, cityCY, cityScale, 2.5)
+                    var bBR = project3DPoint(xR, groundY3, zBack,  cityRx, cityRy, cityRz, cityCX, cityCY, cityScale, 2.5)
+                    var bBL = project3DPoint(xL, groundY3, zBack,  cityRx, cityRy, cityRz, cityCX, cityCY, cityScale, 2.5)
+
+                    var tFL = project3DPoint(xL, topY3, zFront, cityRx, cityRy, cityRz, cityCX, cityCY, cityScale, 2.5)
+                    var tFR = project3DPoint(xR, topY3, zFront, cityRx, cityRy, cityRz, cityCX, cityCY, cityScale, 2.5)
+                    var tBR = project3DPoint(xR, topY3, zBack,  cityRx, cityRy, cityRz, cityCX, cityCY, cityScale, 2.5)
+                    var tBL = project3DPoint(xL, topY3, zBack,  cityRx, cityRy, cityRz, cityCX, cityCY, cityScale, 2.5)
+
+                    rowTowers.push({ bFL: bFL, bFR: bFR, bBR: bBR, bBL: bBL, tFL: tFL, tFR: tFR, tBR: tBR, tBL: tBL })
+
+                    // 3D Rooftop quad
+                    ctx.moveTo(tFL.x, tFL.y)
+                    ctx.lineTo(tFR.x, tFR.y)
+                    ctx.lineTo(tBR.x, tBR.y)
+                    ctx.lineTo(tBL.x, tBL.y)
+                    ctx.closePath()
+                }
                 ctx.fill()
                 ctx.stroke()
 
-                // Horizontal anamorphic lens-flare streak + hot white collimator emitter point
-                var flareW = w * (0.014 + vL * 0.028 + state.beatPulse * 0.012)
-                ctx.strokeStyle = colourWithAlpha(lampCol, clamp((0.62 + vL * 0.35) * (1.0 - dim), 0.0, 1.0))
-                ctx.lineWidth = 1.6 + vL * 1.2
+                // 2. 3D Wireframe Skyscraper Vertical Pillars & Base Footprint Edges
                 ctx.beginPath()
-                ctx.moveTo(lx - flareW, horizonY)
-                ctx.lineTo(lx + flareW, horizonY)
+                for (var twi = 0; twi < rowTowers.length; twi++) {
+                    var tw = rowTowers[twi]
+                    // 4 vertical edges of the 3D skyscraper
+                    ctx.moveTo(tw.bFL.x, tw.bFL.y); ctx.lineTo(tw.tFL.x, tw.tFL.y)
+                    ctx.moveTo(tw.bFR.x, tw.bFR.y); ctx.lineTo(tw.tFR.x, tw.tFR.y)
+                    ctx.moveTo(tw.bBR.x, tw.bBR.y); ctx.lineTo(tw.tBR.x, tw.tBR.y)
+                    ctx.moveTo(tw.bBL.x, tw.bBL.y); ctx.lineTo(tw.tBL.x, tw.tBL.y)
+                    // Front & side base edges sitting on the perspective ground grid
+                    ctx.moveTo(tw.bFL.x, tw.bFL.y); ctx.lineTo(tw.bFR.x, tw.bFR.y)
+                    ctx.moveTo(tw.bFR.x, tw.bFR.y); ctx.lineTo(tw.bBR.x, tw.bBR.y)
+                    ctx.moveTo(tw.bBL.x, tw.bBL.y); ctx.lineTo(tw.bFL.x, tw.bFL.y)
+                }
                 ctx.stroke()
-
-                ctx.fillStyle = colourWithAlpha("#ffffff", clamp((0.88 + vL * 0.12) * (1.0 - dim), 0.0, 1.0))
-                ctx.beginPath()
-                ctx.arc(lx, horizonY, 2.2 + vL * 1.8, 0, Math.PI * 2)
-                ctx.fill()
             }
         }
         ctx.restore()
@@ -2495,45 +3213,57 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
 
     // =========================================================================
     // SUB-SYSTEM 3: L1 BEAT SHAPES & 3D ARCADE VECTOR CRAFT
-    // (Spawning at the distant vanishing point and moving all the way OFF screen!
-    //  In Battlezone `l1Mode === 4`, shapes are placed directly on the 3D terrain grid above.)
+    // (Spawning at the distant vanishing point and moving all the way OFF screen,
+    //  including flying OFF the land in the 3D sky when Battlezone `l1Mode === 4` is active!)
     // =========================================================================
-    if (shapesOn && state.shockwaves.length > 0 && !(fieldOn && l1Mode === 4)) {
+    if (shapesOn && state.shockwaves.length > 0) {
         var shapeStyle = cfg && cfg.layer1ShapeStyle !== undefined ? ((Number(cfg.layer1ShapeStyle) || 0) % LAYER1_SHAPE_STYLES.length) : 0
         var shapeSpin = cfg && cfg.layer1ShapeSpin !== undefined ? clamp(Number(cfg.layer1ShapeSpin), -2.5, 2.5) : 0.25
         var shapeScale = cfg && cfg.layer1ShapeScale !== undefined ? clamp(Number(cfg.layer1ShapeScale), 0.3, 2.5) : 1.0
+        var shapeDensityDraw = cfg && cfg.layer1ShapeDensity !== undefined ? clamp(Number(cfg.layer1ShapeDensity), 0.25, 2.5) : 1.0
+        var maxDrawShapes = Math.max(1, Math.min(state.shockwaves.length, Math.round(6 * shapeDensityDraw)))
 
         ctx.save()
         ctx.globalCompositeOperation = "source-over"
-        for (var sw = 0; sw < state.shockwaves.length; sw++) {
+        for (var sw = 0; sw < maxDrawShapes; sw++) {
             var wave = state.shockwaves[sw]
             var uProg = clamp(wave.r / 1.45, 0.0, 1.25)
-            // Perspective size grows from pinpoint at distant horizon/endpoint to past diagR off screen!
-            var wr = Math.pow(uProg, 1.45) * diagR * 0.92 * shapeScale
-            var laneOffset = ((sw % 3) - 1) * w * 0.26 * Math.pow(uProg, 1.2)
+            var wSizeMul = wave.sizeMul !== undefined ? wave.sizeMul : (0.65 + ((sw * 29) % 9) * 0.11)
+            // Perspective size grows from pinpoint at distant horizon/endpoint to past diagR off screen, scaled by per-shape sizeMul!
+            var wr = Math.pow(uProg, 1.45) * diagR * 0.92 * shapeScale * wSizeMul
+            var wLaneX = wave.laneX !== undefined ? wave.laneX : (((sw % 3) - 1) * 0.26)
+            var wLaneY = wave.laneY !== undefined ? wave.laneY : ((sw % 2 === 0 ? -1 : 1) * 0.18)
+            var laneOffset = wLaneX * w * Math.pow(uProg, 1.15)
             var wcx = lerp(vanishX, cx + laneOffset, Math.min(1.0, uProg * 1.15))
-            var wcy = (shapeStyle === 0 || shapeStyle === 2)
+            var isGroundUnit = (shapeStyle === 0 || (shapeStyle === 2 && (sw & 1) === 1))
+            var wcy = isGroundUnit
                 ? lerp(horizonY, h * 0.96, Math.pow(uProg, 1.35))
-                : lerp(cy + endPt.dy * 0.35, cy + ((sw % 2 === 0 ? -1 : 1) * h * 0.14 * uProg), uProg)
+                : ((fieldOn && l1Mode === 4)
+                    ? lerp(horizonY - h * 0.06, h * (0.26 + wLaneY * 0.45) + Math.sin(l1T * 1.5 + sw) * h * 0.06, Math.min(1.0, uProg * 1.1))
+                    : lerp(cy + endPt.dy * 0.35, cy + wLaneY * h * uProg, uProg))
             var spinAngle = l1T * shapeSpin * 0.85 + (shapeSpin !== 0 ? sw * 0.25 : 0.0)
             var sAlpha = clamp(wave.alpha * (1.0 - dim), 0.06, 1.0)
 
             ctx.fillStyle = hslToHex((wave.hueOffset + 35) % 360, 0.92, 0.55, sAlpha * 0.14)
             ctx.strokeStyle = hslToHex(wave.hueOffset, 0.95, 0.62, sAlpha * 0.88)
-            ctx.lineWidth = (1.8 + state.bass * 2.0) * Math.sqrt(shapeScale)
+            ctx.lineWidth = (1.8 + state.bass * 2.0) * Math.sqrt(shapeScale * wSizeMul)
             ctx.beginPath()
 
-            // True 3-axis 3D rotation angles (rx, ry, rz) for L1 Beat Shapes
+            // True 3-axis 3D rotation angles (rx, ry, rz) with per-shape randomised spinX, spinY, spinZ
             var spinRate = (shapeSpin !== 0.0) ? shapeSpin : 0.45
-            var ry3 = l1T * spinRate * 0.95 + sw * 1.15
-            var rx3 = Math.sin(l1T * 0.75 + sw * 1.65) * 0.38 + l1T * spinRate * 0.42
-            var rz3 = Math.cos(l1T * 0.62 + sw * 1.35) * 0.30 + spinAngle * 0.35
+            var spX = wave.spinX !== undefined ? wave.spinX : 0.85
+            var spY = wave.spinY !== undefined ? wave.spinY : 1.00
+            var spZ = wave.spinZ !== undefined ? wave.spinZ : 0.65
+            var ry3 = l1T * spinRate * spY * 0.95 + sw * 1.15
+            var rx3 = Math.sin(l1T * 0.75 + sw * 1.65) * 0.38 + l1T * spinRate * spX * 0.52
+            var rz3 = Math.cos(l1T * 0.62 + sw * 1.35) * 0.30 + spinAngle * spZ * 0.45
+            var craftVar = (wave.variant !== undefined ? wave.variant : sw) % 3
 
             if (shapeStyle === 0) {
                 // 0: 3D Battlezone Tanks (1980 Atari Battlezone 3D Wireframe Vector Tank rotating in 3D!)
                 var ts = Math.max(10.0, wr * 0.38)
                 var tankPitch = 0.22 + Math.sin(l1T * 0.85 + sw * 1.4) * 0.14
-                var tankYaw = Math.sin(l1T * 0.9 + sw * 1.7) * 0.52 + spinAngle * 0.45
+                var tankYaw = Math.sin(l1T * 0.9 + sw * 1.7) * 0.52 + spinAngle * spY * 0.45
                 var tankRoll = Math.cos(l1T * 0.7 + sw * 1.1) * 0.12
                 var turYaw = Math.sin(l1T * 1.45 + sw * 2.1) * 0.65
                 var gunEl = 0.08 + state.beatPulse * 0.14
@@ -2542,89 +3272,13 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.fill()
                 ctx.stroke()
             } else if (shapeStyle === 1) {
-                // 1: 3D Star Wars Craft (1983 Atari Vector X-Wing Starfighter & TIE Fighter rotating in 3-axis 3D!)
+                // 1: 1983 Atari Color-QuadraScan XY Vector Star Wars Craft (Standard TIE, Vader TIE Advanced x1, Rebel X-Wing)
                 var cs = Math.max(10.0, wr * 0.40)
-                var swPitch = Math.sin(l1T * 1.15 + sw * 1.9) * 0.34
-                var swYaw = Math.cos(l1T * 0.95 + sw * 1.5) * 0.48 + spinAngle * 0.40
-                var swRoll = Math.sin(l1T * 1.4 + sw * 2.1) * 0.32 + spinAngle * 0.35
-
-                if ((sw & 1) === 0) {
-                    // 3D Rebel X-Wing Starfighter (3D hexagonal fuselage + 4 S-Foil attack wings + 4 laser cannons)
-                    var xwFus = [
-                        [ 0.0,  -0.14,  0.85], // 0: Nose cone tip
-                        [ 0.18, -0.10, -0.15], // 1: Right cockpit shoulder
-                        [ 0.14,  0.10, -0.68], // 2: Right rear engine block
-                        [-0.14,  0.10, -0.68], // 3: Left rear engine block
-                        [-0.18, -0.10, -0.15], // 4: Left cockpit shoulder
-                        [ 0.0,  -0.26, -0.22]  // 5: Canopy dorsal ridge
-                    ]
-                    var xp = []
-                    for (var xfi = 0; xfi < xwFus.length; xfi++) {
-                        xp.push(project3DPoint(xwFus[xfi][0], xwFus[xfi][1], xwFus[xfi][2], swPitch, swYaw, swRoll, wcx, wcy, cs, 3.6))
-                    }
-                    var xFusEdges = [
-                        0, 1,  1, 2,  2, 3,  3, 4,  4, 0,
-                        0, 5,  5, 2,  5, 3,  1, 5,  4, 5
-                    ]
-                    for (var xfe = 0; xfe < xFusEdges.length; xfe += 2) {
-                        ctx.moveTo(xp[xFusEdges[xfe]].x, xp[xFusEdges[xfe]].y)
-                        ctx.lineTo(xp[xFusEdges[xfe + 1]].x, xp[xFusEdges[xfe + 1]].y)
-                    }
-                    // 4 3D S-Foil attack wings + wingtip Taim & Bak laser cannons
-                    for (var wxSign = -1; wxSign <= 1; wxSign += 2) {
-                        for (var wySign = -1; wySign <= 1; wySign += 2) {
-                            var rFront = project3DPoint(wxSign * 0.15, wySign * 0.06, -0.18, swPitch, swYaw, swRoll, wcx, wcy, cs, 3.6)
-                            var rRear  = project3DPoint(wxSign * 0.14, wySign * 0.08, -0.58, swPitch, swYaw, swRoll, wcx, wcy, cs, 3.6)
-                            var tFront = project3DPoint(wxSign * 0.96, wySign * 0.44, -0.14, swPitch, swYaw, swRoll, wcx, wcy, cs, 3.6)
-                            var tRear  = project3DPoint(wxSign * 0.96, wySign * 0.52, -0.48, swPitch, swYaw, swRoll, wcx, wcy, cs, 3.6)
-                            var cTip   = project3DPoint(wxSign * 0.96, wySign * 0.44,  0.48, swPitch, swYaw, swRoll, wcx, wcy, cs, 3.6)
-                            ctx.moveTo(rFront.x, rFront.y)
-                            ctx.lineTo(tFront.x, tFront.y)
-                            ctx.lineTo(tRear.x, tRear.y)
-                            ctx.lineTo(rRear.x, rRear.y)
-                            ctx.closePath()
-                            ctx.moveTo(tRear.x, tRear.y)
-                            ctx.lineTo(cTip.x, cTip.y)
-                        }
-                    }
-                    ctx.fill()
-                    ctx.stroke()
-                } else {
-                    // 3D Imperial TIE Advanced x1 / TIE Fighter (3D ball cockpit + pylons + 3D bent hexagonal solar wings)
-                    var ballR = 0.28
-                    for (var bi2 = 0; bi2 <= 8; bi2++) {
-                        var ba = (bi2 / 8.0) * Math.PI * 2
-                        var bp = project3DPoint(Math.cos(ba) * ballR, Math.sin(ba) * ballR, 0.08, swPitch, swYaw, swRoll, wcx, wcy, cs, 3.6)
-                        if (bi2 === 0) ctx.moveTo(bp.x, bp.y)
-                        else ctx.lineTo(bp.x, bp.y)
-                    }
-                    var pL0 = project3DPoint(-ballR, 0, 0, swPitch, swYaw, swRoll, wcx, wcy, cs, 3.6)
-                    var pL1 = project3DPoint(-0.74,  0, 0, swPitch, swYaw, swRoll, wcx, wcy, cs, 3.6)
-                    var pR0 = project3DPoint( ballR, 0, 0, swPitch, swYaw, swRoll, wcx, wcy, cs, 3.6)
-                    var pR1 = project3DPoint( 0.74,  0, 0, swPitch, swYaw, swRoll, wcx, wcy, cs, 3.6)
-                    ctx.moveTo(pL0.x, pL0.y); ctx.lineTo(pL1.x, pL1.y)
-                    ctx.moveTo(pR0.x, pR0.y); ctx.lineTo(pR1.x, pR1.y)
-                    for (var tSide = -1; tSide <= 1; tSide += 2) {
-                        var wPts = [
-                            [tSide * 0.56, -0.68,  0.42],
-                            [tSide * 0.76, -0.28,  0.48],
-                            [tSide * 0.76,  0.28,  0.48],
-                            [tSide * 0.56,  0.68,  0.42],
-                            [tSide * 0.56,  0.68, -0.42],
-                            [tSide * 0.76,  0.28, -0.48],
-                            [tSide * 0.76, -0.28, -0.48],
-                            [tSide * 0.56, -0.68, -0.42]
-                        ]
-                        for (var wpi = 0; wpi < wPts.length; wpi++) {
-                            var wpP = project3DPoint(wPts[wpi][0], wPts[wpi][1], wPts[wpi][2], swPitch, swYaw, swRoll, wcx, wcy, cs, 3.6)
-                            if (wpi === 0) ctx.moveTo(wpP.x, wpP.y)
-                            else ctx.lineTo(wpP.x, wpP.y)
-                        }
-                        ctx.closePath()
-                    }
-                    ctx.fill()
-                    ctx.stroke()
-                }
+                var swPitch = Math.sin(l1T * 1.15 + sw * 1.9) * 0.34 + rx3 * 0.25
+                var swYaw = Math.cos(l1T * 0.95 + sw * 1.5) * 0.48 + ry3 * 0.35
+                var swRoll = Math.sin(l1T * 1.4 + sw * 2.1) * 0.32 + rz3 * 0.35
+                append3DStarWarsFighter(ctx, craftVar, wcx, wcy, cs, swPitch, swYaw, swRoll)
+                ctx.stroke()
             } else if (shapeStyle === 2) {
                 // 2: 3D TRON Recognizers (1982 TRON 3D Wireframe Arch Craft rotating in 3D!)
                 var rs = Math.max(12.0, wr * 0.42)
@@ -3421,42 +4075,86 @@ function drawMode4MinterVlm(ctx, w, h, state, palette, cfg) {
     ctx.restore()
 }
 
-// Mode 5: True Complex-Plane Mandelbrot & Julia Set Deep Zoom Engine
-// Zooms continuously in (Towards), out (Away), or breathes (Breathe) into wandering complex-plane POIs
-// (Seahorse Valley, Elephant Valley, Triple Spiral, Douady Rabbit, San Marco, Siegel Disk, Misiurewicz Spiral)
-// with true z_{n+1} = z_n^2 + c escape-time equipotential contours, self-similar Mandelbrot cardioids & spiral eddies!
+// Mode 5: True Complex-Plane Mandelbrot & Julia Boundary Deep-Zoom Engine
+// Zooms continuously in (Towards), out (Away), or breathes (Breathe) directly into a boundary section
+// (Seahorse Valley crevice / budding filament neck) of the Mandelbrot & Julia fractal shape,
+// allowing the boundary to recursively subdivide ("fractal out/in") across self-similar generations!
 function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
     var zoom = cfg.layer2Zoom || 1.0
     var minDim = Math.min(w, h) * zoom
-    var diagR = Math.sqrt(w * w + h * h) * 0.72 * zoom
     var comp = clamp(cfg.layer2Complexity || 1.0, 0.4, 2.0)
 
     // Smooth monotonic zoom accumulator (`state.zoomTime`) — supports Towards (1), Away (-1), and Breathe (0)!
-    var zoomFlow = (state.zoomTime !== undefined ? state.zoomTime : state.t * 0.8) * 1.35
+    var zoomFlow = (state.zoomTime !== undefined ? state.zoomTime : state.t * 0.8) * 1.28
     var zoomFract = ((zoomFlow % 1.0) + 1.0) % 1.0
     var zoomGen = Math.floor(zoomFlow)
 
     // Active complex-plane POI coordinate (poiRe + i*poiIm) & Julia constant (cRe + i*cIm)
-    var poiRe = (state.fractalRe !== undefined ? state.fractalRe : -0.7436) + Math.cos(state.t * 0.22) * 0.04
-    var poiIm = (state.fractalIm !== undefined ? state.fractalIm : 0.1318) + Math.sin(state.t * 0.27) * 0.04
+    var poiRe = (state.fractalRe !== undefined ? state.fractalRe : -0.7436) + Math.cos(state.t * 0.22) * 0.03
+    var poiIm = (state.fractalIm !== undefined ? state.fractalIm : 0.1318) + Math.sin(state.t * 0.27) * 0.03
     var cRe = (state.fractalCRe !== undefined ? state.fractalCRe : -0.745) + Math.cos(state.t * 0.31) * (0.04 + state.bassSmooth * 0.04)
     var cIm = (state.fractalCIm !== undefined ? state.fractalCIm : 0.186) + Math.sin(state.t * 0.37) * (0.04 + state.midSmooth * 0.04)
 
     var driftT = state.driftTime !== undefined ? state.driftTime : state.t
     var endPt = computeTracerEndpoint(w, h, driftT, cfg.tracerDrift !== undefined ? cfg.tracerDrift : 1.0, 1.0)
-    var focalX = cx + endPt.dx * 0.52 + (poiRe + 0.55) * minDim * 0.18
-    var focalY = cy + endPt.dy * 0.52 + poiIm * minDim * 0.18
+    // Zoom focal point on screen (where the boundary section of the fractal is pinned as we zoom in/out)
+    var focalX = cx + endPt.dx * 0.38
+    var focalY = cy + endPt.dy * 0.38
 
     var trEnabled = cfg.layer2TracersEnabled !== undefined ? Boolean(cfg.layer2TracersEnabled) : true
     var trCount = trEnabled ? clamp(Math.round(Number(cfg.tracerCount) || 7), 1, 16) : 3
-    var octaves = Math.max(5, Math.min(11, Math.round(4 + trCount * 0.35 * comp)))
-    var ratio = 1.88 // Logarithmic scale factor per octave so outer fractal contours expand past all 4 screen borders!
-    var baseScale = minDim * 0.011
+    var octaves = Math.max(5, Math.min(10, Math.round(4 + trCount * 0.35 * comp)))
+    var ratio = 2.08 // Logarithmic magnification per self-similar boundary generation
+    var baseScale = minDim * 0.014
     var folds = clamp(Math.round(Number(cfg.layer2Facets) || 6), 3, 12)
-    var contourSteps = Math.max(48, Math.min(84, Math.floor(64 * comp)))
+    var contourSteps = Math.max(64, Math.min(112, Math.floor(80 * comp)))
     var palShift = Math.floor((state.hueShift || 0) / 45)
+
+    // Helper: evaluate a point on the multi-lobed Mandelbrot + Julia fractal boundary in local complex space,
+    // where the Seahorse Valley boundary point (`theta = Math.PI * 0.82`) sits at local `(poiLocX, poiLocY)`.
+    function evalFractalBoundaryLocal(theta, subDetail, cReVal, cImVal, bVal) {
+        // 1. Exact Mandelbrot main cardioid: c(t) = 0.5*e^{it} - 0.25*e^{2it}
+        var cardX = 0.5 * Math.cos(theta) - 0.25 * Math.cos(2.0 * theta)
+        var cardY = 0.5 * Math.sin(theta) - 0.25 * Math.sin(2.0 * theta)
+
+        // 2. Period-2 head bulb at theta ~ PI, Period-3 coronal bulbs at theta ~ ±PI/2, and apical antenna
+        var dHead = Math.cos((theta - Math.PI) * 0.5)
+        var headBulb = Math.pow(Math.max(0.0, dHead), 6.0) * 0.42
+        var dTop = Math.cos((theta - Math.PI * 0.52) * 0.5)
+        var dBot = Math.cos((theta + Math.PI * 0.52) * 0.5)
+        var period3Bulbs = (Math.pow(Math.max(0.0, dTop), 8.0) + Math.pow(Math.max(0.0, dBot), 8.0)) * 0.26
+
+        // 3. True z_{n+1} = z_n^2 + c escape-time orbit modulation along the boundary
+        var zr = cardX + poiRe * 0.25
+        var zi = cardY + poiIm * 0.25
+        var smoothIter = 0.0
+        for (var it = 0; it < 6; it++) {
+            var r2 = zr * zr, i2 = zi * zi
+            if (r2 + i2 > 6.5) break
+            zi = 2.0 * zr * zi + cImVal
+            zr = r2 - i2 + cReVal
+            smoothIter += 1.0 / (1.0 + (r2 + i2) * 0.35)
+        }
+        var escapePot = clamp(smoothIter / 4.2, 0.15, 1.45)
+
+        // 4. Recursive self-similar fractal sub-buds ("fractalling out/in" as subDetail increases with zoom!)
+        var bud1 = Math.sin(folds * theta + escapePot * 2.4) * 0.14
+        var bud2 = Math.cos(folds * 2.0 * theta - escapePot * 3.6 + state.phase * 0.5) * 0.09 * subDetail
+        var bud3 = Math.sin(folds * 4.0 * theta + escapePot * 5.2 - state.t * 1.4) * 0.06 * subDetail * subDetail
+        var radialOut = 1.0 + headBulb + period3Bulbs + bud1 + bud2 + bud3 + bVal * 0.18
+
+        var nx = Math.cos(theta), ny = Math.sin(theta)
+        return {
+            x: cardX * radialOut - headBulb * 0.35 + nx * (bud1 + bud2 + bud3) * 0.45,
+            y: cardY * radialOut + ny * (bud1 + bud2 + bud3) * 0.45,
+            escapePot: escapePot
+        }
+    }
+
+    // Boundary section angle on the Mandelbrot perimeter to zoom directly into (Seahorse Valley crevice at theta = 0.82 * PI)
+    var poiTheta = Math.PI * 0.82 + Math.sin(state.t * 0.19) * 0.14
 
     ctx.save()
     ctx.globalCompositeOperation = "source-over"
@@ -3467,49 +4165,44 @@ function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
         var octScale = baseScale * Math.pow(ratio, octProgress)
         var octWorld = zoomGen - oct
 
-        // Smooth birth & exit fade-in/out envelope so new octaves never pop at the deep focal core
-        var envAlpha = smoothstep(0.0, 0.22, uOct) * smoothstep(1.05, 0.84, uOct)
+        // Smooth birth & exit fade-in/out envelope so new octaves emerge seamlessly from the boundary section
+        var envAlpha = smoothstep(0.0, 0.20, uOct) * smoothstep(1.08, 0.82, uOct)
         if (envAlpha < 0.01) continue
 
-        // Complex-plane zoom centre shifts progressively from the wandering POI at deep scale out to viewport centre
-        var centerX = lerp(focalX, cx, clamp(uOct * 0.65, 0.0, 0.75))
-        var centerY = lerp(focalY, cy, clamp(uOct * 0.65, 0.0, 0.75))
-        var octRot = octWorld * 0.618034 * Math.PI + state.phase * 0.28
+        // Progressive recursive subdivision detail as this fractal generation zooms in ("fractals out/in")
+        var subDetail = smoothstep(0.08, 0.88, uOct) * (0.75 + state.bassSmooth * 0.35)
+        var octRot = octWorld * 0.42 + Math.sin(state.phase * 0.22 + octWorld * 0.7) * 0.24
+        var cosR = Math.cos(octRot), sinR = Math.sin(octRot)
+
+        // Pin the chosen boundary section `poiPt` of the fractal shape to `(focalX, focalY)` so the camera
+        // genuinely zooms INTO the boundary edge of the fractal shape (not its dead interior centre)!
+        var poiPt = evalFractalBoundaryLocal(poiTheta, subDetail, cRe, cIm, state.bassSmooth * 0.5)
+        var poiRotX = poiPt.x * cosR - poiPt.y * sinR
+        var poiRotY = poiPt.x * sinR + poiPt.y * cosR
+        var shapeOriginX = focalX - poiRotX * octScale
+        var shapeOriginY = focalY - poiRotY * octScale
 
         var colPrimary = palette[((octWorld * 2 + palShift) % palette.length + palette.length) % palette.length]
         var colSecondary = palette[((octWorld * 2 + 1 + palShift) % palette.length + palette.length) % palette.length]
         var colAccent = palette[((octWorld * 2 + 3 + palShift) % palette.length + palette.length) % palette.length]
 
-        // 1. Complex-Plane Julia Equipotential Escape-Time Contour Ring (z_{n+1} = z_n^2 + c)
-        ctx.fillStyle = colourWithAlpha(colPrimary, (0.11 + (1.0 - uOct) * 0.12 + state.bassSmooth * 0.06) * envAlpha)
-        ctx.strokeStyle = colourWithAlpha(colSecondary, (0.54 + envAlpha * 0.42) * envAlpha)
-        ctx.lineWidth = (1.1 + uOct * 2.5 + state.beatPulse * 1.1) * envAlpha
+        // 1. Main Mandelbrot & Julia Boundary Shape zooming through the boundary section at (focalX, focalY)
+        ctx.fillStyle = colourWithAlpha(colPrimary, (0.10 + (1.0 - uOct) * 0.12 + state.bassSmooth * 0.06) * envAlpha)
+        ctx.strokeStyle = colourWithAlpha(colSecondary, (0.58 + envAlpha * 0.40) * envAlpha)
+        ctx.lineWidth = (1.2 + uOct * 2.6 + state.beatPulse * 1.1) * envAlpha
 
+        var boundaryPts = []
         ctx.beginPath()
         for (var s = 0; s <= contourSteps; s++) {
             var u = s / contourSteps
-            var theta = u * Math.PI * 2 + octRot
-            // Sample complex orbit around POI + harmonic fold symmetry
-            var zr = poiRe * 0.35 + Math.cos(theta) * 0.78
-            var zi = poiIm * 0.35 + Math.sin(theta) * 0.78
-            var smoothIter = 0.0
-            for (var it = 0; it < 6; it++) {
-                var r2 = zr * zr
-                var i2 = zi * zi
-                if (r2 + i2 > 6.5) break
-                zi = 2.0 * zr * zi + cIm
-                zr = r2 - i2 + cRe
-                smoothIter += 1.0 / (1.0 + (r2 + i2) * 0.35)
-            }
-            var escapePot = clamp(smoothIter / 4.2, 0.15, 1.45)
+            var theta = u * Math.PI * 2
             var bVal = state.smoothBands[(s + (octWorld & 15) * 4) & 63] || 0.08
-            // True Mandelbrot cardioid + bulb harmonic modulation along equipotential boundary
-            var cardioidMod = 1.0 - 0.32 * Math.cos(theta - octRot) + 0.18 * Math.cos(2.0 * (theta - octRot))
-            var spiralMod = 0.16 * Math.sin(folds * u * Math.PI * 2 + (escapePot * 3.2))
-            var rContour = octScale * (0.58 + 0.48 * escapePot * cardioidMod + spiralMod + bVal * 0.22)
-            var curlA = theta + (escapePot - 0.65) * 0.48
-            var jx = centerX + Math.cos(curlA) * rContour
-            var jy = centerY + Math.sin(curlA) * rContour
+            var ptL = evalFractalBoundaryLocal(theta, subDetail, cRe, cIm, bVal)
+            var rx = ptL.x * cosR - ptL.y * sinR
+            var ry = ptL.x * sinR + ptL.y * cosR
+            var jx = shapeOriginX + rx * octScale
+            var jy = shapeOriginY + ry * octScale
+            boundaryPts.push({ x: jx, y: jy, theta: theta + octRot, pot: ptL.escapePot, band: bVal })
             if (s === 0) ctx.moveTo(jx, jy)
             else ctx.lineTo(jx, jy)
         }
@@ -3517,50 +4210,45 @@ function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
         ctx.fill()
         ctx.stroke()
 
-        // 2. Self-Similar Mini-Mandelbrot Cardioid & Period-2 Bulb Silhouettes + Seahorse Spiral Eddies
-        var satCount = Math.max(3, Math.min(8, Math.round(folds * 0.65)))
-        ctx.strokeStyle = colourWithAlpha(colAccent, (0.62 + state.highSmooth * 0.32) * envAlpha)
+        // 2. Recursive Fractal Sub-Buds & Seahorse Valley Double-Spiral Filaments budding directly off the boundary!
+        var budStride = Math.max(4, Math.floor(contourSteps / Math.max(5, Math.min(12, folds * 2))))
+        ctx.strokeStyle = colourWithAlpha(colAccent, (0.66 + state.highSmooth * 0.32) * envAlpha)
         ctx.fillStyle = colourWithAlpha(colSecondary, (0.16 + state.bassSmooth * 0.12) * envAlpha)
         ctx.lineWidth = (1.0 + uOct * 1.8 + state.bassSmooth * 0.8) * envAlpha
 
-        for (var sat = 0; sat < satCount; sat++) {
-            var satA = (sat / satCount) * Math.PI * 2 + octRot
-            var bSat = state.smoothBands[(sat * 9 + (octWorld & 7) * 5) & 63] || 0.1
-            var satDist = octScale * (0.72 + bSat * 0.22)
-            var sx = centerX + Math.cos(satA) * satDist
-            var sy = centerY + Math.sin(satA) * satDist
-            var cardScale = octScale * (0.20 + bSat * 0.08)
-            var cardRot = satA + Math.PI * 0.5 + state.phase * 0.25
+        for (var bi = 0; bi < contourSteps; bi += budStride) {
+            var bNode = boundaryPts[bi]
+            var budScale = octScale * (0.16 + subDetail * 0.14 + bNode.band * 0.10)
+            var outAng = bNode.theta
 
-            if ((sat + octWorld) & 1) {
-                // True Mandelbrot Cardioid + Period-2 Head Bulb (`r = cardScale * (1 - cos(t))`)
+            if (((bi / budStride) + octWorld) & 1) {
+                // Self-similar mini-Mandelbrot cardioid & head bulb budding outward from the parent boundary
                 ctx.beginPath()
-                var cSteps = 20
+                var cSteps = 18
                 for (var cs = 0; cs <= cSteps; cs++) {
                     var ct = (cs / cSteps) * Math.PI * 2
-                    // Cardioid in local complex coordinates + period-2 bulb bump at ct = PI
-                    var cr = cardScale * (0.85 * (1.0 - Math.cos(ct)) + 0.32 * Math.pow(Math.max(0.0, -Math.cos(ct)), 3.0))
-                    var lx = Math.cos(ct) * cr + cardScale * 0.35
+                    var cr = budScale * (0.55 * (1.0 - Math.cos(ct)) + 0.24 * Math.pow(Math.max(0.0, -Math.cos(ct)), 3.0))
+                    var lx = Math.cos(ct) * cr + budScale * 0.28
                     var ly = Math.sin(ct) * cr
-                    var rx = sx + lx * Math.cos(cardRot) - ly * Math.sin(cardRot)
-                    var ry = sy + lx * Math.sin(cardRot) + ly * Math.cos(cardRot)
-                    if (cs === 0) ctx.moveTo(rx, ry)
-                    else ctx.lineTo(rx, ry)
+                    var bx = bNode.x + lx * Math.cos(outAng) - ly * Math.sin(outAng)
+                    var by = bNode.y + lx * Math.sin(outAng) + ly * Math.cos(outAng)
+                    if (cs === 0) ctx.moveTo(bx, by)
+                    else ctx.lineTo(bx, by)
                 }
                 ctx.closePath()
                 ctx.fill()
                 ctx.stroke()
             } else {
-                // Logarithmic Seahorse Valley Double-Spiral Eddy (curling fractal tendril)
+                // Unfurling Seahorse Valley logarithmic double-spiral dendrite fractalling out/in from the boundary node
                 ctx.beginPath()
-                var spSteps = 16
-                var curlSign = (sat % 2 === 0) ? 1.0 : -1.0
+                var spSteps = 14
+                var curlSign = ((bi & 2) === 0) ? 1.0 : -1.0
                 for (var sp = 0; sp <= spSteps; sp++) {
                     var su = sp / spSteps
-                    var sTheta = cardRot + curlSign * su * Math.PI * 2.6
-                    var sRad = cardScale * 1.15 * Math.pow(1.0 - su * 0.82, 1.35)
-                    var spx = sx + Math.cos(sTheta) * sRad
-                    var spy = sy + Math.sin(sTheta) * sRad
+                    var sTheta = outAng + curlSign * su * Math.PI * (2.2 + subDetail * 1.2)
+                    var sRad = budScale * 1.25 * Math.pow(1.0 - su * 0.82, 1.30)
+                    var spx = bNode.x + Math.cos(sTheta) * sRad
+                    var spy = bNode.y + Math.sin(sTheta) * sRad
                     if (sp === 0) ctx.moveTo(spx, spy)
                     else ctx.lineTo(spx, spy)
                 }
@@ -4638,7 +5326,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
     var pos = Number(c.position) || 0.0
     var dur = Number(c.duration) || 0.0
     var prog = c.trackProgress !== undefined ? Number(c.trackProgress) : (dur > 0 ? clamp(pos / dur, 0.0, 1.0) : 0.0)
-    var geomDetail = c.geometryDetail !== undefined ? clamp(Number(c.geometryDetail), 0.50, 1.50) : 1.0
+    var geomDetail = c.geometryDetail !== undefined ? clamp(Number(c.geometryDetail), 0.50, 2.00) : 1.0
     var l2TrOn = c.layer2TracersEnabled !== undefined ? Boolean(c.layer2TracersEnabled) : true
     return {
         playing: c.playing !== undefined ? Boolean(c.playing) : true,
@@ -4671,7 +5359,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer1Density: Number(c.layer1Density !== undefined ? c.layer1Density : 1.0) * geomDetail,
         layer1Dim: Number(c.layer1Dim !== undefined ? c.layer1Dim : 0.15),
         layer1EqEnabled: c.layer1EqEnabled !== undefined ? Boolean(c.layer1EqEnabled) : false,
-        layer1EqStyle: c.layer1EqStyle !== undefined ? clamp(Math.round(Number(c.layer1EqStyle)), 0, 6) : 0,
+        layer1EqStyle: c.layer1EqStyle !== undefined ? clamp(Math.round(Number(c.layer1EqStyle)), 0, LAYER1_EQ_STYLES.length - 1) : 0,
         layer1EqLayout: c.layer1EqLayout !== undefined ? clamp(Math.round(Number(c.layer1EqLayout)), 0, 2) : 0,
         layer1EqGain: c.layer1EqGain !== undefined ? clamp(Number(c.layer1EqGain), 0.4, 2.5) : 1.25,
         layer1EqDamping: c.layer1EqDamping !== undefined ? clamp(Math.round(Number(c.layer1EqDamping)), 0, 2) : 0,
@@ -4680,6 +5368,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer1ShapeSpin: c.layer1ShapeSpin !== undefined ? clamp(Number(c.layer1ShapeSpin), -2.5, 2.5) : 0.25,
         layer1ShapeSpeed: c.layer1ShapeSpeed !== undefined ? clamp(Number(c.layer1ShapeSpeed), 0.2, 3.0) : 1.0,
         layer1ShapeScale: c.layer1ShapeScale !== undefined ? clamp(Number(c.layer1ShapeScale), 0.3, 2.5) : 1.0,
+        layer1ShapeDensity: c.layer1ShapeDensity !== undefined ? clamp(Number(c.layer1ShapeDensity), 0.25, 2.5) : 1.0,
         layer2Enabled: c.layer2Enabled !== undefined ? Boolean(c.layer2Enabled) : true,
         layer2VizEnabled: c.layer2VizEnabled !== undefined ? Boolean(c.layer2VizEnabled) : true,
         layer2TracersEnabled: c.layer2TracersEnabled !== undefined ? Boolean(c.layer2TracersEnabled) : true,

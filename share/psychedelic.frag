@@ -188,32 +188,47 @@ void main() {
             vec3 pCol = mix(uCol0.rgb, uCol2.rgb, lift);
             col += pCol * pow(plasma, 1.55) * (0.42 + 0.30 * uBass) * bIntensity;
         } else if (m == 3) {
-            // Mode 3: Continuous Infinite Log-Polar Julia Seahorse Fractal
-            float logR = log(max(0.0005, r)) * 0.65 - uZoomTime * 0.85 * dir;
-            float wrappedR = exp(mod(logR, 1.38629436) - 0.69314718);
-            float spiralA = a + floor(logR / 1.38629436) * 0.523598 + uTime * 0.22;
-            vec2 z = vec2(cos(spiralA), sin(spiralA)) * wrappedR * 1.15;
-            vec2 c = vec2(-0.745 + cos(uTime * 0.28) * (0.06 + uBass * 0.04),
-                          0.186 + sin(uTime * 0.34) * (0.06 + uMid * 0.04));
+            // Mode 3: Mandelbrot & Julia Boundary Deep-Zoom (Seahorse Valley boundary section zoom in/out)
+            vec2 poi = vec2(-0.743643887, 0.131825904);
+            vec2 cJulia = vec2(-0.745 + cos(uTime * 0.25) * (0.025 + uBass * 0.02),
+                               0.186 + sin(uTime * 0.31) * (0.025 + uMid * 0.02));
+            float zCycle = uZoomTime * 0.42 * dir;
+            vec3 accumCol = vec3(0.0);
+            float totalW = 0.0;
+            const float maxIter = 26.0;
 
-            float iter = 0.0;
-            const float maxIter = 18.0;
-            for (float i = 0.0; i < maxIter; i += 1.0) {
-                if (dot(z, z) > 16.0) break;
-                z = vec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + c;
-                iter += 1.0;
+            for (int k = 0; k < 2; k++) {
+                float phase = fract(zCycle + float(k) * 0.5);
+                float sWin = sin(phase * PI);
+                float wOct = sWin * sWin;
+                // Starts at full Mandelbrot cardioid/bulb view (scale=1.65) and zooms 36x into the Seahorse Valley boundary!
+                float scale = exp2(-phase * 5.2) * 1.65;
+                float rotA = floor(zCycle + float(k) * 0.5) * 0.45 + uTime * 0.10;
+                vec2 zOff = rot2D(rotA) * cPos * scale;
+                vec2 c = poi + zOff;
+                vec2 z = c;
+                vec2 cStep = mix(c, cJulia, 0.18 + 0.08 * sin(uTime * 0.35 + phase * PI));
+
+                float iter = 0.0;
+                for (float i = 0.0; i < maxIter; i += 1.0) {
+                    if (dot(z, z) > 16.0) break;
+                    z = vec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + cStep;
+                    iter += 1.0;
+                }
+                float smoothIt = iter;
+                if (iter < maxIter) {
+                    float log_zn = log(max(1.001, dot(z, z))) * 0.5;
+                    float nu = log(max(0.001, log_zn / log(2.0))) / log(2.0);
+                    smoothIt = iter + 1.0 - nu;
+                }
+                float fVal = sin(smoothIt * 0.48 - uTime * 1.1) * 0.5 + 0.5;
+                float edgeGlow = exp(-abs(iter - maxIter * 0.62) * 0.22);
+                vec3 kCol = mix(uCol0.rgb, mix(uCol1.rgb, uCol2.rgb, fVal), edgeGlow);
+                accumCol += kCol * (0.38 + 0.52 * edgeGlow) * wOct;
+                totalW += wOct;
             }
-            float smoothIt = iter;
-            if (iter < maxIter) {
-                float log_zn = log(max(1.001, dot(z, z))) * 0.5;
-                float nu = log(max(0.001, log_zn / log(2.0))) / log(2.0);
-                smoothIt = iter + 1.0 - nu;
-            }
-            float fVal = sin(smoothIt * 0.55 - uTime * 1.2) * 0.5 + 0.5;
-            float edgeGlow = exp(-abs(iter - maxIter * 0.55) * 0.28);
-            vec3 fracCol = mix(uCol0.rgb, mix(uCol1.rgb, uCol2.rgb, fVal), edgeGlow);
-            float centerFade = smoothstep(0.01, 0.14, r);
-            col = mix(col, fracCol, clamp((0.45 + 0.35 * edgeGlow + 0.15 * uBass) * bIntensity * centerFade, 0.0, 0.90));
+            vec3 fracCol = accumCol / max(0.001, totalW);
+            col = mix(col, fracCol, clamp((0.56 + 0.26 * uBass) * bIntensity, 0.0, 0.92));
         } else if (m == 4) {
             // Mode 4: Raymarched Shape Field (Smooth vanishing-point fade so zero sudden joint appears at r -> 0)
             float rotBase = uTime * 0.32;

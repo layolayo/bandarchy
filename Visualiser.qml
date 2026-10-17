@@ -106,6 +106,7 @@ FocusScope {
     property real layer1ShapeSpin: 1.0
     property real layer1ShapeSpeed: 1.0
     property real layer1ShapeScale: 1.0
+    property real layer1ShapeDensity: 1.0
 
     // Layer #2 — 3 Independent Sub-Layers:
     //   (1) L2 Main Visualiser (`layer2VizEnabled` + `visualMode` 0..11 + `layer2Speed` + `layer2Complexity`)
@@ -530,6 +531,7 @@ FocusScope {
             layer1ShapeSpin: root.layer1ShapeSpin,
             layer1ShapeSpeed: root.layer1ShapeSpeed,
             layer1ShapeScale: root.layer1ShapeScale,
+            layer1ShapeDensity: root.layer1ShapeDensity,
             layer2Enabled: root.layer2Enabled,
             layer2AutoRandomise: root.layer2AutoRandomise,
             layer2VizEnabled: root.layer2VizEnabled,
@@ -618,6 +620,7 @@ FocusScope {
         if (cfg.layer1ShapeSpin !== undefined) root.layer1ShapeSpin = Number(cfg.layer1ShapeSpin)
         if (cfg.layer1ShapeSpeed !== undefined) root.layer1ShapeSpeed = Number(cfg.layer1ShapeSpeed)
         if (cfg.layer1ShapeScale !== undefined) root.layer1ShapeScale = Number(cfg.layer1ShapeScale)
+        if (cfg.layer1ShapeDensity !== undefined) root.layer1ShapeDensity = Number(cfg.layer1ShapeDensity)
 
         if (cfg.layer2Enabled !== undefined) root.layer2Enabled = Boolean(cfg.layer2Enabled)
         if (cfg.layer2AutoRandomise !== undefined) root.layer2AutoRandomise = Boolean(cfg.layer2AutoRandomise)
@@ -685,6 +688,7 @@ FocusScope {
         root.layer1EqStyle = 0
         root.layer1ShapesEnabled = true
         root.layer1ShapeStyle = 0
+        root.layer1ShapeDensity = 1.0
         root.layer2Enabled = true
         root.layer2VizEnabled = true
         root.layer2TracersEnabled = true
@@ -736,6 +740,7 @@ FocusScope {
             l1ShapeSpin: root.layer1ShapeSpin,
             l1ShapeSpeed: root.layer1ShapeSpeed,
             l1ShapeScale: root.layer1ShapeScale,
+            l1ShapeDensity: root.layer1ShapeDensity,
             l1AutoRandomise: root.layer1AutoRandomise
         }
         copy.push(item)
@@ -775,6 +780,7 @@ FocusScope {
         if (item.l1ShapeSpin !== undefined) root.layer1ShapeSpin = Number(item.l1ShapeSpin)
         if (item.l1ShapeSpeed !== undefined) root.layer1ShapeSpeed = Number(item.l1ShapeSpeed)
         if (item.l1ShapeScale !== undefined) root.layer1ShapeScale = Number(item.l1ShapeScale)
+        if (item.l1ShapeDensity !== undefined) root.layer1ShapeDensity = Number(item.l1ShapeDensity)
         if (item.l1AutoRandomise !== undefined) root.layer1AutoRandomise = Boolean(item.l1AutoRandomise)
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
@@ -1097,6 +1103,7 @@ FocusScope {
             layer1ShapeSpin: root.layer1ShapeSpin,
             layer1ShapeSpeed: root.layer1ShapeSpeed,
             layer1ShapeScale: root.layer1ShapeScale,
+            layer1ShapeDensity: root.layer1ShapeDensity,
             layer2Enabled: root.layer2Enabled,
             layer2VizEnabled: root.layer2VizEnabled,
             layer2TracersEnabled: root.layer2TracersEnabled,
@@ -1187,6 +1194,7 @@ FocusScope {
             root.layer1ShapeSpin = Number(p.l1ShapeSpin !== undefined ? p.l1ShapeSpin : 1.0)
             root.layer1ShapeSpeed = Number(p.l1ShapeSpeed !== undefined ? p.l1ShapeSpeed : 1.0)
             root.layer1ShapeScale = Number(p.l1ShapeScale !== undefined ? p.l1ShapeScale : 1.0)
+            root.layer1ShapeDensity = Number(p.l1ShapeDensity !== undefined ? p.l1ShapeDensity : 1.0)
             root.sensitivity = Number(p.sensitivity !== undefined ? p.sensitivity : 1.35)
             root.layer2Complexity = Number(p.l2Complexity !== undefined ? p.l2Complexity : 1.0)
             root.layer2Speed = Number(p.l2Speed !== undefined ? p.l2Speed : 1.0)
@@ -1270,6 +1278,7 @@ FocusScope {
             l1ShapeSpin: root.layer1ShapeSpin,
             l1ShapeSpeed: root.layer1ShapeSpeed,
             l1ShapeScale: root.layer1ShapeScale,
+            l1ShapeDensity: root.layer1ShapeDensity,
             l2Enabled: root.layer2Enabled,
             l2VizEnabled: root.layer2VizEnabled,
             l2Mode: root.visualMode,
@@ -1416,13 +1425,28 @@ FocusScope {
         root.layer1Enabled = true
         if (root.layer1FieldEnabled) {
             root.layer1Mode = (root.layer1Mode + 1 + Math.floor(Math.random() * Math.max(1, Engine.LAYER1_MODES.length - 1))) % Engine.LAYER1_MODES.length
+            root.layer1Density = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
+            root.layer1Speed = Math.round((0.60 + Math.random() * 1.25) * 100) / 100
+            root.layer1Direction = [1, -1, 0][Math.floor(Math.random() * 3)]
         }
         if (root.layer1EqEnabled) {
             root.layer1EqStyle = (root.layer1EqStyle + 1 + Math.floor(Math.random() * Math.max(1, Engine.LAYER1_EQ_STYLES.length - 1))) % Engine.LAYER1_EQ_STYLES.length
+            root.layer1EqLayout = Math.floor(Math.random() * Engine.LAYER1_EQ_LAYOUTS.length)
+            root.layer1EqDamping = Math.floor(Math.random() * Engine.LAYER1_EQ_DAMPING.length)
+            root.layer1EqGain = Math.round((0.90 + Math.random() * 0.90) * 100) / 100
         }
         if (root.layer1ShapesEnabled) {
             root.layer1ShapeStyle = (root.layer1ShapeStyle + 1 + Math.floor(Math.random() * Math.max(1, Engine.LAYER1_SHAPE_STYLES.length - 1))) % Engine.LAYER1_SHAPE_STYLES.length
+            root.layer1ShapeScale = Math.round((0.55 + Math.random() * 1.35) * 100) / 100
+            root.layer1ShapeDensity = Math.round((0.50 + Math.random() * 1.75) * 100) / 100
+            root.layer1ShapeSpeed = Math.round((0.55 + Math.random() * 1.55) * 100) / 100
+            root.layer1ShapeSpin = Math.round(((Math.random() * 2.8) - 1.4) * 100) / 100
         }
+        if (root.backdropEnabled) {
+            root.backdropMode = (root.backdropMode + 1 + Math.floor(Math.random() * Math.max(1, Engine.BACKDROP_MODES.length - 1))) % Engine.BACKDROP_MODES.length
+            root.backdropDirection = [1, -1, 0][Math.floor(Math.random() * 3)]
+        }
+        Engine.randomiseState(root.engineState)
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
         root.requestActionFeedback("Layer #1 Randomised: " + Engine.LAYER1_MODES[root.layer1Mode])
@@ -1638,7 +1662,7 @@ FocusScope {
         spacing: 6
 
         Text {
-            Layout.preferredWidth: 112
+            Layout.preferredWidth: 138
             text: sliderRow.label
             textFormat: Text.PlainText
             font.family: "JetBrainsMono Nerd Font"
@@ -1844,6 +1868,27 @@ FocusScope {
         return Qt.vector4d(isNaN(r) ? 0.22 : r, isNaN(g) ? 0.74 : g, isNaN(b) ? 0.97 : b, 1.0)
     }
 
+    function lerpVec4(a, b, t) {
+        var f = Math.max(0.0, Math.min(1.0, t))
+        return Qt.vector4d(
+            a.x + (b.x - a.x) * f,
+            a.y + (b.y - a.y) * f,
+            a.z + (b.z - a.z) * f,
+            1.0
+        )
+    }
+
+    function samplePaletteVec4(pal, pos) {
+        var pLen = pal.length
+        var wrapped = ((pos % pLen) + pLen) % pLen
+        var i0 = Math.floor(wrapped)
+        var i1 = (i0 + 1) % pLen
+        var frac = wrapped - i0
+        // Smoothstep easing so palette colour transitions have zero abrupt derivative kinks
+        var sFrac = frac * frac * (3.0 - 2.0 * frac)
+        return root.lerpVec4(root.hexToVec4(pal[i0]), root.hexToVec4(pal[i1]), sFrac)
+    }
+
     // Frame-paced animation loop (honours root.targetFps: 30, 48, or 60 FPS)
     FrameAnimation {
         id: frameAnim
@@ -1868,6 +1913,7 @@ FocusScope {
                 root.layer1Density += (Number(tp.l1Density || 1.0) - root.layer1Density) * alpha
                 root.layer1Dim += (Number(tp.l1Dim || 0.16) - root.layer1Dim) * alpha
                 root.layer1EqGain += (Number(tp.l1EqGain || 1.25) - root.layer1EqGain) * alpha
+                root.layer1ShapeDensity += (Number(tp.l1ShapeDensity || 1.0) - root.layer1ShapeDensity) * alpha
                 root.sensitivity += (Number(tp.sensitivity || 1.35) - root.sensitivity) * alpha
                 root.layer2Complexity += (Number(tp.l2Complexity || 1.0) - root.layer2Complexity) * alpha
                 root.layer2Speed += (Number(tp.l2Speed || 1.0) - root.layer2Speed) * alpha
@@ -1882,7 +1928,7 @@ FocusScope {
             root._cachedFrameConfig = cfg
             Engine.stepState(root.engineState, root.bands, root.playing, cfg, dt)
 
-            // Explicitly push dynamic time, audio, and palette uniforms to gpuShaderStage every frame
+            // Explicitly push dynamic time, audio, and smoothly blended palette uniforms to gpuShaderStage every frame
             // (since plain JS object mutations on root.engineState do not emit QML notify signals)
             if (root.stageMode === "visualiser" && root.gpuShaderEnabled && root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) {
                 var st = root.engineState
@@ -1898,17 +1944,21 @@ FocusScope {
                 gpuShaderStage.uDriftY = Math.cos(bT * 0.21) * 0.12 * root.tracerDrift
 
                 var pal = Engine.PALETTES[root.paletteIndex % Engine.PALETTES.length]
+                var targetCol0, targetCol1, targetCol2
                 if (pal && pal.length >= 3) {
-                    var rot = Math.floor((st.hueShift || 0.0) / 45.0)
-                    var pLen = pal.length
-                    gpuShaderStage.uCol0 = root.hexToVec4(pal[((rot % pLen) + pLen) % pLen])
-                    gpuShaderStage.uCol1 = root.hexToVec4(pal[(((rot + 2) % pLen) + pLen) % pLen])
-                    gpuShaderStage.uCol2 = root.hexToVec4(pal[(((rot + 4) % pLen) + pLen) % pLen])
+                    var contRot = (st.hueShift || 0.0) / 45.0
+                    targetCol0 = root.samplePaletteVec4(pal, contRot)
+                    targetCol1 = root.samplePaletteVec4(pal, contRot + 2.0)
+                    targetCol2 = root.samplePaletteVec4(pal, contRot + 4.0)
                 } else {
-                    gpuShaderStage.uCol0 = Qt.vector4d(root.accentColour.r, root.accentColour.g, root.accentColour.b, 1.0)
-                    gpuShaderStage.uCol1 = Qt.vector4d(root.urgentColour.r, root.urgentColour.g, root.urgentColour.b, 1.0)
-                    gpuShaderStage.uCol2 = Qt.vector4d(0.22, 0.74, 0.97, 1.0)
+                    targetCol0 = Qt.vector4d(root.accentColour.r, root.accentColour.g, root.accentColour.b, 1.0)
+                    targetCol1 = Qt.vector4d(root.urgentColour.r, root.urgentColour.g, root.urgentColour.b, 1.0)
+                    targetCol2 = Qt.vector4d(0.22, 0.74, 0.97, 1.0)
                 }
+                var colBlend = Math.min(1.0, dt * 4.5)
+                gpuShaderStage.uCol0 = root.lerpVec4(gpuShaderStage.uCol0, targetCol0, colBlend)
+                gpuShaderStage.uCol1 = root.lerpVec4(gpuShaderStage.uCol1, targetCol1, colBlend)
+                gpuShaderStage.uCol2 = root.lerpVec4(gpuShaderStage.uCol2, targetCol2, colBlend)
             }
 
             // Throttle QML telemetry property updates to ~12 Hz (every 4th frame) to avoid QML binding storms
@@ -1942,21 +1992,13 @@ FocusScope {
                 return
             }
             if (root.layer2Enabled) {
-                root.cycleMode(1)
+                root.randomiseLayer2()
             }
             if (root.layer1Enabled) {
-                if (root.layer1FieldEnabled) {
-                    root.layer1Mode = (root.layer1Mode + 1) % Engine.LAYER1_MODES.length
-                }
-                if (root.layer1EqEnabled) {
-                    root.layer1EqStyle = (root.layer1EqStyle + 1) % Engine.LAYER1_EQ_STYLES.length
-                }
-                if (root.layer1ShapesEnabled) {
-                    root.layer1ShapeStyle = (root.layer1ShapeStyle + 1) % Engine.LAYER1_SHAPE_STYLES.length
-                }
+                root.randomiseLayer1()
             }
             if (root.layer3Enabled && root.layer3AutoRandomise) {
-                root.layer3Mode = Math.floor(Math.random() * Engine.LAYER3_MODES.length)
+                root.randomiseLayer3()
             }
             Engine.randomiseState(root.engineState)
             root.paletteIndex = (root.paletteIndex + 1) % Engine.PALETTE_NAMES.length
@@ -2150,7 +2192,7 @@ FocusScope {
 
     Canvas {
         id: vizCanvas
-        readonly property int maxInternalW: 640
+        readonly property int maxInternalW: 1280
         readonly property int effectiveTargetW: Math.min(maxInternalW, Math.max(320, root.renderResW))
         readonly property real renderScale: root.width > effectiveTargetW ? (effectiveTargetW / Math.max(1, root.width)) : 1.0
         width: Math.max(64, Math.round(root.width * renderScale))
@@ -2646,13 +2688,13 @@ FocusScope {
                         }
                     }
 
-                    // LED / Equaliser Style Cycler (Skyline, LED Bars, Mirror, 3D Ridges, Sun, TwinWave, Spotlights)
+                    // LED / Equaliser Style Cycler (13 Styles: Skyline, LED Bars, Mirror, 3D Ridges, Sun, TwinWave, Spotlights, 3D Orb, 3D Torus, Cymatics, 3D Helix, Tesla Arcs, Tralis City)
                     VizPillButton {
                         Layout.fillWidth: true
                         pillHeight: 21
                         fontSize: 9
                         horizontalPad: 5
-                        text: "EQ:" + (["Skyline", "LED Bars", "Mirror", "3D Ridges", "Sun", "TwinWave", "Spotlights"][root.layer1EqStyle] || "Skyline")
+                        text: "EQ:" + (["Skyline", "LED Bars", "Mirror", "3D Ridges", "Sun", "TwinWave", "Spotlights", "3D Orb", "3D Torus", "Cymatics", "3D Helix", "Tesla Arcs", "Tralis City"][root.layer1EqStyle] || "Skyline")
                         active: root.layer1Enabled && root.layer1EqEnabled
                         onClicked: {
                             root.layer1Enabled = true
@@ -2730,6 +2772,34 @@ FocusScope {
                             root.layer1ShapeStyle = (root.layer1ShapeStyle + (delta > 0 ? 1 : -1) + nSh) % nSh
                             vizCanvas.requestPaint()
                             root.requestActionFeedback("L1 Beat Shapes: " + Engine.LAYER1_SHAPE_STYLES[root.layer1ShapeStyle])
+                        }
+                    }
+
+                    // L1 Beat Shapes Density Quick Control
+                    VizPillButton {
+                        pillHeight: 21
+                        fontSize: 9
+                        horizontalPad: 4
+                        text: "ShDen:" + root.layer1ShapeDensity.toFixed(1) + "x"
+                        active: root.layer1Enabled && root.layer1ShapesEnabled && Math.abs(root.layer1ShapeDensity - 1.0) > 0.05
+                        onClicked: {
+                            var nextSD = root.layer1ShapeDensity + 0.25
+                            if (nextSD > 2.55) nextSD = 0.25
+                            root.layer1ShapeDensity = Math.round(nextSD * 100) / 100
+                            vizCanvas.requestPaint()
+                            scheduleSaveVisualiserConfig()
+                            root.requestActionFeedback("L1 Shape Density: " + root.layer1ShapeDensity.toFixed(2) + "x")
+                        }
+                        onRightClicked: {
+                            root.layer1ShapeDensity = 1.0
+                            vizCanvas.requestPaint()
+                            scheduleSaveVisualiserConfig()
+                            root.requestActionFeedback("L1 Shape Density Reset: 1.00x")
+                        }
+                        onWheelScrolled: delta => {
+                            root.layer1ShapeDensity = Math.max(0.25, Math.min(2.50, Math.round((root.layer1ShapeDensity + (delta > 0 ? 0.15 : -0.15)) * 100) / 100))
+                            vizCanvas.requestPaint()
+                            scheduleSaveVisualiserConfig()
                         }
                     }
 
@@ -3384,7 +3454,7 @@ FocusScope {
                             }
                         }
 
-                        // Master Layer #1 Toggle + Per-Layer Auto-Randomise + Quick Sub-System Summary Row
+                        // Master Layer #1 Toggle + Per-Layer Auto-Randomise Row
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 6
@@ -3395,50 +3465,6 @@ FocusScope {
                                 onClicked: {
                                     root.layer1Enabled = !root.layer1Enabled
                                     vizCanvas.requestPaint()
-                                }
-                            }
-
-                            VizPillButton {
-                                text: root.layer1FieldEnabled ? "󰄬 (1) L1 Field: ON" : "󰅖 (1) L1 Field: OFF"
-                                active: root.layer1Enabled && root.layer1FieldEnabled
-                                onClicked: {
-                                    root.layer1FieldEnabled = !root.layer1FieldEnabled
-                                    if (root.layer1FieldEnabled) root.layer1Enabled = true
-                                    root.clearCanvasImmediate()
-                                    root.requestActionFeedback("L1 Field Sub-System: " + (root.layer1FieldEnabled ? "ON" : "OFF"))
-                                }
-                            }
-
-                            VizPillButton {
-                                text: root.layer1EqEnabled ? "󰄬 (2) L1 LED EQ: ON" : "󰅖 (2) L1 LED EQ: OFF"
-                                active: root.layer1Enabled && root.layer1EqEnabled
-                                onClicked: {
-                                    root.layer1EqEnabled = !root.layer1EqEnabled
-                                    if (root.layer1EqEnabled) root.layer1Enabled = true
-                                    root.clearCanvasImmediate()
-                                    root.requestActionFeedback("L1 Equaliser Sub-System: " + (root.layer1EqEnabled ? "ON" : "OFF"))
-                                }
-                            }
-
-                            VizPillButton {
-                                text: root.layer1ShapesEnabled ? "󰄬 (3) L1 Shapes: ON" : "󰅖 (3) L1 Shapes: OFF"
-                                active: root.layer1Enabled && root.layer1ShapesEnabled
-                                onClicked: {
-                                    root.layer1ShapesEnabled = !root.layer1ShapesEnabled
-                                    if (root.layer1ShapesEnabled) root.layer1Enabled = true
-                                    root.clearCanvasImmediate()
-                                    root.requestActionFeedback("L1 Beat Shapes Sub-System: " + (root.layer1ShapesEnabled ? "ON" : "OFF"))
-                                }
-                            }
-
-                            VizPillButton {
-                                text: root.backdropEnabled ? "󰄬 (4) GPU Tunnel: ON" : "󰅖 (4) GPU Tunnel: OFF"
-                                active: root.backdropEnabled
-                                onClicked: {
-                                    root.backdropEnabled = !root.backdropEnabled
-                                    if (root.backdropEnabled) root.layer1Enabled = true
-                                    root.clearCanvasImmediate()
-                                    root.requestActionFeedback("GPU Tunnel Backdrop: " + (root.backdropEnabled ? "ON" : "OFF"))
                                 }
                             }
 
@@ -3460,7 +3486,7 @@ FocusScope {
                             }
                         }
 
-                        // SUB-SYSTEM 1: L1 Ambient / Perspective Field (Explicit OFF pill + 7 Modes + Tri-State Direction + Ground Speed & Sliders)
+                        // SUB-SYSTEM 1: L1 Ambient / Perspective Field (Bi-State ON/OFF Toggle + 7 Modes + Tri-State Direction + Ground Speed & Sliders)
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: fieldSubCol.implicitHeight + 14
@@ -3480,13 +3506,15 @@ FocusScope {
                                     spacing: 5
 
                                     VizPillButton {
-                                        text: "󰅖 OFF"
-                                        active: !root.layer1FieldEnabled
+                                        text: root.layer1FieldEnabled ? "󰄬 Field: ON" : "󰅖 Field: OFF"
+                                        active: root.layer1FieldEnabled
                                         horizontalPad: 7
                                         onClicked: {
-                                            root.layer1FieldEnabled = false
+                                            root.layer1FieldEnabled = !root.layer1FieldEnabled
+                                            if (root.layer1FieldEnabled) root.layer1Enabled = true
                                             root.clearCanvasImmediate()
-                                            root.requestActionFeedback("L1 Field: OFF")
+                                            scheduleSaveVisualiserConfig()
+                                            root.requestActionFeedback("L1 Field: " + (root.layer1FieldEnabled ? "ON" : "OFF"))
                                         }
                                     }
 
@@ -3555,10 +3583,10 @@ FocusScope {
                                     }
 
                                     LayerSlider {
-                                        label: "Model / Field Density"
+                                        label: "Field Object Density"
                                         value: root.layer1Density
                                         minValue: 0.25
-                                        maxValue: 2.00
+                                        maxValue: 2.50
                                         unitSuffix: "x"
                                         onValueEdited: v => {
                                             root.layer1Density = v
@@ -3582,7 +3610,7 @@ FocusScope {
                             }
                         }
 
-                        // SUB-SYSTEM 2: Independent L1 SynthGrid Equaliser (Explicit OFF pill + 7 Styles including Sun Rays & Horizon Spotlights)
+                        // SUB-SYSTEM 2: Independent L1 SynthGrid Equaliser (Bi-State ON/OFF Toggle + 7 Styles including Sun Rays & Horizon Spotlights)
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: eqControlsCol.implicitHeight + 14
@@ -3597,18 +3625,20 @@ FocusScope {
                                 anchors.margins: 7
                                 spacing: 6
 
-                                RowLayout {
+                                Flow {
                                     Layout.fillWidth: true
                                     spacing: 5
 
                                     VizPillButton {
-                                        text: "󰅖 OFF"
-                                        active: !root.layer1EqEnabled
+                                        text: root.layer1EqEnabled ? "󰄬 EQ: ON" : "󰅖 EQ: OFF"
+                                        active: root.layer1EqEnabled
                                         horizontalPad: 7
                                         onClicked: {
-                                            root.layer1EqEnabled = false
+                                            root.layer1EqEnabled = !root.layer1EqEnabled
+                                            if (root.layer1EqEnabled) root.layer1Enabled = true
                                             root.clearCanvasImmediate()
-                                            root.requestActionFeedback("L1 Equaliser: OFF")
+                                            scheduleSaveVisualiserConfig()
+                                            root.requestActionFeedback("L1 Equaliser: " + (root.layer1EqEnabled ? "ON" : "OFF"))
                                         }
                                     }
 
@@ -3697,7 +3727,7 @@ FocusScope {
                             }
                         }
 
-                        // SUB-SYSTEM 3: Independent L1 Beat Shapes (Explicit OFF pill + 6 3D Rotating Styles)
+                        // SUB-SYSTEM 3: Independent L1 Beat Shapes (Bi-State ON/OFF Toggle + 6 3D Rotating Styles + Density Slider)
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: shapesControlsCol.implicitHeight + 14
@@ -3717,13 +3747,15 @@ FocusScope {
                                     spacing: 5
 
                                     VizPillButton {
-                                        text: "󰅖 OFF"
-                                        active: !root.layer1ShapesEnabled
+                                        text: root.layer1ShapesEnabled ? "󰄬 Shapes: ON" : "󰅖 Shapes: OFF"
+                                        active: root.layer1ShapesEnabled
                                         horizontalPad: 7
                                         onClicked: {
-                                            root.layer1ShapesEnabled = false
+                                            root.layer1ShapesEnabled = !root.layer1ShapesEnabled
+                                            if (root.layer1ShapesEnabled) root.layer1Enabled = true
                                             root.clearCanvasImmediate()
-                                            root.requestActionFeedback("L1 Beat Shapes: OFF")
+                                            scheduleSaveVisualiserConfig()
+                                            root.requestActionFeedback("L1 Beat Shapes: " + (root.layer1ShapesEnabled ? "ON" : "OFF"))
                                         }
                                     }
 
@@ -3747,7 +3779,7 @@ FocusScope {
 
                                 GridLayout {
                                     Layout.fillWidth: true
-                                    columns: 3
+                                    columns: 4
                                     columnSpacing: 12
                                     rowSpacing: 5
 
@@ -3789,11 +3821,24 @@ FocusScope {
                                             scheduleSaveVisualiserConfig()
                                         }
                                     }
+
+                                    LayerSlider {
+                                        label: "Beat Shapes Density"
+                                        value: root.layer1ShapeDensity
+                                        minValue: 0.25
+                                        maxValue: 2.50
+                                        unitSuffix: "x"
+                                        onValueEdited: v => {
+                                            root.layer1ShapeDensity = v
+                                            vizCanvas.requestPaint()
+                                            scheduleSaveVisualiserConfig()
+                                        }
+                                    }
                                 }
                             }
                         }
 
-                        // SUB-SYSTEM 4: Independent Moving GPU Tunnel / Backdrop (7 GPU Shaders + Explicit OFF pill + Tri-State Direction)
+                        // SUB-SYSTEM 4: Independent Moving GPU Tunnel / Backdrop (7 GPU Shaders + Bi-State ON/OFF Toggle + Tri-State Direction)
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: gpuSubCol.implicitHeight + 14
@@ -3812,23 +3857,16 @@ FocusScope {
                                     Layout.fillWidth: true
                                     spacing: 5
 
-                                    Text {
-                                        text: "󰢮 GPU Tunnel:"
-                                        textFormat: Text.PlainText
-                                        font.family: "JetBrainsMono Nerd Font"
-                                        font.pixelSize: 10
-                                        font.bold: true
-                                        color: root.accentColour
-                                    }
-
                                     VizPillButton {
-                                        text: "󰅖 OFF"
-                                        active: !root.backdropEnabled
+                                        text: root.backdropEnabled ? "󰄬 GPU Tunnel: ON" : "󰅖 GPU Tunnel: OFF"
+                                        active: root.backdropEnabled
                                         horizontalPad: 7
                                         onClicked: {
-                                            root.backdropEnabled = false
+                                            root.backdropEnabled = !root.backdropEnabled
+                                            if (root.backdropEnabled) root.layer1Enabled = true
                                             root.clearCanvasImmediate()
-                                            root.requestActionFeedback("GPU Tunnel Backdrop: OFF")
+                                            scheduleSaveVisualiserConfig()
+                                            root.requestActionFeedback("GPU Tunnel Backdrop: " + (root.backdropEnabled ? "ON" : "OFF"))
                                         }
                                     }
 
@@ -3982,7 +4020,7 @@ FocusScope {
                             spacing: 6
 
                             VizPillButton {
-                                text: root.layer2Enabled ? "󰄬 Layer #2: ON" : "󰅖 Layer #2: OFF"
+                                text: root.layer2Enabled ? "󰄬 Layer #2 Master: ON" : "󰅖 Layer #2 Master: OFF"
                                 active: root.layer2Enabled
                                 onClicked: {
                                     root.layer2Enabled = !root.layer2Enabled
@@ -3991,35 +4029,14 @@ FocusScope {
                             }
 
                             VizPillButton {
-                                text: root.layer2VizEnabled ? "󰄬 (1) L2 Viz: ON" : "󰅖 (1) L2 Viz: OFF"
+                                text: root.layer2VizEnabled ? "󰄬 L2 Viz: ON" : "󰅖 L2 Viz: OFF"
                                 active: root.layer2Enabled && root.layer2VizEnabled
                                 onClicked: {
                                     root.layer2VizEnabled = !root.layer2VizEnabled
                                     if (root.layer2VizEnabled) root.layer2Enabled = true
                                     root.clearCanvasImmediate()
+                                    scheduleSaveVisualiserConfig()
                                     root.requestActionFeedback("L2 Main Visualiser: " + (root.layer2VizEnabled ? "ON" : "OFF"))
-                                }
-                            }
-
-                            VizPillButton {
-                                text: root.backdropEnabled ? "󰄬 (2) L2 Tunnel: ON" : "󰅖 (2) L2 Tunnel: OFF"
-                                active: root.backdropEnabled
-                                onClicked: {
-                                    root.backdropEnabled = !root.backdropEnabled
-                                    if (root.backdropEnabled) root.layer2Enabled = true
-                                    root.clearCanvasImmediate()
-                                    root.requestActionFeedback("GPU Tunnel Backdrop: " + (root.backdropEnabled ? "ON" : "OFF"))
-                                }
-                            }
-
-                            VizPillButton {
-                                text: root.layer2TracersEnabled ? "󰄬 (3) L2 Tracers: ON" : "󰅖 (3) L2 Tracers: OFF"
-                                active: root.layer2Enabled && root.layer2TracersEnabled
-                                onClicked: {
-                                    root.layer2TracersEnabled = !root.layer2TracersEnabled
-                                    if (root.layer2TracersEnabled && root.tracerCount <= 1) root.tracerCount = 4
-                                    root.clearCanvasImmediate()
-                                    root.requestActionFeedback("L2 3D Tracers: " + (root.layer2TracersEnabled ? "ON" : "OFF"))
                                 }
                             }
 
@@ -4073,29 +4090,25 @@ FocusScope {
                             }
                         }
 
-                        // Dedicated L2 3D History Tracers Strip (OFF + 1x..16x Quick Pills + 3D Flow Direction)
+                        // Dedicated L2 3D History Tracers Strip (Bi-State ON/OFF Toggle + 1x..16x Quick Pills + 3D Flow Direction)
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 5
 
-                            Text {
-                                text: "L2 3D Tracers:"
-                                textFormat: Text.PlainText
-                                font.family: "JetBrainsMono Nerd Font"
-                                font.pixelSize: 10
-                                font.bold: true
-                                color: root.accentColour
-                            }
-
                             VizPillButton {
-                                text: "󰅖 OFF"
-                                active: !root.layer2TracersEnabled
-                                horizontalPad: 6
+                                text: root.layer2TracersEnabled ? "󰄬 L2 3D Tracers: ON" : "󰅖 L2 3D Tracers: OFF"
+                                active: root.layer2TracersEnabled
+                                horizontalPad: 7
                                 pillHeight: 22
                                 onClicked: {
-                                    root.layer2TracersEnabled = false
+                                    root.layer2TracersEnabled = !root.layer2TracersEnabled
+                                    if (root.layer2TracersEnabled) {
+                                        root.layer2Enabled = true
+                                        if (root.tracerCount <= 1) root.tracerCount = 4
+                                    }
                                     root.clearCanvasImmediate()
-                                    root.requestActionFeedback("L2 3D Tracers: OFF")
+                                    scheduleSaveVisualiserConfig()
+                                    root.requestActionFeedback("L2 3D Tracers: " + (root.layer2TracersEnabled ? "ON" : "OFF"))
                                 }
                             }
 
@@ -4529,10 +4542,11 @@ FocusScope {
 
                                     Repeater {
                                         model: [
-                                            { q: 0, w: 384, detail: 0.75, label: "Low (384p Fast)" },
+                                            { q: 0, w: 384, detail: 0.75, label: "Low (384p)" },
                                             { q: 1, w: 480, detail: 1.00, label: "Balanced (480p)" },
-                                            { q: 2, w: 560, detail: 1.30, label: "High (560p)" },
-                                            { q: 3, w: 640, detail: 1.65, label: "Ultra (640p Crisp)" }
+                                            { q: 2, w: 640, detail: 1.35, label: "High (640p)" },
+                                            { q: 3, w: 960, detail: 1.70, label: "Ultra (960p HD)" },
+                                            { q: 4, w: 1280, detail: 2.00, label: "Ultra+ (1280p Razor)" }
                                         ]
                                         delegate: VizPillButton {
                                             required property var modelData
@@ -4619,10 +4633,10 @@ FocusScope {
                                     }
 
                                     LayerSlider {
-                                        label: "Internal Width"
+                                        label: "Canvas Resolution"
                                         value: root.renderResW
                                         minValue: 320
-                                        maxValue: 640
+                                        maxValue: 1280
                                         integerSteps: true
                                         unitSuffix: "px"
                                         onValueEdited: v => {
