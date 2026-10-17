@@ -506,6 +506,12 @@ Item {
         }
     }
 
+    function syncVisualiserActive() {
+        if (!root.service) return
+        var stageOn = (panelVisualiser.stageMode === "visualiser" || panelVisualiser.stageMode === "turntable")
+        root.service.visualiserActive = Boolean((root.opened || root.standaloneMode) && root.visible && root.activeTab === 2 && stageOn)
+    }
+
     function open(payloadJson) {
         root.opened = true
         if (!root.service && root.shell && typeof root.shell.serviceFor === "function") {
@@ -516,8 +522,8 @@ Item {
             root.service.loadCollection(root.service.activeScope, root.service.searchQuery)
             root.service.loadPlaylists()
             root.service.refreshSmartPlaylist(root.service.smartPreset, "")
+            root.syncVisualiserActive()
             if (root.activeTab === 2) {
-                root.service.visualiserActive = true
                 root.service.refreshAsciiArt()
             }
         }
@@ -535,11 +541,18 @@ Item {
         else root.open("{}")
     }
 
+    onVisibleChanged: {
+        if (!root.visible && !root.standaloneMode) {
+            root.opened = false
+        }
+        root.syncVisualiserActive()
+    }
+
     onActiveTabChanged: {
         if (service) {
-            service.visualiserActive = (activeTab === 2)
-            if (activeTab === 2) service.refreshAsciiArt()
-            if (activeTab === 1) {
+            root.syncVisualiserActive()
+            if (activeTab === 2 && (root.opened || root.standaloneMode) && root.visible) service.refreshAsciiArt()
+            if (activeTab === 1 && (root.opened || root.standaloneMode) && root.visible) {
                 service.loadPlaylists()
                 service.refreshSmartPlaylist(service.smartPreset, "")
             }
@@ -2019,6 +2032,7 @@ Item {
                         }
                         onRequestStageModeChange: newStageMode => {
                             if (root.service) root.service.setStageMode(newStageMode)
+                            root.syncVisualiserActive()
                         }
                         onRequestActionFeedback: msg => {
                             if (root.service) root.service.notifyAction(msg)

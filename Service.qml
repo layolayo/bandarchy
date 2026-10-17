@@ -560,7 +560,6 @@ Item {
         if (["off", "art", "turntable", "visualiser"].indexOf(newMode) < 0) return
         root._stageChangedLocally = true
         root.stageMode = newMode
-        root.visualiserActive = (newMode === "visualiser" || newMode === "turntable")
         Quickshell.execDetached([root.binPath, "auth", "--stage-mode", newMode])
         var labels = {
             "off": "Stage Closed",

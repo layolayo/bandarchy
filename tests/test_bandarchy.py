@@ -883,7 +883,7 @@ console.log(JSON.stringify({ ok: true, maxFrameMs: maxMs }));
         self.assertIn("onArtLinesChanged:", viz_src)
         self.assertIn("interval: 9000", viz_src)
         self.assertIn("interval: 18000", viz_src)
-        self.assertIn('text: "󰒟 Randomise"', viz_src)
+        self.assertIn('"󰒟 Rand L1"', viz_src)
         self.assertIn("Dynamic Audio Arc", engine_src)
         self.assertNotIn("+ state.beatCount)", engine_src)
 
@@ -1160,6 +1160,8 @@ console.log('OK');
             viz_src = f.read()
         with open(os.path.join(REPO_ROOT, "App.qml"), "r", encoding="utf-8") as f:
             app_src = f.read()
+        with open(os.path.join(REPO_ROOT, "Panel.qml"), "r", encoding="utf-8") as f:
+            panel_src = f.read()
         with open(os.path.join(REPO_ROOT, "Service.qml"), "r", encoding="utf-8") as f:
             svc_src = f.read()
         with open(os.path.join(REPO_ROOT, "PsychedelicEngine.js"), "r", encoding="utf-8") as f:
@@ -1168,14 +1170,23 @@ console.log('OK');
         # 1. Verify GPU Tunnel works in L1 even when L2 & L3 are OFF, and Row 2A has explicit ON/OFF + Tri-State controls
         self.assertIn("property real uL1Enabled: 0.0", viz_src)
         self.assertIn("property real uL2Enabled: (root.gpuShaderEnabled && root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) ? 1.0 : 0.0", viz_src)
+        self.assertIn("readonly property bool hasActiveCpuLayers:", viz_src)
+        self.assertIn("visible: root.stageMode === \"visualiser\" && root.hasActiveCpuLayers", viz_src)
         self.assertIn("renderStrategy: Canvas.Threaded", viz_src)
-        self.assertIn('text: root.backdropEnabled ? "GPU:ON" : "GPU:OFF"', viz_src)
+        self.assertIn('text: root.backdropEnabled ? "Tunnel:ON" : "Tunnel:OFF"', viz_src)
         self.assertIn('text: "TunDir:" + (root.backdropDirection > 0 ? "Towards" : (root.backdropDirection < 0 ? "Away" : "Breathe"))', viz_src)
         self.assertIn('text: root.layer1EqEnabled ? "LED:ON" : "LED:OFF"', viz_src)
+        self.assertIn('text: "EQ:" + (["Skyline", "LED Bars", "Mirror", "3D Ridges", "Sun", "TwinWave", "Spotlights"][root.layer1EqStyle] || "Skyline")', viz_src)
         self.assertIn('text: root.layer1ShapesEnabled ? "Shapes:ON" : "Shapes:OFF"', viz_src)
 
-        # 2. Verify orphaned L2 Tracers pill is removed from App.qml and cavaProc is gated in Service.qml
+        # 2. Verify unified Rand buttons in drawer Tabs 1, 2, 3 (no duplicate Step Random buttons), orphaned L2 Tracers removed from App.qml, and Panel/Service cava gating
+        self.assertNotIn("🎲 Step Random L2", viz_src)
+        self.assertNotIn("🎲 Step Random L3", viz_src)
+        self.assertIn('text: root.layer1AutoRandomise ? "󰒟 Rand L1 (Auto: ON)" : "󰒟 Rand L1"', viz_src)
+        self.assertIn('text: root.layer2AutoRandomise ? "󰒟 Rand L2 (Auto: ON)" : "󰒟 Rand L2"', viz_src)
+        self.assertIn('text: root.layer3AutoRandomise ? "󰒟 Rand L3 (Auto: ON)" : "󰒟 Rand L3"', viz_src)
         self.assertNotIn("L2 Tracers: ", app_src)
+        self.assertIn("function syncVisualiserActive()", panel_src)
         self.assertIn("running: root.visualiserActive || root.fullscreenVisualiserOpen", svc_src)
         self.assertIn('"Sun Rays"', engine_src)
         self.assertNotIn('"Synth Sun Rays"', engine_src)
@@ -1204,6 +1215,12 @@ stepState(stAway, bands, true, normaliseConfig({ backdropDirection: -1, backdrop
 stepState(stBreathe, bands, true, normaliseConfig({ backdropDirection: 0, backdropSpeed: 1.2 }, 0, []), 0.05);
 if (!(stTowards.backdropTime > 0 && stAway.backdropTime < 0)) {
     throw new Error('Tri-state backdropDirection failed: towards=' + stTowards.backdropTime + ' away=' + stAway.backdropTime);
+}
+
+// Verify normaliseConfig sets tracerCount=1 when layer2TracersEnabled=false
+const cfgTrOff = normaliseConfig({ layer2TracersEnabled: false, tracerCount: 8 }, 0, []);
+if (cfgTrOff.tracerCount !== 1) {
+    throw new Error('Expected tracerCount === 1 when layer2TracersEnabled === false, got ' + cfgTrOff.tracerCount);
 }
 
 function makeMockCtx() {

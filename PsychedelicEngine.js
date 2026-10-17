@@ -1585,11 +1585,11 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             ctx.stroke()
 
             // 3. Full 3-Axis 3D Wireframe Landscape Models scaled by Field Density (`density`)!
-            //    - When `shapesOn` (`cfg.layer1ShapesEnabled`) is ON: landscape models match the selected `layer1ShapeStyle` (`0..5`)!
-            //    - When `shapesOn` is OFF ("if none selected just use tanks"): `obsCount = 0` and only 3D wireframe tanks populate the landscape!
+            //    - When `shapesOn` (`cfg.layer1ShapesEnabled`) is ON and `activeShapeStyle > 0`: landscape models strictly match the selected `layer1ShapeStyle` (`1..5`)!
+            //    - When `shapesOn` is OFF ("if none selected just use tanks") or `activeShapeStyle === 0` ("Battlezone Tanks"): `obsCount = 0` and only 3D wireframe tanks populate the landscape!
             var activeShapeStyle = cfg && cfg.layer1ShapeStyle !== undefined ? ((Number(cfg.layer1ShapeStyle) || 0) % LAYER1_SHAPE_STYLES.length) : 0
             var shapeScaleBz = cfg && cfg.layer1ShapeScale !== undefined ? clamp(Number(cfg.layer1ShapeScale), 0.3, 2.5) : 1.0
-            var obsCount = shapesOn ? Math.max(2, Math.min(16, Math.round(6 * density))) : 0
+            var obsCount = (shapesOn && activeShapeStyle > 0) ? Math.max(2, Math.min(14, Math.round(5 * density))) : 0
             var objSpinCfg = cfg && cfg.layer1ShapeSpin !== undefined ? clamp(Number(cfg.layer1ShapeSpin), -2.5, 2.5) : 1.0
             for (var ob = 0; ob < obsCount; ob++) {
                 var obProg = ((((ob / obsCount) + worldScroll) % 1.0) + 1.0) % 1.0
@@ -1701,25 +1701,57 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                         }
                     }
                 } else if (activeShapeStyle === 3) {
-                    // Style 3: 3D Sacred Polyhedra (Dual-Ring 3D Hexagonal/Octagonal Prism Monoliths on the terrain)
-                    var sidesBz = 6 + (ob & 1) * 2
-                    var topPtsBz = [], botPtsBz = []
-                    for (var vBz = 0; vBz < sidesBz; vBz++) {
-                        var angBz = (vBz / sidesBz) * Math.PI * 2
-                        topPtsBz.push(project3DPoint(Math.cos(angBz), Math.sin(angBz),  0.42, rx, ry, rz, obX, hoverY, obScale * 1.15, 3.6))
-                        botPtsBz.push(project3DPoint(Math.cos(angBz), Math.sin(angBz), -0.42, rx, ry, rz, obX, hoverY, obScale * 1.15, 3.6))
-                    }
-                    for (var v1B = 0; v1B <= sidesBz; v1B++) {
-                        var pTB = topPtsBz[v1B % sidesBz]
-                        if (v1B === 0) ctx.moveTo(pTB.x, pTB.y); else ctx.lineTo(pTB.x, pTB.y)
-                    }
-                    for (var v2B = 0; v2B <= sidesBz; v2B++) {
-                        var pBB = botPtsBz[v2B % sidesBz]
-                        if (v2B === 0) ctx.moveTo(pBB.x, pBB.y); else ctx.lineTo(pBB.x, pBB.y)
-                    }
-                    for (var v3B = 0; v3B < sidesBz; v3B++) {
-                        ctx.moveTo(topPtsBz[v3B].x, topPtsBz[v3B].y)
-                        ctx.lineTo(botPtsBz[v3B].x, botPtsBz[v3B].y)
+                    // Style 3: 3D Sacred Polyhedra (Dual-Ring 3D Hexagonal/Octagonal Prism Monoliths + Pyramids + Cubes on the terrain)
+                    if (ob % 3 === 1) {
+                        var pyrV = [
+                            [-1.0,  0.75, -1.0],
+                            [ 1.0,  0.75, -1.0],
+                            [ 1.0,  0.75,  1.0],
+                            [-1.0,  0.75,  1.0],
+                            [ 0.0, -1.15,  0.0]
+                        ]
+                        var pp = []
+                        for (var pv = 0; pv < 5; pv++) {
+                            pp.push(project3DPoint(pyrV[pv][0], pyrV[pv][1], pyrV[pv][2], rx, ry, rz, obX, hoverY, obScale, 3.8))
+                        }
+                        ctx.moveTo(pp[0].x, pp[0].y); ctx.lineTo(pp[1].x, pp[1].y); ctx.lineTo(pp[2].x, pp[2].y); ctx.lineTo(pp[3].x, pp[3].y); ctx.closePath()
+                        for (var pc = 0; pc < 4; pc++) {
+                            ctx.moveTo(pp[pc].x, pp[pc].y); ctx.lineTo(pp[4].x, pp[4].y)
+                        }
+                    } else if (ob % 3 === 0) {
+                        var cubV = [
+                            [-0.82,  0.88, -0.82], [ 0.82,  0.88, -0.82], [ 0.82,  0.88,  0.82], [-0.82,  0.88,  0.82],
+                            [-0.82, -0.88, -0.82], [ 0.82, -0.88, -0.82], [ 0.82, -0.88,  0.82], [-0.82, -0.88,  0.82]
+                        ]
+                        var cp = []
+                        for (var cv = 0; cv < 8; cv++) {
+                            cp.push(project3DPoint(cubV[cv][0], cubV[cv][1], cubV[cv][2], rx, ry, rz, obX, hoverY, obScale, 3.8))
+                        }
+                        var cubEdges = [0, 1,  1, 2,  2, 3,  3, 0,  4, 5,  5, 6,  6, 7,  7, 4,  0, 4,  1, 5,  2, 6,  3, 7]
+                        for (var ce = 0; ce < cubEdges.length; ce += 2) {
+                            ctx.moveTo(cp[cubEdges[ce]].x, cp[cubEdges[ce]].y)
+                            ctx.lineTo(cp[cubEdges[ce + 1]].x, cp[cubEdges[ce + 1]].y)
+                        }
+                    } else {
+                        var sidesBz = 6 + (ob & 1) * 2
+                        var topPtsBz = [], botPtsBz = []
+                        for (var vBz = 0; vBz < sidesBz; vBz++) {
+                            var angBz = (vBz / sidesBz) * Math.PI * 2
+                            topPtsBz.push(project3DPoint(Math.cos(angBz), Math.sin(angBz),  0.42, rx, ry, rz, obX, hoverY, obScale * 1.15, 3.6))
+                            botPtsBz.push(project3DPoint(Math.cos(angBz), Math.sin(angBz), -0.42, rx, ry, rz, obX, hoverY, obScale * 1.15, 3.6))
+                        }
+                        for (var v1B = 0; v1B <= sidesBz; v1B++) {
+                            var pTB = topPtsBz[v1B % sidesBz]
+                            if (v1B === 0) ctx.moveTo(pTB.x, pTB.y); else ctx.lineTo(pTB.x, pTB.y)
+                        }
+                        for (var v2B = 0; v2B <= sidesBz; v2B++) {
+                            var pBB = botPtsBz[v2B % sidesBz]
+                            if (v2B === 0) ctx.moveTo(pBB.x, pBB.y); else ctx.lineTo(pBB.x, pBB.y)
+                        }
+                        for (var v3B = 0; v3B < sidesBz; v3B++) {
+                            ctx.moveTo(topPtsBz[v3B].x, topPtsBz[v3B].y)
+                            ctx.lineTo(botPtsBz[v3B].x, botPtsBz[v3B].y)
+                        }
                     }
                 } else if (activeShapeStyle === 4) {
                     // Style 4: 3D Merkaba Starbursts (Dual-Apex 3D Star Tetrahedra hovering over the terrain)
@@ -1740,7 +1772,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                         ctx.moveTo(starRingBz[sv2B].x, starRingBz[sv2B].y); ctx.lineTo(apexFB.x, apexFB.y)
                         ctx.moveTo(starRingBz[sv2B].x, starRingBz[sv2B].y); ctx.lineTo(apexBB.x, apexBB.y)
                     }
-                } else if (activeShapeStyle === 5) {
+                } else {
                     // Style 5: 3D Sonic Boom Rings (3D Gyroscopic Harmonic Portal Rings across the landscape)
                     var ringSegsBz = 24
                     for (var rs2B = 0; rs2B <= ringSegsBz; rs2B++) {
@@ -1751,78 +1783,15 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                         if (rs2B === 0) ctx.moveTo(rp1B.x, rp1B.y); else ctx.lineTo(rp1B.x, rp1B.y)
                     }
                     ctx.closePath()
-                } else if (ob % 3 === 1) {
-                    // Style 0: 3D Wireframe Battlezone Pyramid (5 vertices, ALL 8 edges: 4 base edges + 4 apex edges!)
-                    var pyrV = [
-                        [-1.0,  0.75, -1.0],
-                        [ 1.0,  0.75, -1.0],
-                        [ 1.0,  0.75,  1.0],
-                        [-1.0,  0.75,  1.0],
-                        [ 0.0, -1.15,  0.0]
-                    ]
-                    var pp = []
-                    for (var pv = 0; pv < 5; pv++) {
-                        pp.push(project3DPoint(pyrV[pv][0], pyrV[pv][1], pyrV[pv][2], rx, ry, rz, obX, hoverY, obScale, 3.8))
-                    }
-                    ctx.moveTo(pp[0].x, pp[0].y)
-                    ctx.lineTo(pp[1].x, pp[1].y)
-                    ctx.lineTo(pp[2].x, pp[2].y)
-                    ctx.lineTo(pp[3].x, pp[3].y)
-                    ctx.closePath()
-                    for (var pc = 0; pc < 4; pc++) {
-                        ctx.moveTo(pp[pc].x, pp[pc].y)
-                        ctx.lineTo(pp[4].x, pp[4].y)
-                    }
-                } else if (ob % 3 === 0) {
-                    // Style 0: 3D Wireframe Battlezone / TRON Monolith Cube (8 vertices, ALL 12 edges!)
-                    var cubV = [
-                        [-0.82,  0.88, -0.82], [ 0.82,  0.88, -0.82], [ 0.82,  0.88,  0.82], [-0.82,  0.88,  0.82],
-                        [-0.82, -0.88, -0.82], [ 0.82, -0.88, -0.82], [ 0.82, -0.88,  0.82], [-0.82, -0.88,  0.82]
-                    ]
-                    var cp = []
-                    for (var cv = 0; cv < 8; cv++) {
-                        cp.push(project3DPoint(cubV[cv][0], cubV[cv][1], cubV[cv][2], rx, ry, rz, obX, hoverY, obScale, 3.8))
-                    }
-                    var cubEdges = [
-                        0, 1,  1, 2,  2, 3,  3, 0,
-                        4, 5,  5, 6,  6, 7,  7, 4,
-                        0, 4,  1, 5,  2, 6,  3, 7
-                    ]
-                    for (var ce = 0; ce < cubEdges.length; ce += 2) {
-                        var cA = cp[cubEdges[ce]], cB = cp[cubEdges[ce + 1]]
-                        ctx.moveTo(cA.x, cA.y)
-                        ctx.lineTo(cB.x, cB.y)
-                    }
-                } else {
-                    // Style 0: 3D Wireframe Diamond Octahedron (6 vertices, ALL 12 edges!)
-                    var octV = [
-                        [-0.95,  0.0,  0.0], [ 0.95,  0.0,  0.0],
-                        [ 0.0,   0.0, -0.95], [ 0.0,   0.0,  0.95],
-                        [ 0.0,  -1.20, 0.0], [ 0.0,   1.20, 0.0]
-                    ]
-                    var op = []
-                    for (var ov = 0; ov < 6; ov++) {
-                        op.push(project3DPoint(octV[ov][0], octV[ov][1], octV[ov][2], rx, ry, rz, obX, hoverY, obScale, 3.8))
-                    }
-                    var octEdges = [
-                        0, 2,  2, 1,  1, 3,  3, 0,
-                        0, 4,  1, 4,  2, 4,  3, 4,
-                        0, 5,  1, 5,  2, 5,  3, 5
-                    ]
-                    for (var oe = 0; oe < octEdges.length; oe += 2) {
-                        var oA = op[octEdges[oe]], oB = op[octEdges[oe + 1]]
-                        ctx.moveTo(oA.x, oA.y)
-                        ctx.lineTo(oB.x, oB.y)
-                    }
                 }
                 ctx.stroke()
             }
 
             // 4. 3D Wireframe 1980 Atari Battlezone Tanks Rolling on the Landscape + Cannon Shells!
-            //    When Shapes is OFF ("if none selected just use tanks") or Shapes Style 0 ("Battlezone Tanks"), scale tank count up with `density`!
+            //    When Shapes is OFF ("if none selected just use tanks") or Shapes Style 0 ("Battlezone Tanks"), only 3D wireframe tanks populate the landscape, scaled by `density`!
             var tankCount = (!shapesOn || activeShapeStyle === 0)
                 ? Math.max(2, Math.min(12, Math.round(5 * density)))
-                : Math.max(1, Math.min(6, Math.round(2.5 * density)))
+                : 0
             var shellMuzzles = []
             for (var tk = 0; tk < tankCount; tk++) {
                 var tkProg = ((((tk / tankCount) + worldScroll + 0.12) % 1.0) + 1.0) % 1.0
@@ -4671,7 +4640,8 @@ function normaliseConfig(cfg, mode, asciiLines) {
     var pos = Number(c.position) || 0.0
     var dur = Number(c.duration) || 0.0
     var prog = c.trackProgress !== undefined ? Number(c.trackProgress) : (dur > 0 ? clamp(pos / dur, 0.0, 1.0) : 0.0)
-    var geomDetail = c.geometryDetail !== undefined ? clamp(Number(c.geometryDetail), 0.50, 1.75) : 1.0
+    var geomDetail = c.geometryDetail !== undefined ? clamp(Number(c.geometryDetail), 0.50, 1.50) : 1.0
+    var l2TrOn = c.layer2TracersEnabled !== undefined ? Boolean(c.layer2TracersEnabled) : true
     return {
         playing: c.playing !== undefined ? Boolean(c.playing) : true,
         palette: Number(c.palette) || 0,
@@ -4690,7 +4660,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         backdropSymmetry: c.backdropSymmetry !== undefined ? clamp(Math.round(Number(c.backdropSymmetry)), 2, 16) : 6,
         backdropDirection: c.backdropDirection !== undefined ? Number(c.backdropDirection) : 1,
         trackArcMode: c.trackArcMode !== undefined ? clamp(Math.round(Number(c.trackArcMode)), 0, 4) : 0,
-        tracerCount: c.tracerCount !== undefined ? clamp(Math.round(Number(c.tracerCount)), 1, 16) : 9,
+        tracerCount: l2TrOn ? (c.tracerCount !== undefined ? clamp(Math.round(Number(c.tracerCount)), 1, 16) : 4) : 1,
         tracerSpeed: c.tracerSpeed !== undefined ? clamp(Number(c.tracerSpeed), 0.15, 3.0) : 1.15,
         tracerDrift: c.tracerDrift !== undefined ? clamp(Number(c.tracerDrift), 0.0, 2.5) : 1.0,
         tracerDirection: c.tracerDirection !== undefined ? Number(c.tracerDirection) : 1,
