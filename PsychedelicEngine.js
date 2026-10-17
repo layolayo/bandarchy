@@ -194,6 +194,69 @@ var TTFX_EFFECTS = [
 
 var SYMMETRY_OPTIONS = [1, 2, 4, 6, 8, 12, 16]
 
+var DEFAULT_STATEMENTS = [
+    "WE ARE THE FREQUENCIES",
+    "RESONANCE IS ARCHITECTURE",
+    "SOUND BECOMES GEOMETRY",
+    "ENTER THE VORTEX",
+    "ACID IN THE CIRCUITRY",
+    "SYNTHESISE THE INFINITE",
+    "PULSE OF THE UNDERGROUND",
+    "SUBWOOFER CATHEDRAL",
+    "VOLTAGE AND VELVET",
+    "BEYOND THE EVENT HORIZON",
+    "ANALOGUE SOUL DIGITAL VOID",
+    "HYPNOTIC MOMENTUM",
+    "DANCE IN THE VECTOR FIELD",
+    "FUTURE PRIMITIVE RAVE",
+    "PHOSPHOR DREAMS IN 60HZ",
+    "NO BORDERS IN THE BASSLINE",
+    "LUMINOUS FREQUENCIES",
+    "TRANSMITTING FROM THE DEEP",
+    "KINETIC EUPHORIA",
+    "CYBERNETIC ECSTASY",
+    "EVERY BEAT REWRITES SPACE",
+    "MODULATE REALITY",
+    "ELECTRIC MYCELIUM",
+    "HIGH VOLTAGE SERENITY",
+    "ECHOES OF TOMORROW",
+    "THE FLOOR IS LIQUID LIGHT",
+    "WAREHOUSE TELEPATHY",
+    "OSCILLATE FOREVER",
+    "INFINITE FEEDBACK LOOP",
+    "LASER THROUGH THE FOG",
+    "CHROMATIC TRANSCENDENCE",
+    "SYNTHESIS IS LIBERATION",
+    "DEEP SPACE SUBHARMONICS",
+    "VECTOR HORIZON",
+    "PURE WAVEFORM ALCHEMY",
+    "NIGHT DRIVE TO INFINITY",
+    "NEURAL RAVE SYNCHRONISATION",
+    "SONIC HOLOGRAPHY",
+    "FRACTAL MEMORY",
+    "RHYTHM OF THE COSMOS",
+    "SUBTERRANEAN SUNRISE",
+    "ZERO GRAVITY GROOVE",
+    "PHANTOM OSCILLATOR",
+    "ULTRA VIOLET VELOCITY",
+    "SIGNAL IN THE NOISE",
+    "SILICON AND STARLIGHT",
+    "TIME DISSOLVES IN REVERB",
+    "POLYPHONIC REBELLION",
+    "BASS IS THE FOUNDATION",
+    "LIQUID CHROME HORIZON",
+    "PERPETUAL MOTION ENGINE",
+    "THE MACHINE BREATHES MUSIC",
+    "ASTRAL PROJECTION",
+    "HYPERDIMENSIONAL DUB",
+    "ACID HOUSE FOREVER",
+    "DEMOSCENE FOREVER",
+    "GREETINGS TO ALL NIGHT OWLS",
+    "STAY IN THE FREQUENCY",
+    "WE NEVER STOP DANCING",
+    "LIGHT SPEED ARPEGGIO"
+]
+
 var PALETTE_NAMES = [
     "Acid Rainbow",
     "Cyber Neon",
@@ -1123,6 +1186,7 @@ function stepState(state, rawBands, active, cfg, dt) {
         state.tronRivalTrail = [[state.tronRivalX, state.tronRivalZ - 400.0], [state.tronRivalX, state.tronRivalZ]]
     }
 
+    if (cfg && cfg.layer1Enabled !== false && cfg.layer1FieldEnabled !== false && Number(cfg.layer1Mode) === 7) {
     // Step active 3D world-space vectored crashes (bikes continue moving without losing flow!)
     for (var ci = state.tronCrashes.length - 1; ci >= 0; ci--) {
         state.tronCrashes[ci].age += dt
@@ -1299,6 +1363,7 @@ function stepState(state, rawBands, active, cfg, dt) {
         state.tronRivalTurnTimer = 0.85 + ((state.tronRivalTurnSeq * 29) % 6) * 0.12
     }
     state.tronRivalYaw = state.tronRivalTargetYaw
+    }
 
     // Step Layer #3 Autonomous Album Art Particle Cells
     if (cfg && cfg.layer3Enabled && state.artCells && state.artCells.length > 0) {
@@ -3510,40 +3575,51 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             drawTronLightCycleAndTrail(rivalTrail, rivalX, rivalZ, rivalYaw, "#FFAA00")
             drawTronLightCycleAndTrail(playerTrail, bikeX, bikeZ, bikeYaw, "#33FFFF")
 
-            // 4B. 3D Vectored Light Cycle Crash Explosions in World Space (while bikes continue moving without losing flow!)
+            // 4B. 3D Vectored Light Cycle Crash Explosions in World Space in Vivid RED (while bikes continue moving without losing flow!)
             var crashesList = state.tronCrashes || []
             for (var crIdx = 0; crIdx < crashesList.length; crIdx++) {
                 var cr = crashesList[crIdx]
                 var crashProg = clamp(cr.age / (cr.maxAge || 1.55), 0.0, 1.0)
-                var crX = cr.x, crZ = cr.z, crYaw = cr.yaw || 0.0, crCol = cr.col || "#33FFFF"
+                var crX = cr.x, crZ = cr.z, crYaw = cr.yaw || 0.0
                 var cosC = Math.cos(crYaw), sinC = Math.sin(crYaw)
-                var crScale = 1.32
+                var crScale = 1.38
 
-                // A. Shattering 3D Vector Light Cycle Chassis & Wheel Shards flying outward & upward with 3D tumbling
+                // A. Shattering 3D Vector Light Cycle Chassis & Wheel Shards + Radial Smash Rays flying outward & upward in RED
                 ctx.beginPath()
                 for (var eiC = 0; eiC < lcEdges.length; eiC += 2) {
                     var vA0 = lcVerts[lcEdges[eiC]], vB0 = lcVerts[lcEdges[eiC + 1]]
                     var shardIdx = eiC >> 1
                     var shAng = shardIdx * 1.15 + crYaw
-                    var shSpeed = 95.0 + (shardIdx % 5) * 46.0
+                    var shSpeed = 105.0 + (shardIdx % 5) * 48.0
                     var shOut = crashProg * shSpeed
-                    var shUp = Math.sin(crashProg * Math.PI * 0.88) * (78.0 + (shardIdx % 4) * 42.0)
-                    var shSpin = crashProg * (3.6 + (shardIdx % 3) * 1.9)
+                    var shUp = Math.sin(crashProg * Math.PI * 0.88) * (82.0 + (shardIdx % 4) * 44.0)
+                    var shSpin = crashProg * (3.8 + (shardIdx % 3) * 2.0)
                     var mx = ((vA0[0] + vB0[0]) * 0.5) * crScale
                     var my = ((vA0[1] + vB0[1]) * 0.5) * crScale
                     var mz = ((vA0[2] + vB0[2]) * 0.5 + 48.0) * crScale
-                    var dxS = (vB0[0] - vA0[0]) * 0.55 * crScale * Math.cos(shSpin)
-                    var dyS = (vB0[1] - vA0[1]) * 0.55 * crScale + Math.sin(shSpin) * 16.0
-                    var dzS = (vB0[2] - vA0[2]) * 0.55 * crScale * Math.cos(shSpin * 0.7)
+                    var dxS = (vB0[0] - vA0[0]) * 0.62 * crScale * Math.cos(shSpin)
+                    var dyS = (vB0[1] - vA0[1]) * 0.62 * crScale + Math.sin(shSpin) * 18.0
+                    var dzS = (vB0[2] - vA0[2]) * 0.62 * crScale * Math.cos(shSpin * 0.7)
                     var wxC = crX + mx * cosC + mz * sinC + Math.cos(shAng) * shOut
                     var wyC = Math.max(2.0, my + shUp)
                     var wzC = crZ - mx * sinC + mz * cosC + Math.sin(shAng) * shOut
                     appendClippedTronLine(wxC - dxS, wyC - dyS, wzC - dzS, wxC + dxS, wyC + dyS, wzC + dzS)
                 }
+                // High-velocity 3D radial smash vector spikes erupting from the impact point
+                for (var spk = 0; spk < 12; spk++) {
+                    var spkAng = (spk / 12.0) * Math.PI * 2.0 + crYaw * 0.5
+                    var spkElev = 0.18 + (spk % 3) * 0.24
+                    var rInner = crashProg * 55.0
+                    var rOuter = rInner + (52.0 + (spk % 2) * 34.0) * (1.0 - crashProg * 0.35)
+                    appendClippedTronLine(
+                        crX + Math.cos(spkAng) * rInner, 10.0 + rInner * spkElev, crZ + Math.sin(spkAng) * rInner,
+                        crX + Math.cos(spkAng) * rOuter, 14.0 + rOuter * spkElev, crZ + Math.sin(spkAng) * rOuter
+                    )
+                }
                 // B. Expanding 3D Octagonal Derezz Shockwave Rings on the Game Grid floor
                 for (var sRing = 0; sRing < 3; sRing++) {
                     var rPhase = clamp(crashProg * 1.25 - sRing * 0.18, 0.02, 1.0)
-                    var shockR = rPhase * (205.0 + sRing * 70.0)
+                    var shockR = rPhase * (215.0 + sRing * 75.0)
                     var shockY = 4.0 + sRing * 18.0 * (1.0 - rPhase * 0.5)
                     for (var os = 0; os < 8; os++) {
                         var oa0 = (os / 8.0) * Math.PI * 2.0 + crashProg * 1.6
@@ -3554,19 +3630,19 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                         )
                     }
                 }
-                strokeQuadraScanPass(ctx, (Math.floor(l1T * 18.0) & 1) === 0 ? "#FFFFFF" : crCol, 2.35, (1.0 - crashProg * 0.35) * (1.0 - dim), true)
+                strokeQuadraScanPass(ctx, (Math.floor(l1T * 20.0) & 1) === 0 ? "#FF111E" : "#FF3824", 2.45, (1.0 - crashProg * 0.30) * (1.0 - dim), true)
 
-                // C. Towering Vertical Derezz Energy Beam Spire shooting into the sky (classic 1982 TRON de-resolution column)
+                // C. Towering Vertical RED Derezz Energy Beam Spire shooting into the sky (classic 1982 TRON de-resolution column)
                 ctx.beginPath()
-                var pillarH = (195.0 + crashProg * 380.0) * (1.0 - crashProg * 0.25)
-                var pillarR = 28.0 * (1.0 - crashProg * 0.55)
+                var pillarH = (205.0 + crashProg * 390.0) * (1.0 - crashProg * 0.25)
+                var pillarR = 30.0 * (1.0 - crashProg * 0.55)
                 for (var pb = 0; pb < 4; pb++) {
                     var pAng = (pb / 4.0) * Math.PI * 2.0 + l1T * 5.5
                     var px = crX + Math.cos(pAng) * pillarR
                     var pz = crZ + Math.sin(pAng) * pillarR
                     appendClippedTronLine(px, 0, pz, px, pillarH, pz)
                 }
-                strokeQuadraScanPass(ctx, "#FF2266", 2.15, (1.0 - crashProg * 0.45) * (1.0 - dim), true)
+                strokeQuadraScanPass(ctx, "#FF0022", 2.25, (1.0 - crashProg * 0.40) * (1.0 - dim), true)
             }
 
             // 5. Floating 3D "Bit" Companion (Octahedron binary entity in upper-left camera space)
@@ -7302,6 +7378,43 @@ function drawLayer2Visualiser(ctx, w, h, state, palette, cfg) {
 var BRAILLE_DOT_DX = [-0.24, -0.24, -0.24,  0.24,  0.24,  0.24, -0.24,  0.24]
 var BRAILLE_DOT_DY = [-0.36, -0.12,  0.12, -0.36, -0.12,  0.12,  0.36,  0.36]
 
+var LAYER3_STYLE_FONTS = [
+    "'Orbitron', 'Rajdhani', 'Eurostile', 'JetBrainsMono Nerd Font', sans-serif",          // 0: Cyber Techno
+    "'Syne', 'Space Grotesk', 'JetBrainsMono Nerd Font', sans-serif",                      // 1: Psychedelic Liquid
+    "'Chakra Petch', 'Orbitron', 'JetBrainsMono Nerd Font', monospace",                    // 2: Rave Laser Stencil
+    "'Montserrat', 'Orbitron', 'JetBrainsMono Nerd Font', sans-serif",                     // 3: Dance Chrome
+    "'JetBrainsMono Nerd Font', 'JetBrains Mono', monospace",                              // 4: Club LED Wall
+    "'JetBrainsMono Nerd Font', 'JetBrains Mono', monospace",                              // 5: Acid Glitch IDM
+    "'Cinzel', 'Orbitron', 'JetBrainsMono Nerd Font', sans-serif",                         // 6: Psytrance UV Glow
+    "'Impact', 'Arial Black', 'JetBrainsMono Nerd Font', sans-serif",                      // 7: Berlin Brutalist
+    "'Rajdhani', 'Orbitron', 'JetBrainsMono Nerd Font', monospace",                        // 8: Holographic Sci-Fi HUD
+    "'Share Tech Mono', 'JetBrainsMono Nerd Font', monospace",                             // 9: Oscilloscope Vector Beam
+    "'Orbitron', 'Montserrat', 'JetBrainsMono Nerd Font', sans-serif",                     // 10: 3D Isometric Extrude
+    "'Chakra Petch', 'Orbitron', 'JetBrainsMono Nerd Font', sans-serif",                   // 11: Plasma Arc Tesla
+    "'Syne', 'Montserrat', 'JetBrainsMono Nerd Font', sans-serif",                         // 12: Y2K Iridescent Mercury
+    "'Press Start 2P', 'JetBrainsMono Nerd Font', monospace",                              // 13: Demoscene Copperbars
+    "'Space Grotesk', 'Syne', 'JetBrainsMono Nerd Font', sans-serif",                      // 14: Bioluminescent Mycelium
+    "'JetBrainsMono Nerd Font', 'Share Tech Mono', monospace"                              // 15: Quantum Matrix Datastream
+]
+var LAYER3_STYLE_PALETTES = [
+    ["#00F5FF", "#FF1493", "#E2F9FF", "#7B2CBF", "#00FFB2", "#FFBE0B"], // 0: Cyber Techno
+    ["#FF007F", "#FFAA00", "#00FFCC", "#BF00FF", "#FFFF33", "#00C8FF"], // 1: Psychedelic Liquid
+    ["#00FF88", "#00F0FF", "#FF0055", "#E6FF00", "#00FFCC", "#FF2A85"], // 2: Rave Laser Stencil
+    ["#E8F7FF", "#00E5FF", "#FF2A9D", "#FFFFFF", "#9B5DE5", "#FFD166"], // 3: Dance Chrome
+    ["#00FF88", "#00E5FF", "#FFB800", "#FF007F", "#38BDF8", "#A3E635"], // 4: Club LED Wall
+    ["#E6FF00", "#00F0FF", "#FF1E56", "#F8FAFC", "#A855F7", "#10B981"], // 5: Acid Glitch IDM
+    ["#B5179E", "#00FFFF", "#FFD700", "#7209B7", "#4CC9F0", "#F72585"], // 6: Psytrance UV Glow
+    ["#F4F4F6", "#FF1E38", "#E6FF00", "#FFFFFF", "#FF3B30", "#D1D5DB"], // 7: Berlin Brutalist
+    ["#00FFD5", "#00B4D8", "#90E0EF", "#38F9D7", "#48CAE4", "#E0FBFC"], // 8: Holographic Sci-Fi HUD
+    ["#00FF66", "#33FFCC", "#CCFFDD", "#00E5FF", "#80FFAA", "#FFFFFF"], // 9: Oscilloscope Vector Beam
+    ["#00F5D4", "#F15BB5", "#9B5DE5", "#FEE440", "#00BBF9", "#FFFFFF"], // 10: 3D Isometric Extrude
+    ["#7DF9FF", "#B5179E", "#FFFFFF", "#4CC9F0", "#9D4EDD", "#E0AAFF"], // 11: Plasma Arc Tesla
+    ["#F8FAFC", "#A5F3FC", "#F5D0FE", "#C4B5FD", "#67E8F9", "#F472B6"], // 12: Y2K Iridescent Mercury
+    ["#FF0055", "#FF8800", "#FFEE00", "#00FF66", "#00CCFF", "#AA00FF"], // 13: Demoscene Copperbars
+    ["#00FFB2", "#38BDF8", "#A3E635", "#E879F9", "#2DD4BF", "#FDE047"], // 14: Bioluminescent Mycelium
+    ["#00FF99", "#10B981", "#FFD166", "#6EE7B7", "#34D399", "#ECFDF5"]  // 15: Quantum Matrix Datastream
+]
+
 function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFrames) {
     if (!cfg || !cfg.layer3Enabled) return
 
@@ -7335,7 +7448,8 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     var showArtist = cfg.layer3ShowArtist !== undefined ? Boolean(cfg.layer3ShowArtist) : true
     var showTrack = cfg.layer3ShowTrack !== undefined ? Boolean(cfg.layer3ShowTrack) : true
     var showAlbum = cfg.layer3ShowAlbum !== undefined ? Boolean(cfg.layer3ShowAlbum) : true
-    if (!showArtist && !showTrack && !showAlbum) {
+    var showStatements = cfg.layer3ShowStatements !== undefined ? Boolean(cfg.layer3ShowStatements) : false
+    if (!showArtist && !showTrack && !showAlbum && !showStatements) {
         showArtist = true
     }
     var textStyle = clamp(Math.round(Number(cfg.layer3TextStyle !== undefined ? cfg.layer3TextStyle : 0)), 0, LAYER3_TEXT_STYLES.length - 1)
@@ -7344,6 +7458,10 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     var rawArtist = String(cfg.trackArtist || "").trim().toUpperCase()
     var rawTitle = String(cfg.trackTitle || "").trim().toUpperCase()
     var rawAlbum = String(cfg.trackAlbum || "").trim().toUpperCase()
+    var rawStatement = String(cfg.statementText || "").trim().toUpperCase()
+    if (!rawStatement && DEFAULT_STATEMENTS.length > 0) {
+        rawStatement = DEFAULT_STATEMENTS[Math.floor(Math.max(0, l3T) * 0.12) % DEFAULT_STATEMENTS.length]
+    }
     if (!rawArtist && !rawTitle && !rawAlbum) {
         rawArtist = "BANDARCHY"
         rawTitle = "AUDIO STREAM"
@@ -7360,50 +7478,16 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     if (showAlbum && rawAlbum && (textLines.length === 0 || (rawAlbum !== rawTitle && rawAlbum !== rawArtist))) {
         textLines.push(rawAlbum)
     }
+    if (showStatements && rawStatement && (textLines.length === 0 || textLines.indexOf(rawStatement) < 0)) {
+        textLines.push(rawStatement)
+    }
     if (textLines.length === 0) {
-        textLines.push(rawArtist || rawTitle || rawAlbum || "BANDARCHY")
+        textLines.push(rawStatement || rawArtist || rawTitle || rawAlbum || "BANDARCHY")
     }
     var textStream = textLines.join(" • ") + " • "
 
-    // Style-specific font stacks & colour palettes for the 16 Psychedelic / Techno / Futuristic Typography Styles
-    var styleFonts = [
-        "'Orbitron', 'Rajdhani', 'Eurostile', 'JetBrainsMono Nerd Font', sans-serif",          // 0: Cyber Techno
-        "'Syne', 'Space Grotesk', 'JetBrainsMono Nerd Font', sans-serif",                      // 1: Psychedelic Liquid
-        "'Chakra Petch', 'Orbitron', 'JetBrainsMono Nerd Font', monospace",                    // 2: Rave Laser Stencil
-        "'Montserrat', 'Orbitron', 'JetBrainsMono Nerd Font', sans-serif",                     // 3: Dance Chrome
-        "'JetBrainsMono Nerd Font', 'JetBrains Mono', monospace",                              // 4: Club LED Wall
-        "'JetBrainsMono Nerd Font', 'JetBrains Mono', monospace",                              // 5: Acid Glitch IDM
-        "'Cinzel', 'Orbitron', 'JetBrainsMono Nerd Font', sans-serif",                         // 6: Psytrance UV Glow
-        "'Impact', 'Arial Black', 'JetBrainsMono Nerd Font', sans-serif",                      // 7: Berlin Brutalist
-        "'Rajdhani', 'Orbitron', 'JetBrainsMono Nerd Font', monospace",                        // 8: Holographic Sci-Fi HUD
-        "'Share Tech Mono', 'JetBrainsMono Nerd Font', monospace",                             // 9: Oscilloscope Vector Beam
-        "'Orbitron', 'Montserrat', 'JetBrainsMono Nerd Font', sans-serif",                     // 10: 3D Isometric Extrude
-        "'Chakra Petch', 'Orbitron', 'JetBrainsMono Nerd Font', sans-serif",                   // 11: Plasma Arc Tesla
-        "'Syne', 'Montserrat', 'JetBrainsMono Nerd Font', sans-serif",                         // 12: Y2K Iridescent Mercury
-        "'Press Start 2P', 'JetBrainsMono Nerd Font', monospace",                              // 13: Demoscene Copperbars
-        "'Space Grotesk', 'Syne', 'JetBrainsMono Nerd Font', sans-serif",                      // 14: Bioluminescent Mycelium
-        "'JetBrainsMono Nerd Font', 'Share Tech Mono', monospace"                              // 15: Quantum Matrix Datastream
-    ]
-    var stylePalettes = [
-        ["#00F5FF", "#FF1493", "#E2F9FF", "#7B2CBF", "#00FFB2", "#FFBE0B"], // 0: Cyber Techno
-        ["#FF007F", "#FFAA00", "#00FFCC", "#BF00FF", "#FFFF33", "#00C8FF"], // 1: Psychedelic Liquid
-        ["#00FF88", "#00F0FF", "#FF0055", "#E6FF00", "#00FFCC", "#FF2A85"], // 2: Rave Laser Stencil
-        ["#E8F7FF", "#00E5FF", "#FF2A9D", "#FFFFFF", "#9B5DE5", "#FFD166"], // 3: Dance Chrome
-        ["#00FF88", "#00E5FF", "#FFB800", "#FF007F", "#38BDF8", "#A3E635"], // 4: Club LED Wall
-        ["#E6FF00", "#00F0FF", "#FF1E56", "#F8FAFC", "#A855F7", "#10B981"], // 5: Acid Glitch IDM
-        ["#B5179E", "#00FFFF", "#FFD700", "#7209B7", "#4CC9F0", "#F72585"], // 6: Psytrance UV Glow
-        ["#F4F4F6", "#FF1E38", "#E6FF00", "#FFFFFF", "#FF3B30", "#D1D5DB"], // 7: Berlin Brutalist
-        ["#00FFD5", "#00B4D8", "#90E0EF", "#38F9D7", "#48CAE4", "#E0FBFC"], // 8: Holographic Sci-Fi HUD
-        ["#00FF66", "#33FFCC", "#CCFFDD", "#00E5FF", "#80FFAA", "#FFFFFF"], // 9: Oscilloscope Vector Beam
-        ["#00F5D4", "#F15BB5", "#9B5DE5", "#FEE440", "#00BBF9", "#FFFFFF"], // 10: 3D Isometric Extrude
-        ["#7DF9FF", "#B5179E", "#FFFFFF", "#4CC9F0", "#9D4EDD", "#E0AAFF"], // 11: Plasma Arc Tesla
-        ["#F8FAFC", "#A5F3FC", "#F5D0FE", "#C4B5FD", "#67E8F9", "#F472B6"], // 12: Y2K Iridescent Mercury
-        ["#FF0055", "#FF8800", "#FFEE00", "#00FF66", "#00CCFF", "#AA00FF"], // 13: Demoscene Copperbars
-        ["#00FFB2", "#38BDF8", "#A3E635", "#E879F9", "#2DD4BF", "#FDE047"], // 14: Bioluminescent Mycelium
-        ["#00FF99", "#10B981", "#FFD166", "#6EE7B7", "#34D399", "#ECFDF5"]  // 15: Quantum Matrix Datastream
-    ]
-    var activeStylePal = stylePalettes[textStyle] || palette
-    var activeFontFamily = styleFonts[textStyle] || "'JetBrainsMono Nerd Font', sans-serif"
+    var activeStylePal = LAYER3_STYLE_PALETTES[textStyle] || palette
+    var activeFontFamily = LAYER3_STYLE_FONTS[textStyle] || "'JetBrainsMono Nerd Font', sans-serif"
 
     // Select source lines early so if Art has no lines yet, Crisp Text still renders full-screen
     var effectiveLines = asciiLines
@@ -8488,8 +8572,10 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
             if (!isTextGlyph) ctx.fill()
         }
 
-        // When Art source + Crisp Text (`isTextGlyph && !isWordsSource`), also render the styled Artist / Track / Album banners
-        if (isTextGlyph && !isEcho) {
+        // When Art source + Crisp Text (or when Statements is enabled), also render the styled Artist / Track / Album / Statements banners
+        if ((isTextGlyph || showStatements) && !isEcho) {
+            ctx.textAlign = "center"
+            ctx.textBaseline = "middle"
             var artMaxCh = 10
             for (var ali = 0; ali < textLines.length; ali++) {
                 if (textLines[ali].length > artMaxCh) artMaxCh = textLines[ali].length
@@ -8608,6 +8694,8 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer3ShowArtist: c.layer3ShowArtist !== undefined ? Boolean(c.layer3ShowArtist) : true,
         layer3ShowTrack: c.layer3ShowTrack !== undefined ? Boolean(c.layer3ShowTrack) : true,
         layer3ShowAlbum: c.layer3ShowAlbum !== undefined ? Boolean(c.layer3ShowAlbum) : true,
+        layer3ShowStatements: c.layer3ShowStatements !== undefined ? Boolean(c.layer3ShowStatements) : false,
+        statementText: String(c.statementText || ""),
         layer3Dismantle: Number(c.layer3Dismantle !== undefined ? c.layer3Dismantle : 1.15),
         layer3Rebuild: Number(c.layer3Rebuild !== undefined ? c.layer3Rebuild : 1.0),
         layer3Evolution: Number(c.layer3Evolution !== undefined ? c.layer3Evolution : 0.85),

@@ -645,6 +645,12 @@ Item {
                 onRequestSaveVisualiserConfig: cfg => {
                     if (root.service) root.service.saveVisualiserConfig(cfg)
                 }
+                onRequestOpenStatementsFile: {
+                    if (root.service) root.service.openStatementsFile()
+                }
+                onRequestReloadStatementsFile: {
+                    if (root.service) root.service.loadVisualiserConfig()
+                }
 
                 Connections {
                     target: root.service
@@ -2053,6 +2059,12 @@ Item {
                         onRequestActionFeedback: msg => {}
                         onRequestSaveVisualiserConfig: cfg => {
                             if (root.service) root.service.saveVisualiserConfig(cfg)
+                        }
+                        onRequestOpenStatementsFile: {
+                            if (root.service) root.service.openStatementsFile()
+                        }
+                        onRequestReloadStatementsFile: {
+                            if (root.service) root.service.loadVisualiserConfig()
                         }
 
                         Connections {

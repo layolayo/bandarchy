@@ -2257,6 +2257,12 @@ ShellRoot {
                             onRequestSaveVisualiserConfig: cfg => {
                                 service.saveVisualiserConfig(cfg)
                             }
+                            onRequestOpenStatementsFile: {
+                                service.openStatementsFile()
+                            }
+                            onRequestReloadStatementsFile: {
+                                service.loadVisualiserConfig()
+                            }
 
                             Connections {
                                 target: service

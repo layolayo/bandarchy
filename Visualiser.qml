@@ -179,6 +179,12 @@ FocusScope {
     property bool layer3ShowArtist: true
     property bool layer3ShowTrack: true
     property bool layer3ShowAlbum: true
+    property bool layer3ShowStatements: false
+    property var statementsList: Engine.DEFAULT_STATEMENTS
+    property string statementsFilePath: "~/.config/bandarchy/statements.txt"
+    property string currentStatement: (Engine.DEFAULT_STATEMENTS && Engine.DEFAULT_STATEMENTS.length > 0)
+        ? Engine.DEFAULT_STATEMENTS[Math.floor(Math.random() * Engine.DEFAULT_STATEMENTS.length)]
+        : "WE ARE THE FREQUENCIES"
     property alias layer3UseArt: root.useAlbumArt
     property alias layer3AsciiMode: root.asciiMode
     property real layer3Dismantle: 1.15
@@ -564,6 +570,8 @@ FocusScope {
     signal requestSelectTtfxEffect(string effectName)
     signal requestStageModeChange(string newStageMode)
     signal requestActionFeedback(string message)
+    signal requestOpenStatementsFile()
+    signal requestReloadStatementsFile()
     function suppressActionFeedback(message) {}
 
     property var engineState: Engine.createState()
@@ -777,6 +785,8 @@ FocusScope {
             layer3ShowArtist: root.layer3ShowArtist,
             layer3ShowTrack: root.layer3ShowTrack,
             layer3ShowAlbum: root.layer3ShowAlbum,
+            layer3ShowStatements: root.layer3ShowStatements,
+            statementText: root.currentStatement,
             useAlbumArt: root.useAlbumArt,
             asciiMode: root.asciiMode,
             layer3Dismantle: root.layer3Dismantle,
@@ -894,6 +904,15 @@ FocusScope {
         if (cfg.layer3ShowArtist !== undefined) root.layer3ShowArtist = Boolean(cfg.layer3ShowArtist)
         if (cfg.layer3ShowTrack !== undefined) root.layer3ShowTrack = Boolean(cfg.layer3ShowTrack)
         if (cfg.layer3ShowAlbum !== undefined) root.layer3ShowAlbum = Boolean(cfg.layer3ShowAlbum)
+        if (cfg.layer3ShowStatements !== undefined) root.layer3ShowStatements = Boolean(cfg.layer3ShowStatements)
+        if (Array.isArray(cfg.statements) && cfg.statements.length > 0) {
+            root.statementsList = cfg.statements
+            if (!root.currentStatement || cfg.statements.indexOf(root.currentStatement) < 0) {
+                root.currentStatement = cfg.statements[Math.floor(Math.random() * cfg.statements.length)]
+            }
+        }
+        if (cfg.statementsPath) root.statementsFilePath = String(cfg.statementsPath)
+        if (cfg.statementText) root.currentStatement = String(cfg.statementText)
         if (cfg.useAlbumArt !== undefined) root.useAlbumArt = Boolean(cfg.useAlbumArt)
         if (cfg.asciiMode !== undefined) {
             var am = String(cfg.asciiMode).toLowerCase()
@@ -980,6 +999,7 @@ FocusScope {
         root.layer3ShowArtist = true
         root.layer3ShowTrack = true
         root.layer3ShowAlbum = true
+        root.layer3ShowStatements = false
         root.layer3Tracers = 3
         root.autoCycle = false
         root.layer1AutoRandomise = false
@@ -990,7 +1010,7 @@ FocusScope {
         root.layer4AutoRandomise = false
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
-        root.requestActionFeedback("Reset Visualiser & Quality Settings to Defaults")
+        root.suppressActionFeedback("Reset Visualiser & Quality Settings to Defaults")
     }
 
     // -------------------------------------------------------------------------
@@ -1028,7 +1048,7 @@ FocusScope {
         root.savedL1Configs = copy
         root.currentSavedL1Index = copy.length - 1
         root.emitSaveVisualiserConfig()
-        root.requestActionFeedback("Saved L1 Setting: " + item.name)
+        root.suppressActionFeedback("Saved L1 Setting: " + item.name)
     }
 
     function applySavedL1Config(idx) {
@@ -1060,7 +1080,7 @@ FocusScope {
         if (item.l1AutoRandomise !== undefined) root.layer1AutoRandomise = Boolean(item.l1AutoRandomise)
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
-        root.requestActionFeedback("Applied Saved L1: " + (item.name || ("L1 #" + (idx + 1))))
+        root.suppressActionFeedback("Applied Saved L1: " + (item.name || ("L1 #" + (idx + 1))))
     }
 
     function cycleSavedL1Config(delta) {
@@ -1078,7 +1098,7 @@ FocusScope {
         root.savedL1Configs = copy
         root.currentSavedL1Index = Math.max(0, Math.min(copy.length - 1, root.currentSavedL1Index))
         root.emitSaveVisualiserConfig()
-        root.requestActionFeedback("Removed Saved L1: " + (removed && removed.name ? removed.name : ""))
+        root.suppressActionFeedback("Removed Saved L1: " + (removed && removed.name ? removed.name : ""))
     }
 
     function saveCurrentL2Config() {
@@ -1107,7 +1127,7 @@ FocusScope {
         root.savedL2Configs = copy
         root.currentSavedL2Index = copy.length - 1
         root.emitSaveVisualiserConfig()
-        root.requestActionFeedback("Saved L2 Setting: " + item.name)
+        root.suppressActionFeedback("Saved L2 Setting: " + item.name)
     }
 
     function applySavedL2Config(idx) {
@@ -1134,7 +1154,7 @@ FocusScope {
         if (item.l2AutoRandomise !== undefined) root.layer2AutoRandomise = Boolean(item.l2AutoRandomise)
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
-        root.requestActionFeedback("Applied Saved L2: " + (item.name || ("L2 #" + (idx + 1))))
+        root.suppressActionFeedback("Applied Saved L2: " + (item.name || ("L2 #" + (idx + 1))))
     }
 
     function cycleSavedL2Config(delta) {
@@ -1152,7 +1172,7 @@ FocusScope {
         root.savedL2Configs = copy
         root.currentSavedL2Index = Math.max(0, Math.min(copy.length - 1, root.currentSavedL2Index))
         root.emitSaveVisualiserConfig()
-        root.requestActionFeedback("Removed Saved L2: " + (removed && removed.name ? removed.name : ""))
+        root.suppressActionFeedback("Removed Saved L2: " + (removed && removed.name ? removed.name : ""))
     }
 
     function saveCurrentL3Config() {
@@ -1169,6 +1189,7 @@ FocusScope {
             l3ShowArtist: root.layer3ShowArtist,
             l3ShowTrack: root.layer3ShowTrack,
             l3ShowAlbum: root.layer3ShowAlbum,
+            l3ShowStatements: root.layer3ShowStatements,
             useAlbumArt: root.useAlbumArt,
             asciiMode: root.asciiMode === "block" ? "block" : (root.asciiMode === "text" ? "text" : "braille"),
             l3Dismantle: root.layer3Dismantle,
@@ -1183,7 +1204,7 @@ FocusScope {
         root.savedL3Configs = copy
         root.currentSavedL3Index = copy.length - 1
         root.emitSaveVisualiserConfig()
-        root.requestActionFeedback("Saved L3 Setting: " + item.name)
+        root.suppressActionFeedback("Saved L3 Setting: " + item.name)
     }
 
     function applySavedL3Config(idx) {
@@ -1199,6 +1220,7 @@ FocusScope {
         if (item.l3ShowArtist !== undefined) root.layer3ShowArtist = Boolean(item.l3ShowArtist)
         if (item.l3ShowTrack !== undefined) root.layer3ShowTrack = Boolean(item.l3ShowTrack)
         if (item.l3ShowAlbum !== undefined) root.layer3ShowAlbum = Boolean(item.l3ShowAlbum)
+        if (item.l3ShowStatements !== undefined) root.layer3ShowStatements = Boolean(item.l3ShowStatements)
         if (item.useAlbumArt !== undefined) {
             root.selectL3SourceOrGlyph(item.useAlbumArt ? "art" : "words")
         }
@@ -1217,7 +1239,7 @@ FocusScope {
         }
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
-        root.requestActionFeedback("Applied Saved L3: " + (item.name || ("L3 #" + (idx + 1))))
+        root.suppressActionFeedback("Applied Saved L3: " + (item.name || ("L3 #" + (idx + 1))))
     }
 
     function cycleSavedL3Config(delta) {
@@ -1235,7 +1257,7 @@ FocusScope {
         root.savedL3Configs = copy
         root.currentSavedL3Index = Math.max(0, Math.min(copy.length - 1, root.currentSavedL3Index))
         root.emitSaveVisualiserConfig()
-        root.requestActionFeedback("Removed Saved L3: " + (removed && removed.name ? removed.name : ""))
+        root.suppressActionFeedback("Removed Saved L3: " + (removed && removed.name ? removed.name : ""))
     }
 
     function saveCurrentL4Config() {
@@ -1262,7 +1284,7 @@ FocusScope {
         root.savedL4Configs = copy
         root.currentSavedL4Index = copy.length - 1
         root.emitSaveVisualiserConfig()
-        root.requestActionFeedback("Saved L4 Setting: " + item.name)
+        root.suppressActionFeedback("Saved L4 Setting: " + item.name)
     }
 
     function applySavedL4Config(idx) {
@@ -1285,7 +1307,7 @@ FocusScope {
         if (item.l4AutoRandomise !== undefined) root.layer4AutoRandomise = Boolean(item.l4AutoRandomise)
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
-        root.requestActionFeedback("Applied Saved L4: " + (item.name || ("L4 #" + (idx + 1))))
+        root.suppressActionFeedback("Applied Saved L4: " + (item.name || ("L4 #" + (idx + 1))))
     }
 
     function cycleSavedL4Config(delta) {
@@ -1303,7 +1325,7 @@ FocusScope {
         root.savedL4Configs = copy
         root.currentSavedL4Index = Math.max(0, Math.min(copy.length - 1, root.currentSavedL4Index))
         root.emitSaveVisualiserConfig()
-        root.requestActionFeedback("Removed Saved L4: " + (removed && removed.name ? removed.name : ""))
+        root.suppressActionFeedback("Removed Saved L4: " + (removed && removed.name ? removed.name : ""))
     }
 
     function clearCanvasImmediate() {
@@ -1513,6 +1535,8 @@ FocusScope {
             layer3ShowArtist: root.layer3ShowArtist,
             layer3ShowTrack: root.layer3ShowTrack,
             layer3ShowAlbum: root.layer3ShowAlbum,
+            layer3ShowStatements: root.layer3ShowStatements,
+            statementText: root.currentStatement,
             layer3Dismantle: root.layer3Dismantle,
             layer3Rebuild: root.layer3Rebuild,
             layer3Evolution: root.layer3Evolution,
@@ -1757,27 +1781,54 @@ FocusScope {
         root.suppressActionFeedback("Spin Axis: " + Engine.LAYER3_CYLINDER_DIRS[root.layer3CylinderDir])
     }
 
+    function pickRandomStatement() {
+        var list = (root.statementsList && root.statementsList.length > 0) ? root.statementsList : Engine.DEFAULT_STATEMENTS
+        if (!list || list.length === 0) return
+        var candidates = []
+        for (var i = 0; i < list.length; i++) {
+            if (list[i] !== root.currentStatement) candidates.push(list[i])
+        }
+        var pool = candidates.length > 0 ? candidates : list
+        root.currentStatement = pool[Math.floor(Math.random() * pool.length)]
+        if (root.engineState) {
+            root.engineState.artSourceKey = ""
+        }
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+
     function toggleLayer3TextField(field) {
         if (field === "artist") {
-            if (root.layer3ShowArtist && !root.layer3ShowTrack && !root.layer3ShowAlbum) {
+            if (root.layer3ShowArtist && !root.layer3ShowTrack && !root.layer3ShowAlbum && !root.layer3ShowStatements) {
                 root.layer3ShowTrack = true
             }
             root.layer3ShowArtist = !root.layer3ShowArtist
         } else if (field === "track") {
-            if (root.layer3ShowTrack && !root.layer3ShowArtist && !root.layer3ShowAlbum) {
+            if (root.layer3ShowTrack && !root.layer3ShowArtist && !root.layer3ShowAlbum && !root.layer3ShowStatements) {
                 root.layer3ShowArtist = true
             }
             root.layer3ShowTrack = !root.layer3ShowTrack
         } else if (field === "album") {
-            if (root.layer3ShowAlbum && !root.layer3ShowArtist && !root.layer3ShowTrack) {
+            if (root.layer3ShowAlbum && !root.layer3ShowArtist && !root.layer3ShowTrack && !root.layer3ShowStatements) {
                 root.layer3ShowArtist = true
             }
             root.layer3ShowAlbum = !root.layer3ShowAlbum
+        } else if (field === "statements") {
+            if (root.layer3ShowStatements && !root.layer3ShowArtist && !root.layer3ShowTrack && !root.layer3ShowAlbum) {
+                root.layer3ShowArtist = true
+            }
+            root.layer3ShowStatements = !root.layer3ShowStatements
+            if (root.layer3ShowStatements) {
+                root.pickRandomStatement()
+            }
         }
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
         var activeFields = []
         if (root.layer3ShowArtist) activeFields.push("Artist")
         if (root.layer3ShowTrack) activeFields.push("Track")
         if (root.layer3ShowAlbum) activeFields.push("Album")
+        if (root.layer3ShowStatements) activeFields.push("Statements")
         root.suppressActionFeedback("Visible Text: " + activeFields.join(" + "))
     }
 
@@ -1982,6 +2033,7 @@ FocusScope {
         root.layer3TextStyle = (root.layer3TextStyle + 1 + Math.floor(Math.random() * Math.max(1, totalStyles - 1))) % totalStyles
         root.layer3CylinderDir = Math.floor(Math.random() * Engine.LAYER3_CYLINDER_DIRS.length)
         root.layer3Scale = Math.round((0.55 + Math.random() * 1.15) * 100) / 100
+        root.pickRandomStatement()
         if (root.engineState) {
             root.engineState.l3FormFactor = 0.25
         }
@@ -2085,7 +2137,7 @@ FocusScope {
         Engine.shatterAlbumArt(root.engineState, 1.25)
         root.requestSelectTtfxEffect("random")
         vizCanvas.requestPaint()
-        root.requestActionFeedback("󰍹 TTE Randomised Effect: " + randomEffect)
+        root.suppressActionFeedback("󰍹 TTE Randomised Effect: " + randomEffect)
     }
 
     function toggleInCanvasTte() {
@@ -2096,7 +2148,7 @@ FocusScope {
         var randomEffect = pickRandomTtfxEffect()
         root.ttfxEffectName = randomEffect
         root.requestLaunchTtfxScreensaver("random")
-        root.requestActionFeedback("Launching Omarchy TTE Terminal (Random Effect)...")
+        root.suppressActionFeedback("Launching Omarchy TTE Terminal (Random Effect)...")
     }
 
     function currentTtfxEffect() {
@@ -2112,7 +2164,7 @@ FocusScope {
             "turntable": "Stage: Audiophile Turntable Deck",
             "visualiser": "Stage: 3-Layer Psychedelic Visualiser"
         }
-        root.requestActionFeedback(labels[modeStr] || ("Stage: " + modeStr))
+        root.suppressActionFeedback(labels[modeStr] || ("Stage: " + modeStr))
     }
 
     function formatTime(sec) {
@@ -2337,17 +2389,17 @@ FocusScope {
         else if (event.key === Qt.Key_S) { triggerShatterImpulse(); event.accepted = true }
         else if (event.key === Qt.Key_X) {
             autoCycle = !autoCycle
-            root.requestActionFeedback("Auto-Morph: " + (autoCycle ? "ON" : "OFF"))
+            root.suppressActionFeedback("Auto-Morph: " + (autoCycle ? "ON" : "OFF"))
             event.accepted = true
         }
         else if (event.key === Qt.Key_A) {
             root.layer3Enabled = !root.layer3Enabled
-            root.requestActionFeedback("Layer #3 Album Art: " + (root.layer3Enabled ? "ON" : "OFF"))
+            root.suppressActionFeedback("Layer #3 Album Art: " + (root.layer3Enabled ? "ON" : "OFF"))
             event.accepted = true
         }
         else if (event.key === Qt.Key_B) {
             root.requestToggleAsciiMode()
-            root.requestActionFeedback("ASCII Glyph Mode toggled")
+            root.suppressActionFeedback("ASCII Glyph Mode toggled")
             event.accepted = true
         }
         else if (event.key === Qt.Key_T) {
@@ -2373,12 +2425,12 @@ FocusScope {
         }
         else if (event.key === Qt.Key_Plus || event.key === Qt.Key_Equal) {
             sensitivity = Math.min(3.0, Math.round((sensitivity + 0.15) * 100) / 100)
-            root.requestActionFeedback("Audio Reactivity: " + sensitivity.toFixed(2) + "x")
+            root.suppressActionFeedback("Audio Reactivity: " + sensitivity.toFixed(2) + "x")
             event.accepted = true
         }
         else if (event.key === Qt.Key_Minus) {
             sensitivity = Math.max(0.35, Math.round((sensitivity - 0.15) * 100) / 100)
-            root.requestActionFeedback("Audio Reactivity: " + sensitivity.toFixed(2) + "x")
+            root.suppressActionFeedback("Audio Reactivity: " + sensitivity.toFixed(2) + "x")
             event.accepted = true
         }
         else if (event.key === Qt.Key_Space) { root.requestPlayPause(); event.accepted = true }
@@ -2453,7 +2505,7 @@ FocusScope {
             Keys.onPressed: event => {
                 if (event.key === Qt.Key_Escape) {
                     root.externalStageOpen = false
-                    root.requestActionFeedback("Closed External VJ Stage Window")
+                    root.suppressActionFeedback("Closed External VJ Stage Window")
                     event.accepted = true
                 }
             }
@@ -2462,7 +2514,7 @@ FocusScope {
                 z: -1
                 onDoubleClicked: {
                     root.externalStageOpen = false
-                    root.requestActionFeedback("Returned Visualiser Stage to Main Window")
+                    root.suppressActionFeedback("Returned Visualiser Stage to Main Window")
                 }
             }
         }
@@ -2666,6 +2718,17 @@ FocusScope {
         repeat: true
         onTriggered: {
             root.randomiseLayerVectors()
+        }
+    }
+
+    // Independent 6: Typography Statements Rotation Timer (every 9s when Statements is enabled)
+    Timer {
+        id: statementCycleTimer
+        interval: 9000
+        running: root.visible && root.stageMode === "visualiser" && root.layer3Enabled && root.layer3ShowStatements
+        repeat: true
+        onTriggered: {
+            root.pickRandomStatement()
         }
     }
 
@@ -3892,10 +3955,10 @@ FocusScope {
                     pillHeight: 22
                     fontSize: 8
                     horizontalPad: 3
-                    text: root.layer4Direction === 0 ? "Fwd" : (root.layer4Direction === 1 ? "Rev" : "Ping")
-                    active: root.layer4Direction !== 0
+                    text: root.layer4Direction === 0 ? "Ping" : (root.layer4Direction < 0 ? "Rev" : "Fwd")
+                    active: root.layer4Direction !== 1
                     onClicked: {
-                        root.layer4Direction = (root.layer4Direction + 1) % 3
+                        root.layer4Direction = (root.layer4Direction === 1 ? -1 : (root.layer4Direction === -1 ? 0 : 1))
                         root.backdropDirection = root.layer4Direction
                         vizCanvas.requestPaint()
                         scheduleSaveVisualiserConfig()
@@ -4023,6 +4086,19 @@ FocusScope {
                     text: "Album"
                     active: root.layer3ShowAlbum
                     onClicked: root.toggleLayer3TextField("album")
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 8
+                    horizontalPad: 3
+                    text: "Statements"
+                    active: root.layer3ShowStatements
+                    onClicked: root.toggleLayer3TextField("statements")
+                    onRightClicked: {
+                        root.layer3ShowStatements = true
+                        root.pickRandomStatement()
+                    }
                 }
 
                 Repeater {
@@ -4530,7 +4606,7 @@ FocusScope {
                                     }
 
                                     LayerSlider {
-                                        label: "Minimal → Many Density"
+                                        label: "Field Object Density"
                                         value: root.layer1Density
                                         minValue: 0.25
                                         maxValue: 2.50
@@ -4846,7 +4922,7 @@ FocusScope {
                                     }
 
                                     LayerSlider {
-                                        label: "Minimal → Many Density"
+                                        label: "Beat Shapes Density"
                                         value: root.layer1ShapeDensity
                                         minValue: 0.25
                                         maxValue: 2.50
@@ -5171,7 +5247,7 @@ FocusScope {
 
                                     VizPillButton {
                                         text: "󰑓 Saved L4 (" + (root.savedL4Configs ? root.savedL4Configs.length : 0) + ")"
-                                        active: root.selectedSavedL4Index >= 0
+                                        active: root.currentSavedL4Index >= 0
                                         horizontalPad: 8
                                         onClicked: root.cycleSavedL4Config(1)
                                         onRightClicked: root.cycleSavedL4Config(-1)
@@ -5201,7 +5277,7 @@ FocusScope {
                                             required property int index
                                             readonly property var itemData: (root.savedL4Configs && index < root.savedL4Configs.length) ? root.savedL4Configs[index] : ({})
                                             text: "★ " + (itemData.name || ("L4 #" + (index + 1)))
-                                            active: root.selectedSavedL4Index === index
+                                            active: root.currentSavedL4Index === index
                                             horizontalPad: 7
                                             onClicked: root.applySavedL4Config(index)
                                             onRightClicked: root.deleteSavedL4Config(index)
@@ -5240,10 +5316,10 @@ FocusScope {
                             }
 
                             VizPillButton {
-                                text: root.layer4Direction === 0 ? "󰁔 Dir: Forward" : (root.layer4Direction === 1 ? "󰁍 Dir: Reverse" : "󰘁 Dir: Ping-Pong")
-                                active: root.layer4Direction !== 0
+                                text: root.layer4Direction === 0 ? "󰘁 Dir: Ping-Pong" : (root.layer4Direction < 0 ? "󰁍 Dir: Reverse" : "󰁔 Dir: Forward")
+                                active: root.layer4Direction !== 1
                                 onClicked: {
-                                    root.layer4Direction = (root.layer4Direction + 1) % 3
+                                    root.layer4Direction = (root.layer4Direction === 1 ? -1 : (root.layer4Direction === -1 ? 0 : 1))
                                     root.backdropDirection = root.layer4Direction
                                     vizCanvas.requestPaint()
                                     scheduleSaveVisualiserConfig()
@@ -5394,11 +5470,11 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Vortex Glow"
-                                value: root.layer4Intensity
+                                value: root.layer4Glow
                                 minValue: 0.15
                                 maxValue: 2.00
                                 unitSuffix: "x"
-                                onValueEdited: v => { root.layer4Intensity = v; root.backdropIntensity = v; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                                onValueEdited: v => { root.layer4Glow = v; root.backdropIntensity = v; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
                             }
 
                             LayerSlider {
@@ -5613,7 +5689,49 @@ FocusScope {
                                 onClicked: root.toggleLayer3TextField("album")
                             }
 
-                            Item { Layout.fillWidth: true }
+                            VizPillButton {
+                                text: root.layer3ShowStatements ? "󰄬 Statements (" + (root.statementsList ? root.statementsList.length : 0) + ")" : "Statements (" + (root.statementsList ? root.statementsList.length : 0) + ")"
+                                active: root.layer3ShowStatements
+                                horizontalPad: 7
+                                onClicked: root.toggleLayer3TextField("statements")
+                                onRightClicked: {
+                                    root.layer3ShowStatements = true
+                                    root.pickRandomStatement()
+                                }
+                            }
+
+                            VizPillButton {
+                                text: "󰒟 Next Statement"
+                                active: root.layer3ShowStatements
+                                horizontalPad: 7
+                                onClicked: {
+                                    root.layer3ShowStatements = true
+                                    root.pickRandomStatement()
+                                }
+                            }
+
+                            VizPillButton {
+                                text: "󰏫 Edit statements.txt"
+                                horizontalPad: 7
+                                onClicked: root.requestOpenStatementsFile()
+                            }
+
+                            VizPillButton {
+                                text: "󰑐 Reload File"
+                                horizontalPad: 7
+                                onClicked: root.requestReloadStatementsFile()
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.layer3ShowStatements ? ("“" + root.currentStatement + "”") : ("File: " + root.statementsFilePath)
+                                textFormat: Text.PlainText
+                                font.family: "JetBrainsMono Nerd Font"
+                                font.pixelSize: 9
+                                font.bold: root.layer3ShowStatements
+                                color: root.layer3ShowStatements ? root.accentColour : Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.72)
+                                elide: Text.ElideRight
+                            }
                         }
 
                         Flow {

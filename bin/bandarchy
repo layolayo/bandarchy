@@ -66,6 +66,10 @@ AUTH_FILE = os.path.join(CONFIG_DIR, "auth.json")
 FAVOURITES_FILE = os.path.join(CONFIG_DIR, "favourites.json")
 PLAYLISTS_FILE = os.path.join(CONFIG_DIR, "playlists.json")
 VISUALISER_CONFIG_FILE = os.path.join(CONFIG_DIR, "visualiser.json")
+STATEMENTS_FILE = os.path.join(CONFIG_DIR, "statements.txt")
+DEFAULT_STATEMENTS_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "share", "statements.txt"
+)
 
 INDEX_FILE = os.path.join(DATA_DIR, "collection.json")
 HISTORY_FILE = os.path.join(DATA_DIR, "history.json")
@@ -3676,13 +3680,14 @@ def _visualiser_settings_payload(settings: dict) -> dict:
         "top_bar_led": top_led,
         "topBarLedEnabled": top_led,
         "stageMode": settings.get("stageMode") or "visualiser",
+        "paletteIndex": bounded_int(settings.get("paletteIndex"), 0, 0, 29),
         "backdropEnabled": l4_enabled,
         "backdropMode": l4_mode,
         "layer1Enabled": bool(settings.get("layer1Enabled", True)),
         "layer1Mode": bounded_int(settings.get("layer1Mode"), 0, 0, 10),
         "layer1EqStyle": bounded_int(settings.get("layer1EqStyle"), 0, 0, 15),
         "layer1EqLayout": bounded_int(settings.get("layer1EqLayout"), 0, 0, 3),
-        "layer1EqScale": bounded_float(settings.get("layer1EqScale"), 1.0, 0.35, 2.25),
+        "layer1EqScale": bounded_float(settings.get("layer1EqScale"), 1.0, 0.15, 2.25),
         "layer1Speed": bounded_float(settings.get("layer1Speed"), 1.0, 0.1, 4.0),
         "layer1Density": bounded_float(settings.get("layer1Density"), 1.0, 0.1, 3.0),
         "layer1Trail": bounded_float(settings.get("layer1Trail"), 0.84, 0.1, 0.98),
@@ -3702,7 +3707,8 @@ def _visualiser_settings_payload(settings: dict) -> dict:
         "layer3Evolution": bounded_float(settings.get("layer3Evolution"), 0.65, 0.0, 3.0),
         "layer3Scale": bounded_float(settings.get("layer3Scale"), 1.0, 0.5, 2.5),
         "layer3AsciiMode": settings.get("layer3AsciiMode") or settings.get("asciiMode") or "braille",
-        "layer3TextStyle": bounded_int(settings.get("layer3TextStyle"), 0, 0, 7),
+        "layer3TextStyle": bounded_int(settings.get("layer3TextStyle"), 0, 0, 15),
+        "layer3CylinderDir": bounded_int(settings.get("layer3CylinderDir"), 0, 0, 5),
         "layer3ShowArtist": bool(settings.get("layer3ShowArtist", True)),
         "layer3ShowTrack": bool(settings.get("layer3ShowTrack", True)),
         "layer3ShowAlbum": bool(settings.get("layer3ShowAlbum", False)),
@@ -3716,7 +3722,7 @@ def _visualiser_settings_payload(settings: dict) -> dict:
         "layer4Intensity": bounded_float(settings.get("layer4Intensity", settings.get("backdropIntensity")), 0.72, 0.15, 2.0),
         "layer4Twist": bounded_float(settings.get("layer4Twist"), 1.0, 0.10, 3.0),
         "layer4Symmetry": bounded_int(settings.get("layer4Symmetry", settings.get("backdropSymmetry")), 8, 2, 16),
-        "layer4Direction": bounded_int(settings.get("layer4Direction", settings.get("backdropDirection")), 0, 0, 2),
+        "layer4Direction": bounded_int(settings.get("layer4Direction", settings.get("backdropDirection")), 1, -1, 1),
         "turntableRpm": bounded_float(settings.get("turntableRpm"), 33.3, 16.0, 78.0),
         "turntableStyle": bounded_int(settings.get("turntableStyle"), 0, 0, 4),
     }
@@ -4814,7 +4820,89 @@ def cmd_now(args) -> None:
     })
 
 
+DEFAULT_STATEMENTS_FALLBACK = [
+    "WE ARE THE FREQUENCIES",
+    "RESONANCE IS ARCHITECTURE",
+    "SOUND BECOMES GEOMETRY",
+    "ENTER THE VORTEX",
+    "ACID IN THE CIRCUITRY",
+    "SYNTHESISE THE INFINITE",
+    "PULSE OF THE UNDERGROUND",
+    "SUBWOOFER CATHEDRAL",
+    "VOLTAGE AND VELVET",
+    "BEYOND THE EVENT HORIZON",
+    "ANALOGUE SOUL DIGITAL VOID",
+    "HYPNOTIC MOMENTUM",
+    "DANCE IN THE VECTOR FIELD",
+    "FUTURE PRIMITIVE RAVE",
+    "PHOSPHOR DREAMS IN 60HZ",
+    "NO BORDERS IN THE BASSLINE",
+    "LUMINOUS FREQUENCIES",
+    "TRANSMITTING FROM THE DEEP",
+    "KINETIC EUPHORIA",
+    "CYBERNETIC ECSTASY",
+    "EVERY BEAT REWRITES SPACE",
+    "MODULATE REALITY",
+    "ELECTRIC MYCELIUM",
+    "HIGH VOLTAGE SERENITY",
+    "ECHOES OF TOMORROW",
+    "THE FLOOR IS LIQUID LIGHT",
+    "WAREHOUSE TELEPATHY",
+    "OSCILLATE FOREVER",
+    "INFINITE FEEDBACK LOOP",
+    "LASER THROUGH THE FOG",
+    "CHROMATIC TRANSCENDENCE",
+    "SYNTHESIS IS LIBERATION",
+    "DEEP SPACE SUBHARMONICS",
+    "VECTOR HORIZON",
+    "PURE WAVEFORM ALCHEMY",
+    "NIGHT DRIVE TO INFINITY",
+    "NEURAL RAVE SYNCHRONISATION",
+    "SONIC HOLOGRAPHY",
+    "FRACTAL MEMORY",
+    "RHYTHM OF THE COSMOS",
+]
+
+
+def load_statements() -> list[str]:
+    """Load user-customisable statements from ~/.config/bandarchy/statements.txt (seeding from share/statements.txt if absent)."""
+    ensure_private_dir(CONFIG_DIR)
+    if not os.path.exists(STATEMENTS_FILE):
+        seed_txt = safe_read_text(DEFAULT_STATEMENTS_FILE, max_bytes=256 * 1024)
+        if not seed_txt:
+            seed_txt = (
+                "# Bandarchy — 6: Typography Statements & Words Collection\n"
+                "# One statement or word per line ('#' comments are ignored).\n\n"
+                + "\n".join(DEFAULT_STATEMENTS_FALLBACK)
+                + "\n"
+            )
+        safe_write_bytes(STATEMENTS_FILE, seed_txt.encode("utf-8"), mode=0o600, fatal=False)
+    raw = safe_read_text(STATEMENTS_FILE, max_bytes=256 * 1024)
+    if not raw:
+        raw = safe_read_text(DEFAULT_STATEMENTS_FILE, max_bytes=256 * 1024) or ""
+    lines: list[str] = []
+    for raw_line in raw.splitlines():
+        s = raw_line.strip()
+        if not s or s.startswith("#"):
+            continue
+        lines.append(bounded_text(s, 160))
+        if len(lines) >= 500:
+            break
+    return lines if lines else list(DEFAULT_STATEMENTS_FALLBACK)
+
+
 def cmd_visualiser_config(args) -> None:
+    statements_list = load_statements()
+    if getattr(args, "open_statements", False):
+        xdg_open = resolve_bin("xdg-open")
+        if xdg_open:
+            subprocess.Popen(
+                [xdg_open, STATEMENTS_FILE],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
     existing = read_json(VISUALISER_CONFIG_FILE, {})
     if not isinstance(existing, dict):
         existing = {}
@@ -4825,12 +4913,15 @@ def cmd_visualiser_config(args) -> None:
             die(f"invalid --set JSON payload: {exc}")
         if not isinstance(incoming, dict):
             die("--set payload must be a JSON object")
-        existing.update(incoming)
+        incoming_clean = {k: v for k, v in incoming.items() if k not in ("statements", "statementsPath")}
+        existing.update(incoming_clean)
         existing["updatedAt"] = int(time.time())
         write_json(VISUALISER_CONFIG_FILE, existing, mode=0o600)
     emit({
         "status": "ok",
         "config": existing,
+        "statements": statements_list,
+        "statementsPath": STATEMENTS_FILE,
         "path": VISUALISER_CONFIG_FILE,
     })
 
@@ -4933,6 +5024,7 @@ def main() -> None:
     p = sub.add_parser("visualiser-config", help="get or atomically persist visualiser configuration and saved L1/L2/L3 layer items")
     p.add_argument("--get", action="store_true", help="read ~/.config/bandarchy/visualiser.json")
     p.add_argument("--set", help="atomically write JSON object to ~/.config/bandarchy/visualiser.json")
+    p.add_argument("--open-statements", action="store_true", help="open ~/.config/bandarchy/statements.txt in default editor")
     p.set_defaults(func=cmd_visualiser_config)
 
     p = sub.add_parser("collection", help="list collection items filtered by scope and query")

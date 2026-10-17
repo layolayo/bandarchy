@@ -513,7 +513,10 @@ Item {
             try {
                 var d = JSON.parse(raw)
                 if (d.ok && d.config && typeof d.config === "object") {
-                    root.visualiserConfig = d.config
+                    var cfgObj = Object.assign({}, d.config)
+                    if (Array.isArray(d.statements)) cfgObj.statements = d.statements
+                    if (typeof d.statementsPath === "string") cfgObj.statementsPath = d.statementsPath
+                    root.visualiserConfig = cfgObj
                     root.visualiserConfigLoaded = true
                     if (!root._topBarLedChangedLocally) {
                         if (d.config.topBarLedEnabled !== undefined) {
@@ -577,12 +580,27 @@ Item {
         visualiserConfigProc.running = true
     }
 
+    function openStatementsFile() {
+        Quickshell.execDetached([
+            root.binPath, "visualiser-config",
+            "--open-statements"
+        ])
+    }
+
     function saveVisualiserConfig(cfgObj) {
         if (!cfgObj || typeof cfgObj !== "object") return
-        var merged = Object.assign({}, root.visualiserConfig || {}, cfgObj)
+        var prevCfg = root.visualiserConfig || ({})
+        var merged = Object.assign({}, prevCfg, cfgObj)
         root.visualiserConfig = merged
         root.visualiserConfigLoaded = true
         root.syncScreensaverInhibit()
+        if (cfgObj.layer3ShowStatements !== prevCfg.layer3ShowStatements
+                || cfgObj.statementText !== prevCfg.statementText
+                || cfgObj.layer3ShowArtist !== prevCfg.layer3ShowArtist
+                || cfgObj.layer3ShowTrack !== prevCfg.layer3ShowTrack
+                || cfgObj.layer3ShowAlbum !== prevCfg.layer3ShowAlbum) {
+            root.refreshAsciiArt()
+        }
         Quickshell.execDetached([
             root.binPath, "visualiser-config",
             "--set", JSON.stringify(merged)
@@ -635,13 +653,6 @@ Item {
         root._stageChangedLocally = true
         root.stageMode = newMode
         Quickshell.execDetached([root.binPath, "auth", "--stage-mode", newMode])
-        var labels = {
-            "off": "Stage Closed",
-            "art": "Stage: Album Art As-Is",
-            "turntable": "Stage: Audiophile Turntable Deck",
-            "visualiser": "Stage: 3-Layer Psychedelic Visualiser"
-        }
-        root.notifyAction(labels[newMode] || ("Stage: " + newMode))
     }
 
     function loadCollection(scope, query) {
@@ -711,14 +722,17 @@ Item {
         var showArtist = vc.layer3ShowArtist !== undefined ? Boolean(vc.layer3ShowArtist) : true
         var showTrack = vc.layer3ShowTrack !== undefined ? Boolean(vc.layer3ShowTrack) : true
         var showAlbum = vc.layer3ShowAlbum !== undefined ? Boolean(vc.layer3ShowAlbum) : false
+        var showStatements = vc.layer3ShowStatements !== undefined ? Boolean(vc.layer3ShowStatements) : false
         var effArtist = root.trackArtist || (fb ? (fb.artist || "") : "")
         var effTrack = root.trackTitle || (fb ? (fb.title || fb.album || "") : "")
         var effAlbum = root.trackAlbum || (fb ? (fb.album || fb.title || "") : "")
+        var effStatement = String(vc.statementText || "").trim()
         var parts = []
         if (showArtist && effArtist) parts.push(effArtist)
         if (showTrack && effTrack) parts.push(effTrack)
         if (showAlbum && effAlbum && effAlbum !== effTrack) parts.push(effAlbum)
-        var bannerTxt = parts.length > 0 ? parts.join(" — ") : (effArtist || effTrack || effAlbum || "BANDARCHY")
+        if (showStatements && effStatement) parts.push(effStatement)
+        var bannerTxt = parts.length > 0 ? parts.join(" — ") : (effStatement || effArtist || effTrack || effAlbum || "BANDARCHY")
         cmd.push("--text", bannerTxt)
         asciiProc.command = cmd
         asciiProc.running = true
@@ -727,7 +741,6 @@ Item {
     function setTtfxEffect(effectName) {
         root.ttfxEffect = "random"
         refreshAsciiArt("", "random")
-        root.notifyAction("TTE Effect Randomised")
     }
 
     function setUseAlbumArt(useArt) {
@@ -741,10 +754,6 @@ Item {
             "--ascii-mode", root.asciiMode
         ])
         refreshAsciiArt()
-        root.notifyAction(
-            "Layer #3: " + (root.useAlbumArt ? "Cover Art" : "Artist/Song Words") +
-            " · " + _asciiStyleLabel(root.asciiMode)
-        )
     }
 
     function setAsciiGlyphMode(glyphMode) {
@@ -755,10 +764,6 @@ Item {
             "--ascii-mode", root.asciiMode
         ])
         refreshAsciiArt()
-        root.notifyAction(
-            "Layer #3: " + (root.useAlbumArt ? "Cover Art" : "Artist/Song Words") +
-            " · " + _asciiStyleLabel(root.asciiMode)
-        )
     }
 
     function toggleUseAlbumArt() {
@@ -781,10 +786,6 @@ Item {
             "--ascii-mode", root.asciiMode
         ])
         refreshAsciiArt()
-        root.notifyAction(
-            "Layer #3: " + (root.useAlbumArt ? "Cover Art" : "Artist/Song Words") +
-            " · " + _asciiStyleLabel(root.asciiMode)
-        )
     }
 
     function setAsciiSourceMode(modeStr) {
@@ -827,10 +828,6 @@ Item {
             "--ascii-mode", root.asciiMode
         ])
         refreshAsciiArt()
-        root.notifyAction(
-            "Layer #3: " + (root.useAlbumArt ? "Cover Art" : "Artist/Song Words") +
-            " · " + _asciiStyleLabel(root.asciiMode)
-        )
     }
 
     function cycleLayer3Source() {

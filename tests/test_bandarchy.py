@@ -242,6 +242,17 @@ class BandarchyTestSuite(unittest.TestCase):
                 "BANDARCHY_MPV_SOCKET",
             )
         }
+        orig_rt = cls._orig_env.get("XDG_RUNTIME_DIR")
+        if orig_rt and os.path.isdir(orig_rt):
+            try:
+                for entry in os.listdir(orig_rt):
+                    if entry.startswith("wayland-"):
+                        src_sock = os.path.join(orig_rt, entry)
+                        dst_sock = os.path.join(cls.run_dir, entry)
+                        if not os.path.exists(dst_sock):
+                            os.symlink(src_sock, dst_sock)
+            except OSError:
+                pass
         cls.env = os.environ.copy()
         cls.env["HOME"] = cls.tmp_root
         cls.env["XDG_CONFIG_HOME"] = os.path.join(cls.tmp_root, ".config")
@@ -1270,6 +1281,14 @@ console.log('OK');
         self.assertIn('"DNA Helix Beam"', engine_src)
         self.assertIn('"Ferrofluid Lake"', engine_src)
         self.assertNotIn('"Synth Sun Rays"', engine_src)
+        self.assertIn('label: "󰍹 Visuals"', app_src)
+        self.assertIn('label: "󰍹 Visuals"', panel_src)
+        self.assertNotIn("root.selectedSavedL4Index", viz_src)
+        self.assertNotIn("root.layer4Intensity", viz_src)
+        self.assertNotIn("root.requestActionFeedback(", viz_src)
+        self.assertIn("function toggleAllRandomisations()", viz_src)
+        self.assertIn("disableScreensaverInFullscreenOrVj", viz_src)
+        self.assertIn("disableScreensaverInFullscreenOrVj", svc_src)
 
         # 3. Verify Node.js PsychedelicEngine.js:
         #    - Tri-state backdropDirection (+1 Towards, -1 Away, 0 Breathe) on state.backdropTime
