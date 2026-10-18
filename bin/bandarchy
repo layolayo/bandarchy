@@ -6608,10 +6608,24 @@ def cmd_kill(args) -> None:
     emit({"action": "kill", "status": "stopped"})
 
 
+def _resolve_plugin_root() -> str:
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if os.path.isfile(os.path.join(base, "App.qml")):
+        return base
+    xdg_cfg = os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config")
+    plugin_cand = os.path.join(xdg_cfg, "omarchy", "plugins", "io.github.layolayo.bandarchy")
+    if os.path.isfile(os.path.join(plugin_cand, "App.qml")):
+        return plugin_cand
+    repo_cand = os.path.join(HOME, "Projects", "bandarchy")
+    if os.path.isfile(os.path.join(repo_cand, "App.qml")):
+        return repo_cand
+    return base
+
+
 def cmd_restart(args) -> None:
     _kill_bandarchy_processes()
     time.sleep(0.2)
-    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    root_dir = _resolve_plugin_root()
     app_qml = os.path.join(root_dir, "App.qml")
     qs_bin = resolve_bin("quickshell")
     if os.path.isfile(app_qml) and qs_bin:
@@ -6625,6 +6639,7 @@ def cmd_restart(args) -> None:
             bandarchy_bin = qs_bin
         subprocess.Popen(
             [bandarchy_bin, "-p", app_qml],
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
@@ -6633,9 +6648,11 @@ def cmd_restart(args) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) == 2 and sys.argv[1] in ("--kill", "-k", "stop", "--stop"):
+    if len(sys.argv) == 1:
+        sys.argv.append("restart")
+    elif len(sys.argv) == 2 and sys.argv[1] in ("--kill", "-k", "stop", "--stop"):
         sys.argv[1] = "kill"
-    elif len(sys.argv) == 2 and sys.argv[1] in ("--restart", "-r"):
+    elif len(sys.argv) == 2 and sys.argv[1] in ("--restart", "-r", "start", "--start", "gui", "--gui"):
         sys.argv[1] = "restart"
     parser = argparse.ArgumentParser(prog="bandarchy", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
