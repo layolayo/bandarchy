@@ -33,6 +33,10 @@ FocusScope {
     property real position: 0.0
     property real duration: 0.0
 
+    onTrackTitleChanged: vizCanvas.requestPaint()
+    onTrackArtistChanged: vizCanvas.requestPaint()
+    onTrackAlbumChanged: vizCanvas.requestPaint()
+
     // Stage mode: "off", "art", "turntable", "visualiser"
     property string stageMode: "visualiser"
 
@@ -69,9 +73,16 @@ FocusScope {
         "Isotope", "Quasar", "Crimson", "Oceanic", "Prismatic"
     ]
     readonly property var trackArcModes: Engine.TRACK_ARC_MODES
+    readonly property var audioLinkSources: Engine.AUDIO_LINK_SOURCES
+    readonly property var shortAudioLinkSources: Engine.SHORT_AUDIO_LINK_SOURCES
+    readonly property var audioLinkModes: Engine.AUDIO_LINK_MODES
+    readonly property var shortAudioLinkModes: Engine.SHORT_AUDIO_LINK_MODES
+    readonly property var audioLinkTargets: Engine.AUDIO_LINK_TARGETS
 
-    // Global Music-Driven Modulation, Hardware GPU Acceleration, Song Arc & Row 2 Focus
+    // Global Music-Driven Modulation, Non-Destructive Audio-Responder Link Matrix, Hardware GPU Acceleration, Song Arc & Row 2 Focus
     property bool musicDrive: true
+    property var audioLinks: ({}) // Opt-in per-feature Audio-Responder links (default empty = 100% existing behaviour preserved)
+    property real _l4DualMusicCooldown: 0.0
     property bool gpuShaderEnabled: true // Hardware GPU shader acceleration (configured in General & Quality)
     property int hudFocusedLayer: 1 // 1 = L1 Controls, 2 = L2 Controls, 3 = L3 Controls, 4 = L4 Tunnel & Vortex Controls on Row 2 of topHud
     property int trackArcMode: 0 // 0 = Dynamic Audio Arc, 1 = Climax (75%), 2 = Dismantle, 3 = Rebuild, 4 = Quarters
@@ -826,7 +837,8 @@ FocusScope {
             savedL2Configs: root.savedL2Configs,
             savedL3Configs: root.savedL3Configs,
             savedL4Configs: root.savedL4Configs,
-            collectivePresets: root.collectivePresets
+            collectivePresets: root.collectivePresets,
+            audioLinks: root.audioLinks || ({})
         }
     }
 
@@ -967,12 +979,157 @@ FocusScope {
         if (Array.isArray(cfg.savedL3Configs)) root.savedL3Configs = cfg.savedL3Configs
         if (Array.isArray(cfg.savedL4Configs)) root.savedL4Configs = cfg.savedL4Configs
         if (Array.isArray(cfg.collectivePresets) && cfg.collectivePresets.length > 0) root.collectivePresets = cfg.collectivePresets
+        if (cfg.audioLinks && typeof cfg.audioLinks === "object") {
+            root.audioLinks = Object.assign({}, cfg.audioLinks)
+        }
 
+        root.syncLayer1MasterFromSubs()
         root._applyingPersistedConfig = false
         if (isLegacyV2) {
             scheduleSaveVisualiserConfig()
         }
         clearCanvasImmediate()
+    }
+
+    function getAudioLink(targetId) {
+        return Engine.getAudioLinkSpec({ audioLinks: root.audioLinks }, targetId)
+    }
+
+    function setAudioLink(targetId, source, mode, amount) {
+        if (!targetId) return
+        var nextLinks = Object.assign({}, root.audioLinks || ({}))
+        var src = Math.max(0, Math.min(Engine.AUDIO_LINK_SOURCES.length - 1, Math.round(Number(source) || 0)))
+        var md = Math.max(0, Math.min(Engine.AUDIO_LINK_MODES.length - 1, Math.round(Number(mode) || 0)))
+        var amt = amount !== undefined ? Math.max(0.0, Math.min(2.5, Math.round(Number(amount) * 100) / 100)) : 1.0
+        if (src === 0) {
+            delete nextLinks[targetId]
+        } else {
+            nextLinks[targetId] = { source: src, mode: md, amount: amt }
+        }
+        root.audioLinks = nextLinks
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+
+    function cycleAudioLinkSource(targetId, delta) {
+        var cur = root.getAudioLink(targetId)
+        var n = Engine.AUDIO_LINK_SOURCES.length
+        var step = (delta !== undefined && delta < 0) ? -1 : 1
+        var nextSrc = (cur.source + step + n) % n
+        var defMode = cur.mode
+        if (cur.source === 0 && nextSrc > 0) {
+            for (var i = 0; i < Engine.AUDIO_LINK_TARGETS.length; i++) {
+                if (Engine.AUDIO_LINK_TARGETS[i].id === targetId) {
+                    defMode = Engine.AUDIO_LINK_TARGETS[i].defaultMode || 0
+                    break
+                }
+            }
+        }
+        root.setAudioLink(targetId, nextSrc, defMode, cur.amount > 0 ? cur.amount : 1.0)
+    }
+
+    function cycleAudioLinkMode(targetId) {
+        var cur = root.getAudioLink(targetId)
+        if (cur.source === 0) {
+            root.cycleAudioLinkSource(targetId, 1)
+            return
+        }
+        var nextMode = (cur.mode + 1) % Engine.AUDIO_LINK_MODES.length
+        root.setAudioLink(targetId, cur.source, nextMode, cur.amount)
+    }
+
+    function cycleAudioLinkAmount(targetId, delta) {
+        var cur = root.getAudioLink(targetId)
+        if (cur.source === 0) return
+        var nextAmt = Math.max(0.25, Math.min(2.50, Math.round((cur.amount + (delta > 0 ? 0.20 : -0.20)) * 100) / 100))
+        root.setAudioLink(targetId, cur.source, cur.mode, nextAmt)
+    }
+
+    function formatAudioLinkBadge(targetId) {
+        var spec = root.getAudioLink(targetId)
+        if (!spec || spec.source === 0) return "󰓃 Off"
+        var sName = Engine.SHORT_AUDIO_LINK_SOURCES[spec.source] || "Audio"
+        var mSym = Engine.SHORT_AUDIO_LINK_MODES[spec.mode] || "+"
+        return "󰓃 " + sName + " " + mSym + spec.amount.toFixed(1) + "x"
+    }
+
+    property real _lastDualPeakTriggerT: -10.0
+
+    function isLayerAudioBoosted(layerNum) {
+        var links = root.audioLinks || ({})
+        for (var i = 0; i < Engine.AUDIO_LINK_TARGETS.length; i++) {
+            var t = Engine.AUDIO_LINK_TARGETS[i]
+            if (t.layer === layerNum && links[t.id] && Number(links[t.id].source) > 0) {
+                return true
+            }
+        }
+        return false
+    }
+
+    function toggleLayerAudioBoost(layerNum) {
+        var nextLinks = Object.assign({}, root.audioLinks || ({}))
+        var currentlyBoosted = root.isLayerAudioBoosted(layerNum)
+        var defaultSources = [1, 2, 5, 6, 3, 4]
+        var srcIdx = 0
+        for (var i = 0; i < Engine.AUDIO_LINK_TARGETS.length; i++) {
+            var t = Engine.AUDIO_LINK_TARGETS[i]
+            if (t.layer === layerNum) {
+                if (currentlyBoosted) {
+                    delete nextLinks[t.id]
+                } else {
+                    var chosenSource = defaultSources[srcIdx % defaultSources.length]
+                    srcIdx++
+                    nextLinks[t.id] = {
+                        source: chosenSource,
+                        mode: t.defaultMode !== undefined ? t.defaultMode : 0,
+                        amount: 1.0
+                    }
+                }
+            }
+        }
+        root.audioLinks = nextLinks
+        if (!currentlyBoosted && layerNum === 5 && !root.layer4DualEnabled) {
+            root.toggleLayer4DualWithRandomPair()
+            return
+        }
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+
+    function toggleAllAudioBoosts() {
+        var anyBoosted = false
+        for (var l = 1; l <= 6; l++) {
+            if (root.isLayerAudioBoosted(l)) {
+                anyBoosted = true
+                break
+            }
+        }
+        if (anyBoosted) {
+            root.audioLinks = ({})
+            vizCanvas.requestPaint()
+            scheduleSaveVisualiserConfig()
+        } else {
+            for (var layerIdx = 1; layerIdx <= 6; layerIdx++) {
+                if (!root.isLayerAudioBoosted(layerIdx)) {
+                    root.toggleLayerAudioBoost(layerIdx)
+                }
+            }
+        }
+    }
+
+    function toggleLayer4DualWithRandomPair() {
+        var total = Engine.LAYER4_MODES.length
+        root.layer4Enabled = true
+        root.backdropEnabled = true
+        root.layer4DualEnabled = !root.layer4DualEnabled
+        if (root.layer4DualEnabled) {
+            root.layer4Mode = Math.floor(Math.random() * total)
+            root.backdropMode = root.layer4Mode
+            root.layer4SecondaryMode = (root.layer4Mode + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total
+            root.layer4DualMix = Math.round((0.35 + Math.random() * 0.30) * 100) / 100
+        }
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
     }
 
     function resetAllVisualiserDefaults() {
@@ -990,6 +1147,7 @@ FocusScope {
         root.autoCycleIntervalSec = 18
         root.presetTransitionIntervalSec = 10
         root.musicDrive = true
+        root.audioLinks = ({})
         root.gpuShaderEnabled = true
         root.backdropEnabled = true
         root.backdropMode = 0
@@ -1598,7 +1756,8 @@ FocusScope {
             layer3Scale: root.layer3Scale,
             layer3Tracers: root.layer3Tracers,
             layer3AutoRandomise: root.layer3AutoRandomise,
-            autoCycle: root.autoCycle
+            autoCycle: root.autoCycle,
+            audioLinks: root.audioLinks
         }
     }
 
@@ -2289,21 +2448,24 @@ FocusScope {
             return
         }
         root._internalLayerChange = true
+        var vecDen = (Math.random() < 0.85)
+            ? (0.45 + Math.random() * 0.85)
+            : (1.35 + Math.random() * 0.40)
         if (root.layer3PinnedByUser) {
             root.layer1ShapesEnabled = true
             root.layer1ShapeStyle = Math.floor(Math.random() * Engine.LAYER1_SHAPE_STYLES.length)
-            root.layer1ShapeScale = Math.round((0.55 + Math.random() * 1.35) * 100) / 100
-            root.layer1ShapeDensity = Math.round((0.50 + Math.random() * 1.75) * 100) / 100
-            root.layer1ShapeSpeed = Math.round((0.55 + Math.random() * 1.55) * 100) / 100
+            root.layer1ShapeScale = Math.round((0.50 + Math.random() * 0.65) * 100) / 100
+            root.layer1ShapeDensity = Math.round(vecDen * 100) / 100
+            root.layer1ShapeSpeed = Math.round((0.55 + Math.random() * 1.25) * 100) / 100
             root.layer1ShapeSpin = Math.round(((Math.random() * 2.8) - 1.4) * 100) / 100
         } else {
             var shRoll = Math.floor(Math.random() * (Engine.LAYER1_SHAPE_STYLES.length + 1))
             root.layer1ShapesEnabled = (shRoll < Engine.LAYER1_SHAPE_STYLES.length)
             if (root.layer1ShapesEnabled) {
                 root.layer1ShapeStyle = shRoll
-                root.layer1ShapeScale = Math.round((0.55 + Math.random() * 1.35) * 100) / 100
-                root.layer1ShapeDensity = Math.round((0.50 + Math.random() * 1.75) * 100) / 100
-                root.layer1ShapeSpeed = Math.round((0.55 + Math.random() * 1.55) * 100) / 100
+                root.layer1ShapeScale = Math.round((0.50 + Math.random() * 0.65) * 100) / 100
+                root.layer1ShapeDensity = Math.round(vecDen * 100) / 100
+                root.layer1ShapeSpeed = Math.round((0.55 + Math.random() * 1.25) * 100) / 100
                 root.layer1ShapeSpin = Math.round(((Math.random() * 2.8) - 1.4) * 100) / 100
             }
             if (!root.layer1FieldEnabled && !root.layer1EqEnabled && !root.layer1ShapesEnabled && !root.hasOtherActiveLayer(1)) {
@@ -2601,6 +2763,7 @@ FocusScope {
         property real maxValue: 2.0
         property string unitSuffix: ""
         property bool integerSteps: false
+        property string linkTarget: ""
         signal valueEdited(real newVal)
 
         Layout.fillWidth: true
@@ -2675,6 +2838,17 @@ FocusScope {
             font.pixelSize: 10
             font.bold: true
             color: root.accentColour
+        }
+
+        VizPillButton {
+            visible: sliderRow.linkTarget.length > 0
+            text: sliderRow.linkTarget.length > 0 ? root.formatAudioLinkBadge(sliderRow.linkTarget) : "󰓃 Off"
+            active: sliderRow.linkTarget.length > 0 && root.getAudioLink(sliderRow.linkTarget).source > 0
+            pillHeight: 18
+            fontSize: 8
+            horizontalPad: 5
+            onClicked: root.cycleAudioLinkSource(sliderRow.linkTarget, 1)
+            onRightClicked: root.cycleAudioLinkMode(sliderRow.linkTarget)
         }
     }
 
@@ -2947,6 +3121,20 @@ FocusScope {
                 gpuShaderStage.uBeat = st.beatPulse || 0.0
                 gpuShaderStage.uDriftX = Math.sin(bT * 0.27) * 0.16 * root.tracerDrift
                 gpuShaderStage.uDriftY = Math.cos(bT * 0.21) * 0.12 * root.tracerDrift
+                gpuShaderStage.uComplexity = Engine.applyAudioLinkValue(st, cfg, "l5_vortex_glow", root.backdropIntensity, 0.20, 2.00, 1.10, false)
+                gpuShaderStage.uL4Twist = Engine.applyAudioLinkValue(st, cfg, "l5_vortex_twist", root.layer4Twist, -2.50, 2.50, 2.00, false)
+                var mixSpec = root.getAudioLink("l5_vortex_mix")
+                var mixLinked = Boolean(mixSpec && mixSpec.source > 0)
+                if (mixLinked && (st.beatPulse || 0.0) > 0.72 && ((st.t || 0.0) - root._lastDualPeakTriggerT) > 3.5) {
+                    var totalL4 = Engine.LAYER4_MODES.length
+                    root._lastDualPeakTriggerT = st.t || 0.0
+                    root.layer4DualEnabled = true
+                    root.layer4Mode = Math.floor(Math.random() * totalL4)
+                    root.backdropMode = root.layer4Mode
+                    root.layer4SecondaryMode = (root.layer4Mode + 1 + Math.floor(Math.random() * Math.max(1, totalL4 - 1))) % totalL4
+                }
+                gpuShaderStage.uL4DualEnabled = (root.layer4DualEnabled || mixLinked) ? 1.0 : 0.0
+                gpuShaderStage.uL4DualMix = Engine.applyAudioLinkValue(st, cfg, "l5_vortex_mix", root.layer4DualMix, 0.15, 0.85, 0.60, false)
 
                 var pal = Engine.PALETTES[root.paletteIndex % Engine.PALETTES.length]
                 var targetCol0, targetCol1, targetCol2
@@ -4257,13 +4445,7 @@ FocusScope {
                     horizontalPad: 4
                     text: root.layer4DualEnabled ? "2x:ON" : "2x:OFF"
                     active: root.layer4DualEnabled
-                    onClicked: {
-                        root.layer4Enabled = true
-                        root.backdropEnabled = true
-                        root.layer4DualEnabled = !root.layer4DualEnabled
-                        vizCanvas.requestPaint()
-                        scheduleSaveVisualiserConfig()
-                    }
+                    onClicked: root.toggleLayer4DualWithRandomPair()
                     onRightClicked: {
                         root.layer4Enabled = true
                         root.backdropEnabled = true
@@ -4902,6 +5084,12 @@ FocusScope {
                                 }
                             }
 
+                            VizPillButton {
+                                text: root.isLayerAudioBoosted(1) ? "󰓃 Boost L1: ON" : "󰓃 Boost L1"
+                                active: root.isLayerAudioBoosted(1)
+                                onClicked: root.toggleLayerAudioBoost(1)
+                            }
+
                             Item { Layout.fillWidth: true }
 
                             VizPillButton {
@@ -4962,6 +5150,7 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "World Flight Speed"
+                                        linkTarget: "l1_speed"
                                         value: root.layer1Speed
                                         minValue: 0.05
                                         maxValue: 4.00
@@ -4975,6 +5164,7 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "Trail Persistence"
+                                        linkTarget: "l1_trail"
                                         value: root.layer1Persistence
                                         minValue: 0.20
                                         maxValue: 0.96
@@ -4987,6 +5177,7 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "Field Object Density"
+                                        linkTarget: "l1_density"
                                         value: root.layer1Density
                                         minValue: 0.25
                                         maxValue: 2.50
@@ -5036,6 +5227,12 @@ FocusScope {
                                     root.clearCanvasImmediate()
                                     scheduleSaveVisualiserConfig()
                                 }
+                            }
+
+                            VizPillButton {
+                                text: root.isLayerAudioBoosted(2) ? "󰓃 Boost L2: ON" : "󰓃 Boost L2"
+                                active: root.isLayerAudioBoosted(2)
+                                onClicked: root.toggleLayerAudioBoost(2)
                             }
 
                             Item { Layout.fillWidth: true }
@@ -5152,6 +5349,7 @@ FocusScope {
                                     LayerSlider {
                                         Layout.fillWidth: true
                                         label: "EQ Scale (0.15x–2.25x)"
+                                        linkTarget: "l2_eq_scale"
                                         value: root.layer1EqScale
                                         minValue: 0.15
                                         maxValue: 2.25
@@ -5166,6 +5364,7 @@ FocusScope {
                                     LayerSlider {
                                         Layout.fillWidth: true
                                         label: "3D Spin & Rotation"
+                                        linkTarget: "l2_eq_spin"
                                         value: root.layer1EqSpin
                                         minValue: -2.50
                                         maxValue: 2.50
@@ -5180,6 +5379,7 @@ FocusScope {
                                     LayerSlider {
                                         Layout.fillWidth: true
                                         label: "Equaliser Gain"
+                                        linkTarget: "l2_eq_gain"
                                         value: root.layer1EqGain
                                         minValue: 0.40
                                         maxValue: 2.50
@@ -5268,6 +5468,12 @@ FocusScope {
                                 }
                             }
 
+                            VizPillButton {
+                                text: root.isLayerAudioBoosted(3) ? "󰓃 Boost L3: ON" : "󰓃 Boost L3"
+                                active: root.isLayerAudioBoosted(3)
+                                onClicked: root.toggleLayerAudioBoost(3)
+                            }
+
                             Item { Layout.fillWidth: true }
 
                             VizPillButton {
@@ -5327,6 +5533,7 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "3D Spin Rate"
+                                        linkTarget: "l3_vec_spin"
                                         value: root.layer1ShapeSpin
                                         minValue: -2.50
                                         maxValue: 2.50
@@ -5340,6 +5547,7 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "Flight Speed"
+                                        linkTarget: "l3_vec_speed"
                                         value: root.layer1ShapeSpeed
                                         minValue: 0.20
                                         maxValue: 3.00
@@ -5353,6 +5561,7 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "Vector Scale"
+                                        linkTarget: "l3_vec_scale"
                                         value: root.layer1ShapeScale
                                         minValue: 0.30
                                         maxValue: 2.50
@@ -5366,6 +5575,7 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "Beat Shapes Density"
+                                        linkTarget: "l3_vec_density"
                                         value: root.layer1ShapeDensity
                                         minValue: 0.25
                                         maxValue: 2.50
@@ -5487,6 +5697,19 @@ FocusScope {
                                 onClicked: root.cycleSymmetry()
                             }
 
+                            VizPillButton {
+                                text: "Symmetry " + root.formatAudioLinkBadge("l4_geo_facets")
+                                active: root.getAudioLink("l4_geo_facets").source > 0
+                                onClicked: root.cycleAudioLinkSource("l4_geo_facets", 1)
+                                onRightClicked: root.cycleAudioLinkMode("l4_geo_facets")
+                            }
+
+                            VizPillButton {
+                                text: root.isLayerAudioBoosted(4) ? "󰓃 Boost L4: ON" : "󰓃 Boost L4"
+                                active: root.isLayerAudioBoosted(4)
+                                onClicked: root.toggleLayerAudioBoost(4)
+                            }
+
                             Item { Layout.fillWidth: true }
 
                             VizPillButton {
@@ -5590,6 +5813,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "3D Tracers (1–16x)"
+                                linkTarget: "l4_geo_tracers"
                                 value: root.tracerCount
                                 minValue: 1
                                 maxValue: 16
@@ -5636,6 +5860,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Evolution Speed"
+                                linkTarget: "l4_geo_speed"
                                 value: root.layer2Speed
                                 minValue: 0.20
                                 maxValue: 2.50
@@ -5645,6 +5870,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Scale / Zoom"
+                                linkTarget: "l4_geo_zoom"
                                 value: root.layer2Zoom
                                 minValue: 0.50
                                 maxValue: 2.00
@@ -5749,13 +5975,13 @@ FocusScope {
                             VizPillButton {
                                 text: root.layer4DualEnabled ? "󰄬 2x Dual Mode Blend: ON" : "2x Dual Mode Blend: OFF"
                                 active: root.layer4DualEnabled
-                                onClicked: {
-                                    root.layer4Enabled = true
-                                    root.backdropEnabled = true
-                                    root.layer4DualEnabled = !root.layer4DualEnabled
-                                    vizCanvas.requestPaint()
-                                    scheduleSaveVisualiserConfig()
-                                }
+                                onClicked: root.toggleLayer4DualWithRandomPair()
+                            }
+
+                            VizPillButton {
+                                text: root.isLayerAudioBoosted(5) ? "󰓃 Boost L5: ON" : "󰓃 Boost L5"
+                                active: root.isLayerAudioBoosted(5)
+                                onClicked: root.toggleLayerAudioBoost(5)
                             }
 
                             VizPillButton {
@@ -5904,6 +6130,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Vortex Speed"
+                                linkTarget: "l5_vortex_speed"
                                 value: root.layer4Speed
                                 minValue: 0.15
                                 maxValue: 3.00
@@ -5913,6 +6140,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Vortex Glow"
+                                linkTarget: "l5_vortex_glow"
                                 value: root.layer4Glow
                                 minValue: 0.15
                                 maxValue: 2.00
@@ -5922,6 +6150,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Spiral Twist"
+                                linkTarget: "l5_vortex_twist"
                                 value: root.layer4Twist
                                 minValue: 0.10
                                 maxValue: 3.00
@@ -5941,6 +6170,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Dual 2x Mix"
+                                linkTarget: "l5_vortex_mix"
                                 value: root.layer4DualMix
                                 minValue: 0.10
                                 maxValue: 0.90
@@ -6682,6 +6912,32 @@ FocusScope {
                                 }
                             }
 
+                            VizPillButton {
+                                text: "EQ Wave: " + root.formatAudioLinkBadge("l6_typo_wave")
+                                active: root.getAudioLink("l6_typo_wave").source > 0
+                                pillHeight: 22
+                                horizontalPad: 6
+                                onClicked: root.cycleAudioLinkSource("l6_typo_wave", 1)
+                                onRightClicked: root.cycleAudioLinkMode("l6_typo_wave")
+                            }
+
+                            VizPillButton {
+                                text: "Glitch: " + root.formatAudioLinkBadge("l6_typo_glitch")
+                                active: root.getAudioLink("l6_typo_glitch").source > 0
+                                pillHeight: 22
+                                horizontalPad: 6
+                                onClicked: root.cycleAudioLinkSource("l6_typo_glitch", 1)
+                                onRightClicked: root.cycleAudioLinkMode("l6_typo_glitch")
+                            }
+
+                            VizPillButton {
+                                text: root.isLayerAudioBoosted(6) ? "󰓃 Boost L6: ON" : "󰓃 Boost L6"
+                                active: root.isLayerAudioBoosted(6)
+                                pillHeight: 22
+                                horizontalPad: 7
+                                onClicked: root.toggleLayerAudioBoost(6)
+                            }
+
                             Item { Layout.fillWidth: true }
                         }
 
@@ -6694,6 +6950,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Dismantle Force"
+                                linkTarget: "l6_typo_dismantle"
                                 value: root.layer3Dismantle
                                 minValue: 0.10
                                 maxValue: 2.50
@@ -6712,6 +6969,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Song Evolution"
+                                linkTarget: "l6_typo_speed"
                                 value: root.layer3Evolution
                                 minValue: 0.10
                                 maxValue: 2.50
@@ -6721,6 +6979,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Art/Words Scale"
+                                linkTarget: "l6_typo_scale"
                                 value: root.layer3Scale
                                 minValue: 0.45
                                 maxValue: 1.95

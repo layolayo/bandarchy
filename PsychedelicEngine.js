@@ -194,6 +194,79 @@ var TTFX_EFFECTS = [
 
 var SYMMETRY_OPTIONS = [1, 2, 4, 6, 8, 12, 16]
 
+// ---------------------------------------------------------------------------
+// Generic Non-Destructive Audio-Responder Link Matrix
+// Every target defaults to source = 0 ("Off") so existing layer effects and
+// slider settings remain 100% untouched unless explicitly linked by the user.
+// ---------------------------------------------------------------------------
+var AUDIO_LINK_SOURCES = [
+    "Off (Unlinked)",
+    "Kick & Sub-Bass",
+    "Bass Groove",
+    "Mid Synth / Vocals",
+    "Highs / Hi-Hats",
+    "Beat Onset Pulse",
+    "48-Band EQ Wave",
+    "Drop vs Breakdown"
+]
+
+var SHORT_AUDIO_LINK_SOURCES = [
+    "Off",
+    "Kick",
+    "Bass",
+    "Mids",
+    "Highs",
+    "Onset",
+    "EQWave",
+    "Drop"
+]
+
+var AUDIO_LINK_MODES = [
+    "Add (+)",
+    "Scale (×)",
+    "Bipolar (±)",
+    "Invert (−)"
+]
+
+var SHORT_AUDIO_LINK_MODES = [
+    "+",
+    "×",
+    "±",
+    "−"
+]
+
+var AUDIO_LINK_TARGETS = [
+    // Layer 1 — 1: Worlds
+    { id: "l1_speed",       layer: 1, subGroup: "World Motion",           label: "World Speed",        prop: "layer1Speed",        lo: 0.10, hi: 3.00, span: 1.40, defaultMode: 1, hadNativeAudio: true },
+    { id: "l1_density",     layer: 1, subGroup: "Grid & Horizon",         label: "Grid Density",       prop: "layer1Density",      lo: 0.25, hi: 2.50, span: 1.10, defaultMode: 0, hadNativeAudio: false },
+    { id: "l1_trail",       layer: 1, subGroup: "Atmosphere & Trails",    label: "Feedback Trail",     prop: "layer1Trail",        lo: 0.15, hi: 0.98, span: 0.45, defaultMode: 0, hadNativeAudio: false },
+    // Layer 2 — 2: Equaliser
+    { id: "l2_eq_gain",     layer: 2, subGroup: "Spectrum Response",      label: "Audio Gain",         prop: "layer1EqGain",       lo: 0.40, hi: 2.50, span: 1.20, defaultMode: 1, hadNativeAudio: true },
+    { id: "l2_eq_scale",    layer: 2, subGroup: "Spectrum Geometry",      label: "Equaliser Scale",    prop: "layer1EqScale",      lo: 0.15, hi: 2.25, span: 1.00, defaultMode: 1, hadNativeAudio: false },
+    { id: "l2_eq_spin",     layer: 2, subGroup: "3D Orbit & Rotation",    label: "3D Spin Rate",       prop: "layer1EqSpin",       lo: -2.50, hi: 2.50, span: 1.80, defaultMode: 2, hadNativeAudio: false },
+    // Layer 3 — 3: Vectors
+    { id: "l3_vec_speed",   layer: 3, subGroup: "Fleet Propulsion",       label: "Vector Speed",       prop: "layer1ShapeSpeed",   lo: 0.20, hi: 3.00, span: 1.50, defaultMode: 1, hadNativeAudio: true },
+    { id: "l3_vec_scale",   layer: 3, subGroup: "Polyhedron Scale",       label: "Vector Scale",       prop: "layer1ShapeScale",   lo: 0.30, hi: 2.50, span: 1.20, defaultMode: 1, hadNativeAudio: false },
+    { id: "l3_vec_density", layer: 3, subGroup: "Spawn & Fleet Density",  label: "Vector Density",     prop: "layer1ShapeDensity", lo: 0.25, hi: 2.50, span: 1.00, defaultMode: 0, hadNativeAudio: false },
+    { id: "l3_vec_spin",    layer: 3, subGroup: "3D Tumble & Roll",       label: "3D Spin / Roll",     prop: "layer1ShapeSpin",    lo: -2.50, hi: 2.50, span: 1.80, defaultMode: 2, hadNativeAudio: false },
+    // Layer 4 — 4: Geometry
+    { id: "l4_geo_speed",   layer: 4, subGroup: "Mandala Velocity",       label: "Geometry Speed",     prop: "layer2Speed",        lo: 0.10, hi: 4.00, span: 1.80, defaultMode: 1, hadNativeAudio: true },
+    { id: "l4_geo_facets",  layer: 4, subGroup: "Kaleidoscope Symmetry",  label: "Symmetry Folds",     prop: "layer2Facets",       lo: 1,    hi: 16,   span: 8.00, defaultMode: 0, hadNativeAudio: false },
+    { id: "l4_geo_tracers", layer: 4, subGroup: "Phosphor Echoes",        label: "Tracer Count",       prop: "tracerCount",        lo: 1,    hi: 16,   span: 8.00, defaultMode: 0, hadNativeAudio: false },
+    { id: "l4_geo_zoom",    layer: 4, subGroup: "Camera Field Zoom",      label: "Geometry Scale",     prop: "layer2Zoom",         lo: 0.40, hi: 2.50, span: 1.10, defaultMode: 1, hadNativeAudio: false },
+    // Layer 5 — 5: Vortex (GPU Shaders)
+    { id: "l5_vortex_speed",layer: 5, subGroup: "Tunnel Velocity",        label: "Tunnel Speed",       prop: "layer4Speed",        lo: 0.10, hi: 3.00, span: 1.60, defaultMode: 1, hadNativeAudio: true },
+    { id: "l5_vortex_twist",layer: 5, subGroup: "Spiral Warp & Twist",    label: "Spiral Twist",       prop: "layer4Twist",        lo: -2.50, hi: 2.50, span: 2.00, defaultMode: 2, hadNativeAudio: false },
+    { id: "l5_vortex_glow", layer: 5, subGroup: "Shader Bloom & Glow",    label: "Shader Glow",        prop: "layer4Glow",         lo: 0.20, hi: 2.00, span: 1.10, defaultMode: 0, hadNativeAudio: true },
+    { id: "l5_vortex_mix",  layer: 5, subGroup: "Dual-Shader Crossfade",  label: "Dual Mix",           prop: "layer4DualMix",      lo: 0.15, hi: 0.85, span: 0.60, defaultMode: 2, hadNativeAudio: false },
+    // Layer 6 — 6: Typography
+    { id: "l6_typo_scale",  layer: 6, subGroup: "Banner Scale & Bounce",  label: "Text Scale Bounce",  prop: "layer3Scale",        lo: 0.45, hi: 2.50, span: 1.10, defaultMode: 1, hadNativeAudio: false },
+    { id: "l6_typo_wave",   layer: 6, subGroup: "Per-Letter EQ Ribbon",   label: "Letter EQ Wave",     prop: "layer3WaveLink",     lo: 0.00, hi: 2.50, span: 1.25, defaultMode: 0, hadNativeAudio: false },
+    { id: "l6_typo_dismantle", layer: 6, subGroup: "Warp & 3D Extrusion", label: "Warp / Kerning",     prop: "layer3Dismantle",    lo: 0.15, hi: 3.00, span: 1.50, defaultMode: 1, hadNativeAudio: true },
+    { id: "l6_typo_glitch", layer: 6, subGroup: "Hi-Hat Glitch & Shear",  label: "Chromatic Glitch",   prop: "layer3GlitchLink",   lo: 0.00, hi: 2.50, span: 1.25, defaultMode: 0, hadNativeAudio: false },
+    { id: "l6_typo_speed",  layer: 6, subGroup: "Kinetic Evolution",      label: "Evolution Speed",    prop: "layer3Evolution",    lo: 0.20, hi: 2.50, span: 1.30, defaultMode: 1, hadNativeAudio: false }
+]
+
 var DEFAULT_STATEMENTS = [
     "WE ARE THE FREQUENCIES",
     "RESONANCE IS ARCHITECTURE",
@@ -609,7 +682,14 @@ function rebuildArtCells(state, asciiLines, mode) {
         state.artSourceKey = ""
         return
     }
-    var key = (mode || "braille") + ":" + asciiLines.length + ":" + (asciiLines[0] || "").slice(0, 28) + ":" + (asciiLines[Math.floor(asciiLines.length / 2)] || "").slice(0, 28)
+    var lineHash = 5381
+    for (var hi = 0; hi < asciiLines.length; hi++) {
+        var hLine = asciiLines[hi] || ""
+        for (var hj = 0; hj < hLine.length; hj += 2) {
+            lineHash = (((lineHash << 5) + lineHash) + hLine.charCodeAt(hj)) | 0
+        }
+    }
+    var key = (mode || "braille") + ":" + asciiLines.length + ":" + lineHash + ":" + (asciiLines[0] || "").slice(0, 28)
     if (key === state.artSourceKey && state.artCells.length > 0) {
         return
     }
@@ -885,18 +965,19 @@ function stepState(state, rawBands, active, cfg, dt) {
         if (state.beatCount % 16 === 0) {
             state.fractalPoiIndex = ((state.fractalPoiIndex || 0) + 1 + (state.beatCount % 3)) % FRACTAL_POIS.length
         }
-        var fieldDenBeat = clamp(Number(cfg && cfg.layer1Density !== undefined ? cfg.layer1Density : 1.0), 0.25, 2.5)
         var shapeDenBeat = clamp(Number(cfg && cfg.layer1ShapeDensity !== undefined ? cfg.layer1ShapeDensity : 1.0), 0.25, 2.5)
-        var beatDenCurve = Math.pow(fieldDenBeat * shapeDenBeat, 1.65)
-        var maxBeatShapes = Math.max(1, Math.min(20, Math.round(4.0 * beatDenCurve)))
+        var beatTargetShapes = shapeDenBeat <= 1.5
+            ? Math.round(1.0 + Math.pow((shapeDenBeat - 0.25) / 1.25, 1.15) * 4.0)
+            : Math.round(5.0 + Math.pow(shapeDenBeat - 1.5, 0.78) * 3.0)
+        var maxBeatShapes = Math.max(1, Math.min(9, beatTargetShapes + 1))
         if (state.shockwaves.length < maxBeatShapes) {
             state.shockwaves.push({
-                r: l1Dir < 0 ? 1.38 : 0.02,
-                alpha: 0.88,
-                sizeMul: 0.50 + Math.random() * 1.30,
-                speed: 0.36 + Math.random() * 0.68 + state.bassSmooth * 0.45,
-                laneX: (Math.random() * 2.0 - 1.0) * 0.42,
-                laneY: (Math.random() * 2.0 - 1.0) * 0.34,
+                r: l1Dir < 0 ? 1.38 : 0.015,
+                alpha: 0.90,
+                sizeMul: 0.42 + Math.random() * 0.52,
+                speed: 0.34 + Math.random() * 0.54 + state.bassSmooth * 0.35,
+                laneX: (Math.random() * 2.0 - 1.0) * 0.58,
+                laneY: (Math.random() * 2.0 - 1.0) * 0.44,
                 spinX: (Math.random() * 2.0 - 1.0) * 1.5,
                 spinY: (Math.random() * 2.0 - 1.0) * 1.5,
                 spinZ: (Math.random() * 2.0 - 1.0) * 1.5,
@@ -938,6 +1019,10 @@ function stepState(state, rawBands, active, cfg, dt) {
     var rawIntensity = clamp(state.energySmooth * 0.68 + state.beatSmooth * 0.22 + (state.bassAtt - 1.0) * 0.15, 0.0, 1.35)
     state.musicIntensity = lerp(state.musicIntensity || 0.35, rawIntensity, clamp(dt * 3.5, 0.02, 0.12))
     state.musicCalm = clamp(1.0 - state.musicIntensity * 0.80, 0.12, 1.0)
+
+    // Apply any user-configured Generic Audio-Responder Links before computing live envelopes & phase accumulators
+    applyAudioLinksToConfig(state, cfg)
+    l2Speed = clamp(Number(cfg.layer2Speed) || 1.0, 0.1, 4.0)
 
     var trackProg = clamp(Number(cfg.trackProgress) || 0.0, 0.0, 1.0)
     var arcMode = cfg.trackArcMode !== undefined ? clamp(Math.round(Number(cfg.trackArcMode)), 0, 4) : 1
@@ -1004,7 +1089,10 @@ function stepState(state, rawBands, active, cfg, dt) {
     // Smoothly integrated phase accumulators (honours Tri-State l1Dir: +1 Towards, -1 Away, 0 Breathe!)
     var l1Speed = clamp(Number(cfg && cfg.layer1Speed !== undefined ? cfg.layer1Speed : 1.0), 0.05, 4.0)
     var eqSpinCfg = clamp(Number(cfg && cfg.layer1EqSpin !== undefined ? cfg.layer1EqSpin : 1.0), -2.5, 2.5)
-    var bdSpeed = clamp(Number(cfg && cfg.backdropSpeed !== undefined ? cfg.backdropSpeed : 1.0), 0.1, 3.0)
+    var bdSpeedRaw = (cfg && cfg.audioLinks && cfg.audioLinks.l5_vortex_speed && cfg.audioLinks.l5_vortex_speed.source > 0)
+        ? cfg.layer4Speed
+        : (cfg && cfg.backdropSpeed !== undefined ? cfg.backdropSpeed : (cfg && cfg.layer4Speed !== undefined ? cfg.layer4Speed : 1.0))
+    var bdSpeed = clamp(Number(bdSpeedRaw !== undefined ? bdSpeedRaw : 1.0), 0.1, 3.0)
     var bdDirCfg = Number(cfg && cfg.backdropDirection !== undefined ? cfg.backdropDirection : (cfg && cfg.layer1Direction !== undefined ? cfg.layer1Direction : 1))
     var bdDir = (bdDirCfg === 0) ? Math.sin((state.t || 0.0) * 0.72) : clamp(bdDirCfg, -1, 1)
     var trSpeedCfg = clamp(Number(cfg && cfg.tracerSpeed !== undefined ? cfg.tracerSpeed : 1.0), 0.2, 2.5)
@@ -1073,32 +1161,39 @@ function stepState(state, rawBands, active, cfg, dt) {
         }
     }
 
-    // Step Layer #1 Beat Shapes (obeying Tri-State l1Dir and scaling count from minimal to many via non-linear density curve!)
+    // Step Layer #1 Beat Shapes (`3: Vectors`) — always spawn new shapes at the furthest depth point away
+    // so they emerge from the horizon/vanishing point rather than popping in directly in front of the display.
     var shapeSpeed = clamp(Number(cfg && cfg.layer1ShapeSpeed !== undefined ? cfg.layer1ShapeSpeed : 1.0), 0.2, 3.0)
-    var fieldDenStep = clamp(Number(cfg && cfg.layer1Density !== undefined ? cfg.layer1Density : 1.0), 0.25, 2.5)
     var shapeDensity = clamp(Number(cfg && cfg.layer1ShapeDensity !== undefined ? cfg.layer1ShapeDensity : 1.0), 0.25, 2.5)
     var shapesOn = cfg ? (cfg.layer1ShapesEnabled !== false) : true
-    var shapeDenCurve = Math.pow(fieldDenStep * shapeDensity, 1.65)
-    var targetShapeCount = Math.max(1, Math.min(18, Math.round(3.5 * shapeDenCurve)))
-    var maxShapeCount = Math.max(targetShapeCount, Math.min(20, Math.round(4.5 * shapeDenCurve)))
+    var rawTargetShapes = shapeDensity <= 1.5
+        ? Math.round(1.0 + Math.pow((shapeDensity - 0.25) / 1.25, 1.15) * 4.0)
+        : Math.round(5.0 + Math.pow(shapeDensity - 1.5, 0.78) * 3.0)
+    var targetShapeCount = Math.max(1, Math.min(8, rawTargetShapes))
+    var maxShapeCount = Math.max(targetShapeCount, Math.min(9, targetShapeCount + 1))
     if (state.shockwaves.length > maxShapeCount) {
         state.shockwaves.length = maxShapeCount
     }
     if (shapesOn && active && state.shockwaves.length < targetShapeCount) {
-        var missing = targetShapeCount - state.shockwaves.length
+        var existingCount = state.shockwaves.length
+        var missing = targetShapeCount - existingCount
         for (var ms = 0; ms < missing; ms++) {
             var idxS = state.shockwaves.length
-            var staggerFrac = targetShapeCount > 1 ? (idxS / targetShapeCount) : 0.0
+            // If initialising from empty, stagger gently across the far distance (0.015..0.36);
+            // if replenishing an expired shape, ALWAYS spawn at the furthest point away (0.015..0.06)!
+            var farStagger = (existingCount === 0 && missing > 1)
+                ? ((ms / missing) * 0.34)
+                : (ms * 0.035)
             var spawnR = l1Dir < 0
-                ? clamp(1.35 - staggerFrac * 1.10, 0.12, 1.38)
-                : clamp(0.08 + staggerFrac * 1.10, 0.06, 1.28)
+                ? clamp(1.38 - farStagger, 1.02, 1.40)
+                : clamp(0.015 + farStagger, 0.012, 0.38)
             state.shockwaves.push({
                 r: spawnR,
-                alpha: clamp(0.92 - staggerFrac * 0.32, 0.35, 0.92),
-                sizeMul: 0.50 + Math.random() * 1.30,
-                speed: 0.36 + Math.random() * 0.68 + state.bassSmooth * 0.45,
-                laneX: (Math.random() * 2.0 - 1.0) * 0.42,
-                laneY: (Math.random() * 2.0 - 1.0) * 0.34,
+                alpha: 0.90,
+                sizeMul: 0.42 + Math.random() * 0.52,
+                speed: 0.34 + Math.random() * 0.54 + state.bassSmooth * 0.35,
+                laneX: (Math.random() * 2.0 - 1.0) * 0.58,
+                laneY: (Math.random() * 2.0 - 1.0) * 0.44,
                 spinX: (Math.random() * 2.0 - 1.0) * 1.5,
                 spinY: (Math.random() * 2.0 - 1.0) * 1.5,
                 spinZ: (Math.random() * 2.0 - 1.0) * 1.5,
@@ -1110,8 +1205,8 @@ function stepState(state, rawBands, active, cfg, dt) {
     }
     for (var sw = state.shockwaves.length - 1; sw >= 0; sw--) {
         var wave = state.shockwaves[sw]
-        wave.r += dt * wave.speed * shapeSpeed * 0.72 * (rawL1Dir === 0 ? (0.25 + 0.75 * l1Dir) : l1Dir)
-        wave.alpha -= dt * 0.34 * (0.6 + 0.4 * shapeSpeed)
+        wave.r += dt * wave.speed * shapeSpeed * 0.64 * (rawL1Dir === 0 ? (0.25 + 0.75 * l1Dir) : l1Dir)
+        wave.alpha -= dt * 0.28 * (0.6 + 0.4 * shapeSpeed)
         if (wave.alpha <= 0.02 || wave.r > 1.45 || wave.r < 0.01) {
             state.shockwaves.splice(sw, 1)
         }
@@ -5300,33 +5395,37 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
         var shapeSpin = cfg && cfg.layer1ShapeSpin !== undefined ? clamp(Number(cfg.layer1ShapeSpin), -2.5, 2.5) : 0.25
         var shapeScale = cfg && cfg.layer1ShapeScale !== undefined ? clamp(Number(cfg.layer1ShapeScale), 0.3, 2.5) : 1.0
         var shapeDensityDraw = cfg && cfg.layer1ShapeDensity !== undefined ? clamp(Number(cfg.layer1ShapeDensity), 0.25, 2.5) : 1.0
-        var drawDenCurve = Math.pow(density * shapeDensityDraw, 1.65)
-        var maxDrawShapes = Math.max(1, Math.min(state.shockwaves.length, Math.round(4.0 * drawDenCurve)))
+        var drawTargetCount = shapeDensityDraw <= 1.5
+            ? Math.round(1.0 + Math.pow((shapeDensityDraw - 0.25) / 1.25, 1.15) * 4.0)
+            : Math.round(5.0 + Math.pow(shapeDensityDraw - 1.5, 0.78) * 3.0)
+        var maxDrawShapes = Math.max(1, Math.min(state.shockwaves.length, Math.min(8, drawTargetCount)))
 
         ctx.save()
         ctx.globalCompositeOperation = "source-over"
         for (var sw = 0; sw < maxDrawShapes; sw++) {
             var wave = state.shockwaves[sw]
-            var uProg = clamp(wave.r / 1.45, 0.0, 1.25)
-            var wSizeMul = wave.sizeMul !== undefined ? wave.sizeMul : (0.65 + ((sw * 29) % 9) * 0.11)
-            // Perspective size grows from pinpoint at distant horizon/endpoint to past diagR off screen, scaled by per-shape sizeMul!
-            var wr = Math.pow(uProg, 1.45) * diagR * 0.92 * shapeScale * wSizeMul
-            var wLaneX = wave.laneX !== undefined ? wave.laneX : (((sw % 3) - 1) * 0.26)
-            var wLaneY = wave.laneY !== undefined ? wave.laneY : ((sw % 2 === 0 ? -1 : 1) * 0.18)
-            var laneOffset = wLaneX * w * Math.pow(uProg, 1.15)
+            var uProg = clamp(wave.r / 1.45, 0.0, 1.15)
+            var wSizeMul = wave.sizeMul !== undefined ? wave.sizeMul : (0.52 + ((sw * 29) % 7) * 0.06)
+            // Perspective size grows from a tiny pinpoint at the distant horizon/vanishing point and expands only as it nears the viewer
+            var wr = Math.pow(uProg, 1.95) * diagR * 0.56 * shapeScale * wSizeMul
+            var wLaneX = wave.laneX !== undefined ? wave.laneX : (((sw % 3) - 1) * 0.32)
+            var wLaneY = wave.laneY !== undefined ? wave.laneY : ((sw % 2 === 0 ? -1 : 1) * 0.22)
+            var laneOffset = wLaneX * w * Math.pow(uProg, 1.20)
             var wcx = lerp(vanishX, cx + laneOffset, Math.min(1.0, uProg * 1.15))
             var isGroundUnit = (shapeStyle === 0 || (shapeStyle === 2 && (sw & 1) === 1))
             var wcy = isGroundUnit
-                ? lerp(horizonY, h * 0.96, Math.pow(uProg, 1.35))
+                ? lerp(horizonY, h * 0.96, Math.pow(uProg, 1.45))
                 : ((fieldOn && l1Mode === 4)
                     ? lerp(horizonY - h * 0.06, h * (0.26 + wLaneY * 0.45) + Math.sin(l1T * 1.5 + sw) * h * 0.06, Math.min(1.0, uProg * 1.1))
                     : lerp(cy + endPt.dy * 0.35, cy + wLaneY * h * uProg, uProg))
             var spinAngle = l1T * shapeSpin * 0.85 + (shapeSpin !== 0 ? sw * 0.25 : 0.0)
-            var sAlpha = clamp(wave.alpha * (1.0 - dim), 0.06, 1.0)
+            var distFadeIn = smoothstep(0.0, 0.14, uProg)
+            var nearFadeOut = 1.0 - smoothstep(0.76, 1.04, uProg)
+            var sAlpha = clamp(wave.alpha * (1.0 - dim) * distFadeIn * nearFadeOut, 0.04, 0.95)
 
-            ctx.fillStyle = hslToHex((wave.hueOffset + 35) % 360, 0.92, 0.55, sAlpha * 0.14)
-            ctx.strokeStyle = hslToHex(wave.hueOffset, 0.95, 0.62, sAlpha * 0.88)
-            ctx.lineWidth = (1.8 + state.bass * 2.0) * Math.sqrt(shapeScale * wSizeMul)
+            ctx.fillStyle = hslToHex((wave.hueOffset + 35) % 360, 0.92, 0.55, sAlpha * 0.12)
+            ctx.strokeStyle = hslToHex(wave.hueOffset, 0.95, 0.62, sAlpha * 0.85)
+            ctx.lineWidth = (1.3 + state.bass * 1.5) * Math.sqrt(shapeScale * wSizeMul) * (0.45 + 0.55 * Math.min(1.0, uProg))
             ctx.beginPath()
 
             // True 3-axis 3D rotation angles (rx, ry, rz) with per-shape randomised spinX, spinY, spinZ
@@ -5341,19 +5440,19 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
 
             if (shapeStyle === 1) {
                 // 1: 1983 Atari Color-QuadraScan XY Vector Star Wars Craft (Standard TIE, Vader TIE Advanced x1, Rebel X-Wing)
-                var cs = Math.max(10.0, wr * 0.40)
+                var cs = Math.max(2.5, wr * 0.38)
                 var swPitch = Math.sin(l1T * 1.15 + sw * 1.9) * 0.34 + rx3 * 0.25
                 var swYaw = Math.cos(l1T * 0.95 + sw * 1.5) * 0.48 + ry3 * 0.35
                 var swRoll = Math.sin(l1T * 1.4 + sw * 2.1) * 0.32 + rz3 * 0.35
                 drawMultiColourStarWarsFighter(
                     ctx, craftVar, wcx, wcy, cs,
                     swPitch, swYaw, swRoll,
-                    (1.6 + state.bass * 1.4) * Math.sqrt(shapeScale * wSizeMul),
-                    sAlpha * 0.92, null
+                    (1.3 + state.bass * 1.2) * Math.sqrt(shapeScale * wSizeMul) * (0.45 + 0.55 * Math.min(1.0, uProg)),
+                    sAlpha * 0.90, null
                 )
             } else if (shapeStyle === 0) {
                 // 0: 3D Battlezone Tanks (1980 Atari Battlezone 3D Wireframe Vector Tank rotating in 3D!)
-                var ts = Math.max(10.0, wr * 0.38)
+                var ts = Math.max(2.5, wr * 0.36)
                 var tankPitch = 0.22 + Math.sin(l1T * 0.85 + sw * 1.4) * 0.14
                 var tankYaw = Math.sin(l1T * 0.9 + sw * 1.7) * 0.52 + spinAngle * spY * 0.45
                 var tankRoll = Math.cos(l1T * 0.7 + sw * 1.1) * 0.12
@@ -5365,7 +5464,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.stroke()
             } else if (shapeStyle === 2) {
                 // 2: 3D TRON Recognizers (1982 TRON 3D Wireframe Arch Craft rotating in 3D!)
-                var rs = Math.max(12.0, wr * 0.42)
+                var rs = Math.max(3.0, wr * 0.40)
                 var rHover = Math.sin(l1T * 2.4 + sw) * rs * 0.08
                 var rcy = wcy + rHover
                 var recPitch = 0.14 + Math.sin(l1T * 0.8 + sw) * 0.16
@@ -7441,7 +7540,8 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     var randomScaleWave = (cfg.layer3AutoRandomise || cfg.autoCycle)
         ? (0.68 + 0.58 * (0.5 + 0.5 * Math.sin(l3T * 0.72 + Math.cos(l3T * 0.31) * 0.8)))
         : 1.0
-    var scale = clamp(baseL3Scale * randomScaleWave, 0.38, 2.6)
+    var musicScalePulse = cfg.musicDrive ? (1.0 + state.beatPulse * 0.08 + state.bassSmooth * 0.05) : 1.0
+    var scale = clamp(baseL3Scale * randomScaleWave * musicScalePulse, 0.38, 2.6)
     var l3Tracers = clamp(Math.round(Number(cfg.layer3Tracers !== undefined ? cfg.layer3Tracers : 3)), 1, 8)
     var tracerSpeed = state.liveTracerSpeed !== undefined
         ? state.liveTracerSpeed
@@ -7451,8 +7551,14 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
         : clamp(Number(cfg.tracerDrift !== undefined ? cfg.tracerDrift : 1.0), 0.0, 2.5)
     var tracerDir = Number(cfg.tracerDirection !== undefined ? cfg.tracerDirection : 1)
     var endPt = computeTracerEndpoint(w, h, state.driftTime !== undefined ? state.driftTime : state.t, tracerDrift, 1.0)
-    var warpIntensity = clamp(Number(cfg.layer3Dismantle !== undefined ? cfg.layer3Dismantle : 1.15), 0.15, 3.0) * (0.65 + state.bassSmooth * 0.55)
-    var evoFreq = clamp(Number(cfg.layer3Evolution !== undefined ? cfg.layer3Evolution : 0.85), 0.2, 2.5)
+    var rawDismantle = (cfg.audioLinks && cfg.audioLinks.l6_typo_dismantle && Number(cfg.audioLinks.l6_typo_dismantle.source) > 0)
+        ? Number(cfg.layer3Dismantle !== undefined ? cfg.layer3Dismantle : 1.15)
+        : (state.liveDismantle !== undefined ? state.liveDismantle : Number(cfg.layer3Dismantle !== undefined ? cfg.layer3Dismantle : 1.15))
+    var rawEvo = (cfg.audioLinks && cfg.audioLinks.l6_typo_speed && Number(cfg.audioLinks.l6_typo_speed.source) > 0)
+        ? Number(cfg.layer3Evolution !== undefined ? cfg.layer3Evolution : 0.85)
+        : (state.liveEvolution !== undefined ? state.liveEvolution : Number(cfg.layer3Evolution !== undefined ? cfg.layer3Evolution : 0.85))
+    var warpIntensity = clamp(rawDismantle, 0.15, 3.0) * (0.65 + state.bassSmooth * 0.55)
+    var evoFreq = clamp(rawEvo, 0.2, 2.5)
 
     var showArtist = cfg.layer3ShowArtist !== undefined ? Boolean(cfg.layer3ShowArtist) : true
     var showTrack = cfg.layer3ShowTrack !== undefined ? Boolean(cfg.layer3ShowTrack) : true
@@ -7696,52 +7802,6 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
 
                 var fontSlope = (textStyle === 1 || textStyle === 3 || textStyle === 12) ? "900 italic " : "900 "
                 ctx.font = fontSlope + rowFontPx + "px " + activeFontFamily
-
-                if (l3Mode === 7 && !isEchoT && rowIdx === 0) {
-                    // True 3D revolving cylinder barrel rings + 12 rotating axial staves so 360° front/back orbit is unmistakable
-                    ctx.save()
-                    var cylGuideScale = Math.max(w * 0.34, rowHalfW)
-                    var cylGuideR = 1.08 + state.bassSmooth * 0.18 * warpIntensity
-                    var gPitch = (cylDir < 2) ? (-0.44 - Math.sin(l3T * 0.35) * 0.10) : ((cylDir < 4) ? 0.0 : (-0.42 + Math.sin(l3T * 0.55 * evoFreq) * 0.38))
-                    var gYaw = (cylDir < 2) ? 0.0 : ((cylDir < 4) ? (0.44 + Math.cos(l3T * 0.35) * 0.10) : (l3T * 0.95 * evoFreq * (cylDir === 5 ? -1.0 : 1.0)))
-                    var gRoll = (cylDir < 2)
-                        ? (Math.sin(l3T * 0.55 * evoFreq) * 0.18 * (cylDir === 1 ? -1.0 : 1.0))
-                        : ((cylDir < 4) ? (Math.cos(l3T * 0.52 * evoFreq) * 0.16 * (cylDir === 3 ? -1.0 : 1.0)) : (l3T * 1.25 * evoFreq * (cylDir === 5 ? -1.0 : 1.0)))
-                    var gOrbit = ((cylDir === 1 || cylDir === 3 || cylDir === 5) ? -1.0 : 1.0) * l3T * 1.55 * evoFreq
-                    ctx.strokeStyle = colourWithAlpha(activeStylePal[0] || "#00F5FF", 0.30 + state.bassSmooth * 0.20)
-                    ctx.lineWidth = 1.4
-                    for (var gr = -1; gr <= 1; gr += 2) {
-                        ctx.beginPath()
-                        for (var gs = 0; gs <= 32; gs++) {
-                            var ga = (gs / 32.0) * Math.PI * 2.0
-                            var gx3 = (cylDir === 2 || cylDir === 3) ? (gr * 0.94) : (Math.sin(ga) * cylGuideR)
-                            var gy3 = (cylDir === 2 || cylDir === 3) ? (Math.sin(ga) * cylGuideR * 0.72) : (gr * 0.58)
-                            var gz3 = Math.cos(ga) * cylGuideR * 0.92
-                            var gp = project3DPoint(gx3, gy3, gz3, gPitch, gYaw, gRoll, cx, cy, cylGuideScale, 3.0)
-                            if (gs === 0) ctx.moveTo(gp.x, gp.y)
-                            else ctx.lineTo(gp.x, gp.y)
-                        }
-                        ctx.stroke()
-                    }
-                    // 12 rotating longitudinal staves around the full 360° cylinder circumference
-                    ctx.strokeStyle = colourWithAlpha(activeStylePal[1 % activeStylePal.length] || "#FF1493", 0.20 + state.midSmooth * 0.16)
-                    ctx.lineWidth = 1.1
-                    for (var stv = 0; stv < 12; stv++) {
-                        var sa = (stv / 12.0) * Math.PI * 2.0 + gOrbit
-                        var sxA = (cylDir === 2 || cylDir === 3) ? -0.94 : (Math.sin(sa) * cylGuideR)
-                        var syA = (cylDir === 2 || cylDir === 3) ? (Math.sin(sa) * cylGuideR * 0.72) : -0.58
-                        var sxB = (cylDir === 2 || cylDir === 3) ? 0.94 : sxA
-                        var syB = (cylDir === 2 || cylDir === 3) ? syA : 0.58
-                        var szAB = Math.cos(sa) * cylGuideR * 0.92
-                        var spA = project3DPoint(sxA, syA, szAB, gPitch, gYaw, gRoll, cx, cy, cylGuideScale, 3.0)
-                        var spB = project3DPoint(sxB, syB, szAB, gPitch, gYaw, gRoll, cx, cy, cylGuideScale, 3.0)
-                        ctx.beginPath()
-                        ctx.moveTo(spA.x, spA.y)
-                        ctx.lineTo(spB.x, spB.y)
-                        ctx.stroke()
-                    }
-                    ctx.restore()
-                }
 
                 // In 3D Cylinder mode (l3Mode === 7), sort characters back-to-front by 3D cylinder Z depth
                 // so characters orbiting across the back hemisphere are cleanly occluded by the front hemisphere!
@@ -8020,6 +8080,24 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                         var bioPulse = 1.0 + Math.sin(l3T * 2.5 + ci * 0.8) * (0.08 + state.midSmooth * 0.12)
                         sx *= bioPulse
                         sy *= bioPulse
+                    }
+
+                    // Opt-in Audio-Responder Link modulation for Layer 6 Typography (0 = Off preserves exact existing behaviour)
+                    var typoWaveSpec = getAudioLinkSpec(cfg, "l6_typo_wave")
+                    if (typoWaveSpec.source > 0 && typoWaveSpec.amount > 0.001) {
+                        var wSig = evalAudioLinkSignal(state, typoWaveSpec.source, (hxNorm + 1.0) * 0.5, ci + rowIdx * 7)
+                        var wDelta = (typoWaveSpec.mode === 2)
+                            ? ((wSig - 0.32) * 1.45)
+                            : ((typoWaveSpec.mode === 3) ? (-wSig * 0.85) : wSig)
+                        cpy -= wDelta * rowFontPx * 0.48 * typoWaveSpec.amount
+                        sy = clamp(sy * (1.0 + Math.max(-0.4, wDelta) * 0.36 * typoWaveSpec.amount), 0.42, 2.50)
+                    }
+                    var typoGlitchSpec = getAudioLinkSpec(cfg, "l6_typo_glitch")
+                    if (typoGlitchSpec.source > 0 && typoGlitchSpec.amount > 0.001) {
+                        var gSig = evalAudioLinkSignal(state, typoGlitchSpec.source, (hxNorm + 1.0) * 0.5, ci + rowIdx * 11)
+                        var gSign = ((ci + rowIdx) & 1) ? 1.0 : -1.0
+                        cpx += gSign * gSig * rowFontPx * 0.38 * typoGlitchSpec.amount
+                        rot += gSign * gSig * 0.15 * typoGlitchSpec.amount
                     }
 
                     var palIdx = (ci + rowIdx * 2 + te + Math.floor(state.hueShift / 40)) % activeStylePal.length
@@ -8524,6 +8602,21 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                     }
                 }
 
+                var cellWaveSpec = getAudioLinkSpec(cfg, "l6_typo_wave")
+                if (cellWaveSpec.source > 0 && cellWaveSpec.amount > 0.001) {
+                    var cwSig = evalAudioLinkSignal(state, cellWaveSpec.source, (hx + 1.0) * 0.5, i)
+                    var cwDelta = (cellWaveSpec.mode === 2)
+                        ? ((cwSig - 0.32) * 1.45)
+                        : ((cellWaveSpec.mode === 3) ? (-cwSig * 0.85) : cwSig)
+                    py -= cwDelta * tileH * 2.4 * cellWaveSpec.amount
+                    scaleH = clamp(scaleH * (1.0 + Math.max(-0.4, cwDelta) * 0.42 * cellWaveSpec.amount), 0.45, 2.50)
+                }
+                var cellGlitchSpec = getAudioLinkSpec(cfg, "l6_typo_glitch")
+                if (cellGlitchSpec.source > 0 && cellGlitchSpec.amount > 0.001) {
+                    var cgSig = evalAudioLinkSignal(state, cellGlitchSpec.source, (hx + 1.0) * 0.5, i)
+                    px += ((p.gy & 1) ? 1.0 : -1.0) * cgSig * tileW * 2.8 * cellGlitchSpec.amount
+                }
+
                 var pulseBoost = 0.82 + p.density * 0.18 + bVal * 0.22
                 var szW = tileW * pulseBoost * scaleW
                 var szH = tileH * pulseBoost * scaleH
@@ -8614,6 +8707,106 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
         }
         ctx.restore()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Generic Non-Destructive Audio-Responder Evaluator & Link Matrix
+// ---------------------------------------------------------------------------
+
+function getAudioLinkSpec(cfg, targetId) {
+    if (!cfg) return { source: 0, mode: 0, amount: 1.0 }
+    var links = cfg.audioLinks
+    if (links && typeof links === "object" && links[targetId]) {
+        var entry = links[targetId]
+        var src = clamp(Math.round(Number(entry.source) || 0), 0, AUDIO_LINK_SOURCES.length - 1)
+        var md = clamp(Math.round(Number(entry.mode) || 0), 0, AUDIO_LINK_MODES.length - 1)
+        var amt = entry.amount !== undefined ? clamp(Number(entry.amount), 0.0, 2.5) : 1.0
+        return { source: src, mode: md, amount: amt }
+    }
+    return { source: 0, mode: 0, amount: 1.0 }
+}
+
+function evalAudioLinkSignal(state, source, normPos, idx) {
+    var src = clamp(Math.round(Number(source) || 0), 0, AUDIO_LINK_SOURCES.length - 1)
+    if (src === 0 || !state) return 0.0
+    var bass = Number(state.bassSmooth) || 0.0
+    var mid = Number(state.midSmooth) || 0.0
+    var high = Number(state.highSmooth) || 0.0
+    var beat = Number(state.beatSmooth !== undefined ? state.beatSmooth : state.beatPulse) || 0.0
+    var onset = Number(state.beatPulse) || 0.0
+    if (src === 1) {
+        // Kick & Sub-Bass
+        return clamp(beat * 0.65 + bass * 0.60, 0.0, 1.6)
+    } else if (src === 2) {
+        // Bass Groove
+        return clamp(bass * 1.15, 0.0, 1.5)
+    } else if (src === 3) {
+        // Mid Synth / Vocals
+        return clamp(mid * 1.25, 0.0, 1.5)
+    } else if (src === 4) {
+        // Highs / Hi-Hats
+        return clamp(high * 1.35 + onset * 0.25, 0.0, 1.6)
+    } else if (src === 5) {
+        // Beat Onset Pulse
+        return clamp(onset * 0.80 + beat * 0.45, 0.0, 1.6)
+    } else if (src === 6) {
+        // 48-Band EQ Wave (spatially indexed across the 64-band FFT spectrum)
+        var bands = state.smoothBands || []
+        if (bands.length === 0) return clamp((bass + mid) * 0.5, 0.0, 1.4)
+        var u = (normPos !== undefined && normPos !== null)
+            ? clamp(Number(normPos), 0.0, 1.0)
+            : (((Number(idx) || 0) * 5) & 63) / 63.0
+        var bin = clamp(Math.floor(u * 47), 0, Math.min(63, bands.length - 1))
+        return clamp((Number(bands[bin]) || 0.0) * 1.30, 0.0, 1.6)
+    } else if (src === 7) {
+        // Drop vs Breakdown macro envelope
+        var drop = state.musicIntensity !== undefined
+            ? Number(state.musicIntensity)
+            : clamp(bass * 0.50 + mid * 0.32 + high * 0.18, 0.0, 1.2)
+        return clamp(drop * 1.15, 0.0, 1.6)
+    }
+    return 0.0
+}
+
+function applyAudioLinkValue(baseVal, state, cfg, targetId, lo, hi, span, normPos, idx) {
+    var spec = getAudioLinkSpec(cfg, targetId)
+    if (spec.source === 0 || spec.amount <= 0.001) {
+        return baseVal
+    }
+    var sig = evalAudioLinkSignal(state, spec.source, normPos, idx)
+    var amt = spec.amount
+    var effSpan = (span !== undefined && span > 0) ? span : Math.max(0.5, (hi - lo) * 0.45)
+    var out = baseVal
+    if (spec.mode === 0) {
+        // Add (+)
+        out = baseVal + sig * amt * effSpan
+    } else if (spec.mode === 1) {
+        // Scale (×)
+        out = baseVal * (1.0 + sig * amt * 0.85)
+    } else if (spec.mode === 2) {
+        // Bipolar (±)
+        out = baseVal + (sig - 0.35) * amt * effSpan * 1.35
+    } else if (spec.mode === 3) {
+        // Invert (−)
+        out = baseVal * Math.max(0.08, 1.0 - sig * amt * 0.72)
+    }
+    return clamp(out, lo, hi)
+}
+
+function applyAudioLinksToConfig(state, cfg) {
+    if (!cfg || !cfg.audioLinks || typeof cfg.audioLinks !== "object") return cfg
+    for (var ti = 0; ti < AUDIO_LINK_TARGETS.length; ti++) {
+        var t = AUDIO_LINK_TARGETS[ti]
+        var spec = getAudioLinkSpec(cfg, t.id)
+        if (spec.source === 0 || spec.amount <= 0.001) continue
+        if (cfg[t.prop] === undefined) continue
+        var modVal = applyAudioLinkValue(Number(cfg[t.prop]), state, cfg, t.id, t.lo, t.hi, t.span, 0.5, ti)
+        if (t.prop === "layer2Facets" || t.prop === "tracerCount") {
+            modVal = Math.round(modVal)
+        }
+        cfg[t.prop] = modVal
+    }
+    return cfg
 }
 
 // ---------------------------------------------------------------------------
@@ -8719,7 +8912,8 @@ function normaliseConfig(cfg, mode, asciiLines) {
         trackTitle: String(c.trackTitle || ""),
         trackArtist: String(c.trackArtist || ""),
         trackAlbum: String(c.trackAlbum || ""),
-        trackProgress: prog
+        trackProgress: prog,
+        audioLinks: (c.audioLinks && typeof c.audioLinks === "object") ? c.audioLinks : {}
     }
 }
 
@@ -8732,6 +8926,7 @@ function renderFrame(ctx, w, h, state, mode, theme, asciiLines, asciiSource, ttf
         var legacyOpts = theme || {}
         var legacyCfg = normaliseConfig(legacyOpts, legacyOpts.mode || 0, legacyOpts.asciiLines)
         stepState(state, legacyBands, legacyCfg.playing, legacyCfg, 0.016)
+        applyAudioLinksToConfig(state, legacyCfg)
         var legacyPalette = buildPalette(legacyOpts.themeColours, state.hueShift, legacyCfg.palette)
         drawLayer1Background(ctx, null, w, h, state, legacyOpts.themeColours, legacyPalette, legacyCfg)
         drawLayer2Visualiser(ctx, w, h, state, legacyPalette, legacyCfg)
@@ -8740,6 +8935,7 @@ function renderFrame(ctx, w, h, state, mode, theme, asciiLines, asciiSource, ttf
     }
 
     var effectiveCfg = normaliseConfig(cfg, mode, asciiLines)
+    applyAudioLinksToConfig(state, effectiveCfg)
     var palette = buildPalette(theme, state.hueShift, effectiveCfg.palette)
 
     // Layer #1: Background & Iterative Framebuffer Feedback

@@ -988,6 +988,20 @@ Item {
                                     panelFrame.forceActiveFocus()
                                 }
                             }
+
+                            ActionPill {
+                                text: (root.service && root.service.syncing) ? "󰑐 Syncing…" : "󰑐 Sync"
+                                active: Boolean(root.service && root.service.syncing)
+                                fontSize: 10
+                                horizontalPad: 9
+                                pillHeight: 30
+                                onClicked: {
+                                    if (root.service && !root.service.syncing) {
+                                        root.service.syncCollection(root.service.activeScope === "local")
+                                    }
+                                    panelFrame.forceActiveFocus()
+                                }
+                            }
                         }
 
                         // Keyboard Navigation Hint Bar

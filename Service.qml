@@ -154,10 +154,13 @@ Item {
         refreshAsciiArt()
     }
 
-    onAlbumIdChanged: refreshAsciiArt()
-    onArtPathChanged: refreshAsciiArt()
-    onTrackArtistChanged: refreshAsciiArt()
-    onTrackTitleChanged: refreshAsciiArt()
+    property bool _batchUpdatingTrack: false
+
+    onAlbumIdChanged: if (!root._batchUpdatingTrack) refreshAsciiArt()
+    onArtPathChanged: if (!root._batchUpdatingTrack) refreshAsciiArt()
+    onTrackArtistChanged: if (!root._batchUpdatingTrack) refreshAsciiArt()
+    onTrackTitleChanged: if (!root._batchUpdatingTrack) refreshAsciiArt()
+    onTrackAlbumChanged: if (!root._batchUpdatingTrack) refreshAsciiArt()
 
     // Fast status poll during downloads/syncs (450ms), normal poll during playback (1100ms)
     Timer {
@@ -242,7 +245,14 @@ Item {
                 var inOptimisticWindow = (Date.now() < root._optimisticPlayUntil)
                 if (p.playing || !inOptimisticWindow) {
                     var fb = root.lastPlayedTrack || ((root.albums && root.albums.length > 0) ? root.albums[0] : null)
-                    var hadNoTrack = !root.trackTitle
+                    var prevTitle = root.trackTitle
+                    var prevArtist = root.trackArtist
+                    var prevAlbum = root.trackAlbum
+                    var prevAlbumId = root.albumId
+                    var prevTrackId = root.trackId
+                    var prevArtPath = root.artPath
+
+                    root._batchUpdatingTrack = true
                     root.playing = Boolean(p.playing)
                     root.paused = Boolean(p.paused)
                     root.trackTitle = p.title || (fb ? (fb.title || fb.album || "") : root.trackTitle)
@@ -252,6 +262,8 @@ Item {
                     root.trackId = p.trackId || (fb ? (fb.id || "") : root.trackId)
                     root.playSource = p.playSource || "local"
                     root.artPath = p.artPath || (fb ? (fb.artPath || "") : root.artPath)
+                    root._batchUpdatingTrack = false
+
                     root.position = (p.position !== undefined && Number(p.position) > 0)
                         ? Number(p.position)
                         : ((fb && fb.position) ? Number(fb.position) : 0.0)
@@ -262,11 +274,22 @@ Item {
                     root.shuffle = Boolean(p.shuffle)
                     root.loop = Boolean(p.loop)
                     root.queue = p.queue || []
-                    if (hadNoTrack && (root.trackTitle || root.trackArtist)) {
+
+                    var metaChanged = (
+                        root.trackTitle !== prevTitle ||
+                        root.trackArtist !== prevArtist ||
+                        root.trackAlbum !== prevAlbum ||
+                        root.albumId !== prevAlbumId ||
+                        root.trackId !== prevTrackId ||
+                        root.artPath !== prevArtPath
+                    )
+                    if (metaChanged && (root.trackTitle || root.trackArtist || root.trackAlbum)) {
                         root.refreshAsciiArt("", "random")
                     }
                 }
-            } catch (e) {}
+            } catch (e) {
+                root._batchUpdatingTrack = false
+            }
         }
     }
 
@@ -298,24 +321,35 @@ Item {
                     root.albums = d.albums || []
                     root.searchTracks = d.tracks || []
                     if (d.availableZips) root.availableZips = d.availableZips
-                    if (!root.trackTitle && root.albums.length > 0) {
+                    if (!root.playing && root.albums.length > 0) {
                         var fb = root.lastPlayedTrack || root.albums[0]
                         if (fb) {
-                            root.trackTitle = fb.title || fb.album || ""
-                            root.trackArtist = fb.artist || ""
-                            root.trackAlbum = fb.album || fb.title || ""
-                            root.albumId = fb.albumId || fb.id || ""
+                            var prevT = root.trackTitle
+                            var prevAr = root.trackArtist
+                            var prevAl = root.trackAlbum
+                            var prevAp = root.artPath
+                            root._batchUpdatingTrack = true
+                            root.trackTitle = fb.title || fb.album || root.trackTitle
+                            root.trackArtist = fb.artist || root.trackArtist
+                            root.trackAlbum = fb.album || fb.title || root.trackAlbum
+                            root.albumId = fb.albumId || fb.id || root.albumId
                             if (!root.trackId && fb.id) root.trackId = fb.id
-                            root.artPath = fb.artPath || ""
+                            root.artPath = fb.artPath || root.artPath
+                            root._batchUpdatingTrack = false
                             if (root.position <= 0 && fb.position) root.position = Number(fb.position) || 0.0
                             if (root.duration <= 0 && fb.duration) root.duration = Number(fb.duration) || 0.0
+                            if (root.trackTitle !== prevT || root.trackArtist !== prevAr || root.trackAlbum !== prevAl || root.artPath !== prevAp) {
+                                root.refreshAsciiArt()
+                            }
                         }
                     }
                     if (root.asciiLines.length === 0 && root.albums.length > 0) {
                         root.refreshAsciiArt()
                     }
                 }
-            } catch (e) {}
+            } catch (e) {
+                root._batchUpdatingTrack = false
+            }
         }
     }
 
@@ -761,7 +795,7 @@ Item {
         var vc = root.visualiserConfig || ({})
         var showArtist = vc.layer3ShowArtist !== undefined ? Boolean(vc.layer3ShowArtist) : true
         var showTrack = vc.layer3ShowTrack !== undefined ? Boolean(vc.layer3ShowTrack) : true
-        var showAlbum = vc.layer3ShowAlbum !== undefined ? Boolean(vc.layer3ShowAlbum) : false
+        var showAlbum = vc.layer3ShowAlbum !== undefined ? Boolean(vc.layer3ShowAlbum) : true
         var showStatements = vc.layer3ShowStatements !== undefined ? Boolean(vc.layer3ShowStatements) : false
         var effArtist = root.trackArtist || (fb ? (fb.artist || "") : "")
         var effTrack = root.trackTitle || (fb ? (fb.title || fb.album || "") : "")

@@ -845,6 +845,20 @@ ShellRoot {
                                             }
                                         }
                                     }
+
+                                    ActionPill {
+                                        text: service.syncing ? "󰑐 Syncing…" : "󰑐 Sync"
+                                        active: service.syncing
+                                        fontSize: 9
+                                        horizontalPad: 8
+                                        pillHeight: 30
+                                        onClicked: {
+                                            if (!service.syncing) {
+                                                service.syncCollection(service.activeScope === "local")
+                                            }
+                                            appRootRect.forceActiveFocus()
+                                        }
+                                    }
                                 }
 
                                 // Keyboard navigation hint bar + quick Shuffle button

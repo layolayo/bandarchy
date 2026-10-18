@@ -14,6 +14,7 @@ Every command outputs a single bounded JSON object on stdout for QML.
 from __future__ import annotations
 
 import argparse
+import base64
 import errno
 import fcntl
 import glob
@@ -26,11 +27,13 @@ import secrets
 import shutil
 import socket
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
 import time
 import unicodedata
+import zlib
 
 os.umask(0o077)
 
@@ -58,6 +61,7 @@ CACHE_DIR = os.environ.get("BANDARCHY_CACHE_DIR") or os.path.join(
     "bandarchy",
 )
 ART_DIR = os.path.join(CACHE_DIR, "art")
+ART_CACHE_DIR = ART_DIR
 ASCII_DIR = os.path.join(CACHE_DIR, "ascii")
 
 SETTINGS_FILE = os.path.join(CONFIG_DIR, "settings.json")
@@ -82,6 +86,7 @@ DOWNLOAD_LOCK_FILE = os.path.join(DATA_DIR, "download.lock")
 LOG_FILE = os.path.join(CACHE_DIR, "bandarchy.log")
 SCREENSAVER_TXT_FILE = os.path.join(CACHE_DIR, "screensaver-art.txt")
 STATUS_COUNTS_FILE = os.path.join(CACHE_DIR, "status_counts.json")
+TAGS_CACHE_FILE = os.path.join(CACHE_DIR, "local_tags_cache.json")
 
 
 def _resolve_runtime_dir() -> str:
@@ -1833,14 +1838,39 @@ def render_omarchy_ascii_banner(text: str, max_width: int = 68) -> list[str]:
     """
     ensure_private_dir(ASCII_DIR)
     max_width = bounded_int(max_width, 68, 32, 140)
-    clean_words = re.sub(r"[^a-zA-Z0-9 ]+", " ", str(text or "BANDARCHY")).strip().upper()
-    clean_words = re.sub(r"\s+", " ", clean_words)[:36] or "BANDARCHY"
+    raw_text = str(text or "BANDARCHY").strip()
+    segments = [
+        re.sub(r"\s+", " ", re.sub(r"[^a-zA-Z0-9 ]+", " ", seg)).strip().upper()[:48]
+        for seg in re.split(r"\s+(?:—|--|-|\|)\s+", raw_text)
+    ]
+    segments = [s for s in segments if s][:3]
+    clean_words = re.sub(r"[^a-zA-Z0-9 ]+", " ", raw_text).strip().upper()
+    clean_words = re.sub(r"\s+", " ", clean_words)[:120] or "BANDARCHY"
 
-    cache_key = hashlib.sha256(f"v2:{max_width}:{clean_words}".encode("utf-8")).hexdigest()[:20]
+    cache_sig = " || ".join(segments) if len(segments) >= 2 else clean_words
+    cache_key = hashlib.sha256(f"v3:{max_width}:{cache_sig}".encode("utf-8")).hexdigest()[:20]
     cached_txt = os.path.join(ASCII_DIR, f"banner_{cache_key}.txt")
     cached_content = safe_read_text(cached_txt, max_bytes=2 * 1024 * 1024)
     if cached_content:
         return [line.rstrip("\n") for line in cached_content.splitlines()]
+
+    if len(segments) >= 2:
+        blocks = []
+        for seg in segments:
+            b = _compress_ascii_block(_run_omarchy_ascii_raw(seg), max_width=max_width)
+            if b:
+                blocks.append(b)
+        if blocks:
+            mw = max((max((len(l) for l in b), default=0) for b in blocks), default=0)
+            lines: list[str] = []
+            for bi, b in enumerate(blocks):
+                if bi > 0:
+                    lines.append("")
+                bw = max((len(l) for l in b), default=0)
+                pad = " " * max(0, (mw - bw) // 2)
+                lines.extend(pad + l for l in b)
+            atomic_write(cached_txt, ("\n".join(lines) + "\n").encode("utf-8"), 0o600, fatal=False)
+            return lines
 
     raw_single = _run_omarchy_ascii_raw(clean_words)
     if raw_single:
@@ -2050,8 +2080,8 @@ def infer_artist_album(folder_path: str, root_dir: str) -> tuple[str, str]:
 
 
 def probe_image_dimensions(path: str) -> tuple[int, int]:
-    """Safely probe image dimensions from header bytes via safe_read_bytes(path, max_bytes=64)."""
-    header = safe_read_bytes(path, max_bytes=64)
+    """Safely probe image dimensions from header bytes via safe_read_bytes."""
+    header = safe_read_bytes(path, max_bytes=65536)
     if not header or len(header) < 10:
         return (0, 0)
     if header.startswith(b"\x89PNG\r\n\x1a\n") and len(header) >= 24:
@@ -2059,6 +2089,30 @@ def probe_image_dimensions(path: str) -> tuple[int, int]:
     if header[:6] in (b"GIF87a", b"GIF89a"):
         return (int.from_bytes(header[6:8], "little"), int.from_bytes(header[8:10], "little"))
     if header.startswith(b"\xff\xd8"):
+        pos = 2
+        while pos + 9 < len(header):
+            if header[pos] != 0xFF:
+                pos += 1
+                continue
+            while pos < len(header) and header[pos] == 0xFF:
+                pos += 1
+            if pos >= len(header):
+                break
+            marker = header[pos]
+            pos += 1
+            if marker in (0xD8, 0xD9) or (0xD0 <= marker <= 0xD7):
+                continue
+            if pos + 2 > len(header):
+                break
+            seg_len = int.from_bytes(header[pos : pos + 2], "big")
+            if seg_len < 2 or pos + seg_len > len(header):
+                break
+            if marker in (0xC0, 0xC1, 0xC2, 0xC3) and seg_len >= 7:
+                h = int.from_bytes(header[pos + 3 : pos + 5], "big")
+                w = int.from_bytes(header[pos + 5 : pos + 7], "big")
+                if w > 0 and h > 0:
+                    return (w, h)
+            pos += seg_len
         return (500, 500)
     if header[:4] == b"RIFF" and header[8:12] == b"WEBP":
         return (500, 500)
@@ -2079,9 +2133,855 @@ def is_valid_media_file(path: str) -> bool:
     return False
 
 
+_IGNORED_SCAN_DIRS = frozenset({
+    "__MACOSX",
+    "@eaDir",
+    "#recycle",
+    "$RECYCLE.BIN",
+    "System Volume Information",
+    ".Trash",
+    ".Trash-1000",
+})
+
+_ID3V1_GENRES = (
+    "Blues", "Classic Rock", "Country", "Dance", "Disco", "Funk", "Grunge", "Hip-Hop",
+    "Jazz", "Metal", "New Age", "Oldies", "Other", "Pop", "R&B", "Rap", "Reggae", "Rock",
+    "Techno", "Industrial", "Alternative", "Ska", "Death Metal", "Pranks", "Soundtrack",
+    "Euro-Techno", "Ambient", "Trip-Hop", "Vocal", "Jazz+Funk", "Fusion", "Trance",
+    "Classical", "Instrumental", "Acid", "House", "Game", "Sound Clip", "Gospel", "Noise",
+    "AlternRock", "Bass", "Soul", "Punk", "Space", "Meditative", "Instrumental Pop",
+    "Instrumental Rock", "Ethnic", "Gothic", "Darkwave", "Techno-Industrial", "Electronic",
+    "Pop-Folk", "Eurodance", "Dream", "Southern Rock", "Comedy", "Cult", "Gangsta",
+    "Top 40", "Christian Rap", "Pop/Funk", "Jungle", "Native American", "Cabaret",
+    "New Wave", "Psychedelic", "Rave", "Showtunes", "Trailer", "Lo-Fi", "Tribal",
+    "Acid Punk", "Acid Jazz", "Polka", "Retro", "Musical", "Rock & Roll", "Hard Rock",
+)
+
+_MPEG_BITRATES_V1_L3 = (0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0)
+_MPEG_BITRATES_V2_L3 = (0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0)
+_MPEG_SAMPLERATES = (44100, 48000, 32000, 0)
+
+
+def _parse_track_int(val: str) -> int:
+    if not val:
+        return 0
+    m = re.match(r"^\s*(\d{1,4})", str(val))
+    return int(m.group(1)) if m else 0
+
+
+def _parse_year_str(val: str) -> str:
+    if not val:
+        return ""
+    m = re.search(r"\b(19\d{2}|20\d{2})\b", str(val))
+    return m.group(1) if m else ""
+
+
+def _parse_genre_str(val: str) -> str:
+    if not val:
+        return ""
+    s = str(val).strip()
+    m_paren = re.match(r"^\((\d{1,3})\)(.*)$", s)
+    if m_paren:
+        idx = int(m_paren.group(1))
+        rest = m_paren.group(2).strip()
+        if rest:
+            return bounded_text(rest, 120)
+        if 0 <= idx < len(_ID3V1_GENRES):
+            return _ID3V1_GENRES[idx]
+        return ""
+    if s.isdigit():
+        idx = int(s)
+        if 0 <= idx < len(_ID3V1_GENRES):
+            return _ID3V1_GENRES[idx]
+        return ""
+    return bounded_text(s, 120)
+
+
+def _decode_id3_text(fdata: bytes) -> str:
+    if not fdata:
+        return ""
+    enc = fdata[0]
+    raw = fdata[1:]
+    if not raw:
+        return ""
+    if enc == 0:
+        parts = raw.split(b"\x00")
+        for p in parts:
+            s = p.decode("latin-1", errors="replace").strip()
+            if s:
+                return bounded_text(s)
+        return ""
+    if enc == 1:
+        # UTF-16 with BOM
+        if len(raw) % 2 == 1:
+            raw = raw[:-1]
+        try:
+            txt = raw.decode("utf-16", errors="replace")
+        except Exception:
+            txt = raw.decode("utf-16-le", errors="replace")
+        for p in txt.split("\x00"):
+            s = p.strip("\ufeff \t\r\n")
+            if s:
+                return bounded_text(s)
+        return ""
+    if enc == 2:
+        if len(raw) % 2 == 1:
+            raw = raw[:-1]
+        txt = raw.decode("utf-16-be", errors="replace")
+        for p in txt.split("\x00"):
+            s = p.strip("\ufeff \t\r\n")
+            if s:
+                return bounded_text(s)
+        return ""
+    if enc == 3:
+        for p in raw.split(b"\x00"):
+            s = p.decode("utf-8", errors="replace").strip("\ufeff \t\r\n")
+            if s:
+                return bounded_text(s)
+        return ""
+    return bounded_text(fdata.decode("utf-8", errors="replace").split("\x00")[0].strip())
+
+
+def _save_embedded_art(img_bytes: bytes, hint_ext: str = ".jpg") -> str:
+    if not img_bytes or len(img_bytes) < 32 or len(img_bytes) > MAX_ART_BYTES:
+        return ""
+    # Trim any stray leading alignment bytes before image signature
+    if not img_bytes.startswith((b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n", b"RIFF", b"GIF8")):
+        for sig in (b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n"):
+            idx = img_bytes.find(sig, 0, 128)
+            if idx > 0:
+                img_bytes = img_bytes[idx:]
+                break
+    if img_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        ext = ".png"
+    elif img_bytes.startswith(b"\xff\xd8\xff"):
+        ext = ".jpg"
+    elif img_bytes[:4] == b"RIFF" and img_bytes[8:12] == b"WEBP":
+        ext = ".webp"
+    elif img_bytes[:6] in (b"GIF87a", b"GIF89a"):
+        ext = ".gif"
+    else:
+        return ""
+    ensure_private_dir(ART_CACHE_DIR)
+    digest = hashlib.sha256(img_bytes).hexdigest()[:24]
+    target = os.path.join(ART_CACHE_DIR, f"embedded_{digest}{ext}")
+    if os.path.isfile(target) and os.path.getsize(target) >= 32:
+        return target
+    safe_write_bytes(target, img_bytes, mode=0o600, fatal=False)
+    return target if os.path.isfile(target) else ""
+
+
+def _extract_id3_apic(fdata: bytes, is_v22: bool = False) -> tuple[int, bytes, str]:
+    if not fdata or len(fdata) < 16:
+        return (0, b"", "")
+    enc = fdata[0]
+    if is_v22:
+        fmt = fdata[1:4].decode("latin-1", errors="ignore").strip().lower()
+        if fmt == "-->":
+            return (0, b"", "")
+        pic_type = fdata[4]
+        desc_start = 5
+        ext = ".png" if fmt == "png" else ".jpg"
+    else:
+        mime_end = fdata.find(b"\x00", 1)
+        if mime_end == -1 or mime_end + 2 >= len(fdata):
+            return (0, b"", "")
+        mime = fdata[1:mime_end].decode("latin-1", errors="ignore").strip().lower()
+        if mime == "-->":
+            return (0, b"", "")
+        pic_type = fdata[mime_end + 1]
+        desc_start = mime_end + 2
+        ext = ".png" if "png" in mime else (".webp" if "webp" in mime else ".jpg")
+
+    if enc in (0, 3):
+        desc_end = fdata.find(b"\x00", desc_start)
+        img_start = desc_end + 1 if desc_end != -1 else desc_start
+    else:
+        i = desc_start
+        while i + 1 < len(fdata) and fdata[i : i + 2] != b"\x00\x00":
+            i += 2
+        img_start = i + 2 if i + 1 < len(fdata) else desc_start
+
+    img_bytes = fdata[img_start:]
+    return (pic_type, img_bytes, ext)
+
+
+def _parse_id3v2_tag(hdr: bytes, body: bytes, extract_art: bool = True) -> dict:
+    out: dict = {}
+    if len(hdr) < 10 or hdr[:3] != b"ID3":
+        return out
+    ver = hdr[3]
+    flags = hdr[5]
+    if ver not in (2, 3, 4) or not body:
+        return out
+
+    if (flags & 0x80) and ver in (2, 3):
+        body = body.replace(b"\xff\x00", b"\xff")
+
+    pos = 0
+    if (flags & 0x40) and ver in (3, 4) and len(body) >= 4:
+        if ver == 4:
+            ext_sz = (
+                ((body[0] & 0x7F) << 21)
+                | ((body[1] & 0x7F) << 14)
+                | ((body[2] & 0x7F) << 7)
+                | (body[3] & 0x7F)
+            )
+            pos = max(4, ext_sz)
+        else:
+            ext_sz = int.from_bytes(body[:4], "big")
+            pos = 4 + ext_sz if ext_sz >= 6 else 4
+
+    best_apic: tuple[int, bytes, str] | None = None
+
+    while pos < len(body):
+        if ver == 2:
+            if pos + 6 > len(body):
+                break
+            fid_b = body[pos : pos + 3]
+            if fid_b == b"\x00\x00\x00" or not all(48 <= b <= 57 or 65 <= b <= 90 for b in fid_b):
+                break
+            fsz = int.from_bytes(body[pos + 3 : pos + 6], "big")
+            if fsz <= 0 or pos + 6 + fsz > len(body):
+                break
+            fdata = body[pos + 6 : pos + 6 + fsz]
+            pos += 6 + fsz
+            fid = fid_b.decode("ascii")
+        else:
+            if pos + 10 > len(body):
+                break
+            fid_b = body[pos : pos + 4]
+            if fid_b == b"\x00\x00\x00\x00" or not all(48 <= b <= 57 or 65 <= b <= 90 for b in fid_b):
+                break
+            raw_sz = body[pos + 4 : pos + 8]
+            fflags0 = body[pos + 8]
+            fflags1 = body[pos + 9]
+            if ver == 4:
+                fsz_sync = (
+                    ((raw_sz[0] & 0x7F) << 21)
+                    | ((raw_sz[1] & 0x7F) << 14)
+                    | ((raw_sz[2] & 0x7F) << 7)
+                    | (raw_sz[3] & 0x7F)
+                )
+                fsz_be = int.from_bytes(raw_sz, "big")
+                if any(b & 0x80 for b in raw_sz):
+                    fsz = fsz_be
+                elif fsz_sync != fsz_be and pos + 10 + fsz_be <= len(body):
+                    nxt_sync = body[pos + 10 + fsz_sync : pos + 14 + fsz_sync]
+                    nxt_be = body[pos + 10 + fsz_be : pos + 14 + fsz_be]
+                    sync_ok = not nxt_sync or nxt_sync == b"\x00\x00\x00\x00" or all(48 <= b <= 57 or 65 <= b <= 90 for b in nxt_sync)
+                    be_ok = not nxt_be or nxt_be == b"\x00\x00\x00\x00" or all(48 <= b <= 57 or 65 <= b <= 90 for b in nxt_be)
+                    fsz = fsz_be if (be_ok and not sync_ok) else fsz_sync
+                else:
+                    fsz = fsz_sync
+            else:
+                fsz = int.from_bytes(raw_sz, "big")
+
+            if fsz <= 0 or pos + 10 + fsz > len(body):
+                break
+            fdata = body[pos + 10 : pos + 10 + fsz]
+            pos += 10 + fsz
+            fid = fid_b.decode("ascii")
+
+            if ver == 3:
+                if fflags1 & 0x40:  # encrypted
+                    continue
+                if fflags1 & 0x20 and len(fdata) >= 1:  # grouping identity
+                    fdata = fdata[1:]
+                if fflags1 & 0x80:  # zlib compressed across 4-byte decompressed length prefix
+                    try:
+                        fdata = zlib.decompress(fdata[4:])
+                    except Exception:
+                        continue
+            elif ver == 4:
+                if fflags1 & 0x04:  # encrypted
+                    continue
+                if fflags1 & 0x40 and len(fdata) >= 1:  # grouping identity
+                    fdata = fdata[1:]
+                if (fflags1 & 0x02) or (flags & 0x80):  # unsynchronised
+                    fdata = fdata.replace(b"\xff\x00", b"\xff")
+                if fflags1 & 0x01 and len(fdata) >= 4:  # data length indicator
+                    fdata = fdata[4:]
+                if fflags1 & 0x08:  # compressed
+                    try:
+                        fdata = zlib.decompress(fdata)
+                    except Exception:
+                        continue
+
+        if fid in ("TIT2", "TT2") and "title" not in out:
+            val = _decode_id3_text(fdata)
+            if val:
+                out["title"] = val
+        elif fid in ("TPE1", "TP1") and "artist" not in out:
+            val = _decode_id3_text(fdata)
+            if val:
+                out["artist"] = val
+        elif fid in ("TPE2", "TP2") and "albumArtist" not in out:
+            val = _decode_id3_text(fdata)
+            if val:
+                out["albumArtist"] = val
+        elif fid in ("TALB", "TAL") and "album" not in out:
+            val = _decode_id3_text(fdata)
+            if val:
+                out["album"] = val
+        elif fid in ("TRCK", "TRK") and "track" not in out:
+            t_int = _parse_track_int(_decode_id3_text(fdata))
+            if t_int > 0:
+                out["track"] = t_int
+        elif fid in ("TPOS", "TPA") and "disc" not in out:
+            d_int = _parse_track_int(_decode_id3_text(fdata))
+            if d_int > 0:
+                out["disc"] = d_int
+        elif fid in ("TDRC", "TYER", "TYE", "TDOR", "TOR") and "year" not in out:
+            yr = _parse_year_str(_decode_id3_text(fdata))
+            if yr:
+                out["year"] = yr
+        elif fid in ("TCON", "TCO") and "genre" not in out:
+            gn = _parse_genre_str(_decode_id3_text(fdata))
+            if gn:
+                out["genre"] = gn
+        elif fid in ("TLEN", "TLE") and "duration" not in out:
+            ms_str = _decode_id3_text(fdata)
+            if ms_str.isdigit() and int(ms_str) > 0:
+                out["duration"] = round(int(ms_str) / 1000.0, 1)
+        elif fid in ("COMM", "COM") and "comment" not in out and len(fdata) > 4:
+            c_txt = _decode_id3_text(fdata[:1] + fdata[4:])
+            if c_txt:
+                out["comment"] = c_txt
+        elif fid in ("APIC", "PIC") and extract_art:
+            ptype, img_bytes, ext = _extract_id3_apic(fdata, is_v22=(ver == 2))
+            if img_bytes and len(img_bytes) >= 32:
+                if best_apic is None or (ptype == 3 and best_apic[0] != 3):
+                    best_apic = (ptype, img_bytes, ext)
+
+    if best_apic is not None:
+        art_p = _save_embedded_art(best_apic[1], best_apic[2])
+        if art_p:
+            out["artPath"] = art_p
+    return out
+
+
+def _probe_mp3_duration(fd: int, fsize: int, audio_offset: int) -> float:
+    if fsize <= audio_offset + 128:
+        return 0.0
+    try:
+        os.lseek(fd, audio_offset, os.SEEK_SET)
+        buf = os.read(fd, 16384)
+    except OSError:
+        return 0.0
+    idx = 0
+    while idx + 4 <= len(buf):
+        if buf[idx] == 0xFF and (buf[idx + 1] & 0xE0) == 0xE0:
+            b1, b2 = buf[idx + 1], buf[idx + 2]
+            ver_bits = (b1 >> 3) & 0x03
+            layer_bits = (b1 >> 1) & 0x03
+            br_idx = (b2 >> 4) & 0x0F
+            sr_idx = (b2 >> 2) & 0x03
+            if ver_bits != 1 and layer_bits in (1, 2, 3) and 0 < br_idx < 15 and sr_idx < 3:
+                sr = _MPEG_SAMPLERATES[sr_idx]
+                if ver_bits == 2:
+                    sr //= 2
+                elif ver_bits == 0:
+                    sr //= 4
+                br = (
+                    _MPEG_BITRATES_V1_L3[br_idx] if ver_bits == 3 else _MPEG_BITRATES_V2_L3[br_idx]
+                ) * 1000
+                samples_per_frame = 1152 if (ver_bits == 3 or layer_bits == 2) else 576
+                frame_win = buf[idx : idx + 256]
+                for xtag in (b"Xing", b"Info"):
+                    xpos = frame_win.find(xtag)
+                    if xpos != -1 and xpos + 12 <= len(frame_win):
+                        xflags = int.from_bytes(frame_win[xpos + 4 : xpos + 8], "big")
+                        if xflags & 0x01:
+                            tot_frames = int.from_bytes(frame_win[xpos + 8 : xpos + 12], "big")
+                            if tot_frames > 0 and sr > 0:
+                                return round(tot_frames * samples_per_frame / sr, 1)
+                vpos = frame_win.find(b"VBRI")
+                if vpos != -1 and vpos + 18 <= len(frame_win):
+                    tot_frames = int.from_bytes(frame_win[vpos + 14 : vpos + 18], "big")
+                    if tot_frames > 0 and sr > 0:
+                        return round(tot_frames * samples_per_frame / sr, 1)
+                if br > 0:
+                    return round(max(0, fsize - audio_offset) * 8.0 / br, 1)
+        idx += 1
+    return 0.0
+
+
+def _parse_flac_picture_block(pbuf: bytes) -> tuple[int, bytes, str]:
+    if len(pbuf) < 32:
+        return (0, b"", "")
+    ptype = int.from_bytes(pbuf[:4], "big")
+    mlen = int.from_bytes(pbuf[4:8], "big")
+    if mlen < 0 or 8 + mlen + 4 > len(pbuf):
+        return (0, b"", "")
+    mime = pbuf[8 : 8 + mlen].decode("latin-1", errors="ignore").strip().lower()
+    dpos = 8 + mlen
+    dlen = int.from_bytes(pbuf[dpos : dpos + 4], "big")
+    ipos = dpos + 4 + dlen + 16
+    if dlen < 0 or ipos + 4 > len(pbuf):
+        return (0, b"", "")
+    ilen = int.from_bytes(pbuf[ipos : ipos + 4], "big")
+    if ilen <= 0 or ipos + 4 + ilen > len(pbuf):
+        return (0, b"", "")
+    img = pbuf[ipos + 4 : ipos + 4 + ilen]
+    ext = ".png" if "png" in mime else (".webp" if "webp" in mime else ".jpg")
+    return (ptype, img, ext)
+
+
+def _parse_vorbis_comments_to_meta(data: bytes, extract_art: bool = True) -> dict:
+    out: dict = {}
+    if len(data) < 8:
+        return out
+    vlen = int.from_bytes(data[:4], "little")
+    pos = 4 + vlen
+    if vlen < 0 or pos + 4 > len(data):
+        return out
+    count = int.from_bytes(data[pos : pos + 4], "little")
+    pos += 4
+    best_pic: tuple[int, bytes, str] | None = None
+    for _ in range(min(count, 500)):
+        if pos + 4 > len(data):
+            break
+        clen = int.from_bytes(data[pos : pos + 4], "little")
+        pos += 4
+        if clen < 0 or pos + clen > len(data):
+            break
+        raw_c = data[pos : pos + clen]
+        pos += clen
+        eq_idx = raw_c.find(b"=")
+        if eq_idx <= 0:
+            continue
+        k = raw_c[:eq_idx].decode("ascii", errors="ignore").strip().upper()
+        if k == "METADATA_BLOCK_PICTURE":
+            if extract_art:
+                try:
+                    pbuf = base64.b64decode(raw_c[eq_idx + 1 :])
+                    ptype, img_b, ext = _parse_flac_picture_block(pbuf)
+                    if img_b and (best_pic is None or (ptype == 3 and best_pic[0] != 3)):
+                        best_pic = (ptype, img_b, ext)
+                except Exception:
+                    pass
+            continue
+        v = raw_c[eq_idx + 1 :].decode("utf-8", errors="replace").strip()
+        if not v:
+            continue
+        if k == "TITLE" and "title" not in out:
+            out["title"] = bounded_text(v)
+        elif k == "ARTIST" and "artist" not in out:
+            out["artist"] = bounded_text(v)
+        elif k in ("ALBUMARTIST", "ALBUM_ARTIST", "ALBUM ARTIST") and "albumArtist" not in out:
+            out["albumArtist"] = bounded_text(v)
+        elif k == "ALBUM" and "album" not in out:
+            out["album"] = bounded_text(v)
+        elif k in ("TRACKNUMBER", "TRACK") and "track" not in out:
+            t_int = _parse_track_int(v)
+            if t_int > 0:
+                out["track"] = t_int
+        elif k in ("DISCNUMBER", "DISC") and "disc" not in out:
+            d_int = _parse_track_int(v)
+            if d_int > 0:
+                out["disc"] = d_int
+        elif k in ("DATE", "YEAR", "ORIGINALDATE") and "year" not in out:
+            yr = _parse_year_str(v)
+            if yr:
+                out["year"] = yr
+        elif k == "GENRE" and "genre" not in out:
+            gn = _parse_genre_str(v)
+            if gn:
+                out["genre"] = gn
+        elif k in ("COMMENT", "DESCRIPTION") and "comment" not in out:
+            out["comment"] = bounded_text(v, 240)
+    if best_pic is not None:
+        art_p = _save_embedded_art(best_pic[1], best_pic[2])
+        if art_p:
+            out["artPath"] = art_p
+    return out
+
+
+def _parse_mp4_metadata(fd: int, fsize: int, extract_art: bool = True) -> dict:
+    out: dict = {}
+
+    def _read_at(offset: int, length: int) -> bytes:
+        try:
+            os.lseek(fd, offset, os.SEEK_SET)
+            return os.read(fd, length)
+        except OSError:
+            return b""
+
+    def _iter_boxes(start: int, end: int):
+        cur = start
+        while cur + 8 <= end:
+            bh = _read_at(cur, 16)
+            if len(bh) < 8:
+                break
+            bsz = int.from_bytes(bh[:4], "big")
+            btype = bh[4:8]
+            hdr_len = 8
+            if bsz == 1 and len(bh) >= 16:
+                bsz = int.from_bytes(bh[8:16], "big")
+                hdr_len = 16
+            elif bsz == 0:
+                bsz = end - cur
+            if bsz < hdr_len or cur + bsz > end:
+                break
+            yield btype, cur + hdr_len, cur + bsz
+            cur += bsz
+
+    for btype, bstart, bend in _iter_boxes(0, fsize):
+        if btype == b"moov":
+            for mtype, mstart, mend in _iter_boxes(bstart, bend):
+                if mtype == b"mvhd" and mend - mstart >= 24:
+                    mvhd = _read_at(mstart, 32)
+                    if len(mvhd) >= 24:
+                        ver = mvhd[0]
+                        if ver == 0:
+                            ts = int.from_bytes(mvhd[12:16], "big")
+                            dur = int.from_bytes(mvhd[16:20], "big")
+                        elif len(mvhd) >= 32:
+                            ts = int.from_bytes(mvhd[20:24], "big")
+                            dur = int.from_bytes(mvhd[24:32], "big")
+                        else:
+                            ts, dur = 0, 0
+                        if ts > 0 and dur > 0:
+                            out["duration"] = round(dur / ts, 1)
+                elif mtype == b"udta":
+                    for utype, ustart, uend in _iter_boxes(mstart, mend):
+                        if utype == b"meta" and uend - ustart > 4:
+                            for itype, istart, iend in _iter_boxes(ustart + 4, uend):
+                                if itype == b"ilst":
+                                    for atype, astart, aend in _iter_boxes(istart, iend):
+                                        for dtype, dstart, dend in _iter_boxes(astart, aend):
+                                            if dtype != b"data" or dend - dstart <= 8:
+                                                continue
+                                            dlen = dend - dstart
+                                            if dlen > MAX_ART_BYTES:
+                                                continue
+                                            dbuf = _read_at(dstart, dlen)
+                                            if len(dbuf) <= 8:
+                                                continue
+                                            dpayload = dbuf[8:]
+                                            if atype == b"\xa9nam" and "title" not in out:
+                                                out["title"] = bounded_text(dpayload.decode("utf-8", errors="replace").strip())
+                                            elif atype == b"\xa9ART" and "artist" not in out:
+                                                out["artist"] = bounded_text(dpayload.decode("utf-8", errors="replace").strip())
+                                            elif atype == b"aART" and "albumArtist" not in out:
+                                                out["albumArtist"] = bounded_text(dpayload.decode("utf-8", errors="replace").strip())
+                                            elif atype == b"\xa9alb" and "album" not in out:
+                                                out["album"] = bounded_text(dpayload.decode("utf-8", errors="replace").strip())
+                                            elif atype == b"\xa9day" and "year" not in out:
+                                                yr = _parse_year_str(dpayload.decode("utf-8", errors="replace"))
+                                                if yr:
+                                                    out["year"] = yr
+                                            elif atype in (b"\xa9gen", b"gnre") and "genre" not in out:
+                                                if atype == b"gnre" and len(dpayload) >= 2:
+                                                    g_idx = int.from_bytes(dpayload[:2], "big") - 1
+                                                    if 0 <= g_idx < len(_ID3V1_GENRES):
+                                                        out["genre"] = _ID3V1_GENRES[g_idx]
+                                                else:
+                                                    gn = _parse_genre_str(dpayload.decode("utf-8", errors="replace"))
+                                                    if gn:
+                                                        out["genre"] = gn
+                                            elif atype == b"trkn" and len(dpayload) >= 4 and "track" not in out:
+                                                t_int = int.from_bytes(dpayload[2:4], "big")
+                                                if t_int > 0:
+                                                    out["track"] = t_int
+                                            elif atype == b"disk" and len(dpayload) >= 4 and "disc" not in out:
+                                                d_int = int.from_bytes(dpayload[2:4], "big")
+                                                if d_int > 0:
+                                                    out["disc"] = d_int
+                                            elif atype == b"covr" and extract_art and "artPath" not in out:
+                                                art_p = _save_embedded_art(dpayload)
+                                                if art_p:
+                                                    out["artPath"] = art_p
+            break
+    return out
+
+
+def read_audio_metadata(
+    path: str,
+    extract_art: bool = True,
+    _cache: dict | None = None,
+    _cache_dirty: list[bool] | None = None,
+) -> dict:
+    """Read embedded metadata and cover art from MP3 (ID3v2.2/2.3/2.4 + ID3v1),
+    FLAC, Ogg Vorbis/Opus, WAV/AIFF, and M4A/MP4 files in pure Python.
+    """
+    uid = os.getuid()
+    try:
+        st = os.lstat(path)
+        if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode) or st.st_uid not in (uid, 0):
+            return {}
+        mtime_ns = st.st_mtime_ns
+        fsize = st.st_size
+    except OSError:
+        return {}
+
+    if _cache is not None:
+        cached_entry = _cache.get(path)
+        if (
+            isinstance(cached_entry, dict)
+            and cached_entry.get("m") == mtime_ns
+            and cached_entry.get("s") == fsize
+            and isinstance(cached_entry.get("d"), dict)
+        ):
+            cached_meta = cached_entry["d"]
+            cached_art = cached_meta.get("artPath") or ""
+            if not extract_art or not cached_Entry_needs_art(cached_meta, cached_art):
+                return dict(cached_meta)
+
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(path, flags)
+    except OSError:
+        return {}
+
+    meta: dict = {}
+    try:
+        st_f = os.fstat(fd)
+        if not stat.S_ISREG(st_f.st_mode) or st_f.st_ino != st.st_ino:
+            return {}
+        head = os.read(fd, 16384)
+        if len(head) < 4:
+            return {}
+
+        # 1. ID3v2 header at start of file (MP3, or ID3-prefixed FLAC/WAV/AAC)
+        audio_offset = 0
+        if head[:3] == b"ID3" and len(head) >= 10:
+            hdr = head[:10]
+            tag_sz = (
+                ((hdr[6] & 0x7F) << 21)
+                | ((hdr[7] & 0x7F) << 14)
+                | ((hdr[8] & 0x7F) << 7)
+                | (hdr[9] & 0x7F)
+            )
+            audio_offset = 10 + tag_sz
+            read_sz = min(tag_sz, MAX_ART_BYTES)
+            if 10 + read_sz <= len(head):
+                body = head[10 : 10 + read_sz]
+            else:
+                chunks = [head[10:]]
+                rem = (10 + read_sz) - len(head)
+                while rem > 0:
+                    ch = os.read(fd, min(65536, rem))
+                    if not ch:
+                        break
+                    chunks.append(ch)
+                    rem -= len(ch)
+                body = b"".join(chunks)
+            meta.update(_parse_id3v2_tag(hdr, body, extract_art=extract_art))
+            if "artPath" in meta:
+                meta["hasArt"] = True
+
+        ext_l = os.path.splitext(path)[1].lower()
+
+        # 2. MP3 duration & ID3v1 fallback
+        if ext_l == ".mp3" or head[:3] == b"ID3" or (head[0] == 0xFF and (head[1] & 0xE0) == 0xE0):
+            if not meta.get("duration"):
+                dur = _probe_mp3_duration(fd, fsize, audio_offset)
+                if dur > 0:
+                    meta["duration"] = dur
+            if fsize >= 128 and not (meta.get("title") and meta.get("artist") and meta.get("album")):
+                try:
+                    os.lseek(fd, fsize - 128, os.SEEK_SET)
+                    v1 = os.read(fd, 128)
+                    if len(v1) == 128 and v1[:3] == b"TAG":
+                        if not meta.get("title"):
+                            t_s = v1[3:33].rstrip(b"\x00 ").decode("latin-1", errors="replace").strip()
+                            if t_s:
+                                meta["title"] = bounded_text(t_s)
+                        if not meta.get("artist"):
+                            a_s = v1[33:63].rstrip(b"\x00 ").decode("latin-1", errors="replace").strip()
+                            if a_s:
+                                meta["artist"] = bounded_text(a_s)
+                        if not meta.get("album"):
+                            al_s = v1[63:93].rstrip(b"\x00 ").decode("latin-1", errors="replace").strip()
+                            if al_s:
+                                meta["album"] = bounded_text(al_s)
+                        if not meta.get("year"):
+                            y_s = _parse_year_str(v1[93:97].decode("latin-1", errors="replace"))
+                            if y_s:
+                                meta["year"] = y_s
+                        if not meta.get("track") and v1[125] == 0 and v1[126] != 0:
+                            meta["track"] = int(v1[126])
+                        if not meta.get("genre") and v1[127] < len(_ID3V1_GENRES):
+                            meta["genre"] = _ID3V1_GENRES[v1[127]]
+                except OSError:
+                    pass
+
+        # 3. FLAC metadata blocks (STREAMINFO, VORBIS_COMMENT, PICTURE)
+        elif head[:4] == b"fLaC":
+            os.lseek(fd, 4, os.SEEK_SET)
+            best_pic: tuple[int, bytes, str] | None = None
+            for _ in range(64):
+                bh = os.read(fd, 4)
+                if len(bh) < 4:
+                    break
+                is_last = (bh[0] & 0x80) != 0
+                btype = bh[0] & 0x7F
+                blen = int.from_bytes(bh[1:4], "big")
+                if blen < 0 or blen > MAX_ART_BYTES:
+                    break
+                if btype == 0 and blen >= 18:
+                    sinfo = os.read(fd, blen)
+                    if len(sinfo) >= 18:
+                        sr = (sinfo[10] << 12) | (sinfo[11] << 4) | (sinfo[12] >> 4)
+                        tot_samples = ((sinfo[13] & 0x0F) << 32) | int.from_bytes(sinfo[14:18], "big")
+                        if sr > 0 and tot_samples > 0:
+                            meta["duration"] = round(tot_samples / sr, 1)
+                elif btype == 4 and blen > 0:
+                    vbuf = os.read(fd, blen)
+                    vmeta = _parse_vorbis_comments_to_meta(vbuf, extract_art=extract_art)
+                    for k, v in vmeta.items():
+                        if k not in meta:
+                            meta[k] = v
+                elif btype == 6 and blen > 32:
+                    meta["hasArt"] = True
+                    if extract_art:
+                        pbuf = os.read(fd, blen)
+                        ptype, img_b, ext = _parse_flac_picture_block(pbuf)
+                        if img_b and (best_pic is None or (ptype == 3 and best_pic[0] != 3)):
+                            best_pic = (ptype, img_b, ext)
+                    else:
+                        os.lseek(fd, blen, os.SEEK_CUR)
+                else:
+                    os.lseek(fd, blen, os.SEEK_CUR)
+                if is_last:
+                    break
+            if best_pic is not None and "artPath" not in meta:
+                art_p = _save_embedded_art(best_pic[1], best_pic[2])
+                if art_p:
+                    meta["artPath"] = art_p
+
+        # 4. Ogg Vorbis / Ogg Opus
+        elif head[:4] == b"OggS":
+            os.lseek(fd, 0, os.SEEK_SET)
+            ogg_buf = os.read(fd, 262144 if extract_art else 65536)
+            pos = 0
+            payload = bytearray()
+            while pos + 27 <= len(ogg_buf):
+                if ogg_buf[pos : pos + 4] != b"OggS":
+                    break
+                n_segs = ogg_buf[pos + 26]
+                if pos + 27 + n_segs > len(ogg_buf):
+                    break
+                seg_tbl = ogg_buf[pos + 27 : pos + 27 + n_segs]
+                body_len = sum(seg_tbl)
+                body_start = pos + 27 + n_segs
+                payload.extend(ogg_buf[body_start : body_start + body_len])
+                pos = body_start + body_len
+                if len(payload) >= 16384 and (b"\x03vorbis" in payload or b"OpusTags" in payload):
+                    if not extract_art or b"METADATA_BLOCK_PICTURE" not in payload.upper():
+                        break
+            for marker in (b"\x03vorbis", b"OpusTags"):
+                m_idx = payload.find(marker)
+                if m_idx != -1:
+                    vmeta = _parse_vorbis_comments_to_meta(
+                        bytes(payload[m_idx + len(marker) :]),
+                        extract_art=extract_art,
+                    )
+                    meta.update(vmeta)
+                    if "artPath" in vmeta:
+                        meta["hasArt"] = True
+                    break
+
+        # 5. RIFF WAVE (`fmt `, `data`, `ID3 ` / `id3 `)
+        elif head[:4] == b"RIFF" and head[8:12] == b"WAVE":
+            pos = 12
+            byte_rate = 0
+            data_bytes = 0
+            while pos + 8 <= fsize:
+                os.lseek(fd, pos, os.SEEK_SET)
+                chdr = os.read(fd, 8)
+                if len(chdr) < 8:
+                    break
+                cid = chdr[:4]
+                csz = int.from_bytes(chdr[4:8], "little")
+                if csz < 0:
+                    break
+                if cid == b"fmt " and csz >= 12:
+                    fmt_b = os.read(fd, min(csz, 32))
+                    if len(fmt_b) >= 12:
+                        byte_rate = int.from_bytes(fmt_b[8:12], "little")
+                elif cid == b"data":
+                    data_bytes = csz
+                elif cid in (b"ID3 ", b"id3 ") and 10 <= csz <= MAX_ART_BYTES:
+                    id3_buf = os.read(fd, csz)
+                    if id3_buf[:3] == b"ID3" and len(id3_buf) >= 10:
+                        meta.update(_parse_id3v2_tag(id3_buf[:10], id3_buf[10:], extract_art=extract_art))
+                        if "artPath" in meta:
+                            meta["hasArt"] = True
+                pos += 8 + csz + (csz & 1)
+            if byte_rate > 0 and data_bytes > 0 and not meta.get("duration"):
+                meta["duration"] = round(data_bytes / byte_rate, 1)
+
+        # 6. MP4 / M4A / ALAC (`ftyp`)
+        elif len(head) >= 8 and head[4:8] == b"ftyp":
+            meta.update(_parse_mp4_metadata(fd, fsize, extract_art=extract_art))
+            if "artPath" in meta:
+                meta["hasArt"] = True
+    except Exception:
+        pass
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+    if _cache is not None:
+        _cache[path] = {"m": mtime_ns, "s": fsize, "d": dict(meta)}
+        if _cache_dirty is not None:
+            _cache_dirty[0] = True
+    return meta
+
+
+def cached_Entry_needs_art(cached_meta: dict, cached_art: str) -> bool:
+    if cached_art:
+        return not os.path.isfile(cached_art)
+    return bool(cached_meta.get("hasArt"))
+
+
+def _infer_folder_suffix(folder_path: str, root_dir: str) -> str:
+    rel = os.path.relpath(folder_path, root_dir)
+    parts = [p for p in rel.split(os.sep) if p and p != "."]
+    sub_stopwords = re.compile(
+        r"^(cd\s*\d+|disk\s*\d+|disc\s*\d+|flac|mp3|wav|ogg|extended|youtubedl|deluxe)$",
+        re.IGNORECASE,
+    )
+    suffix_parts: list[str] = []
+    idx = len(parts) - 1
+    while idx > 0 and sub_stopwords.match(parts[idx].strip()):
+        suffix_parts.insert(0, parts[idx].strip())
+        idx -= 1
+    return f" ({' · '.join(suffix_parts)})" if suffix_parts else ""
+
+
+def _most_common_tag(values: list[str]) -> str:
+    if not values:
+        return ""
+    counts: dict[str, int] = {}
+    first_seen: dict[str, str] = {}
+    for v in values:
+        fv = fold(v)
+        if not fv:
+            continue
+        counts[fv] = counts.get(fv, 0) + 1
+        if fv not in first_seen:
+            first_seen[fv] = v
+    if not counts:
+        return ""
+    best_fold = max(counts, key=lambda k: counts[k])
+    return first_seen[best_fold]
+
+
 def scan_local_directories(local_dirs: list[str]) -> list[dict]:
     albums_by_dir: dict[str, dict] = {}
     seen_real_dirs: set[str] = set()
+
+    raw_cache = read_json(TAGS_CACHE_FILE, None)
+    tags_cache: dict = raw_cache if isinstance(raw_cache, dict) else {}
+    cache_dirty = [False]
 
     for base_dir in local_dirs:
         base_dir = os.path.expanduser(base_dir)
@@ -2090,7 +2990,7 @@ def scan_local_directories(local_dirs: list[str]) -> list[dict]:
         for root, dirs, files in os.walk(base_dir):
             dirs[:] = sorted(
                 d for d in dirs
-                if d != "__MACOSX" and not d.startswith(".")
+                if d not in _IGNORED_SCAN_DIRS and not d.startswith(".")
             )
             real_root = os.path.realpath(root)
             if real_root in seen_real_dirs:
@@ -2123,37 +3023,131 @@ def scan_local_directories(local_dirs: list[str]) -> list[dict]:
                 chosen = preferred[0] if preferred else image_files[0]
                 cover_path = os.path.join(root, chosen)
 
-            artist, album_title = infer_artist_album(root, base_dir)
-            tracks = []
+            fallback_artist, fallback_album = infer_artist_album(root, base_dir)
+            folder_suffix = _infer_folder_suffix(root, base_dir)
+
+            file_metas: list[tuple[int, str, str, dict]] = []
             for idx, fname in enumerate(audio_files, start=1):
                 fpath = os.path.join(root, fname)
-                t_num, t_title, t_artist = parse_track_filename(fname, artist, album_title, idx)
+                meta = read_audio_metadata(
+                    fpath,
+                    extract_art=not bool(cover_path),
+                    _cache=tags_cache,
+                    _cache_dirty=cache_dirty,
+                )
+                if not cover_path and meta.get("artPath") and os.path.isfile(meta["artPath"]):
+                    cover_path = meta["artPath"]
+                file_metas.append((idx, fname, fpath, meta))
+
+            # Resolve album-level artist and title from embedded tags first, falling back to folder heuristics
+            tag_album_artists = [m["albumArtist"] for _, _, _, m in file_metas if m.get("albumArtist")]
+            tag_artists = [m["artist"] for _, _, _, m in file_metas if m.get("artist")]
+            tag_albums = [m["album"] for _, _, _, m in file_metas if m.get("album")]
+            tag_years = [m["year"] for _, _, _, m in file_metas if m.get("year")]
+            tag_genres = [m["genre"] for _, _, _, m in file_metas if m.get("genre")]
+
+            dominant_album_artist = _most_common_tag(tag_album_artists)
+            dominant_track_artist = _most_common_tag(tag_artists)
+            dominant_album = _most_common_tag(tag_albums)
+
+            if dominant_album_artist:
+                artist = dominant_album_artist
+            elif dominant_track_artist:
+                artist = dominant_track_artist
+            else:
+                artist = fallback_artist
+
+            if dominant_album:
+                # Preserve subfolder edition/disc qualifiers (e.g. "Deadwing B-Sides", "(CD1)", "(Extended)")
+                if (
+                    not fallback_album.endswith(" — Singles")
+                    and fold(fallback_album).startswith(fold(dominant_album) + " ")
+                ):
+                    album_title = fallback_album
+                elif folder_suffix and folder_suffix.lower() not in dominant_album.lower():
+                    album_title = bounded_text(f"{dominant_album}{folder_suffix}")
+                else:
+                    album_title = dominant_album
+            elif fallback_album.endswith(" — Singles") and artist != fallback_artist:
+                album_title = bounded_text(f"{artist} — Singles{folder_suffix}")
+            else:
+                album_title = fallback_album
+
+            raw_track_records: list[tuple[bool, int, dict]] = []
+            explicit_nums: set[int] = set()
+
+            for idx, fname, fpath, meta in file_metas:
+                fn_num, fn_title, fn_artist = parse_track_filename(fname, artist, album_title, idx)
+                stem = os.path.splitext(fname)[0].strip()
+                fn_has_explicit_num = bool(
+                    re.match(r"^(.+?)\s+-\s+(.+?)\s+-\s+(\d{1,3})[\s._-]+(.+)$", stem)
+                    or re.match(r"^(\d{1,3})(?:\s*[-._]\s*|\s+)(.+)$", stem)
+                )
+
+                tag_num = bounded_int(meta.get("track") or 0, 0)
+                if tag_num > 0:
+                    t_num = tag_num
+                    is_explicit = True
+                elif fn_has_explicit_num:
+                    t_num = fn_num
+                    is_explicit = True
+                else:
+                    t_num = idx
+                    is_explicit = False
+
+                if is_explicit:
+                    explicit_nums.add(t_num)
+
+                t_title = bounded_text(meta.get("title") or fn_title)
+                t_artist = bounded_text(meta.get("artist") or meta.get("albumArtist") or fn_artist or artist)
+                t_album = bounded_text(meta.get("album") or album_title)
                 if artist in ("Local Artist", "Unknown Artist") and t_artist not in ("Local Artist", "Unknown Artist"):
                     artist = t_artist
-                # Estimate duration lightly from file size if not probed so intelligent playlists know epic vs short tracks
-                est_dur = 0.0
-                try:
-                    fsize = os.path.getsize(fpath)
-                    ext_l = os.path.splitext(fname)[1].lower()
-                    if ext_l in (".flac", ".wav", ".aiff"):
-                        est_dur = round(fsize / (176400 * 0.65), 1)
-                    else:
-                        est_dur = round(fsize / 28000, 1)
-                except OSError:
-                    pass
-                tracks.append({
+
+                est_dur = bounded_float(meta.get("duration") or 0.0, 0.0)
+                if est_dur <= 0.0:
+                    try:
+                        fsize = os.path.getsize(fpath)
+                        ext_l = os.path.splitext(fname)[1].lower()
+                        if ext_l in (".flac", ".wav", ".aiff"):
+                            est_dur = round(fsize / (176400 * 0.65), 1)
+                        else:
+                            est_dur = round(fsize / 28000, 1)
+                    except OSError:
+                        pass
+
+                tr_entry: dict = {
                     "id": f"local-track-{hashlib.sha1(fpath.encode('utf-8')).hexdigest()[:16]}",
                     "title": t_title,
                     "artist": t_artist,
-                    "album": album_title,
+                    "album": album_title if dominant_album else t_album,
                     "index": t_num,
                     "duration": est_dur,
                     "streamUrl": "",
                     "localPath": fpath,
                     "format": os.path.splitext(fname)[1].lstrip(".").upper(),
-                })
+                }
+                if meta.get("disc"):
+                    tr_entry["disc"] = int(meta["disc"])
+                if meta.get("year"):
+                    tr_entry["year"] = str(meta["year"])
+                if meta.get("genre"):
+                    tr_entry["genre"] = str(meta["genre"])
+                raw_track_records.append((is_explicit, idx, tr_entry))
 
-            tracks.sort(key=lambda t: (t["index"], t["title"]))
+            # Ensure tracks without explicit track numbers never collide with explicit TRCK numbers
+            next_free = 1
+            tracks: list[dict] = []
+            for is_explicit, _, tr_entry in raw_track_records:
+                if not is_explicit:
+                    while next_free in explicit_nums:
+                        next_free += 1
+                    tr_entry["index"] = next_free
+                    explicit_nums.add(next_free)
+                    next_free += 1
+                tracks.append(tr_entry)
+
+            tracks.sort(key=lambda t: (int(t.get("disc") or 1), t["index"], t["title"]))
             album_id = f"local-{hashlib.sha1(real_root.encode('utf-8')).hexdigest()[:16]}"
             if not cover_path:
                 cover_path = ensure_cover_svg(album_id, artist, album_title)
@@ -2163,12 +3157,16 @@ def scan_local_directories(local_dirs: list[str]) -> list[dict]:
                 re.match(r"^.+?\s+-\s+.+?\s+-\s+\d{1,3}\s+", os.path.splitext(f)[0])
                 for f in audio_files
             )
+            has_bc_comment = any(
+                "bandcamp.com" in str(m.get("comment") or "").lower()
+                for _, _, _, m in file_metas
+            )
 
             formats = sorted({t.get("format", "") for t in tracks if t.get("format")})
             audio_fmt = " / ".join(formats) if formats else "Local Audio"
             total_dur = round(sum(float(t.get("duration") or 0.0) for t in tracks), 1)
 
-            albums_by_dir[real_root] = {
+            alb_record: dict = {
                 "id": album_id,
                 "itemId": "",
                 "itemType": "album",
@@ -2178,7 +3176,7 @@ def scan_local_directories(local_dirs: list[str]) -> list[dict]:
                 "artUrl": "",
                 "artPath": cover_path,
                 "redownloadUrl": "",
-                "purchased": bool(in_bandcamp_dir or has_bc_naming),
+                "purchased": bool(in_bandcamp_dir or has_bc_naming or has_bc_comment),
                 "isLocal": True,
                 "localPath": root,
                 "audioFormat": audio_fmt,
@@ -2187,6 +3185,20 @@ def scan_local_directories(local_dirs: list[str]) -> list[dict]:
                 "tracks": tracks,
                 "fold": fold(f"{artist} {album_title}"),
             }
+            if tag_years:
+                alb_record["year"] = _most_common_tag(tag_years)
+            if tag_genres:
+                alb_record["genre"] = _most_common_tag(tag_genres)
+            albums_by_dir[real_root] = alb_record
+
+    if cache_dirty[0]:
+        try:
+            if len(tags_cache) > 25_000:
+                keys = list(tags_cache.keys())[-20_000:]
+                tags_cache = {k: tags_cache[k] for k in keys}
+            write_json(TAGS_CACHE_FILE, tags_cache, mode=0o600)
+        except Exception:
+            pass
 
     return list(albums_by_dir.values())
 
@@ -2668,7 +3680,88 @@ def build_unified_collection(
         "albums": unified[:MAX_COLLECTION_ITEMS],
     }
     write_json(INDEX_FILE, result)
+    _refresh_saved_queue_and_history(result["albums"])
     return result
+
+
+def _refresh_saved_queue_and_history(albums: list[dict]) -> None:
+    """Keep saved queue.json and history.json track metadata and artPath synchronised with freshly scanned albums."""
+    track_lookup: dict[str, dict] = {}
+    for alb in albums:
+        aid = alb.get("id") or ""
+        a_title = alb.get("title") or ""
+        a_artist = alb.get("artist") or ""
+        a_art = alb.get("artPath") or ""
+        for t in alb.get("tracks") or []:
+            info = {
+                "id": t.get("id") or "",
+                "title": t.get("title") or "",
+                "artist": t.get("artist") or a_artist,
+                "album": t.get("album") or a_title,
+                "albumId": aid,
+                "artPath": a_art,
+                "duration": t.get("duration") or 0.0,
+            }
+            if info["id"]:
+                track_lookup[info["id"]] = info
+            if t.get("localPath"):
+                track_lookup[str(t["localPath"])] = info
+
+    if not track_lookup:
+        return
+
+    def _patch_entry(item: dict) -> bool:
+        if not isinstance(item, dict):
+            return False
+        ref = (
+            track_lookup.get(str(item.get("id") or ""))
+            or track_lookup.get(str(item.get("localPath") or ""))
+            or track_lookup.get(str(item.get("target") or ""))
+        )
+        if not ref:
+            return False
+        changed = False
+        for k in ("title", "artist", "album", "albumId", "artPath"):
+            if ref.get(k) and item.get(k) != ref[k]:
+                item[k] = ref[k]
+                changed = True
+        if ref.get("duration") and float(ref["duration"]) > 0 and not item.get("duration"):
+            item["duration"] = ref["duration"]
+            changed = True
+        return changed
+
+    try:
+        queue = read_json(QUEUE_FILE, None)
+        if isinstance(queue, dict) and isinstance(queue.get("tracks"), list):
+            q_changed = False
+            for qt in queue["tracks"]:
+                if _patch_entry(qt):
+                    q_changed = True
+            src = queue.get("source")
+            if isinstance(src, dict) and src.get("albumId"):
+                alb_match = next((a for a in albums if a.get("id") == src["albumId"]), None)
+                if alb_match and alb_match.get("title") and src.get("title") != alb_match["title"]:
+                    src["title"] = alb_match["title"]
+                    q_changed = True
+            if q_changed:
+                write_json(QUEUE_FILE, queue)
+    except Exception:
+        pass
+
+    try:
+        hist = read_json(HISTORY_FILE, None)
+        if isinstance(hist, dict):
+            h_changed = False
+            if isinstance(hist.get("lastPlayedTrack"), dict) and _patch_entry(hist["lastPlayedTrack"]):
+                h_changed = True
+            if isinstance(hist.get("recentTracks"), list):
+                for rt in hist["recentTracks"]:
+                    if _patch_entry(rt):
+                        h_changed = True
+            if h_changed:
+                write_json(HISTORY_FILE, hist)
+    except Exception:
+        pass
 
 
 def _extract_status_summary(idx: dict, mtime_ns: int = 0, size: int = 0) -> dict:
@@ -3883,6 +4976,24 @@ def get_playback_state() -> dict:
         album_id = entry.get("albumId") or last.get("albumId") or ""
         track_id = entry.get("id") or last.get("id") or ""
         art_path = entry.get("artPath") or last.get("artPath") or ""
+        local_cand = str(entry.get("localPath") or entry.get("target") or last.get("localPath") or last.get("target") or "")
+        if local_cand and os.path.isfile(local_cand) and (
+            not title
+            or not artist
+            or not album
+            or album.endswith(" — Singles")
+            or not art_path
+            or str(art_path).endswith(".svg")
+        ):
+            fmeta = read_audio_metadata(local_cand, extract_art=(not art_path or str(art_path).endswith(".svg")))
+            if fmeta.get("title") and (not title or re.match(r"^.+?\s+-\s+.+?\s+-\s+\d{1,3}\s+", title)):
+                title = bounded_text(fmeta["title"])
+            if fmeta.get("artist") and (not artist or artist in ("Local Artist", "Unknown Artist") or album.endswith(" — Singles")):
+                artist = bounded_text(fmeta["artist"])
+            if fmeta.get("album") and (not album or album.endswith(" — Singles")):
+                album = bounded_text(fmeta["album"])
+            if fmeta.get("artPath") and os.path.isfile(fmeta["artPath"]) and (not art_path or str(art_path).endswith(".svg")):
+                art_path = fmeta["artPath"]
         if (title or artist) and (not art_path or not os.path.exists(art_path)):
             art_path = ensure_cover_svg(album_id or "now", artist or "Bandarchy", album or title or "Music")
 
@@ -3935,12 +5046,16 @@ def get_playback_state() -> dict:
     tracks = queue.get("tracks") or []
     entry = {}
     matched_idx = bounded_int(pos, 0)
-    if path:
+    if isinstance(pos, int) and 0 <= pos < len(tracks):
+        cand_t = tracks[pos]
+        if not path or cand_t.get("target") == path or (cand_t.get("localPath") and cand_t["localPath"] == path):
+            entry = cand_t
+            matched_idx = pos
+    if not entry and path:
         for idx_t, t in enumerate(tracks):
             if t.get("target") == path or (t.get("localPath") and t["localPath"] == path):
                 entry = t
-                if not isinstance(pos, int):
-                    matched_idx = idx_t
+                matched_idx = idx_t
                 break
     if not entry and isinstance(pos, int) and 0 <= pos < len(tracks):
         entry = tracks[pos]
@@ -3949,18 +5064,50 @@ def get_playback_state() -> dict:
     meta = mpv_get("metadata") or {}
     meta = {str(k).lower(): v for k, v in meta.items()} if isinstance(meta, dict) else {}
 
-    title = bounded_text(entry.get("title") or meta.get("title") or mpv_get("media-title") or "")
-    artist = bounded_text(entry.get("artist") or meta.get("artist") or "")
-    album = bounded_text(entry.get("album") or meta.get("album") or "")
+    fmeta: dict = {}
+    local_media_path = path if (path and os.path.isfile(path)) else str(entry.get("localPath") or "")
+    if local_media_path and os.path.isfile(local_media_path):
+        need_art = not entry.get("artPath") or str(entry.get("artPath")).endswith(".svg")
+        fmeta = read_audio_metadata(local_media_path, extract_art=need_art)
+
+    raw_entry_title = str(entry.get("title") or "")
+    raw_entry_artist = str(entry.get("artist") or "")
+    raw_entry_album = str(entry.get("album") or "")
+
+    meta_title = str(fmeta.get("title") or meta.get("title") or "")
+    meta_artist = str(fmeta.get("artist") or fmeta.get("albumArtist") or meta.get("artist") or meta.get("album_artist") or "")
+    meta_album = str(fmeta.get("album") or meta.get("album") or "")
+
+    if meta_title and (not raw_entry_title or re.match(r"^.+?\s+-\s+.+?\s+-\s+\d{1,3}\s+", raw_entry_title)):
+        title = bounded_text(meta_title)
+    else:
+        title = bounded_text(raw_entry_title or meta_title or mpv_get("media-title") or "")
+
+    if meta_artist and (not raw_entry_artist or raw_entry_artist in ("Local Artist", "Unknown Artist") or raw_entry_album.endswith(" — Singles")):
+        artist = bounded_text(meta_artist)
+    else:
+        artist = bounded_text(raw_entry_artist or meta_artist or "")
+
+    if meta_album and (not raw_entry_album or raw_entry_album.endswith(" — Singles")):
+        album = bounded_text(meta_album)
+    else:
+        album = bounded_text(raw_entry_album or meta_album or "")
+
     art_path = entry.get("artPath") or ""
+    if fmeta.get("artPath") and os.path.isfile(fmeta["artPath"]) and (not art_path or str(art_path).endswith(".svg")):
+        art_path = fmeta["artPath"]
     if not art_path or not os.path.exists(art_path):
         art_path = ensure_cover_svg(entry.get("albumId") or "now", artist or "Bandarchy", album or title or "Music")
 
     time_pos = bounded_float(mpv_get("time-pos") or 0.0)
-    dur_val = bounded_float(mpv_get("duration") or entry.get("duration") or 0.0)
+    dur_val = bounded_float(mpv_get("duration") or fmeta.get("duration") or entry.get("duration") or 0.0)
 
     if entry and entry.get("id"):
         eff_entry = dict(entry)
+        eff_entry["title"] = title
+        eff_entry["artist"] = artist
+        eff_entry["album"] = album
+        eff_entry["artPath"] = art_path
         if dur_val > 0:
             eff_entry["duration"] = dur_val
         record_history(eff_entry, position=time_pos, playlist_pos=matched_idx)
@@ -3968,8 +5115,16 @@ def get_playback_state() -> dict:
     if isinstance(queue, dict) and tracks:
         prev_q_pos = queue.get("playlistPos")
         prev_q_time = float(queue.get("position") or 0.0)
-        if prev_q_pos != matched_idx or abs(time_pos - prev_q_time) >= 1.5:
+        entry_meta_updated = False
+        if 0 <= matched_idx < len(tracks) and isinstance(tracks[matched_idx], dict):
+            q_tr = tracks[matched_idx]
+            for k, v in (("title", title), ("artist", artist), ("album", album), ("artPath", art_path)):
+                if v and q_tr.get(k) != v:
+                    q_tr[k] = v
+                    entry_meta_updated = True
+        if prev_q_pos != matched_idx or abs(time_pos - prev_q_time) >= 1.5 or entry_meta_updated:
             queue["playlistPos"] = matched_idx
+            queue["currentIndex"] = matched_idx
             queue["position"] = round(time_pos, 2)
             if dur_val > 0:
                 queue["duration"] = dur_val
