@@ -88,6 +88,23 @@ var LAYER3_CYLINDER_DIRS = [
     "360° Spin CCW"
 ]
 
+var LAYER3_COLOUR_MODES = [
+    "Style Signature",
+    "Line Palette",
+    "Duotone Contrast",
+    "Audio Spectrum",
+    "Prism Wave",
+    "Letter Alternate"
+]
+var SHORT_LAYER3_COLOUR_MODES = [
+    "Style",
+    "Line Pal",
+    "Duotone",
+    "EQ Spec",
+    "Prism",
+    "Letter"
+]
+
 var LAYER4_MODES = [
     "Cyber Tunnel",
     "Spiral Vortex",
@@ -193,79 +210,6 @@ var TTFX_EFFECTS = [
 ]
 
 var SYMMETRY_OPTIONS = [1, 2, 4, 6, 8, 12, 16]
-
-// ---------------------------------------------------------------------------
-// Generic Non-Destructive Audio-Responder Link Matrix
-// Every target defaults to source = 0 ("Off") so existing layer effects and
-// slider settings remain 100% untouched unless explicitly linked by the user.
-// ---------------------------------------------------------------------------
-var AUDIO_LINK_SOURCES = [
-    "Off (Unlinked)",
-    "Kick & Sub-Bass",
-    "Bass Groove",
-    "Mid Synth / Vocals",
-    "Highs / Hi-Hats",
-    "Beat Onset Pulse",
-    "48-Band EQ Wave",
-    "Drop vs Breakdown"
-]
-
-var SHORT_AUDIO_LINK_SOURCES = [
-    "Off",
-    "Kick",
-    "Bass",
-    "Mids",
-    "Highs",
-    "Onset",
-    "EQWave",
-    "Drop"
-]
-
-var AUDIO_LINK_MODES = [
-    "Add (+)",
-    "Scale (×)",
-    "Bipolar (±)",
-    "Invert (−)"
-]
-
-var SHORT_AUDIO_LINK_MODES = [
-    "+",
-    "×",
-    "±",
-    "−"
-]
-
-var AUDIO_LINK_TARGETS = [
-    // Layer 1 — 1: Worlds
-    { id: "l1_speed",       layer: 1, subGroup: "World Motion",           label: "World Speed",        prop: "layer1Speed",        lo: 0.10, hi: 3.00, span: 1.40, defaultMode: 1, hadNativeAudio: true },
-    { id: "l1_density",     layer: 1, subGroup: "Grid & Horizon",         label: "Grid Density",       prop: "layer1Density",      lo: 0.25, hi: 2.50, span: 1.10, defaultMode: 0, hadNativeAudio: false },
-    { id: "l1_trail",       layer: 1, subGroup: "Atmosphere & Trails",    label: "Feedback Trail",     prop: "layer1Trail",        lo: 0.15, hi: 0.98, span: 0.45, defaultMode: 0, hadNativeAudio: false },
-    // Layer 2 — 2: Equaliser
-    { id: "l2_eq_gain",     layer: 2, subGroup: "Spectrum Response",      label: "Audio Gain",         prop: "layer1EqGain",       lo: 0.40, hi: 2.50, span: 1.20, defaultMode: 1, hadNativeAudio: true },
-    { id: "l2_eq_scale",    layer: 2, subGroup: "Spectrum Geometry",      label: "Equaliser Scale",    prop: "layer1EqScale",      lo: 0.15, hi: 2.25, span: 1.00, defaultMode: 1, hadNativeAudio: false },
-    { id: "l2_eq_spin",     layer: 2, subGroup: "3D Orbit & Rotation",    label: "3D Spin Rate",       prop: "layer1EqSpin",       lo: -2.50, hi: 2.50, span: 1.80, defaultMode: 2, hadNativeAudio: false },
-    // Layer 3 — 3: Vectors
-    { id: "l3_vec_speed",   layer: 3, subGroup: "Fleet Propulsion",       label: "Vector Speed",       prop: "layer1ShapeSpeed",   lo: 0.20, hi: 3.00, span: 1.50, defaultMode: 1, hadNativeAudio: true },
-    { id: "l3_vec_scale",   layer: 3, subGroup: "Polyhedron Scale",       label: "Vector Scale",       prop: "layer1ShapeScale",   lo: 0.30, hi: 2.50, span: 1.20, defaultMode: 1, hadNativeAudio: false },
-    { id: "l3_vec_density", layer: 3, subGroup: "Spawn & Fleet Density",  label: "Vector Density",     prop: "layer1ShapeDensity", lo: 0.25, hi: 2.50, span: 1.00, defaultMode: 0, hadNativeAudio: false },
-    { id: "l3_vec_spin",    layer: 3, subGroup: "3D Tumble & Roll",       label: "3D Spin / Roll",     prop: "layer1ShapeSpin",    lo: -2.50, hi: 2.50, span: 1.80, defaultMode: 2, hadNativeAudio: false },
-    // Layer 4 — 4: Geometry
-    { id: "l4_geo_speed",   layer: 4, subGroup: "Mandala Velocity",       label: "Geometry Speed",     prop: "layer2Speed",        lo: 0.10, hi: 4.00, span: 1.80, defaultMode: 1, hadNativeAudio: true },
-    { id: "l4_geo_facets",  layer: 4, subGroup: "Kaleidoscope Symmetry",  label: "Symmetry Folds",     prop: "layer2Facets",       lo: 1,    hi: 16,   span: 8.00, defaultMode: 0, hadNativeAudio: false },
-    { id: "l4_geo_tracers", layer: 4, subGroup: "Phosphor Echoes",        label: "Tracer Count",       prop: "tracerCount",        lo: 1,    hi: 16,   span: 8.00, defaultMode: 0, hadNativeAudio: false },
-    { id: "l4_geo_zoom",    layer: 4, subGroup: "Camera Field Zoom",      label: "Geometry Scale",     prop: "layer2Zoom",         lo: 0.40, hi: 2.50, span: 1.10, defaultMode: 1, hadNativeAudio: false },
-    // Layer 5 — 5: Vortex (GPU Shaders)
-    { id: "l5_vortex_speed",layer: 5, subGroup: "Tunnel Velocity",        label: "Tunnel Speed",       prop: "layer4Speed",        lo: 0.10, hi: 3.00, span: 1.60, defaultMode: 1, hadNativeAudio: true },
-    { id: "l5_vortex_twist",layer: 5, subGroup: "Spiral Warp & Twist",    label: "Spiral Twist",       prop: "layer4Twist",        lo: -2.50, hi: 2.50, span: 2.00, defaultMode: 2, hadNativeAudio: false },
-    { id: "l5_vortex_glow", layer: 5, subGroup: "Shader Bloom & Glow",    label: "Shader Glow",        prop: "layer4Glow",         lo: 0.20, hi: 2.00, span: 1.10, defaultMode: 0, hadNativeAudio: true },
-    { id: "l5_vortex_mix",  layer: 5, subGroup: "Dual-Shader Crossfade",  label: "Dual Mix",           prop: "layer4DualMix",      lo: 0.15, hi: 0.85, span: 0.60, defaultMode: 2, hadNativeAudio: false },
-    // Layer 6 — 6: Typography
-    { id: "l6_typo_scale",  layer: 6, subGroup: "Banner Scale & Bounce",  label: "Text Scale Bounce",  prop: "layer3Scale",        lo: 0.45, hi: 2.50, span: 1.10, defaultMode: 1, hadNativeAudio: false },
-    { id: "l6_typo_wave",   layer: 6, subGroup: "Per-Letter EQ Ribbon",   label: "Letter EQ Wave",     prop: "layer3WaveLink",     lo: 0.00, hi: 2.50, span: 1.25, defaultMode: 0, hadNativeAudio: false },
-    { id: "l6_typo_dismantle", layer: 6, subGroup: "Warp & 3D Extrusion", label: "Warp / Kerning",     prop: "layer3Dismantle",    lo: 0.15, hi: 3.00, span: 1.50, defaultMode: 1, hadNativeAudio: true },
-    { id: "l6_typo_glitch", layer: 6, subGroup: "Hi-Hat Glitch & Shear",  label: "Chromatic Glitch",   prop: "layer3GlitchLink",   lo: 0.00, hi: 2.50, span: 1.25, defaultMode: 0, hadNativeAudio: false },
-    { id: "l6_typo_speed",  layer: 6, subGroup: "Kinetic Evolution",      label: "Evolution Speed",    prop: "layer3Evolution",    lo: 0.20, hi: 2.50, span: 1.30, defaultMode: 1, hadNativeAudio: false }
-]
 
 var DEFAULT_STATEMENTS = [
     "WE ARE THE FREQUENCIES",
@@ -510,6 +454,83 @@ function mixHexColours(colA, colB, t) {
     var bl = Math.round(a[2] + (b[2] - a[2]) * f)
     return "rgb(" + r + "," + g + "," + bl + ")"
 }
+
+function rgbToHsl(col) {
+    var rgb = parseRgbTriplet(col)
+    var r = (rgb[0] || 0) / 255
+    var g = (rgb[1] || 0) / 255
+    var b = (rgb[2] || 0) / 255
+    var maxC = Math.max(r, g, b)
+    var minC = Math.min(r, g, b)
+    var h = 0
+    var s = 0
+    var l = (maxC + minC) * 0.5
+    if (maxC !== minC) {
+        var d = maxC - minC
+        s = l > 0.5 ? d / (2 - maxC - minC) : d / (maxC + minC)
+        if (maxC === r) {
+            h = ((g - b) / d + (g < b ? 6 : 0)) * 60
+        } else if (maxC === g) {
+            h = ((b - r) / d + 2) * 60
+        } else {
+            h = ((r - g) / d + 4) * 60
+        }
+    }
+    return [((h % 360) + 360) % 360, clamp(s, 0, 1), clamp(l, 0, 1)]
+}
+
+function hueDistanceDeg(h1, h2) {
+    var diff = Math.abs((((h1 - h2) % 360) + 540) % 360 - 180)
+    return diff
+}
+
+function deriveDistinctTypographyTriad(pal, baseIdx, slotIdx, anchorIdx) {
+    var palLen = Math.max(1, pal ? pal.length : 1)
+    var rawCh = pal[baseIdx % palLen] || "#38BDF8"
+    var rawAlt = pal[(baseIdx + 2) % palLen] || "#F43F5E"
+    var rawAcc = pal[(baseIdx + 4) % palLen] || "#FDE047"
+    var rawAnchor = pal[(anchorIdx !== undefined ? anchorIdx : 0) % palLen] || rawCh
+
+    var hslAnchor = rgbToHsl(rawAnchor)
+    var hslCh = rgbToHsl(rawCh)
+    var hslAlt = rgbToHsl(rawAlt)
+    var hslAcc = rgbToHsl(rawAcc)
+
+    var hCh = hslCh[0]
+    var sCh = clamp(Math.max(hslCh[1], 0.88), 0.82, 1.0)
+    var lTargets = [0.76, 0.62, 0.68, 0.72]
+    var lTarget = lTargets[slotIdx % lTargets.length]
+    var lCh = clamp(hslCh[2] * 0.35 + lTarget * 0.65, 0.56, 0.86)
+
+    // If this line/character swatch is too close in hue to the anchor swatch (monochromatic palette),
+    // rotate hue by 68 deg per slot so adjacent lines/letters remain unmistakably distinct.
+    if (slotIdx > 0 && hueDistanceDeg(hCh, hslAnchor[0]) < 52) {
+        hCh = (hslAnchor[0] + slotIdx * 68) % 360
+    }
+
+    // Ensure the 3D extrusion / outer rim (colAlt) has >= 95 deg hue separation from the letter face (colCh)
+    var hAlt = hslAlt[0]
+    if (hueDistanceDeg(hAlt, hCh) < 95) {
+        hAlt = (hCh + 125) % 360
+    }
+    var sAlt = clamp(Math.max(hslAlt[1], 0.90), 0.84, 1.0)
+    var lAlt = clamp(hslAlt[2] * 0.35 + 0.54 * 0.65, 0.48, 0.66)
+
+    // Ensure the highlight / third bevel (colAcc) is separated from both colCh and colAlt
+    var hAcc = hslAcc[0]
+    if (hueDistanceDeg(hAcc, hCh) < 85 || hueDistanceDeg(hAcc, hAlt) < 65) {
+        hAcc = (hCh + 225) % 360
+    }
+    var sAcc = clamp(Math.max(hslAcc[1], 0.92), 0.86, 1.0)
+    var lAcc = clamp(hslAcc[2] * 0.35 + 0.68 * 0.65, 0.58, 0.82)
+
+    return {
+        colCh: hslToHex(hCh, sCh, lCh),
+        colAlt: hslToHex(hAlt, sAlt, lAlt),
+        colAcc: hslToHex(hAcc, sAcc, lAcc)
+    }
+}
+
 
 function buildPalette(theme, hueShift, paletteIndex) {
     var palIdx = ((Number(paletteIndex) || 0) % PALETTES.length + PALETTES.length) % PALETTES.length
@@ -972,10 +993,10 @@ function stepState(state, rawBands, active, cfg, dt) {
         var maxBeatShapes = Math.max(1, Math.min(9, beatTargetShapes + 1))
         if (state.shockwaves.length < maxBeatShapes) {
             state.shockwaves.push({
-                r: l1Dir < 0 ? 1.38 : 0.015,
-                alpha: 0.90,
+                r: l1Dir < 0 ? 1.58 : 0.015,
+                alpha: 0.96,
                 sizeMul: 0.42 + Math.random() * 0.52,
-                speed: 0.34 + Math.random() * 0.54 + state.bassSmooth * 0.35,
+                speed: 0.24 + Math.random() * 0.38 + state.bassSmooth * 0.24,
                 laneX: (Math.random() * 2.0 - 1.0) * 0.58,
                 laneY: (Math.random() * 2.0 - 1.0) * 0.44,
                 spinX: (Math.random() * 2.0 - 1.0) * 1.5,
@@ -1019,10 +1040,6 @@ function stepState(state, rawBands, active, cfg, dt) {
     var rawIntensity = clamp(state.energySmooth * 0.68 + state.beatSmooth * 0.22 + (state.bassAtt - 1.0) * 0.15, 0.0, 1.35)
     state.musicIntensity = lerp(state.musicIntensity || 0.35, rawIntensity, clamp(dt * 3.5, 0.02, 0.12))
     state.musicCalm = clamp(1.0 - state.musicIntensity * 0.80, 0.12, 1.0)
-
-    // Apply any user-configured Generic Audio-Responder Links before computing live envelopes & phase accumulators
-    applyAudioLinksToConfig(state, cfg)
-    l2Speed = clamp(Number(cfg.layer2Speed) || 1.0, 0.1, 4.0)
 
     var trackProg = clamp(Number(cfg.trackProgress) || 0.0, 0.0, 1.0)
     var arcMode = cfg.trackArcMode !== undefined ? clamp(Math.round(Number(cfg.trackArcMode)), 0, 4) : 1
@@ -1089,10 +1106,7 @@ function stepState(state, rawBands, active, cfg, dt) {
     // Smoothly integrated phase accumulators (honours Tri-State l1Dir: +1 Towards, -1 Away, 0 Breathe!)
     var l1Speed = clamp(Number(cfg && cfg.layer1Speed !== undefined ? cfg.layer1Speed : 1.0), 0.05, 4.0)
     var eqSpinCfg = clamp(Number(cfg && cfg.layer1EqSpin !== undefined ? cfg.layer1EqSpin : 1.0), -2.5, 2.5)
-    var bdSpeedRaw = (cfg && cfg.audioLinks && cfg.audioLinks.l5_vortex_speed && cfg.audioLinks.l5_vortex_speed.source > 0)
-        ? cfg.layer4Speed
-        : (cfg && cfg.backdropSpeed !== undefined ? cfg.backdropSpeed : (cfg && cfg.layer4Speed !== undefined ? cfg.layer4Speed : 1.0))
-    var bdSpeed = clamp(Number(bdSpeedRaw !== undefined ? bdSpeedRaw : 1.0), 0.1, 3.0)
+    var bdSpeed = clamp(Number(cfg && cfg.backdropSpeed !== undefined ? cfg.backdropSpeed : 1.0), 0.1, 3.0)
     var bdDirCfg = Number(cfg && cfg.backdropDirection !== undefined ? cfg.backdropDirection : (cfg && cfg.layer1Direction !== undefined ? cfg.layer1Direction : 1))
     var bdDir = (bdDirCfg === 0) ? Math.sin((state.t || 0.0) * 0.72) : clamp(bdDirCfg, -1, 1)
     var trSpeedCfg = clamp(Number(cfg && cfg.tracerSpeed !== undefined ? cfg.tracerSpeed : 1.0), 0.2, 2.5)
@@ -1185,13 +1199,13 @@ function stepState(state, rawBands, active, cfg, dt) {
                 ? ((ms / missing) * 0.34)
                 : (ms * 0.035)
             var spawnR = l1Dir < 0
-                ? clamp(1.38 - farStagger, 1.02, 1.40)
+                ? clamp(1.58 - farStagger, 1.15, 1.60)
                 : clamp(0.015 + farStagger, 0.012, 0.38)
             state.shockwaves.push({
                 r: spawnR,
-                alpha: 0.90,
+                alpha: 0.96,
                 sizeMul: 0.42 + Math.random() * 0.52,
-                speed: 0.34 + Math.random() * 0.54 + state.bassSmooth * 0.35,
+                speed: 0.24 + Math.random() * 0.38 + state.bassSmooth * 0.24,
                 laneX: (Math.random() * 2.0 - 1.0) * 0.58,
                 laneY: (Math.random() * 2.0 - 1.0) * 0.44,
                 spinX: (Math.random() * 2.0 - 1.0) * 1.5,
@@ -1205,9 +1219,9 @@ function stepState(state, rawBands, active, cfg, dt) {
     }
     for (var sw = state.shockwaves.length - 1; sw >= 0; sw--) {
         var wave = state.shockwaves[sw]
-        wave.r += dt * wave.speed * shapeSpeed * 0.64 * (rawL1Dir === 0 ? (0.25 + 0.75 * l1Dir) : l1Dir)
-        wave.alpha -= dt * 0.28 * (0.6 + 0.4 * shapeSpeed)
-        if (wave.alpha <= 0.02 || wave.r > 1.45 || wave.r < 0.01) {
+        wave.r += dt * wave.speed * shapeSpeed * 0.46 * (rawL1Dir === 0 ? (0.25 + 0.75 * l1Dir) : l1Dir)
+        wave.alpha -= dt * 0.14 * (0.55 + 0.45 * shapeSpeed)
+        if (wave.alpha <= 0.02 || wave.r > 1.65 || wave.r < 0.01) {
             state.shockwaves.splice(sw, 1)
         }
     }
@@ -5404,7 +5418,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
         ctx.globalCompositeOperation = "source-over"
         for (var sw = 0; sw < maxDrawShapes; sw++) {
             var wave = state.shockwaves[sw]
-            var uProg = clamp(wave.r / 1.45, 0.0, 1.15)
+            var uProg = clamp(wave.r / 1.60, 0.0, 1.15)
             var wSizeMul = wave.sizeMul !== undefined ? wave.sizeMul : (0.52 + ((sw * 29) % 7) * 0.06)
             // Perspective size grows from a tiny pinpoint at the distant horizon/vanishing point and expands only as it nears the viewer
             var wr = Math.pow(uProg, 1.95) * diagR * 0.56 * shapeScale * wSizeMul
@@ -5419,8 +5433,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                     ? lerp(horizonY - h * 0.06, h * (0.26 + wLaneY * 0.45) + Math.sin(l1T * 1.5 + sw) * h * 0.06, Math.min(1.0, uProg * 1.1))
                     : lerp(cy + endPt.dy * 0.35, cy + wLaneY * h * uProg, uProg))
             var spinAngle = l1T * shapeSpin * 0.85 + (shapeSpin !== 0 ? sw * 0.25 : 0.0)
-            var distFadeIn = smoothstep(0.0, 0.14, uProg)
-            var nearFadeOut = 1.0 - smoothstep(0.76, 1.04, uProg)
+            var distFadeIn = smoothstep(0.0, 0.10, uProg)
+            var nearFadeOut = 1.0 - smoothstep(0.88, 1.12, uProg)
             var sAlpha = clamp(wave.alpha * (1.0 - dim) * distFadeIn * nearFadeOut, 0.04, 0.95)
 
             ctx.fillStyle = hslToHex((wave.hueOffset + 35) % 360, 0.92, 0.55, sAlpha * 0.12)
@@ -7537,11 +7551,10 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     var cy = h * 0.5
     var l3T = state.t || 0.0
     var baseL3Scale = clamp(Number(cfg.layer3Scale !== undefined ? cfg.layer3Scale : 1.0), 0.45, 2.5)
-    var randomScaleWave = (cfg.layer3AutoRandomise || cfg.autoCycle)
+    var randomScaleWave = cfg.layer3AutoRandomise
         ? (0.68 + 0.58 * (0.5 + 0.5 * Math.sin(l3T * 0.72 + Math.cos(l3T * 0.31) * 0.8)))
         : 1.0
-    var musicScalePulse = cfg.musicDrive ? (1.0 + state.beatPulse * 0.08 + state.bassSmooth * 0.05) : 1.0
-    var scale = clamp(baseL3Scale * randomScaleWave * musicScalePulse, 0.38, 2.6)
+    var scale = clamp(baseL3Scale * randomScaleWave, 0.38, 2.6)
     var l3Tracers = clamp(Math.round(Number(cfg.layer3Tracers !== undefined ? cfg.layer3Tracers : 3)), 1, 8)
     var tracerSpeed = state.liveTracerSpeed !== undefined
         ? state.liveTracerSpeed
@@ -7551,23 +7564,16 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
         : clamp(Number(cfg.tracerDrift !== undefined ? cfg.tracerDrift : 1.0), 0.0, 2.5)
     var tracerDir = Number(cfg.tracerDirection !== undefined ? cfg.tracerDirection : 1)
     var endPt = computeTracerEndpoint(w, h, state.driftTime !== undefined ? state.driftTime : state.t, tracerDrift, 1.0)
-    var rawDismantle = (cfg.audioLinks && cfg.audioLinks.l6_typo_dismantle && Number(cfg.audioLinks.l6_typo_dismantle.source) > 0)
-        ? Number(cfg.layer3Dismantle !== undefined ? cfg.layer3Dismantle : 1.15)
-        : (state.liveDismantle !== undefined ? state.liveDismantle : Number(cfg.layer3Dismantle !== undefined ? cfg.layer3Dismantle : 1.15))
-    var rawEvo = (cfg.audioLinks && cfg.audioLinks.l6_typo_speed && Number(cfg.audioLinks.l6_typo_speed.source) > 0)
-        ? Number(cfg.layer3Evolution !== undefined ? cfg.layer3Evolution : 0.85)
-        : (state.liveEvolution !== undefined ? state.liveEvolution : Number(cfg.layer3Evolution !== undefined ? cfg.layer3Evolution : 0.85))
-    var warpIntensity = clamp(rawDismantle, 0.15, 3.0) * (0.65 + state.bassSmooth * 0.55)
-    var evoFreq = clamp(rawEvo, 0.2, 2.5)
+    var warpIntensity = clamp(Number(cfg.layer3Dismantle !== undefined ? cfg.layer3Dismantle : 1.15), 0.15, 3.0) * (0.65 + state.bassSmooth * 0.55)
+    var evoFreq = clamp(Number(cfg.layer3Evolution !== undefined ? cfg.layer3Evolution : 0.85), 0.2, 2.5)
 
     var showArtist = cfg.layer3ShowArtist !== undefined ? Boolean(cfg.layer3ShowArtist) : true
     var showTrack = cfg.layer3ShowTrack !== undefined ? Boolean(cfg.layer3ShowTrack) : true
     var showAlbum = cfg.layer3ShowAlbum !== undefined ? Boolean(cfg.layer3ShowAlbum) : true
     var showStatements = cfg.layer3ShowStatements !== undefined ? Boolean(cfg.layer3ShowStatements) : false
-    if (!showArtist && !showTrack && !showAlbum && !showStatements) {
-        showArtist = true
-    }
+    var anyTextEnabled = (showArtist || showTrack || showAlbum || showStatements)
     var textStyle = clamp(Math.round(Number(cfg.layer3TextStyle !== undefined ? cfg.layer3TextStyle : 0)), 0, LAYER3_TEXT_STYLES.length - 1)
+    var colourMode = clamp(Math.round(Number(cfg.layer3ColourMode !== undefined ? cfg.layer3ColourMode : 0)), 0, LAYER3_COLOUR_MODES.length - 1)
     var cylDir = clamp(Math.round(Number(cfg.layer3CylinderDir !== undefined ? cfg.layer3CylinderDir : 0)), 0, LAYER3_CYLINDER_DIRS.length - 1)
 
     var rawArtist = String(cfg.trackArtist || "").trim().toUpperCase()
@@ -7596,12 +7602,14 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     if (showStatements && rawStatement && (textLines.length === 0 || textLines.indexOf(rawStatement) < 0)) {
         textLines.push(rawStatement)
     }
-    if (textLines.length === 0) {
+    if (anyTextEnabled && textLines.length === 0) {
         textLines.push(rawStatement || rawArtist || rawTitle || rawAlbum || "BANDARCHY")
     }
-    var textStream = textLines.join(" • ") + " • "
+    var textStream = textLines.length > 0 ? (textLines.join(" • ") + " • ") : " "
 
-    var activeStylePal = LAYER3_STYLE_PALETTES[textStyle] || palette
+    var activeStylePal = (colourMode === 0)
+        ? (LAYER3_STYLE_PALETTES[textStyle] || palette)
+        : ((palette && palette.length > 0) ? palette : LAYER3_STYLE_PALETTES[textStyle])
     var activeFontFamily = LAYER3_STYLE_FONTS[textStyle] || "'JetBrainsMono Nerd Font', sans-serif"
 
     // Select source lines early so if Art has no lines yet, Crisp Text still renders full-screen
@@ -7610,6 +7618,11 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
         effectiveLines = cfg.bannerLines
     } else if (!isWordsSource && cfg.artLines && cfg.artLines.length > 0) {
         effectiveLines = cfg.artLines
+    }
+
+    // If in Words / Crisp Text mode (or no art lines) and all 4 text toggles (A/S/D/F) are OFF, draw nothing
+    if (!anyTextEnabled && (isWordsSource || isTextGlyph || !effectiveLines || effectiveLines.length === 0)) {
+        return
     }
 
     // Dedicated Crisp Warped Typography Showcase when Words + Crisp Text (or when Art lines are empty) across ALL 12 Layer 3 Modes (0..11)
@@ -8082,27 +8095,55 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                         sy *= bioPulse
                     }
 
-                    // Opt-in Audio-Responder Link modulation for Layer 6 Typography (0 = Off preserves exact existing behaviour)
-                    var typoWaveSpec = getAudioLinkSpec(cfg, "l6_typo_wave")
-                    if (typoWaveSpec.source > 0 && typoWaveSpec.amount > 0.001) {
-                        var wSig = evalAudioLinkSignal(state, typoWaveSpec.source, (hxNorm + 1.0) * 0.5, ci + rowIdx * 7)
-                        var wDelta = (typoWaveSpec.mode === 2)
-                            ? ((wSig - 0.32) * 1.45)
-                            : ((typoWaveSpec.mode === 3) ? (-wSig * 0.85) : wSig)
-                        cpy -= wDelta * rowFontPx * 0.48 * typoWaveSpec.amount
-                        sy = clamp(sy * (1.0 + Math.max(-0.4, wDelta) * 0.36 * typoWaveSpec.amount), 0.42, 2.50)
+                    var palLen = Math.max(1, activeStylePal.length)
+                    var hueStep = Math.floor(state.hueShift / 42)
+                    var bValCh = state.smoothBands[((ci * 5 + rowIdx * 11) & 63)] || 0.0
+                    var colCh, colAlt, colAcc
+                    if (colourMode === 1) {
+                        // 1: Line Palette (Global Palette coloured line-by-line with contrast & hue-separation boost)
+                        var lineAnchorIdx = (te + hueStep) % palLen
+                        var lineIdx = (rowIdx * 2 + te + hueStep) % palLen
+                        var lineTriad = deriveDistinctTypographyTriad(activeStylePal, lineIdx, rowIdx, lineAnchorIdx)
+                        colCh = lineTriad.colCh
+                        colAlt = lineTriad.colAlt
+                        colAcc = lineTriad.colAcc
+                    } else if (colourMode === 2) {
+                        // 2: Duotone Contrast (Ice-white lead line + contrast-boosted global palette rims & sub-lines)
+                        var duoAnchorIdx = (te + hueStep) % palLen
+                        var duoIdx = (rowIdx * 2 + te + hueStep) % palLen
+                        var duoTriad = deriveDistinctTypographyTriad(activeStylePal, duoIdx, rowIdx, duoAnchorIdx)
+                        colCh = (rowIdx === 0 && !isEchoT) ? "#F8FAFC" : duoTriad.colCh
+                        colAlt = duoTriad.colAlt
+                        colAcc = duoTriad.colAcc
+                    } else if (colourMode === 3) {
+                        // 3: Audio Spectrum (EQ frequency-driven colour per line & character bin)
+                        var eqHue = (state.hueShift + rowIdx * 68 + bValCh * 140 + state.bassSmooth * 52) % 360
+                        colCh = hslToHex(eqHue, 0.96, clamp(0.55 + bValCh * 0.22, 0.48, 0.80))
+                        colAlt = hslToHex((eqHue + 75) % 360, 0.92, 0.56)
+                        colAcc = hslToHex((eqHue + 165) % 360, 0.95, 0.66)
+                    } else if (colourMode === 4) {
+                        // 4: Prism Wave (Smooth horizontal gradient sweep across each word & tracer echo)
+                        var prismFrac = nCh > 1 ? (ci / (nCh - 1)) : 0.0
+                        var prismHue = (state.hueShift + prismFrac * 180 + rowIdx * 55 + te * 32 + l3T * 36) % 360
+                        colCh = hslToHex(prismHue, 0.96, 0.60)
+                        colAlt = hslToHex((prismHue + 90) % 360, 0.92, 0.55)
+                        colAcc = hslToHex((prismHue + 180) % 360, 0.95, 0.66)
+                    } else if (colourMode === 5) {
+                        // 5: Letter Alternate (Global Palette per letter with hue-separation boost)
+                        var letAnchorIdx = (rowIdx * 2 + te + Math.floor(state.hueShift / 40)) % palLen
+                        var letIdx = (ci + rowIdx * 2 + te + Math.floor(state.hueShift / 40)) % palLen
+                        var letTriad = deriveDistinctTypographyTriad(activeStylePal, letIdx, (ci + rowIdx) % 4, letAnchorIdx)
+                        colCh = letTriad.colCh
+                        colAlt = letTriad.colAlt
+                        colAcc = letTriad.colAcc
+                    } else {
+                        // 0: Style Signature (default — uses each typography style's curated 6-colour palette)
+                        var palIdx = (ci + rowIdx * 2 + te + Math.floor(state.hueShift / 40)) % palLen
+                        colCh = activeStylePal[palIdx]
+                        colAlt = activeStylePal[(palIdx + 2) % palLen]
+                        colAcc = activeStylePal[(palIdx + 4) % palLen]
                     }
-                    var typoGlitchSpec = getAudioLinkSpec(cfg, "l6_typo_glitch")
-                    if (typoGlitchSpec.source > 0 && typoGlitchSpec.amount > 0.001) {
-                        var gSig = evalAudioLinkSignal(state, typoGlitchSpec.source, (hxNorm + 1.0) * 0.5, ci + rowIdx * 11)
-                        var gSign = ((ci + rowIdx) & 1) ? 1.0 : -1.0
-                        cpx += gSign * gSig * rowFontPx * 0.38 * typoGlitchSpec.amount
-                        rot += gSign * gSig * 0.15 * typoGlitchSpec.amount
-                    }
-
-                    var palIdx = (ci + rowIdx * 2 + te + Math.floor(state.hueShift / 40)) % activeStylePal.length
-                    var colCh = activeStylePal[palIdx]
-                    var colAlt = activeStylePal[(palIdx + 2) % activeStylePal.length]
+                    var useSigCols = (colourMode === 0)
 
                     ctx.save()
                     ctx.globalAlpha = clamp(passAlphaT * cylDepthAlpha, 0.06, 1.0)
@@ -8118,10 +8159,10 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                             ctx.strokeStyle = "rgba(4, 6, 14, 0.94)"
                             ctx.strokeText(ch, 0, 0)
                             ctx.lineWidth = Math.max(1.6, rowFontPx * 0.08)
-                            ctx.strokeStyle = (rowIdx === 0) ? "#00F5FF" : "#FF1493"
+                            ctx.strokeStyle = useSigCols ? ((rowIdx === 0) ? "#00F5FF" : "#FF1493") : colAlt
                             ctx.strokeText(ch, 1.2, -1.2)
                         }
-                        ctx.fillStyle = (rowIdx === 0 && (ci === 0 || ci === nCh - 1)) ? "#FF1493" : colCh
+                        ctx.fillStyle = (rowIdx === 0 && (ci === 0 || ci === nCh - 1)) ? (useSigCols ? "#FF1493" : colAcc) : colCh
                         ctx.fillText(ch, 0, 0)
                     } else if (textStyle === 1) {
                         // 1: Psychedelic Liquid — concentric multi-ring rainbow prism aura halos + solarised fill
@@ -8140,9 +8181,9 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                         var laserSplit = (2.2 + state.bassSmooth * 6.5 + state.beatPulse * 5.0)
                         if (!isEchoT && hasStrokeText) {
                             ctx.lineWidth = Math.max(1.8, rowFontPx * 0.09)
-                            ctx.strokeStyle = "rgba(255, 0, 85, 0.78)"
+                            ctx.strokeStyle = useSigCols ? "rgba(255, 0, 85, 0.78)" : colourWithAlpha(colAlt, 0.78)
                             ctx.strokeText(ch, -laserSplit, 0)
-                            ctx.strokeStyle = "rgba(0, 255, 204, 0.78)"
+                            ctx.strokeStyle = useSigCols ? "rgba(0, 255, 204, 0.78)" : colourWithAlpha(colAcc, 0.78)
                             ctx.strokeText(ch, laserSplit, 0)
                         }
                         ctx.fillStyle = "rgba(5, 8, 14, 0.86)"
@@ -8163,7 +8204,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                                 ctx.strokeText(ch, 0, 0)
                             }
                         }
-                        ctx.fillStyle = (rowIdx === 0) ? "#E8F7FF" : colCh
+                        ctx.fillStyle = useSigCols ? ((rowIdx === 0) ? "#E8F7FF" : colCh) : colCh
                         ctx.fillText(ch, 0, 0)
                         if (!isEchoT) {
                             ctx.fillStyle = "rgba(255, 255, 255, 0.88)"
@@ -8209,15 +8250,15 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                         // 6: Psytrance UV Glow — deep ultraviolet & electric cyan phosphorescent multi-halo bloom
                         if (hasStrokeText) {
                             ctx.lineWidth = Math.max(4.5, rowFontPx * 0.26)
-                            ctx.strokeStyle = colourWithAlpha("#7209B7", 0.72)
+                            ctx.strokeStyle = colourWithAlpha(useSigCols ? "#7209B7" : colAcc, 0.72)
                             ctx.strokeText(ch, 0, 0)
                             if (!isEchoT) {
                                 ctx.lineWidth = Math.max(2.2, rowFontPx * 0.12)
-                                ctx.strokeStyle = "#00FFFF"
+                                ctx.strokeStyle = useSigCols ? "#00FFFF" : colAlt
                                 ctx.strokeText(ch, 0, 0)
                             }
                         }
-                        ctx.fillStyle = (rowIdx === 0 && (ci === 0 || ci === nCh - 1)) ? "#FFD700" : colCh
+                        ctx.fillStyle = (rowIdx === 0 && (ci === 0 || ci === nCh - 1)) ? (useSigCols ? "#FFD700" : colAcc) : colCh
                         ctx.fillText(ch, 0, 0)
                     } else if (textStyle === 7) {
                         // 7: Berlin Brutalist — monumental heavy block cutout / stark industrial stencil
@@ -8230,39 +8271,39 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                                 ctx.strokeStyle = "#060609"
                                 ctx.strokeText(ch, 0, 0)
                             }
-                            ctx.fillStyle = (rowIdx === 0) ? "#F4F4F6" : "#FF1E38"
+                            ctx.fillStyle = useSigCols ? ((rowIdx === 0) ? "#F4F4F6" : "#FF1E38") : colCh
                             ctx.fillText(ch, 0, 0)
                         }
                     } else if (textStyle === 8) {
                         // 8: Holographic Sci-Fi HUD — phase-shifted hologram ghost + cyan/emerald HUD reticle glyph + telemetry tick
                         var holoShift = (1.8 + state.beatPulse * 3.8) * Math.sin(l3T * 9.0 + ci)
-                        ctx.fillStyle = "rgba(0, 180, 216, 0.42)"
+                        ctx.fillStyle = useSigCols ? "rgba(0, 180, 216, 0.42)" : colourWithAlpha(colAlt, 0.42)
                         ctx.fillText(ch, holoShift, -1.6)
                         if (!isEchoT && hasStrokeText) {
                             ctx.lineWidth = Math.max(1.8, rowFontPx * 0.09)
-                            ctx.strokeStyle = "#00FFD5"
+                            ctx.strokeStyle = useSigCols ? "#00FFD5" : colAlt
                             ctx.strokeText(ch, 0, 0)
                         }
                         ctx.fillStyle = colCh
                         ctx.fillText(ch, 0, 0)
                         if (!isEchoT) {
-                            ctx.fillStyle = "#00FFD5"
+                            ctx.fillStyle = useSigCols ? "#00FFD5" : colAcc
                             ctx.fillRect(-charStep * 0.34, rowFontPx * 0.46, charStep * 0.68, 2.0)
                         }
                     } else if (textStyle === 9) {
                         // 9: Oscilloscope Vector Beam — Tektronix green/cyan phosphor outer bloom + crisp vector stroke + CRT vertex dots
                         if (hasStrokeText) {
                             ctx.lineWidth = Math.max(4.2, rowFontPx * 0.22)
-                            ctx.strokeStyle = "rgba(0, 255, 102, 0.34)"
+                            ctx.strokeStyle = useSigCols ? "rgba(0, 255, 102, 0.34)" : colourWithAlpha(colAlt, 0.38)
                             ctx.strokeText(ch, 0, 0)
                             ctx.lineWidth = Math.max(1.5, rowFontPx * 0.08)
-                            ctx.strokeStyle = "#CCFFDD"
+                            ctx.strokeStyle = useSigCols ? "#CCFFDD" : colCh
                             ctx.strokeText(ch, 0, 0)
                         }
                         ctx.fillStyle = "rgba(4, 24, 14, 0.72)"
                         ctx.fillText(ch, 0, 0)
                         if (!isEchoT) {
-                            ctx.fillStyle = "#FFFFFF"
+                            ctx.fillStyle = useSigCols ? "#FFFFFF" : colAcc
                             ctx.fillRect(-1.8, -rowFontPx * 0.42, 3.6, 3.6)
                             ctx.fillRect(-1.8, rowFontPx * 0.38, 3.6, 3.6)
                         }
@@ -8271,7 +8312,9 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                         var isoDX = (1.6 + state.bassSmooth * 1.4) * Math.cos(l3T * 0.9)
                         var isoDY = (1.6 + state.bassSmooth * 1.4) * Math.sin(l3T * 0.9) + 1.2
                         if (!isEchoT) {
-                            var isoCols = ["#1E0B36", "#5A189A", "#9B5DE5", "#F15BB5"]
+                            var isoCols = useSigCols
+                                ? ["#1E0B36", "#5A189A", "#9B5DE5", "#F15BB5"]
+                                : [colourWithAlpha(colAcc, 0.45), colourWithAlpha(colAcc, 0.70), colAcc, colAlt]
                             for (var stp = 4; stp >= 1; stp--) {
                                 ctx.fillStyle = isoCols[4 - stp]
                                 ctx.fillText(ch, isoDX * stp, isoDY * stp)
@@ -8282,31 +8325,31 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                                 ctx.strokeText(ch, 0, 0)
                             }
                         }
-                        ctx.fillStyle = (rowIdx === 0) ? "#00F5D4" : colCh
+                        ctx.fillStyle = useSigCols ? ((rowIdx === 0) ? "#00F5D4" : colCh) : colCh
                         ctx.fillText(ch, 0, 0)
                     } else if (textStyle === 11) {
                         // 11: Plasma Arc Tesla — violet/cyan high-voltage corona discharge + white-hot ionised core
                         if (hasStrokeText) {
                             ctx.lineWidth = Math.max(5.0, rowFontPx * 0.28)
-                            ctx.strokeStyle = colourWithAlpha("#B5179E", 0.56 + state.beatPulse * 0.34)
+                            ctx.strokeStyle = colourWithAlpha(useSigCols ? "#B5179E" : colAcc, 0.56 + state.beatPulse * 0.34)
                             ctx.strokeText(ch, 0, 0)
                             ctx.lineWidth = Math.max(2.4, rowFontPx * 0.12)
-                            ctx.strokeStyle = "#7DF9FF"
+                            ctx.strokeStyle = useSigCols ? "#7DF9FF" : colAlt
                             ctx.strokeText(ch, 0, 0)
                         }
-                        ctx.fillStyle = "#FFFFFF"
+                        ctx.fillStyle = useSigCols ? "#FFFFFF" : colCh
                         ctx.fillText(ch, 0, 0)
                     } else if (textStyle === 12) {
                         // 12: Y2K Iridescent Mercury — liquid-metal pearlescent triple rim + star specular glint
                         if (!isEchoT && hasStrokeText) {
                             ctx.lineWidth = Math.max(4.6, rowFontPx * 0.24)
-                            ctx.strokeStyle = "#F472B6"
+                            ctx.strokeStyle = useSigCols ? "#F472B6" : colAcc
                             ctx.strokeText(ch, -1.2, 1.2)
                             ctx.lineWidth = Math.max(2.6, rowFontPx * 0.14)
-                            ctx.strokeStyle = "#67E8F9"
+                            ctx.strokeStyle = useSigCols ? "#67E8F9" : colAlt
                             ctx.strokeText(ch, 1.0, -1.0)
                         }
-                        ctx.fillStyle = "#F8FAFC"
+                        ctx.fillStyle = useSigCols ? "#F8FAFC" : colCh
                         ctx.fillText(ch, 0, 0)
                         if (!isEchoT && ((ci + Math.floor(l3T * 4.0)) % 4 === 0)) {
                             var glintR = Math.max(3.5, rowFontPx * 0.18) * (0.7 + state.beatPulse * 0.6)
@@ -8343,13 +8386,13 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                         if (!isEchoT) {
                             var spX = Math.cos(l3T * 2.7 + ci * 1.9) * charStep * 0.42
                             var spY = Math.sin(l3T * 3.1 + ci * 2.3) * rowFontPx * 0.44
-                            ctx.fillStyle = "#FDE047"
+                            ctx.fillStyle = useSigCols ? "#FDE047" : colAcc
                             ctx.fillRect(spX - 2.2, spY - 2.2, 4.4, 4.4)
                         }
                     } else {
                         // 15: Quantum Matrix Datastream — vertical cascading telemetry ticks + beat-triggered decrypt glyph + phosphor core
                         if (!isEchoT) {
-                            ctx.fillStyle = "rgba(16, 185, 129, 0.34)"
+                            ctx.fillStyle = useSigCols ? "rgba(16, 185, 129, 0.34)" : colourWithAlpha(colAlt, 0.36)
                             for (var qk = -2; qk <= 2; qk++) {
                                 var qy = ((qk * 0.28 + (l3T * 1.6 + ci * 0.23) % 1.0) - 0.5) * rowFontPx * 1.25
                                 ctx.fillRect(-2.0, qy, 4.0, Math.max(2.5, rowFontPx * 0.10))
@@ -8363,7 +8406,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                         var qGlyph = (!isEchoT && state.beatPulse > 0.55 && ((ci + Math.floor(l3T * 18.0)) % 5 === 0))
                             ? String.fromCharCode(0x30A2 + ((ci * 7 + Math.floor(l3T * 20.0)) % 42))
                             : ch
-                        ctx.fillStyle = (qGlyph !== ch) ? "#FFD166" : colCh
+                        ctx.fillStyle = (qGlyph !== ch) ? (useSigCols ? "#FFD166" : colAcc) : colCh
                         ctx.fillText(qGlyph, 0, 0)
                     }
                     ctx.restore()
@@ -8453,7 +8496,23 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
         var lensRad = 0.52 + state.bassSmooth * 0.22
 
         for (var b = 0; b < numBuckets; b++) {
-            var col = activeStylePal[(b + e + Math.floor(state.hueShift / 50)) % activeStylePal.length]
+            var bPalLen = Math.max(1, activeStylePal.length)
+            var bHueStep = Math.floor(state.hueShift / 50)
+            var col = activeStylePal[(b + e + bHueStep) % bPalLen]
+            if (colourMode === 1 || colourMode === 5) {
+                var bTriad = deriveDistinctTypographyTriad(activeStylePal, (b + e + bHueStep) % bPalLen, b % 4, (e + bHueStep) % bPalLen)
+                col = bTriad.colCh
+            } else if (colourMode === 2) {
+                var bDuo = deriveDistinctTypographyTriad(activeStylePal, (b + e + bHueStep) % bPalLen, b % 4, (e + bHueStep) % bPalLen)
+                col = (b === 0 && !isEcho) ? "#F8FAFC" : bDuo.colCh
+            } else if (colourMode === 3) {
+                var bEqVal = state.smoothBands[(b * 10) & 63] || 0.0
+                var bEqHue = (state.hueShift + b * 55 + bEqVal * 130 + state.bassSmooth * 50) % 360
+                col = hslToHex(bEqHue, 0.96, clamp(0.55 + bEqVal * 0.22, 0.48, 0.80))
+            } else if (colourMode === 4) {
+                var bPrismHue = (state.hueShift + b * 36 + e * 30 + l3T * 36) % 360
+                col = hslToHex(bPrismHue, 0.96, 0.60)
+            }
             ctx.fillStyle = col
             if (!isTextGlyph) ctx.beginPath()
 
@@ -8602,21 +8661,6 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                     }
                 }
 
-                var cellWaveSpec = getAudioLinkSpec(cfg, "l6_typo_wave")
-                if (cellWaveSpec.source > 0 && cellWaveSpec.amount > 0.001) {
-                    var cwSig = evalAudioLinkSignal(state, cellWaveSpec.source, (hx + 1.0) * 0.5, i)
-                    var cwDelta = (cellWaveSpec.mode === 2)
-                        ? ((cwSig - 0.32) * 1.45)
-                        : ((cellWaveSpec.mode === 3) ? (-cwSig * 0.85) : cwSig)
-                    py -= cwDelta * tileH * 2.4 * cellWaveSpec.amount
-                    scaleH = clamp(scaleH * (1.0 + Math.max(-0.4, cwDelta) * 0.42 * cellWaveSpec.amount), 0.45, 2.50)
-                }
-                var cellGlitchSpec = getAudioLinkSpec(cfg, "l6_typo_glitch")
-                if (cellGlitchSpec.source > 0 && cellGlitchSpec.amount > 0.001) {
-                    var cgSig = evalAudioLinkSignal(state, cellGlitchSpec.source, (hx + 1.0) * 0.5, i)
-                    px += ((p.gy & 1) ? 1.0 : -1.0) * cgSig * tileW * 2.8 * cellGlitchSpec.amount
-                }
-
                 var pulseBoost = 0.82 + p.density * 0.18 + bVal * 0.22
                 var szW = tileW * pulseBoost * scaleW
                 var szH = tileH * pulseBoost * scaleH
@@ -8687,10 +8731,15 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
             ctx.font = artFontSlope + artHeaderPx + "px " + activeFontFamily
             var topLineText = (textStyle === 0) ? ("◢ " + textLines[0] + " ◣") : ((textStyle === 6) ? ("❖ " + textLines[0] + " ❖") : textLines[0])
             var topBannerY = Math.max(artHeaderPx * 1.25, cy - halfH - artHeaderPx * 0.65 + Math.sin(l3T * 2.0) * 5.0)
+            var topBanPalLen = Math.max(1, activeStylePal.length)
+            var topBanHueStep = Math.floor(state.hueShift / 45)
+            var topBanTriad = (colourMode === 0)
+                ? { colCh: activeStylePal[topBanHueStep % topBanPalLen], colAlt: (textStyle === 6 ? "#7209B7" : "rgba(5, 6, 14, 0.92)") }
+                : deriveDistinctTypographyTriad(activeStylePal, topBanHueStep % topBanPalLen, 0, topBanHueStep % topBanPalLen)
             ctx.lineWidth = Math.max(3.5, artHeaderPx * 0.20)
-            ctx.strokeStyle = (textStyle === 6) ? "#7209B7" : "rgba(5, 6, 14, 0.92)"
+            ctx.strokeStyle = (colourMode === 0) ? topBanTriad.colAlt : "rgba(5, 6, 14, 0.92)"
             if (typeof ctx.strokeText === "function") ctx.strokeText(topLineText, cx, topBannerY)
-            ctx.fillStyle = activeStylePal[Math.floor(state.hueShift / 45) % activeStylePal.length]
+            ctx.fillStyle = (colourMode === 2) ? "#F8FAFC" : topBanTriad.colCh
             ctx.fillText(topLineText, cx, topBannerY)
 
             if (textLines.length > 1) {
@@ -8698,115 +8747,18 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                 ctx.font = artFontSlope + subHeaderPx + "px " + activeFontFamily
                 var botBannerY = Math.min(h - subHeaderPx * 1.2, cy + halfH + subHeaderPx * 0.78 + Math.cos(l3T * 2.0) * 4.0)
                 var botLineText = textLines.slice(1).join("  •  ")
+                var botBanTriad = (colourMode === 0)
+                    ? { colCh: activeStylePal[(2 + topBanHueStep) % topBanPalLen] }
+                    : deriveDistinctTypographyTriad(activeStylePal, (2 + topBanHueStep) % topBanPalLen, 1, topBanHueStep % topBanPalLen)
                 ctx.lineWidth = Math.max(3.0, subHeaderPx * 0.18)
                 ctx.strokeStyle = "rgba(5, 6, 14, 0.92)"
                 if (typeof ctx.strokeText === "function") ctx.strokeText(botLineText, cx, botBannerY)
-                ctx.fillStyle = activeStylePal[(2 + Math.floor(state.hueShift / 45)) % activeStylePal.length]
+                ctx.fillStyle = botBanTriad.colCh
                 ctx.fillText(botLineText, cx, botBannerY)
             }
         }
         ctx.restore()
     }
-}
-
-// ---------------------------------------------------------------------------
-// Generic Non-Destructive Audio-Responder Evaluator & Link Matrix
-// ---------------------------------------------------------------------------
-
-function getAudioLinkSpec(cfg, targetId) {
-    if (!cfg) return { source: 0, mode: 0, amount: 1.0 }
-    var links = cfg.audioLinks
-    if (links && typeof links === "object" && links[targetId]) {
-        var entry = links[targetId]
-        var src = clamp(Math.round(Number(entry.source) || 0), 0, AUDIO_LINK_SOURCES.length - 1)
-        var md = clamp(Math.round(Number(entry.mode) || 0), 0, AUDIO_LINK_MODES.length - 1)
-        var amt = entry.amount !== undefined ? clamp(Number(entry.amount), 0.0, 2.5) : 1.0
-        return { source: src, mode: md, amount: amt }
-    }
-    return { source: 0, mode: 0, amount: 1.0 }
-}
-
-function evalAudioLinkSignal(state, source, normPos, idx) {
-    var src = clamp(Math.round(Number(source) || 0), 0, AUDIO_LINK_SOURCES.length - 1)
-    if (src === 0 || !state) return 0.0
-    var bass = Number(state.bassSmooth) || 0.0
-    var mid = Number(state.midSmooth) || 0.0
-    var high = Number(state.highSmooth) || 0.0
-    var beat = Number(state.beatSmooth !== undefined ? state.beatSmooth : state.beatPulse) || 0.0
-    var onset = Number(state.beatPulse) || 0.0
-    if (src === 1) {
-        // Kick & Sub-Bass
-        return clamp(beat * 0.65 + bass * 0.60, 0.0, 1.6)
-    } else if (src === 2) {
-        // Bass Groove
-        return clamp(bass * 1.15, 0.0, 1.5)
-    } else if (src === 3) {
-        // Mid Synth / Vocals
-        return clamp(mid * 1.25, 0.0, 1.5)
-    } else if (src === 4) {
-        // Highs / Hi-Hats
-        return clamp(high * 1.35 + onset * 0.25, 0.0, 1.6)
-    } else if (src === 5) {
-        // Beat Onset Pulse
-        return clamp(onset * 0.80 + beat * 0.45, 0.0, 1.6)
-    } else if (src === 6) {
-        // 48-Band EQ Wave (spatially indexed across the 64-band FFT spectrum)
-        var bands = state.smoothBands || []
-        if (bands.length === 0) return clamp((bass + mid) * 0.5, 0.0, 1.4)
-        var u = (normPos !== undefined && normPos !== null)
-            ? clamp(Number(normPos), 0.0, 1.0)
-            : (((Number(idx) || 0) * 5) & 63) / 63.0
-        var bin = clamp(Math.floor(u * 47), 0, Math.min(63, bands.length - 1))
-        return clamp((Number(bands[bin]) || 0.0) * 1.30, 0.0, 1.6)
-    } else if (src === 7) {
-        // Drop vs Breakdown macro envelope
-        var drop = state.musicIntensity !== undefined
-            ? Number(state.musicIntensity)
-            : clamp(bass * 0.50 + mid * 0.32 + high * 0.18, 0.0, 1.2)
-        return clamp(drop * 1.15, 0.0, 1.6)
-    }
-    return 0.0
-}
-
-function applyAudioLinkValue(baseVal, state, cfg, targetId, lo, hi, span, normPos, idx) {
-    var spec = getAudioLinkSpec(cfg, targetId)
-    if (spec.source === 0 || spec.amount <= 0.001) {
-        return baseVal
-    }
-    var sig = evalAudioLinkSignal(state, spec.source, normPos, idx)
-    var amt = spec.amount
-    var effSpan = (span !== undefined && span > 0) ? span : Math.max(0.5, (hi - lo) * 0.45)
-    var out = baseVal
-    if (spec.mode === 0) {
-        // Add (+)
-        out = baseVal + sig * amt * effSpan
-    } else if (spec.mode === 1) {
-        // Scale (×)
-        out = baseVal * (1.0 + sig * amt * 0.85)
-    } else if (spec.mode === 2) {
-        // Bipolar (±)
-        out = baseVal + (sig - 0.35) * amt * effSpan * 1.35
-    } else if (spec.mode === 3) {
-        // Invert (−)
-        out = baseVal * Math.max(0.08, 1.0 - sig * amt * 0.72)
-    }
-    return clamp(out, lo, hi)
-}
-
-function applyAudioLinksToConfig(state, cfg) {
-    if (!cfg || !cfg.audioLinks || typeof cfg.audioLinks !== "object") return cfg
-    for (var ti = 0; ti < AUDIO_LINK_TARGETS.length; ti++) {
-        var t = AUDIO_LINK_TARGETS[ti]
-        var spec = getAudioLinkSpec(cfg, t.id)
-        if (spec.source === 0 || spec.amount <= 0.001) continue
-        if (cfg[t.prop] === undefined) continue
-        var modVal = applyAudioLinkValue(Number(cfg[t.prop]), state, cfg, t.id, t.lo, t.hi, t.span, 0.5, ti)
-        if (t.prop === "layer2Facets" || t.prop === "tracerCount") {
-            modVal = Math.round(modVal)
-        }
-        cfg[t.prop] = modVal
-    }
-    return cfg
 }
 
 // ---------------------------------------------------------------------------
@@ -8893,6 +8845,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         autoCycle: Boolean(c.autoCycle),
         layer3Mode: c.layer3Mode !== undefined ? clamp(Math.round(Number(c.layer3Mode)), 0, LAYER3_MODES.length - 1) : 0,
         layer3TextStyle: c.layer3TextStyle !== undefined ? clamp(Math.round(Number(c.layer3TextStyle)), 0, LAYER3_TEXT_STYLES.length - 1) : 0,
+        layer3ColourMode: c.layer3ColourMode !== undefined ? clamp(Math.round(Number(c.layer3ColourMode)), 0, LAYER3_COLOUR_MODES.length - 1) : 0,
         layer3CylinderDir: c.layer3CylinderDir !== undefined ? clamp(Math.round(Number(c.layer3CylinderDir)), 0, LAYER3_CYLINDER_DIRS.length - 1) : 0,
         layer3ShowArtist: c.layer3ShowArtist !== undefined ? Boolean(c.layer3ShowArtist) : true,
         layer3ShowTrack: c.layer3ShowTrack !== undefined ? Boolean(c.layer3ShowTrack) : true,
@@ -8912,13 +8865,20 @@ function normaliseConfig(cfg, mode, asciiLines) {
         trackTitle: String(c.trackTitle || ""),
         trackArtist: String(c.trackArtist || ""),
         trackAlbum: String(c.trackAlbum || ""),
-        trackProgress: prog,
-        audioLinks: (c.audioLinks && typeof c.audioLinks === "object") ? c.audioLinks : {}
+        trackProgress: prog
     }
 }
 
 function renderFrame(ctx, w, h, state, mode, theme, asciiLines, asciiSource, ttfxFrames, cfg, canvasItem) {
     if (w <= 4 || h <= 4) return
+
+    if (typeof ctx.resetTransform === "function") {
+        ctx.resetTransform()
+    } else if (typeof ctx.setTransform === "function") {
+        ctx.setTransform(1, 0, 0, 1, 0, 0)
+    }
+    ctx.globalAlpha = 1.0
+    ctx.globalCompositeOperation = "source-over"
 
     // Backward-compatible support if called with 6 args: renderFrame(ctx, w, h, state, rawBands, opts)
     if (Array.isArray(mode) && typeof theme === "object" && asciiLines === undefined) {
@@ -8926,24 +8886,37 @@ function renderFrame(ctx, w, h, state, mode, theme, asciiLines, asciiSource, ttf
         var legacyOpts = theme || {}
         var legacyCfg = normaliseConfig(legacyOpts, legacyOpts.mode || 0, legacyOpts.asciiLines)
         stepState(state, legacyBands, legacyCfg.playing, legacyCfg, 0.016)
-        applyAudioLinksToConfig(state, legacyCfg)
         var legacyPalette = buildPalette(legacyOpts.themeColours, state.hueShift, legacyCfg.palette)
-        drawLayer1Background(ctx, null, w, h, state, legacyOpts.themeColours, legacyPalette, legacyCfg)
-        drawLayer2Visualiser(ctx, w, h, state, legacyPalette, legacyCfg)
-        drawLayer3AlbumArt(ctx, w, h, state, legacyPalette, legacyCfg, legacyOpts.asciiLines || [], legacyOpts.ttfxFrames || [])
+        ctx.save(); try { drawLayer1Background(ctx, null, w, h, state, legacyOpts.themeColours, legacyPalette, legacyCfg) } finally { ctx.restore() }
+        ctx.save(); try { drawLayer2Visualiser(ctx, w, h, state, legacyPalette, legacyCfg) } finally { ctx.restore() }
+        ctx.save(); try { drawLayer3AlbumArt(ctx, w, h, state, legacyPalette, legacyCfg, legacyOpts.asciiLines || [], legacyOpts.ttfxFrames || []) } finally { ctx.restore() }
         return
     }
 
     var effectiveCfg = normaliseConfig(cfg, mode, asciiLines)
-    applyAudioLinksToConfig(state, effectiveCfg)
     var palette = buildPalette(theme, state.hueShift, effectiveCfg.palette)
 
     // Layer #1: Background & Iterative Framebuffer Feedback
-    drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, effectiveCfg)
+    ctx.save()
+    try {
+        drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, effectiveCfg)
+    } finally {
+        ctx.restore()
+    }
 
     // Layer #2: Psychedelic & Nightclub Visualiser Engine (with Universal 3D Graded History Tracers)
-    drawLayer2Visualiser(ctx, w, h, state, palette, effectiveCfg)
+    ctx.save()
+    try {
+        drawLayer2Visualiser(ctx, w, h, state, palette, effectiveCfg)
+    } finally {
+        ctx.restore()
+    }
 
     // Layer #3: Album Art & Words Dismantle, Evolution, Tracers & Rebuild Engine
-    drawLayer3AlbumArt(ctx, w, h, state, palette, effectiveCfg, asciiLines, ttfxFrames)
+    ctx.save()
+    try {
+        drawLayer3AlbumArt(ctx, w, h, state, palette, effectiveCfg, asciiLines, ttfxFrames)
+    } finally {
+        ctx.restore()
+    }
 }

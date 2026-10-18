@@ -297,13 +297,20 @@ Item {
             else if (event.key === Qt.Key_5) { panelVisualiser.toggleVisualiserLayerByNumber(5); event.accepted = true }
             else if (event.key === Qt.Key_6) { panelVisualiser.toggleVisualiserLayerByNumber(6); event.accepted = true }
             else if (event.key === Qt.Key_M) { panelVisualiser.cycleMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
+            else if (event.key === Qt.Key_G) { panelVisualiser.cycleLayer1Mode((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
+            else if (event.key === Qt.Key_A) { panelVisualiser.cycleLayer3Mode((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
             else if (event.key === Qt.Key_C) { panelVisualiser.cyclePalette((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
             else if (event.key === Qt.Key_K) { panelVisualiser.cycleTracers((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
-            else if (event.key === Qt.Key_R) { panelVisualiser.randomiseVisuals(); event.accepted = true }
+            else if (event.key === Qt.Key_Y) { panelVisualiser.randomiseVisuals(); event.accepted = true }
+            else if (event.key === Qt.Key_S) { panelVisualiser.triggerShatterImpulse(); event.accepted = true }
             else if (event.key === Qt.Key_X) { panelVisualiser.autoCycle = !panelVisualiser.autoCycle; event.accepted = true }
-            else if (event.key === Qt.Key_A) { if (root.service) root.service.toggleUseAlbumArt(); event.accepted = true }
+            else if (event.key === Qt.Key_Q) { panelVisualiser.toggleLayer3TextField("artist"); event.accepted = true }
+            else if (event.key === Qt.Key_W) { panelVisualiser.toggleLayer3TextField("track"); event.accepted = true }
+            else if (event.key === Qt.Key_E) { panelVisualiser.toggleLayer3TextField("album"); event.accepted = true }
+            else if (event.key === Qt.Key_R) { panelVisualiser.toggleLayer3TextField("statements"); event.accepted = true }
+            else if (event.key === Qt.Key_T) { panelVisualiser.cycleLayer3ColourMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
             else if (event.key === Qt.Key_B) { if (root.service) root.service.toggleAsciiMode(); event.accepted = true }
-            else if (event.key === Qt.Key_T) { panelVisualiser.toggleInCanvasTte(); event.accepted = true }
+            else if (event.key === Qt.Key_D) { panelVisualiser.toggleInCanvasTte(); event.accepted = true }
             else if (event.key === Qt.Key_H) { panelVisualiser.toggleHudVisibility(); event.accepted = true }
             else if (event.key === Qt.Key_Z) {
                 panelVisualiser.showHud = false

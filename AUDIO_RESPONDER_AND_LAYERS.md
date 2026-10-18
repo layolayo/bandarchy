@@ -180,10 +180,26 @@ flowchart LR
 
 ### Layer 6 — `6: Typography` (`layer3Enabled` — Art, Words & Statements)
 - **Sub-Groups**:
-  - **4 Content Toggles (combinable)**: `Artist` (`layer3ShowArtist`), `Track` (`layer3ShowTrack`), `Album` (`layer3ShowAlbum`), `Statements` (`layer3ShowStatements` from `~/.config/bandarchy/statements.txt`)
+  - **4 Independent Content Toggles (`Q / W / E / R` Keyboard Shortcuts)**:
+    - **`Q`** = `Artist` (`layer3ShowArtist`) ON / OFF
+    - **`W`** = `Track` (`layer3ShowTrack`) ON / OFF
+    - **`E`** = `Album` (`layer3ShowAlbum`) ON / OFF
+    - **`R`** = `Statements` (`layer3ShowStatements` from `~/.config/bandarchy/statements.txt`) ON / OFF
+    - Each field toggles independently; if all 4 are turned OFF, zero text lines are drawn in Layer 6.
   - **4 Glyph Renderers**: `Crisp Text` (`text`), `Braille` (`braille`), `Block` (`block`), `Banner` (`banner`)
-  - **12 Motion Modes (`layer3Mode`, `0..11`)**: `Orbit Ring`, `3D Cylinder`, `Vortex Spiral`, `Matrix Cascade`, `Wave Ribbon`, `Song Words Showcase`, `Starfield Zoom`, `Kaleidoscope Text`, `Shatter & Reform`, `Ticker Marquee`, `Pendulum Swing`, `Explosion Burst`
+  - **12 Motion Modes (`layer3Mode`, `0..11` — Cycled with Key `A` / `Shift+A`)**: `Orbit Ring`, `3D Cylinder`, `Vortex Spiral`, `Matrix Cascade`, `Wave Ribbon`, `Song Words Showcase`, `Starfield Zoom`, `Kaleidoscope Text`, `Shatter & Reform`, `Ticker Marquee`, `Pendulum Swing`, `Explosion Burst`
   - **16 Typography Styles (`layer3TextStyle`, `0..15`)**: `Cyber Techno`, `Psychedelic Liquid`, `Rave Laser Stencil`, `Dance Chrome`, `Club LED Wall`, `Acid Glitch IDM`, `Psytrance UV Glow`, `Berlin Brutalist`, `Holographic Sci-Fi HUD`, `Oscilloscope Vector Beam`, `3D Isometric Extrude`, `Plasma Arc Tesla`, `Y2K Iridescent Mercury`, `Demoscene Copperbars`, `Bioluminescent Mycelium`, `Quantum Matrix Datastream`
+  - **6 Typography Colour Modes (`layer3ColourMode`, `0..5` — Cycled with Key `T` / `Shift+T` or `󰸌 Col:` HUD Pill)**:
+    - **`0: Style Signature` (`Style` — Default)**: Uses each typography style's curated 6-colour palette (`LAYER3_STYLE_PALETTES[textStyle]`) and signature bevel/rim colours.
+    - **`1: Line Palette` (`Line Pal`)**: Uses the active **Global Palette (`Pal:`) coloured line-by-line** (`Artist` = Line 0, `Track` = Line 1, `Album` = Line 2, `Statements` = Line 3) with **automatic contrast & hue-separation boost** (`deriveDistinctTypographyTriad`).
+    - **`2: Duotone Contrast` (`Duotone`)**: Locks the lead line (`rowIdx === 0`) face fill to ultra-crisp ice white (`#F8FAFC`) while driving its 3D extrusion/rim (`colAlt`) and secondary lines from the contrast-boosted Global Palette.
+    - **`3: Audio Spectrum` (`EQ Spec`)**: Dynamically drives each line and character frequency bin from live FFT audio energy (`state.smoothBands` + `state.bassSmooth`).
+    - **`4: Prism Wave` (`Prism`)**: Sweeps a smooth horizontal rainbow/palette gradient across each word (`ci / (nCh - 1)`) and across depth tracer echoes (`te`).
+    - **`5: Letter Alternate` (`Letter`)**: Cycles the contrast-boosted Global Palette character-by-character within each word.
+- **Why Automatic Contrast & Hue-Separation Boost (`deriveDistinctTypographyTriad`) Is Used for Global Palettes**:
+  - Roughly a third of Bandarchy's 30 global palettes (`Solar Flare`, `Emerald Matrix`, `Blood Moon`, `Sub-Zero Cryo`, `Volcanic Magma`, `Amethyst Crystal`, `Oceanic Trench`) are monochromatic or narrow-analogous (all 6 swatches sit within `15°–35°` of the same hue).
+  - Without contrast boosting, indexing raw swatches on monochromatic palettes causes adjacent text lines (`Artist` vs `Track` vs `Album`) and 3D rims (`colAlt` vs `colCh`) to share nearly identical hues and blend into the background.
+  - `deriveDistinctTypographyTriad` in [`PsychedelicEngine.js`](file:///home/matthew/Projects/bandarchy/PsychedelicEngine.js#L487-L532) converts the chosen palette swatches to HSL (`rgbToHsl`), preserves native hues when a multi-hue palette is active (`≥ 52°` line separation, `≥ 95°` face-to-rim separation), and automatically rotates secondary line hues by `+68° × slotIdx` and 3D rim hues by `+125°` with stepped lightness targets (`Line 0: 0.76`, `Line 1: 0.62`, `Line 2: 0.68`, `Rim: 0.54`) whenever a narrow/monochromatic palette is selected.
 - **Current Built-In Audio Response (and Why It Looked Static)**:
   - Previously, `Braille`/`Block` particle cells (`artCells`) had a mild scatter/rebuild modulation from `musicIntensity`/`musicCalm`, whereas **`Crisp Text` (`Words`) was almost purely driven by clock-time sine waves (`state.t`)** with no per-beat scale punch, no per-letter FFT spectrum wave, and no high-frequency glitch response.
 - **Audio-Responder Linkable Targets**:
@@ -192,3 +208,4 @@ flowchart LR
   - **`layer3Dismantle` (`Liquid Wave / Letter Spacing / 3D Extrude Depth`)**: Link to *Mid Synth / Vocals* (`+`) for elastic kerning and wave morphing, or *Drop vs Breakdown* (`+`) to scatter on drops and lock crystal-clear on breakdowns.
   - **`layer3Evolution` (`RGB Chromatic Split / Shear / Tesla Arcs`)**: Link to *Highs / Hi-Hats* (`+`) or *Beat Transient* (`+`) so snare and hi-hat hits trigger RGB ghost splitting, italic shear, and electric arcs.
   - **`statementStep` (`Next Statement Trigger`)**: Link to *Beat Transient* (`⚡`) to snap to a fresh random statement on hard bar drops.
+

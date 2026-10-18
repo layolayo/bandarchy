@@ -294,6 +294,11 @@ ShellRoot {
                 else if (event.key === Qt.Key_4) { appVisualiser.toggleVisualiserLayerByNumber(4); event.accepted = true; return }
                 else if (event.key === Qt.Key_5) { appVisualiser.toggleVisualiserLayerByNumber(5); event.accepted = true; return }
                 else if (event.key === Qt.Key_6) { appVisualiser.toggleVisualiserLayerByNumber(6); event.accepted = true; return }
+                else if (event.key === Qt.Key_Q) { appVisualiser.toggleLayer3TextField("artist"); event.accepted = true; return }
+                else if (event.key === Qt.Key_W) { appVisualiser.toggleLayer3TextField("track"); event.accepted = true; return }
+                else if (event.key === Qt.Key_E) { appVisualiser.toggleLayer3TextField("album"); event.accepted = true; return }
+                else if (event.key === Qt.Key_R) { appVisualiser.toggleLayer3TextField("statements"); event.accepted = true; return }
+                else if (event.key === Qt.Key_T) { appVisualiser.cycleLayer3ColourMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true; return }
             } else {
                 if (event.key === Qt.Key_1) {
                     win.leftTab = 0
@@ -511,7 +516,7 @@ ShellRoot {
             if (!event.accepted) {
                 if (event.key === Qt.Key_M) { appVisualiser.cycleMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
                 else if (event.key === Qt.Key_G) { appVisualiser.cycleLayer1Mode((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
-                else if (event.key === Qt.Key_E) { appVisualiser.cycleLayer3Mode((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
+                else if (event.key === Qt.Key_A) { appVisualiser.cycleLayer3Mode((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
                 else if (event.key === Qt.Key_C) { appVisualiser.cyclePalette((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
                 else if (event.key === Qt.Key_K) { appVisualiser.cycleTracers((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
                 else if (event.key === Qt.Key_L) { appVisualiser.showLayerDrawer = !appVisualiser.showLayerDrawer; event.accepted = true }
@@ -529,12 +534,16 @@ ShellRoot {
                     }
                     event.accepted = true
                 }
-                else if (event.key === Qt.Key_R) { appVisualiser.randomiseVisuals(); event.accepted = true }
+                else if (event.key === Qt.Key_Y) { appVisualiser.randomiseVisuals(); event.accepted = true }
                 else if (event.key === Qt.Key_S) { appVisualiser.triggerShatterImpulse(); event.accepted = true }
                 else if (event.key === Qt.Key_X) { appVisualiser.autoCycle = !appVisualiser.autoCycle; event.accepted = true }
-                else if (event.key === Qt.Key_A) { service.toggleUseAlbumArt(); event.accepted = true }
+                else if (event.key === Qt.Key_Q) { appVisualiser.toggleLayer3TextField("artist"); event.accepted = true }
+                else if (event.key === Qt.Key_W) { appVisualiser.toggleLayer3TextField("track"); event.accepted = true }
+                else if (event.key === Qt.Key_E) { appVisualiser.toggleLayer3TextField("album"); event.accepted = true }
+                else if (event.key === Qt.Key_R) { appVisualiser.toggleLayer3TextField("statements"); event.accepted = true }
+                else if (event.key === Qt.Key_T) { appVisualiser.cycleLayer3ColourMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
                 else if (event.key === Qt.Key_B) { service.toggleAsciiMode(); event.accepted = true }
-                else if (event.key === Qt.Key_T) { appVisualiser.toggleInCanvasTte(); event.accepted = true }
+                else if (event.key === Qt.Key_D) { appVisualiser.toggleInCanvasTte(); event.accepted = true }
                 else if (event.key === Qt.Key_F || event.key === Qt.Key_V) {
                     if (event.modifiers & Qt.ShiftModifier) {
                         appVisualiser.setStage("visualiser")
