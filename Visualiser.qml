@@ -33,10 +33,6 @@ FocusScope {
     property real position: 0.0
     property real duration: 0.0
 
-    onTrackTitleChanged: vizCanvas.requestPaint()
-    onTrackArtistChanged: vizCanvas.requestPaint()
-    onTrackAlbumChanged: vizCanvas.requestPaint()
-
     // Stage mode: "off", "art", "turntable", "visualiser"
     property string stageMode: "visualiser"
 
