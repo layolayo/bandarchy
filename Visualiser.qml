@@ -116,6 +116,7 @@ FocusScope {
     property int layer1EqStyle: 0
     property int layer1EqLayout: 0
     property real layer1EqScale: 1.0
+    property real layer1EqSpin: 1.0
     property real layer1EqGain: 1.25
     property int layer1EqDamping: 0
     property bool layer1ShapesEnabled: true
@@ -185,6 +186,11 @@ FocusScope {
     property string currentStatement: (Engine.DEFAULT_STATEMENTS && Engine.DEFAULT_STATEMENTS.length > 0)
         ? Engine.DEFAULT_STATEMENTS[Math.floor(Math.random() * Engine.DEFAULT_STATEMENTS.length)]
         : "WE ARE THE FREQUENCIES"
+    property bool showStatementsEditor: false
+    property bool statementsEditorBulkMode: false
+    property int editingStatementIndex: -1
+    property string statementEditorStatusText: ""
+    readonly property bool textInputFocused: Boolean(statementSingleInput.activeFocus || statementBulkEdit.activeFocus)
     property alias layer3UseArt: root.useAlbumArt
     property alias layer3AsciiMode: root.asciiMode
     property real layer3Dismantle: 1.15
@@ -572,15 +578,27 @@ FocusScope {
     signal requestActionFeedback(string message)
     signal requestOpenStatementsFile()
     signal requestReloadStatementsFile()
+    signal requestSaveStatements(var statementsArray)
+    signal requestResetStatements()
     function suppressActionFeedback(message) {}
 
     property var engineState: Engine.createState()
+    property bool _internalLayerChange: false
+    property bool layer1PinnedByUser: false
+    property bool layer2PinnedByUser: false
+    property bool layer3PinnedByUser: false
+    property bool layer4PinnedByUser: false
+    property bool layer5PinnedByUser: false
+    property bool layer6PinnedByUser: false
 
     onGpuShaderEnabledChanged: {
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
     onBackdropEnabledChanged: {
+        if (!root._internalLayerChange && !root._applyingPersistedConfig) {
+            root.layer5PinnedByUser = true
+        }
         if (root.backdropEnabled && !root._applyingPersistedConfig) {
             root.gpuShaderEnabled = true
         }
@@ -618,7 +636,14 @@ FocusScope {
         vizCanvas.requestPaint()
         scheduleSaveVisualiserConfig()
     }
+    onLayer1EqSpinChanged: {
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
     onLayer2VizEnabledChanged: {
+        if (!root._internalLayerChange && !root._applyingPersistedConfig) {
+            root.layer4PinnedByUser = true
+        }
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
@@ -758,6 +783,7 @@ FocusScope {
             layer1EqStyle: root.layer1EqStyle,
             layer1EqLayout: root.layer1EqLayout,
             layer1EqScale: root.layer1EqScale,
+            layer1EqSpin: root.layer1EqSpin,
             layer1EqGain: root.layer1EqGain,
             layer1EqDamping: root.layer1EqDamping,
             layer1ShapesEnabled: root.layer1ShapesEnabled,
@@ -875,6 +901,7 @@ FocusScope {
         if (cfg.layer1EqStyle !== undefined) root.layer1EqStyle = Number(cfg.layer1EqStyle) % Engine.LAYER1_EQ_STYLES.length
         if (cfg.layer1EqLayout !== undefined) root.layer1EqLayout = Number(cfg.layer1EqLayout) % Engine.LAYER1_EQ_LAYOUTS.length
         if (cfg.layer1EqScale !== undefined) root.layer1EqScale = Math.max(0.15, Math.min(2.25, Number(cfg.layer1EqScale) || 1.0))
+        if (cfg.layer1EqSpin !== undefined) root.layer1EqSpin = Math.max(-2.50, Math.min(2.50, Number(cfg.layer1EqSpin)))
         if (cfg.layer1EqGain !== undefined) root.layer1EqGain = Number(cfg.layer1EqGain)
         if (cfg.layer1EqDamping !== undefined) root.layer1EqDamping = Number(cfg.layer1EqDamping) % Engine.LAYER1_EQ_DAMPING.length
         if (cfg.layer1ShapesEnabled !== undefined) root.layer1ShapesEnabled = Boolean(cfg.layer1ShapesEnabled)
@@ -909,6 +936,9 @@ FocusScope {
             root.statementsList = cfg.statements
             if (!root.currentStatement || cfg.statements.indexOf(root.currentStatement) < 0) {
                 root.currentStatement = cfg.statements[Math.floor(Math.random() * cfg.statements.length)]
+            }
+            if (!statementBulkEdit.activeFocus) {
+                statementBulkEdit.text = cfg.statements.join("\n")
             }
         }
         if (cfg.statementsPath) root.statementsFilePath = String(cfg.statementsPath)
@@ -983,6 +1013,7 @@ FocusScope {
         root.layer1EqStyle = 0
         root.layer1EqLayout = 0
         root.layer1EqScale = 1.0
+        root.layer1EqSpin = 1.0
         root.layer1ShapesEnabled = true
         root.layer1ShapeStyle = 0
         root.layer1ShapeDensity = 1.0
@@ -1034,6 +1065,7 @@ FocusScope {
             l1EqStyle: root.layer1EqStyle,
             l1EqLayout: root.layer1EqLayout,
             l1EqScale: root.layer1EqScale,
+            l1EqSpin: root.layer1EqSpin,
             l1EqGain: root.layer1EqGain,
             l1EqDamping: root.layer1EqDamping,
             l1ShapesEnabled: root.layer1ShapesEnabled,
@@ -1069,6 +1101,7 @@ FocusScope {
         if (item.l1EqStyle !== undefined) root.layer1EqStyle = Number(item.l1EqStyle) % Engine.LAYER1_EQ_STYLES.length
         if (item.l1EqLayout !== undefined) root.layer1EqLayout = Number(item.l1EqLayout) % Engine.LAYER1_EQ_LAYOUTS.length
         if (item.l1EqScale !== undefined) root.layer1EqScale = Math.max(0.15, Math.min(2.25, Number(item.l1EqScale)))
+        if (item.l1EqSpin !== undefined) root.layer1EqSpin = Math.max(-2.50, Math.min(2.50, Number(item.l1EqSpin)))
         if (item.l1EqGain !== undefined) root.layer1EqGain = Number(item.l1EqGain)
         if (item.l1EqDamping !== undefined) root.layer1EqDamping = Number(item.l1EqDamping) % Engine.LAYER1_EQ_DAMPING.length
         if (item.l1ShapesEnabled !== undefined) root.layer1ShapesEnabled = Boolean(item.l1ShapesEnabled)
@@ -1347,16 +1380,25 @@ FocusScope {
         scheduleSaveVisualiserConfig()
     }
     onLayer1FieldEnabledChanged: {
+        if (!root._internalLayerChange && !root._applyingPersistedConfig) {
+            root.layer1PinnedByUser = true
+        }
         syncLayer1MasterFromSubs()
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
     onLayer1EqEnabledChanged: {
+        if (!root._internalLayerChange && !root._applyingPersistedConfig) {
+            root.layer2PinnedByUser = true
+        }
         syncLayer1MasterFromSubs()
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
     onLayer1ShapesEnabledChanged: {
+        if (!root._internalLayerChange && !root._applyingPersistedConfig) {
+            root.layer3PinnedByUser = true
+        }
         syncLayer1MasterFromSubs()
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
@@ -1365,8 +1407,20 @@ FocusScope {
     onLayer1EqStyleChanged: { clearCanvasImmediate(); scheduleSaveVisualiserConfig() }
     onLayer1EqLayoutChanged: { clearCanvasImmediate(); scheduleSaveVisualiserConfig() }
     onLayer1ShapeStyleChanged: { clearCanvasImmediate(); scheduleSaveVisualiserConfig() }
-    onLayer2EnabledChanged: { clearCanvasImmediate(); scheduleSaveVisualiserConfig() }
-    onLayer3EnabledChanged: { clearCanvasImmediate(); scheduleSaveVisualiserConfig() }
+    onLayer2EnabledChanged: {
+        if (!root._internalLayerChange && !root._applyingPersistedConfig) {
+            root.layer4PinnedByUser = true
+        }
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
+    }
+    onLayer3EnabledChanged: {
+        if (!root._internalLayerChange && !root._applyingPersistedConfig) {
+            root.layer6PinnedByUser = true
+        }
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
+    }
     onLayer3ModeChanged: scheduleSaveVisualiserConfig()
     onLayer3TextStyleChanged: {
         if (vizCanvas) vizCanvas.requestPaint()
@@ -1509,6 +1563,7 @@ FocusScope {
             layer1EqStyle: root.layer1EqStyle,
             layer1EqLayout: root.layer1EqLayout,
             layer1EqScale: root.layer1EqScale,
+            layer1EqSpin: root.layer1EqSpin,
             layer1EqGain: root.layer1EqGain,
             layer1EqDamping: root.layer1EqDamping,
             layer1ShapesEnabled: root.layer1ShapesEnabled,
@@ -1587,6 +1642,7 @@ FocusScope {
         root.layer1EqStyle = Number(p.l1EqStyle || 0) % Engine.LAYER1_EQ_STYLES.length
         root.layer1EqLayout = Number(p.l1EqLayout || 0) % Engine.LAYER1_EQ_LAYOUTS.length
         root.layer1EqScale = p.l1EqScale !== undefined ? Math.max(0.15, Math.min(2.25, Number(p.l1EqScale))) : 1.0
+        if (p.l1EqSpin !== undefined) root.layer1EqSpin = Math.max(-2.50, Math.min(2.50, Number(p.l1EqSpin)))
         root.layer1EqDamping = Number(p.l1EqDamping || 0) % Engine.LAYER1_EQ_DAMPING.length
         root.layer1ShapesEnabled = p.l1ShapesEnabled !== undefined ? Boolean(p.l1ShapesEnabled) : true
         root.layer1ShapeStyle = Number(p.l1ShapeStyle || 0) % Engine.LAYER1_SHAPE_STYLES.length
@@ -1704,6 +1760,7 @@ FocusScope {
             l1EqStyle: root.layer1EqStyle,
             l1EqLayout: root.layer1EqLayout,
             l1EqScale: root.layer1EqScale,
+            l1EqSpin: root.layer1EqSpin,
             l1EqGain: root.layer1EqGain,
             l1EqDamping: root.layer1EqDamping,
             l1ShapesEnabled: root.layer1ShapesEnabled,
@@ -1795,6 +1852,217 @@ FocusScope {
         }
         vizCanvas.requestPaint()
         scheduleSaveVisualiserConfig()
+    }
+
+    function normaliseStatementsArray(rawItems) {
+        var lines = []
+        if (typeof rawItems === "string") {
+            lines = rawItems.split(/\r?\n/)
+        } else if (Array.isArray(rawItems)) {
+            for (var i = 0; i < rawItems.length; i++) {
+                var part = String(rawItems[i] || "").split(/\r?\n/)
+                for (var j = 0; j < part.length; j++) {
+                    lines.push(part[j])
+                }
+            }
+        }
+        var cleaned = []
+        for (var k = 0; k < lines.length; k++) {
+            var s = String(lines[k] || "").trim()
+            if (!s || s.charAt(0) === "#") continue
+            cleaned.push(s.slice(0, 160))
+            if (cleaned.length >= 500) break
+        }
+        return cleaned
+    }
+
+    function syncStatementsEditorTextFromList() {
+        var list = (root.statementsList && root.statementsList.length > 0) ? root.statementsList : Engine.DEFAULT_STATEMENTS
+        statementBulkEdit.text = list.join("\n")
+    }
+
+    function openStatementsEditorDrawer() {
+        root.showHud = true
+        root.showLayerDrawer = true
+        root.activeConfigLayer = 6
+        root.showStatementsEditor = true
+        root.syncStatementsEditorTextFromList()
+    }
+
+    function commitStatementsList(rawList, statusMsg) {
+        var cleaned = root.normaliseStatementsArray(rawList)
+        if (cleaned.length === 0) {
+            cleaned = Engine.DEFAULT_STATEMENTS.slice()
+        }
+        root.statementsList = cleaned
+        if (!root.currentStatement || cleaned.indexOf(root.currentStatement) < 0) {
+            root.currentStatement = cleaned[0]
+        }
+        if (!statementBulkEdit.activeFocus) {
+            statementBulkEdit.text = cleaned.join("\n")
+        }
+        if (root.engineState) {
+            root.engineState.artSourceKey = ""
+        }
+        root.statementEditorStatusText = statusMsg || ("Saved " + cleaned.length + " statements to " + root.statementsFilePath)
+        vizCanvas.requestPaint()
+        root.requestSaveStatements(cleaned)
+        scheduleSaveVisualiserConfig()
+    }
+
+    function selectStatementLive(stmtText) {
+        var s = String(stmtText || "").trim()
+        if (!s) return
+        root.currentStatement = s
+        root.layer3ShowStatements = true
+        root.layer3Enabled = true
+        if (root.engineState) {
+            root.engineState.artSourceKey = ""
+        }
+        root.statementEditorStatusText = "Live on canvas: “" + s + "”"
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+
+    function beginEditStatementAt(idx) {
+        var list = (root.statementsList && root.statementsList.length > 0) ? root.statementsList : Engine.DEFAULT_STATEMENTS
+        if (idx < 0 || idx >= list.length) return
+        root.editingStatementIndex = idx
+        root.statementsEditorBulkMode = false
+        statementSingleInput.text = String(list[idx])
+        statementSingleInput.forceActiveFocus()
+        statementSingleInput.selectAll()
+        root.statementEditorStatusText = "Editing statement #" + (idx + 1) + " — press Enter or click Save to update"
+    }
+
+    function submitSingleStatementInput(useLiveNow) {
+        var addedLines = root.normaliseStatementsArray(statementSingleInput.text)
+        if (addedLines.length === 0) return
+        var current = ((root.statementsList && root.statementsList.length > 0) ? root.statementsList : Engine.DEFAULT_STATEMENTS).slice()
+        var targetStmt = addedLines[0]
+        var msg = ""
+        if (root.editingStatementIndex >= 0 && root.editingStatementIndex < current.length) {
+            var editIdx = root.editingStatementIndex
+            current.splice(editIdx, 1)
+            for (var i = addedLines.length - 1; i >= 0; i--) {
+                current.splice(editIdx, 0, addedLines[i])
+            }
+            root.editingStatementIndex = -1
+            msg = "Updated statement #" + (editIdx + 1) + " (“" + targetStmt + "”) & saved to statements.txt"
+        } else {
+            for (var j = addedLines.length - 1; j >= 0; j--) {
+                var existingIdx = current.indexOf(addedLines[j])
+                if (existingIdx >= 0) current.splice(existingIdx, 1)
+                current.unshift(addedLines[j])
+            }
+            msg = "Added " + (addedLines.length > 1 ? (addedLines.length + " statements") : ("“" + targetStmt + "”")) + " & saved to statements.txt"
+        }
+        statementSingleInput.text = ""
+        if (useLiveNow) {
+            root.currentStatement = targetStmt
+            root.layer3ShowStatements = true
+            root.layer3Enabled = true
+        }
+        root.commitStatementsList(current, msg)
+    }
+
+    function deleteStatementAt(idx) {
+        var current = ((root.statementsList && root.statementsList.length > 0) ? root.statementsList : Engine.DEFAULT_STATEMENTS).slice()
+        if (idx < 0 || idx >= current.length) return
+        var removed = current[idx]
+        current.splice(idx, 1)
+        if (current.length === 0) {
+            current.push("WE ARE THE FREQUENCIES")
+        }
+        if (root.editingStatementIndex === idx) {
+            root.editingStatementIndex = -1
+            statementSingleInput.text = ""
+        } else if (root.editingStatementIndex > idx) {
+            root.editingStatementIndex = root.editingStatementIndex - 1
+        }
+        if (root.currentStatement === removed) {
+            root.currentStatement = current[Math.min(idx, current.length - 1)]
+        }
+        root.commitStatementsList(current, "Removed “" + removed + "” (" + current.length + " statements remaining)")
+    }
+
+    function saveBulkStatementsText() {
+        var cleaned = root.normaliseStatementsArray(statementBulkEdit.text)
+        if (cleaned.length === 0) {
+            root.statementEditorStatusText = "Cannot save an empty list — enter at least 1 statement or click Reset Defaults"
+            return
+        }
+        root.editingStatementIndex = -1
+        root.commitStatementsList(cleaned, "Saved " + cleaned.length + " statements to " + root.statementsFilePath)
+    }
+
+    function resetStatementsToDefaults() {
+        root.editingStatementIndex = -1
+        statementSingleInput.text = ""
+        var defList = Engine.DEFAULT_STATEMENTS.slice()
+        root.statementsList = defList
+        statementBulkEdit.text = defList.join("\n")
+        root.currentStatement = defList[0]
+        if (root.engineState) {
+            root.engineState.artSourceKey = ""
+        }
+        root.statementEditorStatusText = "Reset statements.txt to default collection (" + defList.length + " statements)"
+        vizCanvas.requestPaint()
+        root.requestResetStatements()
+    }
+
+    function toggleVisualiserLayerByNumber(layerNum) {
+        if (layerNum === 1) {
+            root.layer1FieldEnabled = !(root.layer1Enabled && root.layer1FieldEnabled)
+            root.syncLayer1MasterFromSubs()
+            root.hudFocusedLayer = 1
+            if (root.showLayerDrawer) root.activeConfigLayer = 1
+            root.clearCanvasImmediate()
+            scheduleSaveVisualiserConfig()
+            root.suppressActionFeedback("1: Worlds: " + ((root.layer1Enabled && root.layer1FieldEnabled) ? "ON" : "OFF"))
+        } else if (layerNum === 2) {
+            root.layer1EqEnabled = !(root.layer1Enabled && root.layer1EqEnabled)
+            root.syncLayer1MasterFromSubs()
+            root.hudFocusedLayer = 2
+            if (root.showLayerDrawer) root.activeConfigLayer = 2
+            root.clearCanvasImmediate()
+            scheduleSaveVisualiserConfig()
+            root.suppressActionFeedback("2: Equaliser: " + ((root.layer1Enabled && root.layer1EqEnabled) ? "ON" : "OFF"))
+        } else if (layerNum === 3) {
+            root.layer1ShapesEnabled = !(root.layer1Enabled && root.layer1ShapesEnabled)
+            root.syncLayer1MasterFromSubs()
+            root.hudFocusedLayer = 3
+            if (root.showLayerDrawer) root.activeConfigLayer = 3
+            root.clearCanvasImmediate()
+            scheduleSaveVisualiserConfig()
+            root.suppressActionFeedback("3: Vectors: " + ((root.layer1Enabled && root.layer1ShapesEnabled) ? "ON" : "OFF"))
+        } else if (layerNum === 4) {
+            var nextL2 = !(root.layer2Enabled && (root.layer2VizEnabled || root.layer2TracersEnabled))
+            root.layer2Enabled = nextL2
+            if (nextL2) {
+                root.layer2VizEnabled = true
+            }
+            root.hudFocusedLayer = 4
+            if (root.showLayerDrawer) root.activeConfigLayer = 4
+            root.clearCanvasImmediate()
+            scheduleSaveVisualiserConfig()
+            root.suppressActionFeedback("4: Geometry: " + (root.layer2Enabled ? "ON" : "OFF"))
+        } else if (layerNum === 5) {
+            root.layer4Enabled = !root.layer4Enabled
+            root.backdropEnabled = root.layer4Enabled
+            root.hudFocusedLayer = 5
+            if (root.showLayerDrawer) root.activeConfigLayer = 5
+            root.clearCanvasImmediate()
+            scheduleSaveVisualiserConfig()
+            root.suppressActionFeedback("5: Vortex: " + (root.layer4Enabled ? "ON" : "OFF"))
+        } else if (layerNum === 6) {
+            root.layer3Enabled = !root.layer3Enabled
+            root.hudFocusedLayer = 6
+            if (root.showLayerDrawer) root.activeConfigLayer = 6
+            root.clearCanvasImmediate()
+            scheduleSaveVisualiserConfig()
+            root.suppressActionFeedback("6: Typography: " + (root.layer3Enabled ? "ON" : "OFF"))
+        }
     }
 
     function toggleLayer3TextField(field) {
@@ -1940,76 +2208,134 @@ FocusScope {
         return false
     }
 
+    function resetUserLayerPins() {
+        root.layer1PinnedByUser = false
+        root.layer2PinnedByUser = false
+        root.layer3PinnedByUser = false
+        root.layer4PinnedByUser = false
+        root.layer5PinnedByUser = false
+        root.layer6PinnedByUser = false
+    }
+
     function randomiseLayer1() {
-        var fRoll = Math.floor(Math.random() * (Engine.LAYER1_MODES.length + 1))
-        root.layer1FieldEnabled = (fRoll < Engine.LAYER1_MODES.length)
-        if (root.layer1FieldEnabled) {
-            root.layer1Mode = fRoll
+        if (root.layer1PinnedByUser && !root.layer1FieldEnabled) {
+            return
+        }
+        root._internalLayerChange = true
+        if (root.layer1PinnedByUser) {
+            root.layer1FieldEnabled = true
+            root.layer1Mode = Math.floor(Math.random() * Engine.LAYER1_MODES.length)
             root.layer1Density = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
             root.layer1Speed = Math.round((0.60 + Math.random() * 1.25) * 100) / 100
             root.layer1Direction = [1, -1, 0][Math.floor(Math.random() * 3)]
-        }
-        if (!root.layer1FieldEnabled && !root.layer1EqEnabled && !root.layer1ShapesEnabled && !root.hasOtherActiveLayer(1)) {
-            root.layer1FieldEnabled = true
-            root.layer1Mode = Math.floor(Math.random() * Engine.LAYER1_MODES.length)
+        } else {
+            var fRoll = Math.floor(Math.random() * (Engine.LAYER1_MODES.length + 1))
+            root.layer1FieldEnabled = (fRoll < Engine.LAYER1_MODES.length)
+            if (root.layer1FieldEnabled) {
+                root.layer1Mode = fRoll
+                root.layer1Density = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
+                root.layer1Speed = Math.round((0.60 + Math.random() * 1.25) * 100) / 100
+                root.layer1Direction = [1, -1, 0][Math.floor(Math.random() * 3)]
+            }
+            if (!root.layer1FieldEnabled && !root.layer1EqEnabled && !root.layer1ShapesEnabled && !root.hasOtherActiveLayer(1)) {
+                root.layer1FieldEnabled = true
+                root.layer1Mode = Math.floor(Math.random() * Engine.LAYER1_MODES.length)
+            }
         }
         root.syncLayer1MasterFromSubs()
+        root._internalLayerChange = false
         Engine.randomiseState(root.engineState)
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
 
     function randomiseLayerEq() {
-        var eqRoll = Math.floor(Math.random() * (Engine.LAYER1_EQ_STYLES.length + 1))
-        root.layer1EqEnabled = (eqRoll < Engine.LAYER1_EQ_STYLES.length)
-        if (root.layer1EqEnabled) {
-            root.layer1EqStyle = eqRoll
-            root.layer1EqLayout = Math.floor(Math.random() * Engine.LAYER1_EQ_LAYOUTS.length)
-            root.layer1EqScale = Math.round((0.25 + Math.random() * 1.15) * 100) / 100
-            root.layer1EqDamping = Math.floor(Math.random() * Engine.LAYER1_EQ_DAMPING.length)
-            root.layer1EqGain = Math.round((0.90 + Math.random() * 0.90) * 100) / 100
+        if (root.layer2PinnedByUser && !root.layer1EqEnabled) {
+            return
         }
-        if (!root.layer1FieldEnabled && !root.layer1EqEnabled && !root.layer1ShapesEnabled && !root.hasOtherActiveLayer(1)) {
+        root._internalLayerChange = true
+        if (root.layer2PinnedByUser) {
             root.layer1EqEnabled = true
             root.layer1EqStyle = Math.floor(Math.random() * Engine.LAYER1_EQ_STYLES.length)
+            root.layer1EqLayout = Math.floor(Math.random() * Engine.LAYER1_EQ_LAYOUTS.length)
+            root.layer1EqScale = Math.round((0.25 + Math.random() * 1.15) * 100) / 100
+            root.layer1EqSpin = Math.round(((Math.random() < 0.35 ? -1.0 : 1.0) * (0.45 + Math.random() * 1.40)) * 100) / 100
+            root.layer1EqDamping = Math.floor(Math.random() * Engine.LAYER1_EQ_DAMPING.length)
+            root.layer1EqGain = Math.round((0.90 + Math.random() * 0.90) * 100) / 100
+        } else {
+            var eqRoll = Math.floor(Math.random() * (Engine.LAYER1_EQ_STYLES.length + 1))
+            root.layer1EqEnabled = (eqRoll < Engine.LAYER1_EQ_STYLES.length)
+            if (root.layer1EqEnabled) {
+                root.layer1EqStyle = eqRoll
+                root.layer1EqLayout = Math.floor(Math.random() * Engine.LAYER1_EQ_LAYOUTS.length)
+                root.layer1EqScale = Math.round((0.25 + Math.random() * 1.15) * 100) / 100
+                root.layer1EqSpin = Math.round(((Math.random() < 0.35 ? -1.0 : 1.0) * (0.45 + Math.random() * 1.40)) * 100) / 100
+                root.layer1EqDamping = Math.floor(Math.random() * Engine.LAYER1_EQ_DAMPING.length)
+                root.layer1EqGain = Math.round((0.90 + Math.random() * 0.90) * 100) / 100
+            }
+            if (!root.layer1FieldEnabled && !root.layer1EqEnabled && !root.layer1ShapesEnabled && !root.hasOtherActiveLayer(1)) {
+                root.layer1EqEnabled = true
+                root.layer1EqStyle = Math.floor(Math.random() * Engine.LAYER1_EQ_STYLES.length)
+            }
         }
         root.syncLayer1MasterFromSubs()
+        root._internalLayerChange = false
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
 
     function randomiseLayerVectors() {
-        var shRoll = Math.floor(Math.random() * (Engine.LAYER1_SHAPE_STYLES.length + 1))
-        root.layer1ShapesEnabled = (shRoll < Engine.LAYER1_SHAPE_STYLES.length)
-        if (root.layer1ShapesEnabled) {
-            root.layer1ShapeStyle = shRoll
+        if (root.layer3PinnedByUser && !root.layer1ShapesEnabled) {
+            return
+        }
+        root._internalLayerChange = true
+        if (root.layer3PinnedByUser) {
+            root.layer1ShapesEnabled = true
+            root.layer1ShapeStyle = Math.floor(Math.random() * Engine.LAYER1_SHAPE_STYLES.length)
             root.layer1ShapeScale = Math.round((0.55 + Math.random() * 1.35) * 100) / 100
             root.layer1ShapeDensity = Math.round((0.50 + Math.random() * 1.75) * 100) / 100
             root.layer1ShapeSpeed = Math.round((0.55 + Math.random() * 1.55) * 100) / 100
             root.layer1ShapeSpin = Math.round(((Math.random() * 2.8) - 1.4) * 100) / 100
-        }
-        if (!root.layer1FieldEnabled && !root.layer1EqEnabled && !root.layer1ShapesEnabled && !root.hasOtherActiveLayer(1)) {
-            root.layer1ShapesEnabled = true
-            root.layer1ShapeStyle = Math.floor(Math.random() * Engine.LAYER1_SHAPE_STYLES.length)
+        } else {
+            var shRoll = Math.floor(Math.random() * (Engine.LAYER1_SHAPE_STYLES.length + 1))
+            root.layer1ShapesEnabled = (shRoll < Engine.LAYER1_SHAPE_STYLES.length)
+            if (root.layer1ShapesEnabled) {
+                root.layer1ShapeStyle = shRoll
+                root.layer1ShapeScale = Math.round((0.55 + Math.random() * 1.35) * 100) / 100
+                root.layer1ShapeDensity = Math.round((0.50 + Math.random() * 1.75) * 100) / 100
+                root.layer1ShapeSpeed = Math.round((0.55 + Math.random() * 1.55) * 100) / 100
+                root.layer1ShapeSpin = Math.round(((Math.random() * 2.8) - 1.4) * 100) / 100
+            }
+            if (!root.layer1FieldEnabled && !root.layer1EqEnabled && !root.layer1ShapesEnabled && !root.hasOtherActiveLayer(1)) {
+                root.layer1ShapesEnabled = true
+                root.layer1ShapeStyle = Math.floor(Math.random() * Engine.LAYER1_SHAPE_STYLES.length)
+            }
         }
         root.syncLayer1MasterFromSubs()
+        root._internalLayerChange = false
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
 
     function randomiseLayer2() {
+        if (root.layer4PinnedByUser && (!root.layer2Enabled || !root.layer2VizEnabled)) {
+            return
+        }
         var total = Engine.MODE_NAMES.length
-        var roll2 = Math.floor(Math.random() * (total + 1))
-        if (roll2 === total && root.hasOtherActiveLayer(2)) {
+        var roll2 = Math.floor(Math.random() * (root.layer4PinnedByUser ? total : (total + 1)))
+        root._internalLayerChange = true
+        if (!root.layer4PinnedByUser && roll2 === total && root.hasOtherActiveLayer(2)) {
             root.layer2VizEnabled = false
             root.layer2TracersEnabled = false
             root.layer2Enabled = false
+            root._internalLayerChange = false
             clearCanvasImmediate()
             scheduleSaveVisualiserConfig()
             return
         }
         root.layer2Enabled = true
         root.layer2VizEnabled = true
+        root._internalLayerChange = false
         var nextM = roll2 < total ? roll2 : ((root.visualMode + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total)
         root.visualMode = nextM
         root.symmetryIndex = Math.floor(Math.random() * Engine.SYMMETRY_OPTIONS.length)
@@ -2018,15 +2344,21 @@ FocusScope {
     }
 
     function randomiseLayer3() {
+        if (root.layer6PinnedByUser && !root.layer3Enabled) {
+            return
+        }
         var total = Engine.LAYER3_MODES.length
-        var roll3 = Math.floor(Math.random() * (total + 1))
-        if (roll3 === total && root.hasOtherActiveLayer(3)) {
+        var roll3 = Math.floor(Math.random() * (root.layer6PinnedByUser ? total : (total + 1)))
+        root._internalLayerChange = true
+        if (!root.layer6PinnedByUser && roll3 === total && root.hasOtherActiveLayer(3)) {
             root.layer3Enabled = false
+            root._internalLayerChange = false
             clearCanvasImmediate()
             scheduleSaveVisualiserConfig()
             return
         }
         root.layer3Enabled = true
+        root._internalLayerChange = false
         var nextM = roll3 < total ? roll3 : ((root.layer3Mode + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total)
         root.layer3Mode = nextM
         var totalStyles = Engine.LAYER3_TEXT_STYLES.length
@@ -2046,15 +2378,21 @@ FocusScope {
     }
 
     function randomiseLayer4() {
+        if (root.layer5PinnedByUser && !root.layer4Enabled) {
+            return
+        }
         var total = Engine.LAYER4_MODES.length
-        var roll4 = Math.floor(Math.random() * (total + 1))
-        if (roll4 === total && root.hasOtherActiveLayer(4)) {
+        var roll4 = Math.floor(Math.random() * (root.layer5PinnedByUser ? total : (total + 1)))
+        root._internalLayerChange = true
+        if (!root.layer5PinnedByUser && roll4 === total && root.hasOtherActiveLayer(4)) {
             root.layer4Enabled = false
+            root._internalLayerChange = false
             clearCanvasImmediate()
             scheduleSaveVisualiserConfig()
             return
         }
         root.layer4Enabled = true
+        root._internalLayerChange = false
         root.layer4Mode = roll4 < total ? roll4 : ((root.layer4Mode + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total)
         root.layer4DualEnabled = (Math.random() < 0.45)
         if (root.layer4DualEnabled) {
@@ -2068,32 +2406,22 @@ FocusScope {
     }
 
     function randomiseVisuals() {
+        root.resetUserLayerPins()
         Engine.randomiseState(root.engineState)
         paletteIndex = (paletteIndex + 1 + Math.floor(Math.random() * (Engine.PALETTE_NAMES.length - 1))) % Engine.PALETTE_NAMES.length
-        if (root.layer1FieldEnabled) {
-            root.randomiseLayer1()
-        }
-        if (root.layer1EqEnabled) {
-            root.randomiseLayerEq()
-        }
-        if (root.layer1ShapesEnabled) {
-            root.randomiseLayerVectors()
-        }
-        if (root.layer2Enabled) {
-            root.randomiseLayer2()
-        }
-        if (root.layer3Enabled) {
-            root.randomiseLayer3()
-        }
-        if (root.layer4Enabled) {
-            root.randomiseLayer4()
-        }
+        root.randomiseLayer1()
+        root.randomiseLayerEq()
+        root.randomiseLayerVectors()
+        root.randomiseLayer2()
+        root.randomiseLayer3()
+        root.randomiseLayer4()
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
 
     function toggleAllRandomisations() {
         var nextState = !root.allRandomisationsActive
+        root.resetUserLayerPins()
         root.autoCycle = nextState
         root.layer1AutoRandomise = nextState
         root.layerEqAutoRandomise = nextState
@@ -2351,13 +2679,22 @@ FocusScope {
     }
 
     Keys.onPressed: event => {
-        var allowDirectMode1To4 = root.isFullscreen || Boolean(event.modifiers & (Qt.AltModifier | Qt.ControlModifier))
-        if (event.key === Qt.Key_1 && allowDirectMode1To4) { visualMode = 0; event.accepted = true }
-        else if (event.key === Qt.Key_2 && allowDirectMode1To4) { visualMode = 1; event.accepted = true }
-        else if (event.key === Qt.Key_3 && allowDirectMode1To4) { visualMode = 2; event.accepted = true }
-        else if (event.key === Qt.Key_4 && allowDirectMode1To4) { visualMode = 3; event.accepted = true }
-        else if (event.key === Qt.Key_5) { visualMode = 4; event.accepted = true }
-        else if (event.key === Qt.Key_6) { visualMode = 5; event.accepted = true }
+        if (root.textInputFocused) {
+            if (event.key === Qt.Key_Escape) {
+                root.editingStatementIndex = -1
+                statementSingleInput.focus = false
+                statementBulkEdit.focus = false
+                root.forceActiveFocus()
+                event.accepted = true
+            }
+            return
+        }
+        if (event.key === Qt.Key_1) { root.toggleVisualiserLayerByNumber(1); event.accepted = true }
+        else if (event.key === Qt.Key_2) { root.toggleVisualiserLayerByNumber(2); event.accepted = true }
+        else if (event.key === Qt.Key_3) { root.toggleVisualiserLayerByNumber(3); event.accepted = true }
+        else if (event.key === Qt.Key_4) { root.toggleVisualiserLayerByNumber(4); event.accepted = true }
+        else if (event.key === Qt.Key_5) { root.toggleVisualiserLayerByNumber(5); event.accepted = true }
+        else if (event.key === Qt.Key_6) { root.toggleVisualiserLayerByNumber(6); event.accepted = true }
         else if (event.key === Qt.Key_7) { visualMode = 6; event.accepted = true }
         else if (event.key === Qt.Key_8) { visualMode = 7; event.accepted = true }
         else if (event.key === Qt.Key_9) { visualMode = 8; event.accepted = true }
@@ -2446,6 +2783,7 @@ FocusScope {
         }
         else if (event.key === Qt.Key_Escape) {
             if (root.showTracerPopover) root.showTracerPopover = false
+            else if (root.showStatementsEditor) root.showStatementsEditor = false
             else if (root.showLayerDrawer) root.showLayerDrawer = false
             else if (root.isFullscreen) {
                 root.showHud = true
@@ -2461,10 +2799,10 @@ FocusScope {
     Timer {
         id: hudAutoHideTimer
         interval: 4000
-        running: root.visible && root.isFullscreen && root.showHud && !root.showLayerDrawer && !root.showTracerPopover
+        running: root.visible && root.isFullscreen && root.showHud && !root.showLayerDrawer && !root.showTracerPopover && !root.showStatementsEditor && !root.textInputFocused
         repeat: false
         onTriggered: {
-            if (root.isFullscreen && !root.showLayerDrawer && !root.showTracerPopover) {
+            if (root.isFullscreen && !root.showLayerDrawer && !root.showTracerPopover && !root.showStatementsEditor && !root.textInputFocused) {
                 root.showHud = false
             }
         }
@@ -2506,6 +2844,9 @@ FocusScope {
                 if (event.key === Qt.Key_Escape) {
                     root.externalStageOpen = false
                     root.suppressActionFeedback("Closed External VJ Stage Window")
+                    event.accepted = true
+                } else if (root.stageMode === "visualiser" && (event.modifiers === Qt.NoModifier) && event.key >= Qt.Key_1 && event.key <= Qt.Key_6) {
+                    root.toggleVisualiserLayerByNumber((event.key - Qt.Key_1) + 1)
                     event.accepted = true
                 }
             }
@@ -3063,7 +3404,7 @@ FocusScope {
                     active: root.layer1Enabled && root.layer1FieldEnabled
                     horizontalPad: 5
                     onClicked: {
-                        root.layer1FieldEnabled = !root.layer1FieldEnabled
+                        root.layer1FieldEnabled = !(root.layer1Enabled && root.layer1FieldEnabled)
                         root.syncLayer1MasterFromSubs()
                         root.hudFocusedLayer = 1
                         root.clearCanvasImmediate()
@@ -3081,7 +3422,7 @@ FocusScope {
                     active: root.layer1Enabled && root.layer1EqEnabled
                     horizontalPad: 5
                     onClicked: {
-                        root.layer1EqEnabled = !root.layer1EqEnabled
+                        root.layer1EqEnabled = !(root.layer1Enabled && root.layer1EqEnabled)
                         root.syncLayer1MasterFromSubs()
                         root.hudFocusedLayer = 2
                         root.clearCanvasImmediate()
@@ -3099,7 +3440,7 @@ FocusScope {
                     active: root.layer1Enabled && root.layer1ShapesEnabled
                     horizontalPad: 5
                     onClicked: {
-                        root.layer1ShapesEnabled = !root.layer1ShapesEnabled
+                        root.layer1ShapesEnabled = !(root.layer1Enabled && root.layer1ShapesEnabled)
                         root.syncLayer1MasterFromSubs()
                         root.hudFocusedLayer = 3
                         root.clearCanvasImmediate()
@@ -3114,11 +3455,12 @@ FocusScope {
                     visible: root.stageMode === "visualiser"
                     text: "4:Geometry"
                     fontSize: 9
-                    active: root.layer2Enabled
+                    active: root.layer2Enabled && (root.layer2VizEnabled || root.layer2TracersEnabled)
                     horizontalPad: 5
                     onClicked: {
-                        root.layer2Enabled = !root.layer2Enabled
-                        if (root.layer2Enabled && !root.layer2VizEnabled && !root.layer2TracersEnabled) {
+                        var nextL2 = !(root.layer2Enabled && (root.layer2VizEnabled || root.layer2TracersEnabled))
+                        root.layer2Enabled = nextL2
+                        if (nextL2) {
                             root.layer2VizEnabled = true
                         }
                         root.hudFocusedLayer = 4
@@ -3300,7 +3642,7 @@ FocusScope {
                     text: root.layer1FieldEnabled ? "Field:ON" : "Field:OFF"
                     active: root.layer1Enabled && root.layer1FieldEnabled
                     onClicked: {
-                        root.layer1FieldEnabled = !root.layer1FieldEnabled
+                        root.layer1FieldEnabled = !(root.layer1Enabled && root.layer1FieldEnabled)
                         root.syncLayer1MasterFromSubs()
                         root.clearCanvasImmediate()
                     }
@@ -3432,7 +3774,7 @@ FocusScope {
             }
 
             // =================================================================
-            // ROW 2 — LAYER 2: EQUALISER (16 2D & Sculptural 3D EQ Styles + EqPos + EqSz + Gain + Rand)
+            // ROW 2 — LAYER 2: EQUALISER (16 2D & Sculptural 3D EQ Styles + EqPos + EqSz + Spin + Gain + Rand)
             // =================================================================
             RowLayout {
                 Layout.fillWidth: true
@@ -3446,7 +3788,7 @@ FocusScope {
                     text: root.layer1EqEnabled ? "LED:ON" : "LED:OFF"
                     active: root.layer1Enabled && root.layer1EqEnabled
                     onClicked: {
-                        root.layer1EqEnabled = !root.layer1EqEnabled
+                        root.layer1EqEnabled = !(root.layer1Enabled && root.layer1EqEnabled)
                         root.syncLayer1MasterFromSubs()
                         root.clearCanvasImmediate()
                     }
@@ -3530,6 +3872,35 @@ FocusScope {
                     }
                     onWheelScrolled: delta => {
                         root.layer1EqScale = Math.max(0.15, Math.min(2.25, Math.round((root.layer1EqScale + (delta > 0 ? 0.1 : -0.1)) * 100) / 100))
+                        vizCanvas.requestPaint()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "Spin:" + root.layer1EqSpin.toFixed(1) + "x"
+                    active: root.layer1Enabled && root.layer1EqEnabled && Math.abs(root.layer1EqSpin - 1.0) > 0.05
+                    onClicked: {
+                        var spSteps = [-2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5]
+                        var nextSp = 1.0
+                        for (var i = 0; i < spSteps.length; i++) {
+                            if (spSteps[i] > root.layer1EqSpin + 0.05) {
+                                nextSp = spSteps[i]
+                                break
+                            }
+                            if (i === spSteps.length - 1) nextSp = spSteps[0]
+                        }
+                        root.layer1EqSpin = nextSp
+                        vizCanvas.requestPaint()
+                    }
+                    onRightClicked: {
+                        root.layer1EqSpin = 1.0
+                        vizCanvas.requestPaint()
+                    }
+                    onWheelScrolled: delta => {
+                        root.layer1EqSpin = Math.max(-2.50, Math.min(2.50, Math.round((root.layer1EqSpin + (delta > 0 ? 0.15 : -0.15)) * 100) / 100))
                         vizCanvas.requestPaint()
                     }
                 }
@@ -4099,6 +4470,15 @@ FocusScope {
                         root.layer3ShowStatements = true
                         root.pickRandomStatement()
                     }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 8
+                    horizontalPad: 3
+                    text: "󰏫"
+                    active: root.showStatementsEditor && root.showLayerDrawer && root.activeConfigLayer === 6
+                    onClicked: root.openStatementsEditorDrawer()
                 }
 
                 Repeater {
@@ -4785,6 +5165,20 @@ FocusScope {
 
                                     LayerSlider {
                                         Layout.fillWidth: true
+                                        label: "3D Spin & Rotation"
+                                        value: root.layer1EqSpin
+                                        minValue: -2.50
+                                        maxValue: 2.50
+                                        unitSuffix: "x"
+                                        onValueEdited: v => {
+                                            root.layer1EqSpin = v
+                                            vizCanvas.requestPaint()
+                                            scheduleSaveVisualiserConfig()
+                                        }
+                                    }
+
+                                    LayerSlider {
+                                        Layout.fillWidth: true
                                         label: "Equaliser Gain"
                                         value: root.layer1EqGain
                                         minValue: 0.40
@@ -4795,6 +5189,55 @@ FocusScope {
                                             vizCanvas.requestPaint()
                                             scheduleSaveVisualiserConfig()
                                         }
+                                    }
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 5
+
+                                        Text {
+                                            text: "3D Spin:"
+                                            textFormat: Text.PlainText
+                                            font.family: "JetBrainsMono Nerd Font"
+                                            font.pixelSize: 10
+                                            font.bold: true
+                                            color: root.accentColour
+                                        }
+
+                                        VizPillButton {
+                                            text: "↻ Forward"
+                                            active: root.layer1EqSpin > 0.05
+                                            horizontalPad: 6
+                                            onClicked: {
+                                                root.layer1EqSpin = Math.abs(root.layer1EqSpin) > 0.05 ? Math.abs(root.layer1EqSpin) : 1.0
+                                                vizCanvas.requestPaint()
+                                                scheduleSaveVisualiserConfig()
+                                            }
+                                        }
+
+                                        VizPillButton {
+                                            text: "↺ Reverse"
+                                            active: root.layer1EqSpin < -0.05
+                                            horizontalPad: 6
+                                            onClicked: {
+                                                root.layer1EqSpin = Math.abs(root.layer1EqSpin) > 0.05 ? -Math.abs(root.layer1EqSpin) : -1.0
+                                                vizCanvas.requestPaint()
+                                                scheduleSaveVisualiserConfig()
+                                            }
+                                        }
+
+                                        VizPillButton {
+                                            text: "⏸ Static (0x)"
+                                            active: Math.abs(root.layer1EqSpin) <= 0.05
+                                            horizontalPad: 6
+                                            onClicked: {
+                                                root.layer1EqSpin = 0.0
+                                                vizCanvas.requestPaint()
+                                                scheduleSaveVisualiserConfig()
+                                            }
+                                        }
+
+                                        Item { Layout.fillWidth: true }
                                     }
                                 }
                             }
@@ -5711,7 +6154,19 @@ FocusScope {
                             }
 
                             VizPillButton {
-                                text: "󰏫 Edit statements.txt"
+                                text: root.showStatementsEditor ? "󰄬 Statements Editor: OPEN" : "󰏫 Statements Editor"
+                                active: root.showStatementsEditor
+                                horizontalPad: 7
+                                onClicked: {
+                                    root.showStatementsEditor = !root.showStatementsEditor
+                                    if (root.showStatementsEditor) {
+                                        root.syncStatementsEditorTextFromList()
+                                    }
+                                }
+                            }
+
+                            VizPillButton {
+                                text: "󰏫 External File"
                                 horizontalPad: 7
                                 onClicked: root.requestOpenStatementsFile()
                             }
@@ -5731,6 +6186,357 @@ FocusScope {
                                 font.bold: root.layer3ShowStatements
                                 color: root.layer3ShowStatements ? root.accentColour : Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.72)
                                 elide: Text.ElideRight
+                            }
+                        }
+
+                        // Built-in Statements & Words Editor (Add, Edit, Delete, Trigger Live, or Bulk Paste)
+                        Rectangle {
+                            id: statementsEditorBox
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: statementsEditorCol.implicitHeight + 16
+                            visible: root.showStatementsEditor
+                            radius: 7
+                            color: Qt.rgba(root.backgroundColour.r, root.backgroundColour.g, root.backgroundColour.b, 0.92)
+                            border.width: 1
+                            border.color: Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.45)
+
+                            ColumnLayout {
+                                id: statementsEditorCol
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                spacing: 6
+
+                                // Editor Header Bar
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+
+                                    Text {
+                                        text: "󰏫 Statements & Words Editor (" + (root.statementsList ? root.statementsList.length : 0) + "):"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 10
+                                        font.bold: true
+                                        color: root.accentColour
+                                    }
+
+                                    VizPillButton {
+                                        text: "󰉹 List & VJ Pads"
+                                        active: !root.statementsEditorBulkMode
+                                        pillHeight: 22
+                                        horizontalPad: 7
+                                        onClicked: {
+                                            if (root.statementsEditorBulkMode) {
+                                                root.statementsEditorBulkMode = false
+                                            }
+                                        }
+                                    }
+
+                                    VizPillButton {
+                                        text: "󰦨 Bulk Text / Paste"
+                                        active: root.statementsEditorBulkMode
+                                        pillHeight: 22
+                                        horizontalPad: 7
+                                        onClicked: {
+                                            root.syncStatementsEditorTextFromList()
+                                            root.statementsEditorBulkMode = true
+                                            statementBulkEdit.forceActiveFocus()
+                                        }
+                                    }
+
+                                    VizPillButton {
+                                        text: "󰆓 Save to statements.txt"
+                                        active: true
+                                        pillHeight: 22
+                                        horizontalPad: 7
+                                        onClicked: {
+                                            if (root.statementsEditorBulkMode) {
+                                                root.saveBulkStatementsText()
+                                            } else if (statementSingleInput.text.trim().length > 0) {
+                                                root.submitSingleStatementInput(true)
+                                            } else {
+                                                root.commitStatementsList(root.statementsList, "Saved " + (root.statementsList ? root.statementsList.length : 0) + " statements to " + root.statementsFilePath)
+                                            }
+                                        }
+                                    }
+
+                                    VizPillButton {
+                                        text: "󰑐 Reload Disk"
+                                        pillHeight: 22
+                                        horizontalPad: 7
+                                        onClicked: {
+                                            root.statementEditorStatusText = "Reloaded statements from " + root.statementsFilePath
+                                            root.requestReloadStatementsFile()
+                                        }
+                                    }
+
+                                    VizPillButton {
+                                        text: "󰁯 Reset Defaults"
+                                        pillHeight: 22
+                                        horizontalPad: 7
+                                        onClicked: root.resetStatementsToDefaults()
+                                    }
+
+                                    Item { Layout.fillWidth: true }
+
+                                    VizPillButton {
+                                        text: "✕ Close"
+                                        pillHeight: 22
+                                        horizontalPad: 6
+                                        onClicked: {
+                                            root.editingStatementIndex = -1
+                                            statementSingleInput.focus = false
+                                            statementBulkEdit.focus = false
+                                            root.showStatementsEditor = false
+                                            root.forceActiveFocus()
+                                        }
+                                    }
+                                }
+
+                                // Quick Add / Inline Edit Input Bar
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+                                    visible: !root.statementsEditorBulkMode
+
+                                    Text {
+                                        text: root.editingStatementIndex >= 0
+                                            ? ("Editing #" + (root.editingStatementIndex + 1) + ":")
+                                            : "Add / Paste:"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 9
+                                        font.bold: true
+                                        color: root.editingStatementIndex >= 0 ? root.urgentColour : root.accentColour
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 24
+                                        radius: 4
+                                        color: "#0b0f17"
+                                        border.width: 1
+                                        border.color: statementSingleInput.activeFocus
+                                            ? root.accentColour
+                                            : Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.28)
+
+                                        TextInput {
+                                            id: statementSingleInput
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 7
+                                            anchors.rightMargin: 7
+                                            verticalAlignment: Text.AlignVCenter
+                                            font.family: "JetBrainsMono Nerd Font"
+                                            font.pixelSize: 10
+                                            color: root.foregroundColour
+                                            selectByMouse: true
+                                            clip: true
+                                            onAccepted: root.submitSingleStatementInput(true)
+
+                                            Text {
+                                                anchors.fill: parent
+                                                verticalAlignment: Text.AlignVCenter
+                                                text: "Type or paste a statement or word and press Enter…"
+                                                textFormat: Text.PlainText
+                                                font.family: "JetBrainsMono Nerd Font"
+                                                font.pixelSize: 9
+                                                color: Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.42)
+                                                visible: !statementSingleInput.text && !statementSingleInput.activeFocus
+                                            }
+                                        }
+                                    }
+
+                                    VizPillButton {
+                                        text: root.editingStatementIndex >= 0
+                                            ? ("󰆓 Update #" + (root.editingStatementIndex + 1))
+                                            : "+ Add & Show Live"
+                                        active: statementSingleInput.text.trim().length > 0
+                                        pillHeight: 24
+                                        horizontalPad: 8
+                                        onClicked: root.submitSingleStatementInput(true)
+                                    }
+
+                                    VizPillButton {
+                                        visible: root.editingStatementIndex < 0
+                                        text: "+ Add to List"
+                                        pillHeight: 24
+                                        horizontalPad: 7
+                                        onClicked: root.submitSingleStatementInput(false)
+                                    }
+
+                                    VizPillButton {
+                                        visible: root.editingStatementIndex >= 0
+                                        text: "Cancel"
+                                        pillHeight: 24
+                                        horizontalPad: 7
+                                        onClicked: {
+                                            root.editingStatementIndex = -1
+                                            statementSingleInput.text = ""
+                                            root.statementEditorStatusText = "Cancelled inline edit"
+                                        }
+                                    }
+                                }
+
+                                // Interactive List & VJ Pads View (Click statement to show live, 󰏫 to edit, ✕ to delete)
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 136
+                                    visible: !root.statementsEditorBulkMode
+                                    radius: 5
+                                    color: Qt.rgba(0, 0, 0, 0.32)
+                                    border.width: 1
+                                    border.color: Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.16)
+                                    clip: true
+
+                                    Flickable {
+                                        id: statementsListFlick
+                                        anchors.fill: parent
+                                        anchors.margins: 6
+                                        contentWidth: width
+                                        contentHeight: statementsChipsFlow.implicitHeight
+                                        clip: true
+                                        boundsBehavior: Flickable.StopAtBounds
+
+                                        Flow {
+                                            id: statementsChipsFlow
+                                            width: statementsListFlick.width
+                                            spacing: 5
+
+                                            Repeater {
+                                                model: root.statementsList ? root.statementsList.length : 0
+                                                delegate: RowLayout {
+                                                    required property int index
+                                                    readonly property string stmtText: String((root.statementsList && root.statementsList[index]) || "")
+                                                    spacing: 2
+
+                                                    VizPillButton {
+                                                        text: (index + 1) + ". " + stmtText
+                                                        active: root.layer3ShowStatements && root.currentStatement === stmtText
+                                                        pillHeight: 22
+                                                        horizontalPad: 7
+                                                        onClicked: root.selectStatementLive(stmtText)
+                                                        onRightClicked: root.beginEditStatementAt(index)
+                                                    }
+
+                                                    VizPillButton {
+                                                        text: "󰏫"
+                                                        active: root.editingStatementIndex === index
+                                                        pillHeight: 22
+                                                        horizontalPad: 5
+                                                        onClicked: root.beginEditStatementAt(index)
+                                                    }
+
+                                                    VizPillButton {
+                                                        text: "✕"
+                                                        pillHeight: 22
+                                                        horizontalPad: 5
+                                                        onClicked: root.deleteStatementAt(index)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Multi-line Bulk Text Editor Mode (One statement per line)
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+                                    visible: root.statementsEditorBulkMode
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "Bulk Edit / Paste (one statement or word per line — '#' comments and blank lines are ignored):"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 9
+                                        color: Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.78)
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 136
+                                        radius: 5
+                                        color: "#0b0f17"
+                                        border.width: 1
+                                        border.color: statementBulkEdit.activeFocus
+                                            ? root.accentColour
+                                            : Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.28)
+                                        clip: true
+
+                                        Flickable {
+                                            id: bulkEditFlick
+                                            anchors.fill: parent
+                                            anchors.margins: 6
+                                            contentWidth: width
+                                            contentHeight: Math.max(height, statementBulkEdit.paintedHeight + 12)
+                                            clip: true
+                                            boundsBehavior: Flickable.StopAtBounds
+
+                                            TextEdit {
+                                                id: statementBulkEdit
+                                                width: bulkEditFlick.width
+                                                height: Math.max(bulkEditFlick.height, paintedHeight + 12)
+                                                font.family: "JetBrainsMono Nerd Font"
+                                                font.pixelSize: 10
+                                                color: root.foregroundColour
+                                                selectByMouse: true
+                                                wrapMode: TextEdit.Wrap
+                                                text: (root.statementsList && root.statementsList.length > 0)
+                                                    ? root.statementsList.join("\n")
+                                                    : Engine.DEFAULT_STATEMENTS.join("\n")
+                                                onCursorRectangleChanged: {
+                                                    if (cursorRectangle.y < bulkEditFlick.contentY) {
+                                                        bulkEditFlick.contentY = cursorRectangle.y
+                                                    } else if (cursorRectangle.y + cursorRectangle.height > bulkEditFlick.contentY + bulkEditFlick.height) {
+                                                        bulkEditFlick.contentY = cursorRectangle.y + cursorRectangle.height - bulkEditFlick.height
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
+
+                                        VizPillButton {
+                                            text: "󰆓 Save All Lines to statements.txt"
+                                            active: true
+                                            pillHeight: 22
+                                            horizontalPad: 8
+                                            onClicked: root.saveBulkStatementsText()
+                                        }
+
+                                        VizPillButton {
+                                            text: "󰑐 Revert Unsaved Changes"
+                                            pillHeight: 22
+                                            horizontalPad: 7
+                                            onClicked: {
+                                                root.syncStatementsEditorTextFromList()
+                                                root.statementEditorStatusText = "Reverted bulk editor to current statements list"
+                                            }
+                                        }
+
+                                        Item { Layout.fillWidth: true }
+                                    }
+                                }
+
+                                // Editor Footer Status Line
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: root.statementEditorStatusText
+                                        ? ("󰄬 " + root.statementEditorStatusText)
+                                        : ("Click any statement pad to display it live on canvas, 󰏫 to edit inline, or ✕ to delete  •  File: " + root.statementsFilePath)
+                                    textFormat: Text.PlainText
+                                    font.family: "JetBrainsMono Nerd Font"
+                                    font.pixelSize: 9
+                                    color: root.statementEditorStatusText
+                                        ? root.accentColour
+                                        : Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.72)
+                                    elide: Text.ElideRight
+                                }
                             }
                         }
 

@@ -2742,8 +2742,8 @@ def ensure_status_summary() -> dict:
 # Playback History & Intelligent / User Playlists Engine
 # --------------------------------------------------------------------------- #
 
-def record_history(track: dict) -> None:
-    """Record a played track in HISTORY_FILE so intelligent playlists can seed from it."""
+def record_history(track: dict, position: float | None = None, playlist_pos: int | None = None) -> None:
+    """Record a played track (and its playback position / queue index) in HISTORY_FILE."""
     if not track or not track.get("title"):
         return
     hist = read_json(HISTORY_FILE, {"lastPlayedTrack": None, "recentTracks": []}) or {}
@@ -2751,26 +2751,44 @@ def record_history(track: dict) -> None:
     now_ts = int(time.time())
     track_id = bounded_text(track.get("id") or "")
     last_played = hist.get("lastPlayedTrack") or {}
-    if (
+    eff_pos = bounded_float(
+        position
+        if position is not None
+        else (track.get("position") if track.get("position") is not None else last_played.get("position", 0.0)),
+        0.0,
+    )
+    eff_pl_pos = bounded_int(
+        playlist_pos
+        if playlist_pos is not None
+        else (track.get("playlistPos") if track.get("playlistPos") is not None else last_played.get("playlistPos", 0)),
+        0,
+    )
+    is_same_recent_track = (
         track_id
         and last_played.get("id") == track_id
         and recent
         and recent[0].get("id") == track_id
         and (now_ts - int(last_played.get("playedAt") or 0)) < 30
-    ):
+    )
+    if is_same_recent_track and position is None and playlist_pos is None:
         return
     entry = {
         "id": track_id,
-        "title": bounded_text(track.get("title") or ""),
-        "artist": bounded_text(track.get("artist") or ""),
-        "album": bounded_text(track.get("album") or ""),
-        "albumId": bounded_text(track.get("albumId") or ""),
-        "artPath": bounded_text(track.get("artPath") or "", MAX_URL_CHARS),
-        "duration": bounded_float(track.get("duration") or 0.0),
-        "playSource": bounded_text(track.get("playSource") or "local", 32),
-        "purchased": bool(track.get("purchased", False)),
-        "isLocal": bool(track.get("isLocal", True)),
-        "playedAt": now_ts,
+        "title": bounded_text(track.get("title") or last_played.get("title") or ""),
+        "artist": bounded_text(track.get("artist") or last_played.get("artist") or ""),
+        "album": bounded_text(track.get("album") or last_played.get("album") or ""),
+        "albumId": bounded_text(track.get("albumId") or last_played.get("albumId") or ""),
+        "artPath": bounded_text(track.get("artPath") or last_played.get("artPath") or "", MAX_URL_CHARS),
+        "duration": bounded_float(track.get("duration") or last_played.get("duration") or 0.0),
+        "position": eff_pos,
+        "playlistPos": eff_pl_pos,
+        "target": bounded_text(track.get("target") or last_played.get("target") or "", MAX_URL_CHARS),
+        "localPath": bounded_text(track.get("localPath") or last_played.get("localPath") or "", MAX_URL_CHARS),
+        "streamUrl": bounded_text(track.get("streamUrl") or last_played.get("streamUrl") or "", MAX_URL_CHARS),
+        "playSource": bounded_text(track.get("playSource") or last_played.get("playSource") or "local", 32),
+        "purchased": bool(track.get("purchased", last_played.get("purchased", False))),
+        "isLocal": bool(track.get("isLocal", last_played.get("isLocal", True))),
+        "playedAt": int(last_played.get("playedAt") or now_ts) if is_same_recent_track else now_ts,
     }
     if recent and recent[0].get("id") == entry["id"] and entry["id"]:
         recent[0] = entry
@@ -2778,7 +2796,9 @@ def record_history(track: dict) -> None:
         recent = [r for r in recent if r.get("id") != entry["id"]]
         recent.insert(0, entry)
     recent = recent[:200]
-    write_json(HISTORY_FILE, {"lastPlayedTrack": entry, "recentTracks": recent})
+    hist["lastPlayedTrack"] = entry
+    hist["recentTracks"] = recent
+    write_json(HISTORY_FILE, hist)
 
 
 def all_indexed_tracks(idx: dict) -> list[dict]:
@@ -3022,7 +3042,72 @@ def mpv_running() -> bool:
     return mpv_get("idle-active") is not None or mpv_get("pid") is not None
 
 
-def mpv_stop() -> None:
+def save_playback_resume_state(position_override: float | None = None) -> None:
+    """Persist current mpv time-pos, playlist-pos, duration, and active track to QUEUE_FILE and HISTORY_FILE."""
+    if not mpv_running():
+        return
+    try:
+        pos = mpv_get("playlist-pos")
+        raw_t = mpv_get("time-pos")
+        dur = bounded_float(mpv_get("duration") or 0.0, 0.0)
+        vol = bounded_float(mpv_get("volume") or 100.0, 100.0, 0.0, 130.0)
+        path = mpv_get("path") or ""
+        queue = read_json(QUEUE_FILE, {}) or {}
+        hist = read_json(HISTORY_FILE, {}) or {}
+        last = hist.get("lastPlayedTrack") if isinstance(hist, dict) else None
+        if position_override is not None:
+            time_pos = bounded_float(position_override, 0.0)
+        elif raw_t is not None:
+            time_pos = bounded_float(raw_t, 0.0)
+        else:
+            time_pos = bounded_float(
+                (queue.get("position") if isinstance(queue, dict) else None)
+                or (last.get("position") if isinstance(last, dict) else None)
+                or 0.0,
+                0.0,
+            )
+        tracks = list(queue.get("tracks") or [])
+        entry = {}
+        matched_idx = bounded_int(pos, 0)
+        if path:
+            for idx_t, t in enumerate(tracks):
+                if t.get("target") == path or (t.get("localPath") and t["localPath"] == path):
+                    entry = t
+                    if not isinstance(pos, int):
+                        matched_idx = idx_t
+                    break
+        if not entry and isinstance(pos, int) and 0 <= pos < len(tracks):
+            entry = tracks[pos]
+            matched_idx = pos
+        if isinstance(queue, dict) and tracks:
+            queue["playlistPos"] = matched_idx
+            queue["position"] = round(time_pos, 2)
+            if dur > 0:
+                queue["duration"] = dur
+                if 0 <= matched_idx < len(tracks) and isinstance(tracks[matched_idx], dict):
+                    tracks[matched_idx]["duration"] = dur
+            queue["updatedAt"] = int(time.time())
+            write_json(QUEUE_FILE, queue)
+        if isinstance(hist, dict):
+            hist["volume"] = vol
+            write_json(HISTORY_FILE, hist)
+        if entry and entry.get("title"):
+            eff_entry = dict(entry)
+            if dur > 0:
+                eff_entry["duration"] = dur
+            record_history(eff_entry, position=time_pos, playlist_pos=matched_idx)
+        elif isinstance(last, dict) and last.get("title"):
+            eff_entry = dict(last)
+            if dur > 0:
+                eff_entry["duration"] = dur
+            record_history(eff_entry, position=time_pos, playlist_pos=matched_idx)
+    except Exception:
+        pass
+
+
+def mpv_stop(save_state: bool = True) -> None:
+    if save_state:
+        save_playback_resume_state()
     sock_path = _active_ipc_socket()
     pid = mpv_get("pid")
     mpv_request(["quit"])
@@ -3052,8 +3137,14 @@ def mpv_stop() -> None:
             pass
 
 
-def mpv_launch(playlist_path: str, shuffle: bool = False, start_index: int = 0, loop: bool = False) -> None:
-    mpv_stop()
+def mpv_launch(
+    playlist_path: str,
+    shuffle: bool = False,
+    start_index: int = 0,
+    loop: bool = False,
+    start_position: float = 0.0,
+) -> None:
+    mpv_stop(save_state=False)
     ensure_private_dir(os.path.dirname(IPC_SOCKET))
     mpv_bin = resolve_bin("mpv", required=True)
     args = [
@@ -3081,6 +3172,8 @@ def mpv_launch(playlist_path: str, shuffle: bool = False, start_index: int = 0, 
         args.append(f"--playlist-start={start_index}")
     if loop:
         args.append("--loop-playlist=inf")
+    if start_position > 0.25:
+        args.append(f"--start=+{start_position:.2f}")
     args.append("--")
     subprocess.Popen(
         args,
@@ -3098,6 +3191,19 @@ def mpv_launch(playlist_path: str, shuffle: bool = False, start_index: int = 0, 
             if mpv_running():
                 break
         time.sleep(0.05)
+    if start_position > 0.25 and mpv_running():
+        for _ in range(16):
+            cur_t = mpv_get("time-pos")
+            if cur_t is not None:
+                if float(cur_t) < start_position - 1.0:
+                    mpv_request(["seek", float(start_position), "absolute"])
+                mpv_request(["set_property", "start", "none"])
+                break
+            time.sleep(0.04)
+        else:
+            mpv_request(["set_property", "start", "none"])
+            mpv_request(["seek", float(start_position), "absolute"])
+
 
 
 def sanitise_m3u_target(target: str) -> str:
@@ -3230,7 +3336,15 @@ def resolve_track_list(raw_tracks: list[dict], idx: dict, mode: str = "auto", ap
     return _resolve_direct_stream_targets(playable, api_base=api_base)
 
 
-def start_queue(tracks: list[dict], source: dict, shuffle: bool = False, start_index: int = 0, loop: bool = False) -> None:
+def start_queue(
+    tracks: list[dict],
+    source: dict,
+    shuffle: bool = False,
+    start_index: int = 0,
+    loop: bool = False,
+    start_position: float = 0.0,
+    emit_output: bool = True,
+) -> dict:
     if not tracks:
         die("no playable tracks found for that selection")
     lines = ["#EXTM3U"]
@@ -3245,28 +3359,171 @@ def start_queue(tracks: list[dict], source: dict, shuffle: bool = False, start_i
         tc["target"] = safe_target
         valid_tracks.append(tc)
     atomic_write(PLAYLIST_M3U_FILE, ("\n".join(lines) + "\n").encode("utf-8"), 0o600)
+    actual_idx = min(max(0, start_index), len(valid_tracks) - 1)
+    first = valid_tracks[actual_idx]
+    eff_start_pos = max(0.0, float(start_position or 0.0))
+    dur_first = float(first.get("duration") or 0.0)
+    if dur_first > 5.0 and eff_start_pos >= dur_first - 0.5:
+        eff_start_pos = 0.0
     write_json(
         QUEUE_FILE,
         {
             "startedAt": int(time.time()),
             "source": source,
             "shuffle": shuffle,
+            "playlistPos": actual_idx,
+            "position": round(eff_start_pos, 2),
+            "duration": dur_first,
             "tracks": valid_tracks,
         },
     )
-    actual_idx = min(max(0, start_index), len(valid_tracks) - 1)
-    first = valid_tracks[actual_idx]
-    record_history(first)
-    mpv_launch(PLAYLIST_M3U_FILE, shuffle=shuffle, start_index=actual_idx, loop=loop)
-    emit({
+    record_history(first, position=eff_start_pos, playlist_pos=actual_idx)
+    mpv_launch(PLAYLIST_M3U_FILE, shuffle=shuffle, start_index=actual_idx, loop=loop, start_position=eff_start_pos)
+    payload = {
         "playing": True,
         "trackIndex": actual_idx,
         "trackCount": len(valid_tracks),
+        "position": round(eff_start_pos, 2),
         "source": source,
         "shuffle": shuffle,
         "track": first,
         "artPath": first.get("artPath") or "",
-    })
+    }
+    if emit_output:
+        emit(payload)
+    return payload
+
+
+def resume_last_playback(
+    start_index_override: int | None = None,
+    start_pos_override: float | None = None,
+) -> dict | None:
+    """Resume the last played queue/track from the saved position when mpv is not running."""
+    global concurrent, ipaddress, ssl, urllib
+    import concurrent.futures as _cf  # noqa: F401
+    import concurrent
+    import ipaddress
+    import ssl
+    import urllib.error  # noqa: F401
+    import urllib.parse  # noqa: F401
+    import urllib.request as _ur  # noqa: F401
+    import urllib
+
+    queue = read_json(QUEUE_FILE, {}) or {}
+    hist = read_json(HISTORY_FILE, {}) or {}
+    last = hist.get("lastPlayedTrack") if isinstance(hist, dict) else None
+    last = last if isinstance(last, dict) else {}
+    loop = bool(hist.get("loopPlaylist", False)) if isinstance(hist, dict) else False
+    shuffle = bool(queue.get("shuffle", False)) if isinstance(queue, dict) else False
+
+    saved_idx = bounded_int(queue.get("playlistPos", last.get("playlistPos", 0)), 0)
+    q_tracks = list(queue.get("tracks") or []) if isinstance(queue, dict) else []
+    if q_tracks and last.get("id"):
+        if not (0 <= saved_idx < len(q_tracks) and q_tracks[saved_idx].get("id") == last.get("id")):
+            for idx_t, t in enumerate(q_tracks):
+                if t.get("id") == last.get("id"):
+                    saved_idx = idx_t
+                    break
+
+    if start_index_override is not None:
+        target_idx = max(0, int(start_index_override))
+        target_pos = max(0.0, float(start_pos_override or 0.0))
+    else:
+        target_idx = saved_idx
+        if start_pos_override is not None:
+            target_pos = max(0.0, float(start_pos_override))
+        else:
+            q_pos_val = bounded_float(queue.get("position", 0.0), 0.0)
+            l_pos_val = bounded_float(last.get("position", 0.0), 0.0)
+            target_pos = l_pos_val if l_pos_val > 0 else q_pos_val
+
+    if q_tracks:
+        usable_q_tracks: list[dict] = []
+        for t in q_tracks:
+            cand = str(t.get("target") or t.get("localPath") or t.get("streamUrl") or "")
+            if not cand:
+                continue
+            try:
+                safe_t = sanitise_m3u_target(cand)
+                tc = dict(t)
+                tc["target"] = safe_t
+                usable_q_tracks.append(tc)
+            except Exception:
+                continue
+        if usable_q_tracks:
+            clamped_idx = min(max(0, target_idx), len(usable_q_tracks) - 1)
+            return start_queue(
+                usable_q_tracks,
+                queue.get("source") or {"type": "resume"},
+                shuffle=shuffle,
+                start_index=clamped_idx,
+                loop=loop,
+                start_position=target_pos,
+                emit_output=False,
+            )
+
+    settings = load_settings()
+    api_base = settings.get("apiBase") or "https://bandcamp.com"
+
+    if last.get("title"):
+        cand_direct = str(last.get("localPath") or last.get("target") or "")
+        if cand_direct and os.path.isfile(cand_direct):
+            try:
+                safe_t = sanitise_m3u_target(cand_direct)
+                tc = dict(last)
+                tc["target"] = safe_t
+                return start_queue(
+                    [tc],
+                    {"type": "track", "trackId": tc.get("id") or ""},
+                    shuffle=False,
+                    start_index=0,
+                    loop=loop,
+                    start_position=target_pos,
+                    emit_output=False,
+                )
+            except Exception:
+                pass
+
+    idx = ensure_index()
+    albums = list(idx.get("albums") or [])
+    target_album = None
+    matched_track_idx = 0
+    if last.get("albumId"):
+        target_album = next((a for a in albums if a.get("id") == last.get("albumId")), None)
+    if not target_album and last.get("id"):
+        for a in albums:
+            for ti, t in enumerate(a.get("tracks") or []):
+                if t.get("id") == last.get("id"):
+                    target_album = a
+                    matched_track_idx = ti
+                    break
+            if target_album:
+                break
+    if not target_album and albums:
+        target_album = albums[0]
+        target_pos = 0.0
+
+    if target_album:
+        resolved = resolve_playable_tracks(target_album, mode="auto", api_base=api_base)
+        if resolved:
+            if last.get("id"):
+                for ti, t in enumerate(resolved):
+                    if t.get("id") == last.get("id"):
+                        matched_track_idx = ti
+                        break
+            if start_index_override is not None:
+                matched_track_idx = min(max(0, int(start_index_override)), len(resolved) - 1)
+            return start_queue(
+                resolved,
+                {"type": "album", "albumId": target_album.get("id"), "title": target_album.get("title"), "mode": "auto"},
+                shuffle=False,
+                start_index=matched_track_idx,
+                loop=loop,
+                start_position=target_pos,
+                emit_output=False,
+            )
+    return None
+
 
 
 # --------------------------------------------------------------------------- #
@@ -3592,26 +3849,84 @@ def download_album_to_local(album: dict, preferred_format: str, settings: dict) 
 # --------------------------------------------------------------------------- #
 
 def get_playback_state() -> dict:
-    """Query running mpv IPC socket and return complete playback state dict."""
+    """Query running mpv IPC socket and return complete playback state dict (or saved resume state when stopped)."""
     if not mpv_running():
+        queue = read_json(QUEUE_FILE, {}) or {}
+        tracks = list(queue.get("tracks") or []) if isinstance(queue, dict) else []
+        hist = read_json(HISTORY_FILE, {}) or {}
+        last = (hist.get("lastPlayedTrack") if isinstance(hist, dict) else None) or {}
+        q_pos = bounded_int(queue.get("playlistPos", last.get("playlistPos", 0)), 0)
+        entry = {}
+        if tracks:
+            if last.get("id"):
+                if 0 <= q_pos < len(tracks) and tracks[q_pos].get("id") == last.get("id"):
+                    entry = tracks[q_pos]
+                else:
+                    for idx_t, t in enumerate(tracks):
+                        if t.get("id") == last.get("id"):
+                            entry = t
+                            q_pos = idx_t
+                            break
+            if not entry:
+                if 0 <= q_pos < len(tracks):
+                    entry = tracks[q_pos]
+                else:
+                    entry = tracks[0]
+                    q_pos = 0
+        elif isinstance(last, dict) and last.get("title"):
+            entry = last
+            q_pos = bounded_int(last.get("playlistPos", 0), 0)
+
+        title = bounded_text(entry.get("title") or last.get("title") or "")
+        artist = bounded_text(entry.get("artist") or last.get("artist") or "")
+        album = bounded_text(entry.get("album") or last.get("album") or "")
+        album_id = entry.get("albumId") or last.get("albumId") or ""
+        track_id = entry.get("id") or last.get("id") or ""
+        art_path = entry.get("artPath") or last.get("artPath") or ""
+        if (title or artist) and (not art_path or not os.path.exists(art_path)):
+            art_path = ensure_cover_svg(album_id or "now", artist or "Bandarchy", album or title or "Music")
+
+        l_pos = bounded_float(last.get("position", 0.0), 0.0) if isinstance(last, dict) else 0.0
+        q_saved_pos = bounded_float(queue.get("position", 0.0), 0.0) if isinstance(queue, dict) else 0.0
+        saved_pos = l_pos if (last.get("id") and last.get("id") == track_id and l_pos > 0) else (q_saved_pos if q_saved_pos > 0 else l_pos)
+        saved_dur = max(
+            bounded_float(last.get("duration") if isinstance(last, dict) and last.get("id") == track_id else 0.0, 0.0),
+            bounded_float(queue.get("duration") if isinstance(queue, dict) else 0.0, 0.0),
+            bounded_float(entry.get("duration") or 0.0, 0.0),
+        )
+        if saved_dur > 5.0 and saved_pos >= saved_dur - 0.5:
+            saved_pos = 0.0
+
         return {
             "playing": False,
             "paused": False,
-            "title": "",
-            "artist": "",
-            "album": "",
-            "albumId": "",
-            "trackId": "",
-            "playSource": "local",
-            "artPath": "",
-            "position": 0.0,
-            "duration": 0.0,
-            "volume": 100.0,
-            "playlistPos": 0,
-            "playlistCount": 0,
-            "shuffle": False,
-            "loop": False,
-            "queue": [],
+            "resumable": bool(title or tracks),
+            "title": title,
+            "artist": artist,
+            "album": album,
+            "albumId": album_id,
+            "trackId": track_id,
+            "playSource": entry.get("playSource") or last.get("playSource") or "local",
+            "artPath": art_path,
+            "position": saved_pos,
+            "duration": saved_dur,
+            "volume": bounded_float(hist.get("volume", 100.0) if isinstance(hist, dict) else 100.0, 100.0, 0.0, 130.0),
+            "playlistPos": q_pos,
+            "playlistCount": len(tracks),
+            "shuffle": bool(queue.get("shuffle")) if isinstance(queue, dict) else False,
+            "loop": bool(hist.get("loopPlaylist", False)) if isinstance(hist, dict) else False,
+            "queue": [
+                {
+                    "id": t.get("id") or "",
+                    "title": t.get("title") or "",
+                    "artist": t.get("artist") or "",
+                    "album": t.get("album") or "",
+                    "albumId": t.get("albumId") or "",
+                    "duration": t.get("duration") or 0,
+                    "playSource": t.get("playSource") or "local",
+                }
+                for t in tracks[:200]
+            ],
         }
 
     pos = mpv_get("playlist-pos")
@@ -3619,13 +3934,17 @@ def get_playback_state() -> dict:
     queue = read_json(QUEUE_FILE, {}) or {}
     tracks = queue.get("tracks") or []
     entry = {}
+    matched_idx = bounded_int(pos, 0)
     if path:
-        for t in tracks:
+        for idx_t, t in enumerate(tracks):
             if t.get("target") == path or (t.get("localPath") and t["localPath"] == path):
                 entry = t
+                if not isinstance(pos, int):
+                    matched_idx = idx_t
                 break
     if not entry and isinstance(pos, int) and 0 <= pos < len(tracks):
         entry = tracks[pos]
+        matched_idx = pos
 
     meta = mpv_get("metadata") or {}
     meta = {str(k).lower(): v for k, v in meta.items()} if isinstance(meta, dict) else {}
@@ -3637,12 +3956,31 @@ def get_playback_state() -> dict:
     if not art_path or not os.path.exists(art_path):
         art_path = ensure_cover_svg(entry.get("albumId") or "now", artist or "Bandarchy", album or title or "Music")
 
+    time_pos = bounded_float(mpv_get("time-pos") or 0.0)
+    dur_val = bounded_float(mpv_get("duration") or entry.get("duration") or 0.0)
+
     if entry and entry.get("id"):
-        record_history(entry)
+        eff_entry = dict(entry)
+        if dur_val > 0:
+            eff_entry["duration"] = dur_val
+        record_history(eff_entry, position=time_pos, playlist_pos=matched_idx)
+
+    if isinstance(queue, dict) and tracks:
+        prev_q_pos = queue.get("playlistPos")
+        prev_q_time = float(queue.get("position") or 0.0)
+        if prev_q_pos != matched_idx or abs(time_pos - prev_q_time) >= 1.5:
+            queue["playlistPos"] = matched_idx
+            queue["position"] = round(time_pos, 2)
+            if dur_val > 0:
+                queue["duration"] = dur_val
+                if 0 <= matched_idx < len(tracks) and isinstance(tracks[matched_idx], dict):
+                    tracks[matched_idx]["duration"] = dur_val
+            write_json(QUEUE_FILE, queue)
 
     return {
         "playing": True,
         "paused": bool(mpv_get("pause")),
+        "resumable": True,
         "title": title,
         "artist": artist,
         "album": album,
@@ -3650,10 +3988,10 @@ def get_playback_state() -> dict:
         "trackId": entry.get("id") or "",
         "playSource": entry.get("playSource") or ("local" if os.path.exists(path) else "stream"),
         "artPath": art_path,
-        "position": bounded_float(mpv_get("time-pos") or 0.0),
-        "duration": bounded_float(mpv_get("duration") or entry.get("duration") or 0.0),
+        "position": time_pos,
+        "duration": dur_val,
         "volume": bounded_float(mpv_get("volume") or 100.0, 100.0, 0.0, 130.0),
-        "playlistPos": bounded_int(pos, 0),
+        "playlistPos": matched_idx,
         "playlistCount": bounded_int(mpv_get("playlist-count") or len(tracks), len(tracks)),
         "shuffle": bool(queue.get("shuffle")),
         "loop": mpv_get("loop-playlist") in ("inf", "force", True),
@@ -3688,6 +4026,7 @@ def _visualiser_settings_payload(settings: dict) -> dict:
         "layer1EqStyle": bounded_int(settings.get("layer1EqStyle"), 0, 0, 15),
         "layer1EqLayout": bounded_int(settings.get("layer1EqLayout"), 0, 0, 3),
         "layer1EqScale": bounded_float(settings.get("layer1EqScale"), 1.0, 0.15, 2.25),
+        "layer1EqSpin": bounded_float(settings.get("layer1EqSpin"), 1.0, -2.5, 2.5),
         "layer1Speed": bounded_float(settings.get("layer1Speed"), 1.0, 0.1, 4.0),
         "layer1Density": bounded_float(settings.get("layer1Density"), 1.0, 0.1, 3.0),
         "layer1Trail": bounded_float(settings.get("layer1Trail"), 0.84, 0.1, 0.98),
@@ -4761,35 +5100,90 @@ def cmd_favourites(args) -> None:
 
 def cmd_cmd(args) -> None:
     action = args.action
+    is_running = mpv_running()
     if action == "play-pause":
-        mpv_request(["cycle", "pause"])
-    elif action == "play":
-        mpv_request(["set_property", "pause", False])
-    elif action == "pause":
-        mpv_request(["set_property", "pause", True])
-    elif action == "next":
-        mpv_request(["playlist-next", "force"])
-    elif action == "prev":
-        pos = mpv_get("playlist-pos") or 0
-        elapsed = mpv_get("time-pos") or 0
-        if pos <= 0 or elapsed > 4:
-            mpv_request(["seek", 0, "absolute"])
+        if is_running:
+            mpv_request(["cycle", "pause"])
+            save_playback_resume_state()
         else:
-            mpv_request(["playlist-prev"])
+            resumed = resume_last_playback()
+            emit({"action": action, "resumed": bool(resumed), **(resumed or {})})
+            return
+    elif action == "play":
+        if is_running:
+            mpv_request(["set_property", "pause", False])
+            save_playback_resume_state()
+        else:
+            resumed = resume_last_playback()
+            emit({"action": action, "resumed": bool(resumed), **(resumed or {})})
+            return
+    elif action == "pause":
+        if is_running:
+            mpv_request(["set_property", "pause", True])
+            save_playback_resume_state()
+    elif action == "next":
+        if is_running:
+            mpv_request(["playlist-next", "force"])
+            save_playback_resume_state()
+        else:
+            queue = read_json(QUEUE_FILE, {}) or {}
+            hist = read_json(HISTORY_FILE, {}) or {}
+            last = (hist.get("lastPlayedTrack") if isinstance(hist, dict) else None) or {}
+            saved_idx = bounded_int(queue.get("playlistPos", last.get("playlistPos", 0)), 0)
+            resumed = resume_last_playback(start_index_override=saved_idx + 1, start_pos_override=0.0)
+            emit({"action": action, "resumed": bool(resumed), **(resumed or {})})
+            return
+    elif action == "prev":
+        if is_running:
+            pos = mpv_get("playlist-pos") or 0
+            elapsed = mpv_get("time-pos") or 0
+            if pos <= 0 or elapsed > 4:
+                mpv_request(["seek", 0, "absolute"])
+            else:
+                mpv_request(["playlist-prev"])
+            save_playback_resume_state()
+        else:
+            queue = read_json(QUEUE_FILE, {}) or {}
+            hist = read_json(HISTORY_FILE, {}) or {}
+            last = (hist.get("lastPlayedTrack") if isinstance(hist, dict) else None) or {}
+            saved_idx = bounded_int(queue.get("playlistPos", last.get("playlistPos", 0)), 0)
+            saved_pos = bounded_float(last.get("position", queue.get("position", 0.0)), 0.0)
+            prev_idx = saved_idx if (saved_idx <= 0 or saved_pos > 4.0) else max(0, saved_idx - 1)
+            resumed = resume_last_playback(start_index_override=prev_idx, start_pos_override=0.0)
+            emit({"action": action, "resumed": bool(resumed), **(resumed or {})})
+            return
     elif action == "stop":
-        mpv_stop()
+        mpv_stop(save_state=True)
     elif action == "volume":
         if args.value is None:
             die("volume requires --value 0-130")
-        mpv_request(["set_property", "volume", float(args.value)])
+        vol_val = bounded_float(args.value, 100.0, 0.0, 130.0)
+        if is_running:
+            mpv_request(["set_property", "volume", vol_val])
+        hist = read_json(HISTORY_FILE, {}) or {}
+        if isinstance(hist, dict):
+            hist["volume"] = vol_val
+            write_json(HISTORY_FILE, hist)
     elif action == "seek":
         if args.value is None:
             die("seek requires --value SECONDS")
-        mpv_request(["seek", float(args.value), "absolute"])
+        sec_val = max(0.0, float(args.value))
+        if is_running:
+            mpv_request(["seek", sec_val, "absolute"])
+            save_playback_resume_state(position_override=sec_val)
+        else:
+            queue = read_json(QUEUE_FILE, {}) or {}
+            if isinstance(queue, dict) and queue.get("tracks"):
+                queue["position"] = round(sec_val, 2)
+                write_json(QUEUE_FILE, queue)
+            hist = read_json(HISTORY_FILE, {}) or {}
+            last = hist.get("lastPlayedTrack") if isinstance(hist, dict) else None
+            if isinstance(last, dict) and last.get("title"):
+                record_history(last, position=sec_val, playlist_pos=bounded_int(last.get("playlistPos", 0), 0))
     elif action == "loop":
         hist = read_json(HISTORY_FILE, {}) or {}
         if args.value is None:
-            cur = mpv_get("loop-playlist")
+            cur = mpv_get("loop-playlist") if is_running else None
             if cur is None:
                 is_looping = bool(hist.get("loopPlaylist", False))
             else:
@@ -4797,7 +5191,8 @@ def cmd_cmd(args) -> None:
             target_loop = "no" if is_looping else "inf"
         else:
             target_loop = "inf" if args.value > 0 else "no"
-        mpv_request(["set_property", "loop-playlist", target_loop])
+        if is_running:
+            mpv_request(["set_property", "loop-playlist", target_loop])
         hist["loopPlaylist"] = target_loop == "inf"
         write_json(HISTORY_FILE, hist)
         emit({"action": action, "loop": target_loop == "inf"})
@@ -4805,10 +5200,18 @@ def cmd_cmd(args) -> None:
     elif action == "jump":
         if args.value is None:
             die("jump requires --value PLAYLIST_INDEX")
-        mpv_request(["set_property", "playlist-pos", int(args.value)])
+        jump_idx = max(0, int(args.value))
+        if is_running:
+            mpv_request(["set_property", "playlist-pos", jump_idx])
+            save_playback_resume_state()
+        else:
+            resumed = resume_last_playback(start_index_override=jump_idx, start_pos_override=0.0)
+            emit({"action": action, "resumed": bool(resumed), **(resumed or {})})
+            return
     else:
         die(f"unknown transport command: {action}")
     emit({"action": action})
+
 
 
 def cmd_now(args) -> None:
@@ -4864,18 +5267,23 @@ DEFAULT_STATEMENTS_FALLBACK = [
 ]
 
 
+def _default_statements_seed_text() -> str:
+    seed_txt = safe_read_text(DEFAULT_STATEMENTS_FILE, max_bytes=256 * 1024)
+    if not seed_txt:
+        seed_txt = (
+            "# Bandarchy — 6: Typography Statements & Words Collection\n"
+            "# One statement or word per line ('#' comments are ignored).\n\n"
+            + "\n".join(DEFAULT_STATEMENTS_FALLBACK)
+            + "\n"
+        )
+    return seed_txt
+
+
 def load_statements() -> list[str]:
     """Load user-customisable statements from ~/.config/bandarchy/statements.txt (seeding from share/statements.txt if absent)."""
     ensure_private_dir(CONFIG_DIR)
     if not os.path.exists(STATEMENTS_FILE):
-        seed_txt = safe_read_text(DEFAULT_STATEMENTS_FILE, max_bytes=256 * 1024)
-        if not seed_txt:
-            seed_txt = (
-                "# Bandarchy — 6: Typography Statements & Words Collection\n"
-                "# One statement or word per line ('#' comments are ignored).\n\n"
-                + "\n".join(DEFAULT_STATEMENTS_FALLBACK)
-                + "\n"
-            )
+        seed_txt = _default_statements_seed_text()
         safe_write_bytes(STATEMENTS_FILE, seed_txt.encode("utf-8"), mode=0o600, fatal=False)
     raw = safe_read_text(STATEMENTS_FILE, max_bytes=256 * 1024)
     if not raw:
@@ -4891,8 +5299,66 @@ def load_statements() -> list[str]:
     return lines if lines else list(DEFAULT_STATEMENTS_FALLBACK)
 
 
+def save_statements(raw_items: list[str] | str) -> list[str]:
+    """Persist user-edited statements list directly to ~/.config/bandarchy/statements.txt and return the cleaned list."""
+    ensure_private_dir(CONFIG_DIR)
+    if isinstance(raw_items, str):
+        candidate_lines = raw_items.splitlines()
+    elif isinstance(raw_items, list):
+        candidate_lines = []
+        for item in raw_items:
+            if isinstance(item, str):
+                candidate_lines.extend(item.splitlines())
+    else:
+        candidate_lines = []
+
+    cleaned: list[str] = []
+    for raw_line in candidate_lines:
+        s = raw_line.strip()
+        if not s or s.startswith("#"):
+            continue
+        cleaned.append(bounded_text(s, 160))
+        if len(cleaned) >= 500:
+            break
+
+    if not cleaned:
+        cleaned = list(DEFAULT_STATEMENTS_FALLBACK)
+
+    header = (
+        "# Bandarchy — 6: Typography Statements & Words Collection\n"
+        "# Add, edit, or remove any statements or words below (one statement per line).\n"
+        "# Lines starting with '#' and blank lines are ignored.\n"
+        "# Your personal copy lives at: ~/.config/bandarchy/statements.txt\n\n"
+    )
+    body = "\n".join(cleaned) + "\n"
+    safe_write_bytes(STATEMENTS_FILE, (header + body).encode("utf-8"), mode=0o600, fatal=False)
+    return load_statements()
+
+
+def reset_statements() -> list[str]:
+    """Reset ~/.config/bandarchy/statements.txt back to the default statements seed file."""
+    ensure_private_dir(CONFIG_DIR)
+    seed_txt = _default_statements_seed_text()
+    safe_write_bytes(STATEMENTS_FILE, seed_txt.encode("utf-8"), mode=0o600, fatal=False)
+    return load_statements()
+
+
 def cmd_visualiser_config(args) -> None:
-    statements_list = load_statements()
+    if getattr(args, "reset_statements", False):
+        statements_list = reset_statements()
+    elif getattr(args, "save_statements", None) is not None:
+        raw_arg = args.save_statements
+        try:
+            parsed_arg = json.loads(raw_arg)
+            if isinstance(parsed_arg, (list, str)):
+                statements_list = save_statements(parsed_arg)
+            else:
+                statements_list = save_statements(str(raw_arg))
+        except Exception:
+            statements_list = save_statements(str(raw_arg))
+    else:
+        statements_list = load_statements()
+
     if getattr(args, "open_statements", False):
         xdg_open = resolve_bin("xdg-open")
         if xdg_open:
@@ -4913,7 +5379,9 @@ def cmd_visualiser_config(args) -> None:
             die(f"invalid --set JSON payload: {exc}")
         if not isinstance(incoming, dict):
             die("--set payload must be a JSON object")
-        incoming_clean = {k: v for k, v in incoming.items() if k not in ("statements", "statementsPath")}
+        if "saveStatements" in incoming and isinstance(incoming["saveStatements"], (list, str)):
+            statements_list = save_statements(incoming["saveStatements"])
+        incoming_clean = {k: v for k, v in incoming.items() if k not in ("statements", "statementsPath", "saveStatements")}
         existing.update(incoming_clean)
         existing["updatedAt"] = int(time.time())
         write_json(VISUALISER_CONFIG_FILE, existing, mode=0o600)
@@ -5025,6 +5493,8 @@ def main() -> None:
     p.add_argument("--get", action="store_true", help="read ~/.config/bandarchy/visualiser.json")
     p.add_argument("--set", help="atomically write JSON object to ~/.config/bandarchy/visualiser.json")
     p.add_argument("--open-statements", action="store_true", help="open ~/.config/bandarchy/statements.txt in default editor")
+    p.add_argument("--save-statements", help="persist JSON array or newline-separated text to ~/.config/bandarchy/statements.txt")
+    p.add_argument("--reset-statements", action="store_true", help="reset ~/.config/bandarchy/statements.txt to default collection")
     p.set_defaults(func=cmd_visualiser_config)
 
     p = sub.add_parser("collection", help="list collection items filtered by scope and query")

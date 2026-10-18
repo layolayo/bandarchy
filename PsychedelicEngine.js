@@ -521,6 +521,7 @@ function createState() {
     return {
         t: 0.0,
         l1Time: 0.0,
+        eqSpinTime: 0.0,
         backdropTime: 0.0,
         driftTime: 0.0,
         zoomTime: 0.0,
@@ -1002,6 +1003,7 @@ function stepState(state, rawBands, active, cfg, dt) {
 
     // Smoothly integrated phase accumulators (honours Tri-State l1Dir: +1 Towards, -1 Away, 0 Breathe!)
     var l1Speed = clamp(Number(cfg && cfg.layer1Speed !== undefined ? cfg.layer1Speed : 1.0), 0.05, 4.0)
+    var eqSpinCfg = clamp(Number(cfg && cfg.layer1EqSpin !== undefined ? cfg.layer1EqSpin : 1.0), -2.5, 2.5)
     var bdSpeed = clamp(Number(cfg && cfg.backdropSpeed !== undefined ? cfg.backdropSpeed : 1.0), 0.1, 3.0)
     var bdDirCfg = Number(cfg && cfg.backdropDirection !== undefined ? cfg.backdropDirection : (cfg && cfg.layer1Direction !== undefined ? cfg.layer1Direction : 1))
     var bdDir = (bdDirCfg === 0) ? Math.sin((state.t || 0.0) * 0.72) : clamp(bdDirCfg, -1, 1)
@@ -1009,6 +1011,7 @@ function stepState(state, rawBands, active, cfg, dt) {
     var timeStep = dt * l2Speed * (active ? (0.35 + state.energySmooth * 0.45) : 0.18)
     state.t += timeStep
     state.l1Time = (state.l1Time || 0.0) + dt * l1Speed * l1Dir * (active ? (0.85 + state.bassSmooth * 0.55) : 0.45)
+    state.eqSpinTime = (state.eqSpinTime || 0.0) + dt * eqSpinCfg * (active ? (0.85 + state.bassSmooth * 0.55) : 0.45)
     state.backdropTime = (state.backdropTime || 0.0) + dt * bdSpeed * bdDir * (active ? (0.42 + state.energySmooth * 0.45) : 0.22)
     state.driftTime = (state.driftTime || 0.0) + dt * 0.28 * trSpeedCfg
     state.zoomTime = (state.zoomTime || 0.0) + dt * 0.38 * l2Speed * (0.75 + state.bassSmooth * 0.45)
@@ -4086,6 +4089,9 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
         var eqLayout = cfg && cfg.layer1EqLayout !== undefined ? clamp(Math.round(Number(cfg.layer1EqLayout)), 0, 3) : 0
         var eqGain = cfg && cfg.layer1EqGain !== undefined ? clamp(Number(cfg.layer1EqGain), 0.2, 3.0) : 1.25
         var eqScale = cfg && cfg.layer1EqScale !== undefined ? clamp(Number(cfg.layer1EqScale), 0.15, 2.25) : 1.0
+        var eqSpin = cfg && cfg.layer1EqSpin !== undefined ? clamp(Number(cfg.layer1EqSpin), -2.5, 2.5) : 1.0
+        var eqSpinT = state.eqSpinTime !== undefined ? state.eqSpinTime : (l1T * eqSpin)
+        var eqSpinDir = eqSpin === 0 ? 0.0 : (eqSpin < 0 ? -1.0 : 1.0)
         var eqDamping = cfg && cfg.layer1EqDamping !== undefined ? ((Number(cfg.layer1EqDamping) || 0) % 3) : 0
         var maxEqH = h * 0.42 * eqScale
 
@@ -4107,9 +4113,12 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ? (h * 0.78)
                 : ((eqLayout === 3) ? (h * 0.22) : (eqLayout === 2 ? (h * 0.54) : (h * 0.46)))
             var localAnchorY = (eqStyle === 10 || eqStyle === 12) ? (horizonY - minDim * 0.22) : (horizonY - minDim * 0.20)
-            var eqBreathe = 0.42 + 0.56 * (0.5 + 0.5 * Math.sin(driftT * 0.55 + eqStyle * 0.9)) + state.bassSmooth * 0.10
-            var eqWanderX = (Math.sin(driftT * 0.52 + eqStyle * 0.7) * 0.24 + Math.cos(driftT * 0.29 + eqStyle * 1.3) * 0.08) * w
-            var eqWanderY = Math.cos(driftT * 0.44 + eqStyle * 1.1) * (h * 0.065)
+            var wanderScale = clamp(Math.abs(eqSpin), 0.0, 1.0)
+            var eqBreathe = (Math.abs(eqSpin) < 0.01)
+                ? (0.88 + state.bassSmooth * 0.10)
+                : (0.42 + 0.56 * (0.5 + 0.5 * Math.sin(eqSpinT * 0.55 + eqStyle * 0.9)) + state.bassSmooth * 0.10)
+            var eqWanderX = (Math.sin(eqSpinT * 0.52 + eqStyle * 0.7) * 0.24 + Math.cos(eqSpinT * 0.29 + eqStyle * 1.3) * 0.08) * w * wanderScale
+            var eqWanderY = Math.cos(eqSpinT * 0.44 + eqStyle * 1.1) * (h * 0.065) * wanderScale
             var effEqScale = eqScale * eqBreathe
             ctx.translate(vanishX + eqWanderX, zoneTargetY + eqWanderY)
             ctx.scale(effEqScale, effEqScale)
@@ -4219,20 +4228,20 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             var ridgeHist = (state.eqRidgeHistory && state.eqRidgeHistory.length > 0) ? state.eqRidgeHistory : null
             var ridgeCount = 16
             var binCount3 = 36
-            var worldRidgeStep = Math.floor(l1T * 2.8)
-            var zPhase = (((l1T * 2.8) % 1.0) + 1.0) % 1.0
+            var worldRidgeStep = Math.floor(eqSpinT * 2.8)
+            var zPhase = (((eqSpinT * 2.8) % 1.0) + 1.0) % 1.0
 
             // Render back-to-front (from distant depthSlot=0 down to foreground at horizonY at depthSlot=ridgeCount-1)
             for (var depthSlot = 0; depthSlot < ridgeCount; depthSlot++) {
                 var uDepth = clamp((depthSlot + zPhase) / ridgeCount, 0.01, 0.999)
                 // Map depthSlot to the historical frequency slice so ridges carry their recorded waveform as they travel in Z!
-                var histIdx = l1Dir >= 0
+                var histIdx = eqSpinDir >= 0
                     ? Math.min((ridgeHist ? ridgeHist.length : 1) - 1, depthSlot)
                     : Math.min((ridgeHist ? ridgeHist.length : 1) - 1, (ridgeCount - 1) - depthSlot)
                 var sliceObj = ridgeHist ? ridgeHist[histIdx] : null
                 var worldId = sliceObj && sliceObj.stepIdx !== undefined
                     ? sliceObj.stepIdx
-                    : (worldRidgeStep - (l1Dir >= 0 ? depthSlot : -depthSlot))
+                    : (worldRidgeStep - (eqSpinDir >= 0 ? depthSlot : -depthSlot))
 
                 // Perspective depth mapping (`z` from 3.4 at far ridge to 0.45 at foreground `horizonY`)
                 var zDist = lerp(3.4, 0.45, uDepth)
@@ -4319,7 +4328,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                     var distC = Math.abs((cw / 63.0) - 0.5) * 2.0
                     var cBand = clamp(Math.floor(distC * 63), 0, 63)
                     var cv = sampleEqBandValue(state, cBand, eqDamping, eqGain) * (1.0 - wingPass * 0.22)
-                    var harmMod = Math.sin(cw * 0.35 + l1T * 1.4 + wingPass) * 0.15 + 0.85
+                    var harmMod = Math.sin(cw * 0.35 + eqSpinT * 1.4 + wingPass) * 0.15 + 0.85
                     var wy5 = horizonY - cv * maxEqH * harmMod * (1.0 - distC * 0.25)
                     ctx.lineTo((cw / 63.0) * w, wy5)
                 }
@@ -4351,9 +4360,9 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 var p1 = sp * 2.39996 // golden angle (~137.5°)
                 var p2 = sp * 4.18879 + 1.13
                 var p3 = sp * 1.71828 + 2.47
-                var tilt = Math.sin(l1T * f1 + p1) * 0.38
-                         + Math.cos(l1T * f2 - p2) * 0.26
-                         + Math.sin(l1T * f3 + p3 + v6 * 0.85) * 0.19
+                var tilt = Math.sin(eqSpinT * f1 + p1) * 0.38
+                         + Math.cos(eqSpinT * f2 - p2) * 0.26
+                         + Math.sin(eqSpinT * f3 + p3 + v6 * 0.85) * 0.19
                          + (uSp - 0.5) * -0.18
                 var dirX = Math.sin(tilt)
                 var dirY = -Math.cos(tilt)
@@ -4489,9 +4498,9 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             var orbCY = horizonY - minDim * 0.20
             var orbScale = minDim * (0.165 + state.bassSmooth * 0.022)
             // Continuous 3-axis 360° 3D revolution so poles, equator, and radial extrusions are seen from every angle
-            var orbRx = l1T * 0.36
-            var orbRy = l1T * 0.54
-            var orbRz = l1T * 0.22
+            var orbRx = eqSpinT * 0.36
+            var orbRy = eqSpinT * 0.54
+            var orbRz = eqSpinT * 0.22
             var orbFov = 4.6
             var lonCols = 16
             var latTiers = 8
@@ -4620,9 +4629,9 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             var torCY = horizonY - minDim * 0.20
             var torScale = minDim * (0.22 + state.bassSmooth * 0.025)
             // Continuous 3-axis 3D revolution so the torus flips smoothly through edge-on, angled, and face-on perspectives
-            var torRx = l1T * 0.38
-            var torRy = l1T * 0.52
-            var torRz = l1T * 0.24
+            var torRx = eqSpinT * 0.38
+            var torRy = eqSpinT * 0.52
+            var torRz = eqSpinT * 0.24
             var torFov = 4.2
             var radialCols = 24
             var ringTiers = 6
@@ -4729,9 +4738,9 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             var cymCY = horizonY - minDim * 0.20
             var cymScale = minDim * 0.27
             // Continuous 3D yaw revolution + organic 3D pitch & roll tilt so you see the 3D relief from all angles
-            var cymRx = 0.68 + Math.sin(l1T * 0.34) * 0.42
-            var cymRy = l1T * 0.40
-            var cymRz = Math.sin(l1T * 0.26) * 0.26
+            var cymRx = 0.68 + Math.sin(eqSpinT * 0.34) * 0.42
+            var cymRy = eqSpinT * 0.40
+            var cymRz = Math.sin(eqSpinT * 0.26) * 0.26
             var cymFov = 3.8
             var padCols = 16
             var padRows = 8
@@ -4783,8 +4792,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
 
                     // 2D Chladni standing-wave resonance pattern across the 16×8 LED pad matrix
                     var chladniVal = Math.abs(
-                        Math.cos(modeN * Math.PI * nxNorm * 0.5 + l1T * 1.1) * Math.cos(modeM * Math.PI * nyNorm * 0.5) -
-                        Math.cos(modeM * Math.PI * nxNorm * 0.5 - l1T * 0.9) * Math.cos(modeN * Math.PI * nyNorm * 0.5)
+                        Math.cos(modeN * Math.PI * nxNorm * 0.5 + eqSpinT * 1.1) * Math.cos(modeM * Math.PI * nyNorm * 0.5) -
+                        Math.cos(modeM * Math.PI * nxNorm * 0.5 - eqSpinT * 0.9) * Math.cos(modeN * Math.PI * nyNorm * 0.5)
                     )
                     var padEnergy = clamp(chladniVal * (0.42 + v9 * 0.95), 0.0, 1.2)
                     var elevY = padEnergy > 0.22 ? -padEnergy * 0.24 : 0.0
@@ -4856,9 +4865,9 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 var towCX = w * 0.5 + sideSign * w * 0.28
                 var towCY = horizonY - minDim * 0.22
                 // Continuous 3-axis 3D revolution so each stereo DNA helix cylinder tumbles in 3D space
-                var towRx = Math.sin(l1T * 0.42 + sideSign) * 0.65
-                var towRy = l1T * 0.78 * sideSign
-                var towRz = Math.cos(l1T * 0.31 + sideSign) * 0.42
+                var towRx = Math.sin(eqSpinT * 0.42 + sideSign) * 0.65
+                var towRy = eqSpinT * 0.78 * sideSign
+                var towRz = Math.cos(eqSpinT * 0.31 + sideSign) * 0.42
 
                 // 1. 3D Revolving Cylindrical End-Cap Rings & Axial Core Spine
                 ctx.strokeStyle = colourWithAlpha("#00e5ff", 0.45 * (1.0 - dim))
@@ -4881,7 +4890,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                     var y3 = lerp(1.08, -1.08, uY)
                     var bIdx10 = mapEqBandIndex(rn, rungCount, eqLayout)
                     var v10 = clamp(sampleEqBandValue(state, bIdx10, eqDamping, eqGain) * 1.15, 0.08, 1.0)
-                    var twistAng = uY * Math.PI * 3.2 - l1T * 2.2 * sideSign
+                    var twistAng = uY * Math.PI * 3.2 - eqSpinT * 2.2 * sideSign
                     var rad3 = 0.32 + v10 * 0.14
 
                     var pA = project3DPoint(Math.cos(twistAng) * rad3, y3, Math.sin(twistAng) * rad3, towRx, towRy, towRz, towCX, towCY, towerScale, 3.6)
@@ -4930,9 +4939,9 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             var bankCY = horizonY - minDim * 0.20
             var bankScale = minDim * 0.34
             // Continuous 3D revolution so the 3D carousel of 16 vacuum plasma tubes revolves in 3D space
-            var bankRx = 0.36 + Math.sin(l1T * 0.38) * 0.36
-            var bankRy = l1T * 0.44
-            var bankRz = Math.sin(l1T * 0.26) * 0.22
+            var bankRx = 0.36 + Math.sin(eqSpinT * 0.38) * 0.36
+            var bankRy = eqSpinT * 0.44
+            var bankRz = Math.sin(eqSpinT * 0.26) * 0.22
             var bankFov = 3.8
             var ledCols11 = ["#00ff9d", "#00e5ff", "#ffb300", "#ff1744"]
             var carouselR = 1.05
@@ -5000,7 +5009,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 // 3. Compact high-voltage Tesla plasma arc inside the upper vacuum tube (from top lit cell to anode cap)
                 var arcStart = project3DPoint(txCenter, topLitY3, tzCenter, bankRx, bankRy, bankRz, bankCX, bankCY, bankScale, bankFov)
                 var arcEnd = project3DPoint(txCenter, yTop3 + 0.02, tzCenter, bankRx, bankRy, bankRz, bankCX, bankCY, bankScale, bankFov)
-                var jitX = Math.sin(l1T * 22.0 + tb * 4.1) * (bR.x - bL.x) * 0.28
+                var jitX = Math.sin((state.t || 0.0) * 22.0 + tb * 4.1) * (bR.x - bL.x) * 0.28
                 ctx.strokeStyle = colourWithAlpha("#ffffff", (0.72 + v11 * 0.28) * (1.0 - dim))
                 ctx.lineWidth = 1.2 + v11 * 0.9
                 ctx.beginPath()
@@ -5017,15 +5026,15 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             var colSpan = 2.85
             var colSpacing = colSpan / cityCols
             var halfW = colSpacing * 0.30
-            var worldCityStep = Math.floor(l1T * 2.4)
-            var zPhaseCity = (((l1T * 2.4) % 1.0) + 1.0) % 1.0
+            var worldCityStep = Math.floor(eqSpinT * 2.4)
+            var zPhaseCity = (((eqSpinT * 2.4) % 1.0) + 1.0) % 1.0
             var cityCX = vanishX
             var cityCY = horizonY - minDim * 0.22
             var cityScale = minDim * 0.42
             // Continuous 3D yaw revolution + pitch/roll oscillation so all 3D sides of the voxel towers are revealed
-            var cityRx = 0.42 + Math.sin(l1T * 0.29) * 0.22
-            var cityRy = Math.sin(l1T * 0.32) * 0.78
-            var cityRz = Math.sin(l1T * 0.21) * 0.14
+            var cityRx = 0.42 + Math.sin(eqSpinT * 0.29) * 0.22
+            var cityRy = Math.sin(eqSpinT * 0.32) * 0.78
+            var cityRz = Math.sin(eqSpinT * 0.21) * 0.14
             var ledCols12 = ["#00ff9d", "#00e5ff", "#ffb300", "#ff1744"]
 
             // Precompute outer-to-inner column draw order so inner towers cleanly occlude outer towers' inner side faces
@@ -5041,7 +5050,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             // Render strictly back-to-front (from farthest horizon row `rCity = 0` to nearest foreground row `rCity = cityRows - 1`)
             for (var rCity = 0; rCity < cityRows; rCity++) {
                 var uRow = clamp((rCity + zPhaseCity) / cityRows, 0.04, 0.995)
-                var histRowIdx = l1Dir >= 0
+                var histRowIdx = eqSpinDir >= 0
                     ? Math.min((cityHist ? cityHist.length : 1) - 1, rCity)
                     : Math.min((cityHist ? cityHist.length : 1) - 1, (cityRows - 1 - rCity))
                 var rowSlice = cityHist ? cityHist[histRowIdx] : null
@@ -5198,11 +5207,11 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                     var uS13 = s13 / segCount13
                     var bIdx13 = mapEqBandIndex(s13, segCount13 + 1, eqLayout)
                     var v13 = sampleEqBandValue(state, bIdx13, eqDamping, eqGain)
-                    var waveX13 = uS13 * w + Math.sin(uS13 * 6.0 + l1T * 1.4 + c13 * 1.2) * w * 0.025
-                    var waveY13 = baseY13 - Math.sin(uS13 * Math.PI * 3.0 - l1T * 1.1 + c13) * minDim * 0.05
+                    var waveX13 = uS13 * w + Math.sin(uS13 * 6.0 + eqSpinT * 1.4 + c13 * 1.2) * w * 0.025
+                    var waveY13 = baseY13 - Math.sin(uS13 * Math.PI * 3.0 - eqSpinT * 1.1 + c13) * minDim * 0.05
                     var curtainH13 = (0.08 + v13 * 0.78) * maxEqH * (0.72 + 0.28 * (1.0 - uC13))
                     botPts13.push({ x: waveX13, y: waveY13 })
-                    topPts13.push({ x: waveX13 + Math.cos(l1T * 0.9 + uS13 * 5.0) * 10.0, y: waveY13 - curtainH13 })
+                    topPts13.push({ x: waveX13 + Math.cos(eqSpinT * 0.9 + uS13 * 5.0) * 10.0, y: waveY13 - curtainH13 })
                 }
                 ctx.moveTo(botPts13[0].x, botPts13[0].y)
                 for (var i13 = 1; i13 <= segCount13; i13++) ctx.lineTo(botPts13[i13].x, botPts13[i13].y)
@@ -5223,7 +5232,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 var x14 = lerp(w * 0.06, w * 0.94, u14)
                 var bIdx14 = mapEqBandIndex(r14, rungCount14, eqLayout)
                 var v14 = clamp(sampleEqBandValue(state, bIdx14, eqDamping, eqGain), 0.06, 1.35)
-                var ang14 = u14 * Math.PI * 4.0 - l1T * 2.4
+                var ang14 = u14 * Math.PI * 4.0 - eqSpinT * 2.4
                 var rad14 = beamAmp14 * (0.45 + v14 * 0.85)
                 var yA14 = beamCY14 + Math.sin(ang14) * rad14
                 var yB14 = beamCY14 - Math.sin(ang14) * rad14
@@ -5266,7 +5275,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                     var u15 = sp15 / spikeCount15
                     var bIdx15 = mapEqBandIndex(sp15, spikeCount15 + 1, eqLayout)
                     var v15 = sampleEqBandValue(state, bIdx15, eqDamping, eqGain)
-                    var thorn = Math.pow(0.5 + 0.5 * Math.sin(sp15 * Math.PI + l1T * 3.2), 2.2)
+                    var thorn = Math.pow(0.5 + 0.5 * Math.sin(sp15 * Math.PI + eqSpinT * 3.2), 2.2)
                     var h15 = (0.04 + v15 * (0.45 + 0.65 * thorn)) * maxEqH
                     var x15 = u15 * w
                     var y15 = horizonY + sign15 * h15
@@ -8668,6 +8677,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer1EqLayout: c.layer1EqLayout !== undefined ? clamp(Math.round(Number(c.layer1EqLayout)), 0, 3) : 0,
         layer1EqGain: c.layer1EqGain !== undefined ? clamp(Number(c.layer1EqGain), 0.4, 2.5) : 1.25,
         layer1EqScale: c.layer1EqScale !== undefined ? clamp(Number(c.layer1EqScale), 0.15, 2.25) : 1.0,
+        layer1EqSpin: c.layer1EqSpin !== undefined ? clamp(Number(c.layer1EqSpin), -2.5, 2.5) : 1.0,
         layer1EqDamping: c.layer1EqDamping !== undefined ? clamp(Math.round(Number(c.layer1EqDamping)), 0, 2) : 0,
         layer1ShapesEnabled: c.layer1ShapesEnabled !== undefined ? Boolean(c.layer1ShapesEnabled) : true,
         layer1ShapeStyle: c.layer1ShapeStyle !== undefined ? clamp(Math.round(Number(c.layer1ShapeStyle)), 0, 5) : 0,

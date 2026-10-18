@@ -220,6 +220,9 @@ Item {
     }
 
     function handleKeyNavigation(event) {
+        if (panelVisualiser.textInputFocused) {
+            return
+        }
         if (searchInput.activeFocus || newPlaylistInput.activeFocus || userInput.activeFocus || cookieInput.activeFocus) {
             if (event.key === Qt.Key_Escape || event.key === Qt.Key_Down || event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                 if (searchInput.activeFocus && (event.key === Qt.Key_Down || event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
@@ -254,7 +257,7 @@ Item {
             event.accepted = true
             return
         }
-        if (!isFsViz && !hasCtrlOrAlt) {
+        if (!isFsViz && !hasCtrlOrAlt && (root.activeTab !== 2 || panelVisualiser.stageMode !== "visualiser")) {
             if (event.key === Qt.Key_1) {
                 root.activeTab = 0
                 panelFrame.forceActiveFocus()
@@ -286,8 +289,14 @@ Item {
             return
         }
 
-        if (root.activeTab === 2) {
-            if (event.key === Qt.Key_M) { panelVisualiser.cycleMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
+        if (root.activeTab === 2 || isFsViz) {
+            if (event.key === Qt.Key_1) { panelVisualiser.toggleVisualiserLayerByNumber(1); event.accepted = true }
+            else if (event.key === Qt.Key_2) { panelVisualiser.toggleVisualiserLayerByNumber(2); event.accepted = true }
+            else if (event.key === Qt.Key_3) { panelVisualiser.toggleVisualiserLayerByNumber(3); event.accepted = true }
+            else if (event.key === Qt.Key_4) { panelVisualiser.toggleVisualiserLayerByNumber(4); event.accepted = true }
+            else if (event.key === Qt.Key_5) { panelVisualiser.toggleVisualiserLayerByNumber(5); event.accepted = true }
+            else if (event.key === Qt.Key_6) { panelVisualiser.toggleVisualiserLayerByNumber(6); event.accepted = true }
+            else if (event.key === Qt.Key_M) { panelVisualiser.cycleMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
             else if (event.key === Qt.Key_C) { panelVisualiser.cyclePalette((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
             else if (event.key === Qt.Key_K) { panelVisualiser.cycleTracers((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
             else if (event.key === Qt.Key_R) { panelVisualiser.randomiseVisuals(); event.accepted = true }
@@ -650,6 +659,12 @@ Item {
                 }
                 onRequestReloadStatementsFile: {
                     if (root.service) root.service.loadVisualiserConfig()
+                }
+                onRequestSaveStatements: statementsArr => {
+                    if (root.service) root.service.saveStatements(statementsArr)
+                }
+                onRequestResetStatements: {
+                    if (root.service) root.service.resetStatementsFile()
                 }
 
                 Connections {
@@ -1172,7 +1187,7 @@ Item {
 
                                                 ActionPill {
                                                     text: albumCard.isCurrentAlbum
-                                                        ? ((root.service && root.service.paused) ? "󰐊 Paused" : "󰏤 Playing")
+                                                        ? ((root.service && root.service.activelyPlaying) ? "󰏤 Playing" : "󰐊 Paused")
                                                         : "󰐊 Play"
                                                     primary: albumCard.isCurrentAlbum
                                                     active: !albumCard.isCurrentAlbum
@@ -1182,7 +1197,7 @@ Item {
                                                     onClicked: {
                                                         root.focusedAlbumIndex = albumCard.index
                                                         if (root.service) {
-                                                            if (albumCard.isCurrentAlbum && root.service.playing) {
+                                                            if (albumCard.isCurrentAlbum) {
                                                                 root.service.togglePlayPause()
                                                             } else {
                                                                 root.service.playAlbum(modelData.id, 0, "auto", false)
@@ -1369,7 +1384,7 @@ Item {
                                                     }
 
                                                     ActionPill {
-                                                        text: "󰐊 Play"
+                                                        text: isTrackPlaying ? ((root.service && root.service.activelyPlaying) ? "󰏤 Pause" : "󰐊 Play") : "󰐊 Play"
                                                         primary: isTrackPlaying
                                                         active: !isTrackPlaying
                                                         fontSize: 9
@@ -1379,7 +1394,11 @@ Item {
                                                             root.focusedAlbumIndex = albumCard.index
                                                             root.focusedTrackIndex = index
                                                             if (root.service) {
-                                                                root.service.playAlbum(albumCard.modelData.id, index, "auto", false)
+                                                                if (isTrackPlaying) {
+                                                                    root.service.togglePlayPause()
+                                                                } else {
+                                                                    root.service.playAlbum(albumCard.modelData.id, index, "auto", false)
+                                                                }
                                                             }
                                                             panelFrame.forceActiveFocus()
                                                         }
@@ -2065,6 +2084,12 @@ Item {
                         }
                         onRequestReloadStatementsFile: {
                             if (root.service) root.service.loadVisualiserConfig()
+                        }
+                        onRequestSaveStatements: statementsArr => {
+                            if (root.service) root.service.saveStatements(statementsArr)
+                        }
+                        onRequestResetStatements: {
+                            if (root.service) root.service.resetStatementsFile()
                         }
 
                         Connections {

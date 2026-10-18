@@ -252,10 +252,12 @@ Item {
                     root.trackId = p.trackId || (fb ? (fb.id || "") : root.trackId)
                     root.playSource = p.playSource || "local"
                     root.artPath = p.artPath || (fb ? (fb.artPath || "") : root.artPath)
-                    root.position = Number(p.position) || 0.0
+                    root.position = (p.position !== undefined && Number(p.position) > 0)
+                        ? Number(p.position)
+                        : ((fb && fb.position) ? Number(fb.position) : 0.0)
                     root.duration = Number(p.duration) || (fb && fb.duration ? Number(fb.duration) : 0.0)
                     root.volume = p.volume !== undefined ? Number(p.volume) : 100.0
-                    root.playlistPos = Number(p.playlistPos) || 0
+                    root.playlistPos = (p.playlistPos !== undefined) ? (Number(p.playlistPos) || 0) : ((fb && fb.playlistPos) ? Number(fb.playlistPos) : 0)
                     root.playlistCount = Number(p.playlistCount) || 0
                     root.shuffle = Boolean(p.shuffle)
                     root.loop = Boolean(p.loop)
@@ -303,7 +305,10 @@ Item {
                             root.trackArtist = fb.artist || ""
                             root.trackAlbum = fb.album || fb.title || ""
                             root.albumId = fb.albumId || fb.id || ""
+                            if (!root.trackId && fb.id) root.trackId = fb.id
                             root.artPath = fb.artPath || ""
+                            if (root.position <= 0 && fb.position) root.position = Number(fb.position) || 0.0
+                            if (root.duration <= 0 && fb.duration) root.duration = Number(fb.duration) || 0.0
                         }
                     }
                     if (root.asciiLines.length === 0 && root.albums.length > 0) {
@@ -585,6 +590,41 @@ Item {
             root.binPath, "visualiser-config",
             "--open-statements"
         ])
+    }
+
+    function saveStatements(statementsArr) {
+        if (!Array.isArray(statementsArr)) return
+        var cleaned = []
+        for (var i = 0; i < statementsArr.length; i++) {
+            var line = String(statementsArr[i] || "").trim()
+            if (!line || line.charAt(0) === "#") continue
+            cleaned.push(line.slice(0, 160))
+            if (cleaned.length >= 500) break
+        }
+        var prevCfg = root.visualiserConfig || ({})
+        var merged = Object.assign({}, prevCfg, { statements: cleaned })
+        root.visualiserConfig = merged
+        root.visualiserConfigLoaded = true
+        if (merged.layer3ShowStatements) {
+            root.refreshAsciiArt()
+        }
+        if (visualiserConfigProc.running) visualiserConfigProc.running = false
+        visualiserConfigProc.outBuf = ""
+        visualiserConfigProc.command = [
+            root.binPath, "visualiser-config",
+            "--save-statements", JSON.stringify(cleaned)
+        ]
+        visualiserConfigProc.running = true
+    }
+
+    function resetStatementsFile() {
+        if (visualiserConfigProc.running) visualiserConfigProc.running = false
+        visualiserConfigProc.outBuf = ""
+        visualiserConfigProc.command = [
+            root.binPath, "visualiser-config",
+            "--reset-statements"
+        ]
+        visualiserConfigProc.running = true
     }
 
     function saveVisualiserConfig(cfgObj) {
@@ -1250,17 +1290,31 @@ Item {
         var wasActive = root.activelyPlaying
         if (root.playing) {
             root.paused = !root.paused
+        } else {
+            root._optimisticPlayUntil = Date.now() + 2400
+            root.playing = true
+            root.paused = false
         }
         runAction(["cmd", "play-pause"], false)
         fastPlayPollTimer.restart()
         root.notifyAction(wasActive ? "Paused playback" : "Resumed playback")
     }
     function nextTrack() {
+        if (!root.playing) {
+            root._optimisticPlayUntil = Date.now() + 2400
+            root.playing = true
+            root.paused = false
+        }
         runAction(["cmd", "next"], false)
         fastPlayPollTimer.restart()
         root.notifyAction("Next track 󰒭")
     }
     function prevTrack() {
+        if (!root.playing) {
+            root._optimisticPlayUntil = Date.now() + 2400
+            root.playing = true
+            root.paused = false
+        }
         runAction(["cmd", "prev"], false)
         fastPlayPollTimer.restart()
         root.notifyAction("Previous track 󰒮")
@@ -1281,10 +1335,19 @@ Item {
         runAction(["cmd", "volume", "--value", String(vol)], false)
     }
     function seekTo(sec) {
-        runAction(["cmd", "seek", "--value", String(sec)], false)
+        var targetSec = Math.max(0.0, Number(sec) || 0.0)
+        root.position = targetSec
+        runAction(["cmd", "seek", "--value", String(targetSec)], false)
+        fastPlayPollTimer.restart()
     }
     function jumpQueue(idx) {
+        if (!root.playing) {
+            root._optimisticPlayUntil = Date.now() + 2400
+            root.playing = true
+            root.paused = false
+        }
         runAction(["cmd", "jump", "--value", String(idx)], false)
+        fastPlayPollTimer.restart()
         root.notifyAction("Jumped to queue track #" + (Number(idx) + 1))
     }
 

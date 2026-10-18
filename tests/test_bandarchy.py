@@ -1563,11 +1563,147 @@ console.log('OK');
         extracted_multi = mod.safe_extract_zip(real_zip, os.path.join(self.tmp_root, "zip_multi_out"))
         self.assertEqual(len(extracted_multi), 2)
 
+    def test_15_statements_editor_keys_1_to_6_and_random_layer_pins(self):
+        # 1. CLI statements persistence (--save-statements, --reset-statements, and saveStatements in --set)
+        saved_res = self.run_cli(
+            "visualiser-config",
+            "--save-statements",
+            json.dumps(["  # comment ignored ", "", "ACID CATHEDRAL", "SUBWOOFER MEDITATION\nCYBERNETIC PULSE"]),
+        )
+        self.assertEqual(saved_res["status"], "ok")
+        self.assertEqual(saved_res["statements"], ["ACID CATHEDRAL", "SUBWOOFER MEDITATION", "CYBERNETIC PULSE"])
+
+        get_res = self.run_cli("visualiser-config", "--get")
+        self.assertEqual(get_res["statements"], ["ACID CATHEDRAL", "SUBWOOFER MEDITATION", "CYBERNETIC PULSE"])
+
+        # Empty input falls back to default collection rather than leaving 0 statements
+        empty_res = self.run_cli("visualiser-config", "--save-statements", "   \n# only comment\n")
+        self.assertGreaterEqual(len(empty_res["statements"]), 10)
+
+        # Reset restores default collection from share/statements.txt
+        reset_res = self.run_cli("visualiser-config", "--reset-statements")
+        self.assertGreaterEqual(len(reset_res["statements"]), 20)
+        self.assertIn("WE ARE THE FREQUENCIES", reset_res["statements"])
+
+        # 2. Verify Built-in Statements Editor, Keys 1-6 Layer Toggles, and Full Random Layer Pinning in QML
+        with open(os.path.join(REPO_ROOT, "Visualiser.qml"), "r", encoding="utf-8") as f:
+            viz_src = f.read()
+        with open(os.path.join(REPO_ROOT, "Service.qml"), "r", encoding="utf-8") as f:
+            svc_src = f.read()
+        with open(os.path.join(REPO_ROOT, "App.qml"), "r", encoding="utf-8") as f:
+            app_src = f.read()
+        with open(os.path.join(REPO_ROOT, "Panel.qml"), "r", encoding="utf-8") as f:
+            panel_src = f.read()
+
+        for expected in (
+            "property bool showStatementsEditor: false",
+            "property bool statementsEditorBulkMode: false",
+            "signal requestSaveStatements(",
+            "signal requestResetStatements()",
+            "function submitSingleStatementInput(",
+            "function deleteStatementAt(",
+            "function saveBulkStatementsText()",
+            "function resetStatementsToDefaults()",
+            "function toggleVisualiserLayerByNumber(",
+            "function resetUserLayerPins()",
+            "property bool layer1PinnedByUser: false",
+            "property bool layer6PinnedByUser: false",
+            "if (root.layer1PinnedByUser && !root.layer1FieldEnabled)",
+            "if (root.layer2PinnedByUser && !root.layer1EqEnabled)",
+            "if (root.layer3PinnedByUser && !root.layer1ShapesEnabled)",
+            "if (root.layer4PinnedByUser && (!root.layer2Enabled || !root.layer2VizEnabled))",
+            "if (root.layer5PinnedByUser && !root.layer4Enabled)",
+            "if (root.layer6PinnedByUser && !root.layer3Enabled)",
+            "property real layer1EqSpin: 1.0",
+            'label: "3D Spin & Rotation"',
+            '"Spin:" + root.layer1EqSpin.toFixed(1) + "x"',
+            'text: "↻ Forward"',
+            'text: "↺ Reverse"',
+            'text: "⏸ Static (0x)"',
+            "id: statementsEditorBox",
+            "id: statementSingleInput",
+            "id: statementBulkEdit",
+        ):
+            self.assertIn(expected, viz_src, f"Missing {expected} in Visualiser.qml")
+
+        for k in range(1, 7):
+            self.assertIn(f"toggleVisualiserLayerByNumber({k})", viz_src)
+            self.assertIn(f"toggleVisualiserLayerByNumber({k})", app_src)
+            self.assertIn(f"toggleVisualiserLayerByNumber({k})", panel_src)
+
+        self.assertIn("function saveStatements(", svc_src)
+        self.assertIn("function resetStatementsFile()", svc_src)
+
+        # 3. Verify PsychedelicEngine.js eqSpinTime accumulator and layer1EqSpin (-2.5..2.5)
+        if shutil.which("node"):
+            node_script = r"""
+const fs = require('fs');
+let code = fs.readFileSync('PsychedelicEngine.js', 'utf8').replace(/^\.pragma library\s*/m, '');
+eval(code);
+
+const bands = new Array(64).fill(320);
+const stFwd = createState();
+const stRev = createState();
+const stZero = createState();
+stepState(stFwd, bands, true, normaliseConfig({ layer1EqSpin: 1.8 }, 0, []), 0.05);
+stepState(stRev, bands, true, normaliseConfig({ layer1EqSpin: -1.8 }, 0, []), 0.05);
+stepState(stZero, bands, true, normaliseConfig({ layer1EqSpin: 0.0 }, 0, []), 0.05);
+if (!(stFwd.eqSpinTime > 0 && stRev.eqSpinTime < 0 && Math.abs(stZero.eqSpinTime) < 1e-9)) {
+    throw new Error('eqSpinTime failed: fwd=' + stFwd.eqSpinTime + ' rev=' + stRev.eqSpinTime + ' zero=' + stZero.eqSpinTime);
+}
+const cfgClampedHigh = normaliseConfig({ layer1EqSpin: 9.0 }, 0, []);
+const cfgClampedLow = normaliseConfig({ layer1EqSpin: -9.0 }, 0, []);
+if (cfgClampedHigh.layer1EqSpin !== 2.5 || cfgClampedLow.layer1EqSpin !== -2.5) {
+    throw new Error('layer1EqSpin clamping failed: high=' + cfgClampedHigh.layer1EqSpin + ' low=' + cfgClampedLow.layer1EqSpin);
+}
+console.log('OK');
+"""
+            res = subprocess.run(["node", "-e", node_script], cwd=REPO_ROOT, capture_output=True, text=True, timeout=10)
+            self.assertEqual(res.returncode, 0, f"Node layer1EqSpin test failed: {res.stderr}")
+
+        # 4. Verify playback resume from saved track & position when mpv is stopped / restarted
+        local_coll = self.run_cli("collection", "--scope", "local")
+        target_alb = local_coll["albums"][0]
+        play_res = self.run_cli("play", "--album", target_alb["id"], "--track-index", "1")
+        self.assertTrue(play_res["playing"])
+        self.assertEqual(play_res["trackIndex"], 1)
+        expected_track_id = play_res["track"]["id"]
+
+        time.sleep(0.35)
+        self.run_cli("cmd", "seek", "--value", "0.75")
+        time.sleep(0.15)
+
+        # Stop mpv (simulating app restart / kill saving playback resume state)
+        self.run_cli("cmd", "stop")
+
+        stopped_status = self.run_cli("status")
+        self.assertFalse(stopped_status["playback"]["playing"])
+        self.assertTrue(stopped_status["playback"]["resumable"])
+        self.assertEqual(stopped_status["playback"]["trackId"], expected_track_id)
+        self.assertEqual(stopped_status["playback"]["playlistPos"], 1)
+        self.assertGreaterEqual(stopped_status["playback"]["position"], 0.4)
+
+        # Seeking while stopped updates the saved resume position
+        self.run_cli("cmd", "seek", "--value", "0.55")
+        seeked_status = self.run_cli("status")
+        self.assertAlmostEqual(seeked_status["playback"]["position"], 0.55, places=1)
+
+        # Pressing Play/Pause (`cmd play-pause`) while mpv is stopped automatically relaunches mpv at the saved track & position
+        resume_res = self.run_cli("cmd", "play-pause")
+        self.assertTrue(resume_res.get("resumed"))
+        self.assertTrue(resume_res.get("playing"))
+        self.assertEqual(resume_res.get("trackIndex"), 1)
+        self.assertEqual(resume_res["track"]["id"], expected_track_id)
+        self.assertAlmostEqual(resume_res.get("position", 0.0), 0.55, places=1)
+
+        live_now = self.run_cli("now")
+        self.assertTrue(live_now["playing"])
+        self.assertEqual(live_now["trackId"], expected_track_id)
+        self.assertGreaterEqual(live_now["position"], 0.45)
+
+        self.run_cli("cmd", "stop")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
-
-
-
-
 

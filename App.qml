@@ -249,6 +249,9 @@ ShellRoot {
         }
 
         function handleKeyNavigation(event) {
+            if (appVisualiser.textInputFocused) {
+                return
+            }
             if (appSearch.activeFocus || appNewPlaylist.activeFocus || appUserInput.activeFocus || appCookieInput.activeFocus) {
                 if (event.key === Qt.Key_Escape || event.key === Qt.Key_Down || event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                     if (appSearch.activeFocus && (event.key === Qt.Key_Down || event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
@@ -284,7 +287,14 @@ ShellRoot {
             }
 
             var hasAltOrCtrl = Boolean(event.modifiers & (Qt.AltModifier | Qt.ControlModifier))
-            if (!hasAltOrCtrl) {
+            if (!hasAltOrCtrl && appVisualiser.stageMode === "visualiser") {
+                if (event.key === Qt.Key_1) { appVisualiser.toggleVisualiserLayerByNumber(1); event.accepted = true; return }
+                else if (event.key === Qt.Key_2) { appVisualiser.toggleVisualiserLayerByNumber(2); event.accepted = true; return }
+                else if (event.key === Qt.Key_3) { appVisualiser.toggleVisualiserLayerByNumber(3); event.accepted = true; return }
+                else if (event.key === Qt.Key_4) { appVisualiser.toggleVisualiserLayerByNumber(4); event.accepted = true; return }
+                else if (event.key === Qt.Key_5) { appVisualiser.toggleVisualiserLayerByNumber(5); event.accepted = true; return }
+                else if (event.key === Qt.Key_6) { appVisualiser.toggleVisualiserLayerByNumber(6); event.accepted = true; return }
+            } else {
                 if (event.key === Qt.Key_1) {
                     win.leftTab = 0
                     appRootRect.forceActiveFocus()
@@ -1045,7 +1055,7 @@ ShellRoot {
                                                     // Compact Play / Stream Album button (primary fill ONLY when actively playing this album)
                                                     ActionPill {
                                                         text: appAlbumCard.isCurrentAlbum
-                                                            ? (service.paused ? "󰐊 Paused" : "󰏤 Playing")
+                                                            ? (service.activelyPlaying ? "󰏤 Playing" : "󰐊 Paused")
                                                             : "󰐊 Play"
                                                         primary: appAlbumCard.isCurrentAlbum
                                                         active: !appAlbumCard.isCurrentAlbum
@@ -1054,7 +1064,7 @@ ShellRoot {
                                                         pillHeight: 24
                                                         onClicked: {
                                                             win.focusedAlbumIndex = appAlbumCard.index
-                                                            if (appAlbumCard.isCurrentAlbum && service.playing) {
+                                                            if (appAlbumCard.isCurrentAlbum) {
                                                                 service.togglePlayPause()
                                                             } else {
                                                                 service.playAlbum(modelData.id, 0, "auto", false)
@@ -1240,7 +1250,7 @@ ShellRoot {
                                                             }
 
                                                             ActionPill {
-                                                                text: "󰐊 Play"
+                                                                text: isTrackPlaying ? (service.activelyPlaying ? "󰏤 Pause" : "󰐊 Play") : "󰐊 Play"
                                                                 primary: isTrackPlaying
                                                                 active: !isTrackPlaying
                                                                 fontSize: 8
@@ -1249,7 +1259,11 @@ ShellRoot {
                                                                 onClicked: {
                                                                     win.focusedAlbumIndex = appAlbumCard.index
                                                                     win.focusedTrackIndex = index
-                                                                    service.playAlbum(appAlbumCard.modelData.id, index, "auto", false)
+                                                                    if (isTrackPlaying) {
+                                                                        service.togglePlayPause()
+                                                                    } else {
+                                                                        service.playAlbum(appAlbumCard.modelData.id, index, "auto", false)
+                                                                    }
                                                                     appRootRect.forceActiveFocus()
                                                                 }
                                                             }
@@ -2262,6 +2276,12 @@ ShellRoot {
                             }
                             onRequestReloadStatementsFile: {
                                 service.loadVisualiserConfig()
+                            }
+                            onRequestSaveStatements: statementsArr => {
+                                service.saveStatements(statementsArr)
+                            }
+                            onRequestResetStatements: {
+                                service.resetStatementsFile()
                             }
 
                             Connections {
