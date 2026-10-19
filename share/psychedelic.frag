@@ -109,7 +109,7 @@ vec3 evalLayer4Mode(int m, vec2 cPos, float sym, float bIntensity, float dir, fl
         vec2 tp0 = rot2D(uTime * 0.28 * dir * twist + 0.22 * twist / max(0.14, r)) * cPos;
         float dShape0 = shapeRadius(tp0, fSym, sin(uTime * 0.42) * 0.16, 0.36);
         float zDepth0 = 0.84 / max(0.04, dShape0);
-        float zPhase0 = zDepth0 - uZoomTime * 2.4 * dir;
+        float zPhase0 = zDepth0 + uZoomTime * 2.4 * dir;
         float birth0 = smoothstep(0.04, 0.22, dShape0);
         float a0 = atan(tp0.y, tp0.x);
         float aFold0 = abs(mod(a0 + halfSector, sector) - halfSector) / halfSector;
@@ -127,7 +127,7 @@ vec3 evalLayer4Mode(int m, vec2 cPos, float sym, float bIntensity, float dir, fl
         vec2 tp1 = rot2D(-logR * 1.85 * twist + uTime * 0.65 * dir) * cPos;
         float a1 = atan(tp1.y, tp1.x);
         float aFold1 = abs(mod(a1 + halfSector, sector) - halfSector) / halfSector;
-        float zPhase1 = -logR * 3.2 - uZoomTime * 2.2 * dir;
+        float zPhase1 = -logR * 3.2 + uZoomTime * 2.2 * dir;
         float birth1 = smoothstep(0.02, 0.16, r);
         float armCrest = pow(0.5 + 0.5 * cos(aFold1 * PI * 2.0 + sin(logR * 4.0 - uTime * 1.8) * (0.8 + uBass)), 1.65);
         float wallMod = evalWallPattern(wallPat, zPhase1, aFold1, fSym, birth1);
@@ -277,11 +277,11 @@ vec3 evalLayer4Mode(int m, vec2 cPos, float sym, float bIntensity, float dir, fl
         vec2 throat = vec2(cos(uTime * 0.68), sin(uTime * 0.54)) * (0.28 + 0.10 * uBass) * twist;
         float rawR = max(0.035, length(cPos - throat));
         float zW = 0.78 / rawR;
-        vec2 bentP = (cPos - throat) + throat * exp(-rawR * 2.2) * sin(zW * 0.6 - uZoomTime * 2.4 * dir);
+        vec2 bentP = (cPos - throat) + throat * exp(-rawR * 2.2) * sin(zW * 0.6 + uZoomTime * 2.4 * dir);
         vec2 rotW = rot2D(zW * 0.24 * twist + uTime * 0.35 * dir) * bentP;
         float aW = atan(rotW.y, rotW.x);
         float aFoldW = abs(mod(aW + halfSector, sector) - halfSector) / halfSector;
-        float zPhaseW = zW - uZoomTime * 2.6 * dir;
+        float zPhaseW = zW + uZoomTime * 2.6 * dir;
         float birthW = smoothstep(0.035, 0.20, rawR);
         float ringW = evalWallPattern(wallPat, zPhaseW, aFoldW, fSym, birthW);
         float ribsW = smoothstep(0.84, 0.99, cos(aFoldW * PI * 2.0)) * birthW;
@@ -449,10 +449,10 @@ void main() {
     if (dir == 0.0) dir = 1.0;
 
     // =========================================================================
-    // LAYER #1: Per-Pixel Smooth GPU Background Worlds (Modes 0..10)
+    // LAYER #1: Per-Pixel Smooth GPU Background Worlds (Modes 0..11)
     // =========================================================================
     if (uL1Enabled > 0.5) {
-        int l1m = clamp(int(floor(uL1Mode + 0.5)), 0, 10);
+        int l1m = clamp(int(floor(uL1Mode + 0.5)), 0, 11);
         float l1Bright = clamp(1.0 - uL1Dim, 0.12, 1.0);
         float l1Spd = clamp(uL1Speed, 0.0, 2.5);
         float l1Den = clamp(uL1Density, 0.2, 2.5);
@@ -465,7 +465,7 @@ void main() {
         float aq = atan(q.y, q.x);
 
         if (l1m == 0) {
-            // Mode 0: MilkDrop Liquid Feedback Warp (1:Warp)
+            // Mode 0: MilkDrop Liquid Feedback Warp (13:ShdWarp)
             vec2 w = q * (1.8 * sqrt(l1Den));
             for (int i = 0; i < 3; i++) {
                 float fi = float(i) + 1.0;
@@ -481,16 +481,16 @@ void main() {
             wCol = mix(wCol, uCol2.rgb, f2 * 0.72);
             col += (wCol * (0.30 + 0.32 * uBass) + uCol2.rgb * ridge * (0.28 + 0.30 * uBeat)) * l1Bright;
         } else if (l1m == 1) {
-            // Mode 1: G-Force Polar FlowField (2:Spiral)
+            // Mode 1: G-Force Polar FlowField (14:ShdSpiral)
             float spiralA = aq * floor(4.0 + 2.0 * l1Den) + log(max(0.04, rq)) * (6.5 * l1Den) - l1T * 2.4;
-            float spiralB = aq * floor(3.0 + 2.0 * l1Den) - rq * (9.0 * l1Den) + l1T * 1.8;
+            float spiralB = aq * floor(3.0 + 2.0 * l1Den) - rq * (9.0 * l1Den) - l1T * 1.8;
             float s1 = smoothstep(0.35, 0.96, 0.5 + 0.5 * sin(spiralA + sin(rq * 6.0 - l1T) * (1.2 + uBass)));
             float s2 = smoothstep(0.45, 0.96, 0.5 + 0.5 * cos(spiralB));
             float coreFade = smoothstep(0.02, 0.16, rq);
             vec3 gCol = uCol0.rgb * s1 + uCol1.rgb * s2 + uCol2.rgb * (s1 * s2) * 1.25;
             col += gCol * coreFade * (0.36 + 0.34 * uBass + 0.22 * uBeat) * l1Bright;
         } else if (l1m == 2) {
-            // Mode 2: Cthugha Rave Flame (3:Flame)
+            // Mode 2: Cthugha Rave Flame (15:ShdFlame)
             vec2 fp = vec2(p.x * (2.2 * sqrt(l1Den)), uv.y * 1.6);
             float n = sin(fp.x * 3.5 + l1T * 1.5) * 0.35
                     + sin(fp.x * 7.2 - l1T * 2.6 + uBass * 2.0) * 0.20
@@ -502,7 +502,7 @@ void main() {
             fCol = mix(fCol, uCol2.rgb, pow(flameCore, 2.2) * (0.65 + 0.35 * tongues));
             col += fCol * pow(flameCore, 1.35) * (0.44 + 0.38 * uBass + 0.22 * uBeat) * l1Bright;
         } else if (l1m == 3) {
-            // Mode 3: Relativistic Starfield (4:Stars)
+            // Mode 3: Relativistic Starfield (16:ShdStars)
             vec3 starAcc = vec3(0.0);
             for (int layer = 0; layer < 3; layer++) {
                 float fl = float(layer);
@@ -521,9 +521,8 @@ void main() {
             }
             col += starAcc * (0.75 + 0.45 * uBass) * l1Bright;
         } else if (l1m == 4) {
-            // Mode 4: Battlezone 1980 — Classic Atari Green/Red Vector Horizon, Volcanoes & Radar Grid
+            // Mode 4: Battlezone 1980 — Classic Atari Green Vector Horizon, Volcanoes, Tanks & Grid (No Cockpit)
             vec3 bzGreen = vec3(0.08, 1.0, 0.28);
-            vec3 bzRed = vec3(1.0, 0.16, 0.16);
             float hy = qt_TexCoord0.y - 0.50;
             float mtnH = (0.06 + 0.05 * sin(p.x * 3.8 + l1T * 0.25) + 0.035 * abs(cos(p.x * 8.2 - l1T * 0.12)));
             float mtnLine = exp(-abs(hy + mtnH) * 95.0);
@@ -532,27 +531,24 @@ void main() {
             if (hy > 0.002) {
                 float z = 0.20 / max(0.004, hy);
                 float gx = p.x * z * (2.6 * l1Den) + l1T * 0.5;
-                float gz = z * (2.2 * l1Den) - l1T * 2.5;
+                float gz = z * (2.2 * l1Den) + l1T * 2.5;
                 gridVal = max(smoothstep(0.91, 0.99, cos(gx * PI)), smoothstep(0.89, 0.99, cos(gz * PI))) * smoothstep(0.003, 0.06, hy);
             }
-            // Vector wireframe tank / reticle silhouette in foreground
+            // Vector wireframe tank & turret silhouette in open field (zero cockpit/reticle)
             vec2 tp = p - vec2(sin(l1T * 0.6) * 0.18, 0.14);
-            float tankBox = exp(-abs(max(abs(tp.x) - 0.09, abs(tp.y) - 0.035)) * 140.0) * step(abs(tp.x), 0.11) * step(abs(tp.y), 0.05);
-            float reticle = exp(-abs(length(p) - 0.18) * 90.0) * step(0.02, abs(p.y));
-            col += (bzGreen * (mtnLine * 0.85 + horLine * 0.95 + gridVal * 0.72 + tankBox * 0.95) + bzRed * reticle * (0.65 + uBeat * 0.45)) * (0.78 + uBass * 0.28) * l1Bright;
+            float tankHull = exp(-abs(max(abs(tp.x) - 0.09, abs(tp.y) - 0.032)) * 140.0) * step(abs(tp.x), 0.11) * step(abs(tp.y), 0.048);
+            float tankTurret = exp(-abs(max(abs(tp.x) - 0.045, abs(tp.y + 0.045) - 0.018)) * 150.0) * step(abs(tp.x), 0.06) * step(abs(tp.y + 0.045), 0.03);
+            col += bzGreen * (mtnLine * 0.85 + horLine * 0.95 + gridVal * 0.72 + (tankHull + tankTurret) * 0.95) * (0.78 + uBass * 0.28) * l1Bright;
         } else if (l1m == 5) {
-            // Mode 5: Death Star Trench — 3D Perspective Trench Corridor, Struts & Laser Streaks
+            // Mode 5: Shader Death Star Trench — 3D Perspective Trench Corridor, Struts & Laser Streaks (Zero Cockpit)
             vec2 tp = p - vec2(sin(l1T * 0.45) * 0.08, cos(l1T * 0.35) * 0.05);
             float wallDist = max(abs(tp.x) * 0.82, max(0.0, tp.y) * 1.15);
             float zTrench = 0.26 / max(0.025, wallDist);
-            float bayRibs = smoothstep(0.86, 0.98, cos((zTrench * 1.8 * l1Den - l1T * 3.6) * PI));
+            float bayRibs = smoothstep(0.86, 0.98, cos((zTrench * 1.8 * l1Den + l1T * 3.6) * PI));
             float longRails = smoothstep(0.90, 0.99, cos(tp.y / max(0.03, abs(tp.x)) * 6.0));
             float fade = smoothstep(0.025, 0.12, wallDist);
-            // Targeting computer yellow box & green/red laser streaks
-            float targetBox = exp(-abs(max(abs(tp.x), abs(tp.y)) - fract(-l1T * 0.55) * 0.35) * 95.0);
-            float laserLine = exp(-abs(abs(tp.x) - abs(tp.y) * 0.85) * 120.0) * step(0.0, tp.y) * smoothstep(0.6, 0.98, sin(zTrench * 3.0 + l1T * 12.0));
-            vec3 trenchCol = uCol0.rgb * (bayRibs + longRails * 0.65) * fade * 0.72
-                           + vec3(1.0, 0.88, 0.2) * targetBox * 0.75
+            float laserLine = exp(-abs(abs(tp.x) - abs(tp.y) * 0.85) * 120.0) * step(0.0, tp.y) * smoothstep(0.6, 0.98, sin(zTrench * 3.0 + uTime * 12.0));
+            vec3 trenchCol = uCol0.rgb * (bayRibs + longRails * 0.65) * fade * 0.78
                            + vec3(0.2, 1.0, 0.35) * laserLine * (0.85 + uBeat * 0.4);
             col += trenchCol * (0.75 + uBass * 0.32) * l1Bright;
         } else if (l1m == 6) {
@@ -562,7 +558,7 @@ void main() {
             vec2 discCoord = vec2(dp.x, dp.y * 3.2);
             float rDisc = length(discCoord);
             float discBand = smoothstep(ehR * 0.9, ehR * 1.35, rDisc) * exp(-max(0.0, rDisc - ehR * 1.2) * 3.8);
-            float swirl = 0.5 + 0.5 * sin(atan(discCoord.y, discCoord.x) * 5.0 - log(max(0.03, rDisc)) * 9.0 - l1T * 2.4);
+            float swirl = 0.5 + 0.5 * sin(atan(discCoord.y, discCoord.x) * 5.0 - log(max(0.03, rDisc)) * 9.0 + l1T * 2.4);
             float doppler = 0.65 + 0.35 * clamp(dp.x / max(0.05, rDisc), -1.0, 1.0);
             float photonRing = exp(-abs(rq - ehR) * 28.0) * (0.85 + uBeat * 0.45);
             vec3 accCol = mix(uCol0.rgb, uCol1.rgb, swirl) * discBand * doppler * 1.15 + uCol2.rgb * photonRing;
@@ -579,7 +575,7 @@ void main() {
             if (hy > 0.002) {
                 float z = 0.24 / max(0.004, hy);
                 float gx = p.x * z * (2.4 * l1Den) + sin(l1T * 0.4) * 1.5;
-                float gz = z * (2.0 * l1Den) - l1T * 3.2;
+                float gz = z * (2.0 * l1Den) + l1T * 3.2;
                 float gLine = max(smoothstep(0.90, 0.99, cos(gx * PI)), smoothstep(0.88, 0.99, cos(gz * PI)));
                 float fade = smoothstep(0.002, 0.07, hy);
                 // Dual Light Cycle Jetwall ribbons (Cyan & Orange)
@@ -597,7 +593,7 @@ void main() {
                 col += tronRed * recMask * (0.75 + uBeat * 0.35) * l1Bright;
             }
         } else if (l1m == 8) {
-            // Mode 8: SynthGrid Outrun Canyon — Segmented Horizon Sun, 3D Wireframe Canyon Mountains & Valley Floor
+            // Mode 8: SynthGrid Outrun Canyon — Segmented Horizon Sun, 3D Canyon Mountains & Beat-Reactive Side Synth Keyboards
             float hy = qt_TexCoord0.y - 0.50;
             // 1. Segmented Outrun Sun above horizon
             vec2 sp = vec2(p.x, hy + 0.08);
@@ -608,15 +604,32 @@ void main() {
                 vec3 sunCol = mix(uCol2.rgb, uCol0.rgb, clamp((-hy) / max(0.05, sunR), 0.0, 1.0));
                 col += sunCol * scanCut * (0.75 + uBass * 0.30) * l1Bright;
             }
-            // 2. Canyon Mountain Walls & Neon Valley Grid below horizon
+            // 2. Canyon Mountain Walls, Neon Valley Grid & 3D Perspective Side Keyboards below horizon
             if (hy > 0.002) {
                 float z = 0.22 / max(0.004, hy);
                 float gx = p.x * z * (2.5 * l1Den);
-                float gz = z * (2.0 * l1Den) - l1T * 2.8;
+                float gz = z * (2.0 * l1Den) + l1T * 2.8;
                 float gLine = max(smoothstep(0.89, 0.99, cos(gx * PI)), smoothstep(0.88, 0.99, cos(gz * PI)));
                 float canyonElev = max(0.0, abs(p.x) - 0.22) * (1.8 + 0.6 * sin(gz * 0.8));
                 vec3 floorCol = mix(uCol0.rgb, uCol1.rgb, clamp(canyonElev * 1.5, 0.0, 1.0));
-                col += floorCol * gLine * smoothstep(0.002, 0.06, hy) * (0.74 + uBass * 0.36) * l1Bright;
+                float fade8 = smoothstep(0.002, 0.06, hy);
+                col += floorCol * gLine * fade8 * (0.74 + uBass * 0.36) * l1Bright;
+
+                // 3D Perspective Synth Keyboards flanking both sides of the valley road
+                float sideSpan = abs(p.x) / max(0.12, hy * 1.65 + 0.08);
+                if (sideSpan > 0.32 && sideSpan < 0.92) {
+                    float keyId = floor(gz * 1.5);
+                    float keyFract = fract(gz * 1.5);
+                    float keyGap = smoothstep(0.08, 0.16, keyFract) * smoothstep(0.96, 0.88, keyFract);
+                    float keyPulse = 0.5 + 0.5 * sin(keyId * 1.35 - uTime * 5.2 + sign(p.x) * 1.1);
+                    float noteMod = mod(abs(keyId), 7.0);
+                    bool hasBlackKey = (noteMod < 1.5 || (noteMod > 2.5 && noteMod < 5.5));
+                    bool inBlackKey = hasBlackKey && (sideSpan > 0.58) && (abs(keyFract - 0.5) < 0.28);
+                    vec3 keyCol = inBlackKey
+                        ? (uCol2.rgb * (0.35 + 0.65 * uHigh))
+                        : mix(vec3(0.92, 0.95, 1.0), uCol0.rgb, keyPulse * (0.55 + 0.45 * uBass + 0.35 * uBeat));
+                    col += keyCol * keyGap * fade8 * (inBlackKey ? 0.55 : (0.48 + 0.42 * keyPulse * (uBass + uBeat * 0.6))) * l1Bright;
+                }
             }
             float mtnRidge = (0.04 + pow(max(0.0, abs(p.x) - 0.14), 1.35) * 0.55) * (0.75 + 0.25 * sin(p.x * 10.0 + l1T));
             float ridgeGlow = exp(-abs(hy + mtnRidge) * 65.0);
@@ -627,32 +640,70 @@ void main() {
             vec2 tp = rot2D(l1T * 0.22) * q;
             float dPoly = shapeRadius(tp, sides, 0.06, 0.12);
             float zPoly = 0.55 / max(0.03, dPoly);
-            float ringPhase = zPoly * (1.8 * l1Den) - l1T * 2.2;
+            float ringPhase = zPoly * (1.8 * l1Den) + l1T * 2.2;
             float polyRing = smoothstep(0.82, 0.98, cos(ringPhase * PI));
             float polyStrut = smoothstep(0.92, 0.995, cos(atan(tp.y, tp.x) * sides));
             float fade = smoothstep(0.03, 0.16, dPoly);
             vec3 pCol = mix(uCol0.rgb, uCol1.rgb, 0.5 + 0.5 * sin(ringPhase * 0.7));
             pCol = mix(pCol, uCol2.rgb, polyStrut * 0.65);
             col += pCol * max(polyRing, polyStrut * 0.72) * fade * (0.76 + uBass * 0.38) * l1Bright;
-        } else {
-            // Mode 10: Tempest & Asteroids 3D — 16-Lane Electric Blue Tube Web, Yellow Claw/Zapper, Red Flippers & Cyan Vector Asteroids
+        } else if (l1m == 10) {
+            // Mode 10: Tempest & Asteroids 3D — 16-Lane Electric Blue Tube Web, Yellow Claw/Zapper, Red Flippers, Magenta Tankers, Green Spikers & Cyan Fuseballs
             vec3 tempBlue = vec3(0.13, 0.33, 1.0);
             vec3 tempYellow = vec3(1.0, 1.0, 0.08);
             vec3 tempRed = vec3(1.0, 0.08, 0.08);
+            vec3 tempMagenta = vec3(1.0, 0.14, 1.0);
+            vec3 tempGreen = vec3(0.08, 1.0, 0.22);
             vec3 tempCyan = vec3(0.0, 1.0, 1.0);
             float dWeb = shapeRadius(q, 16.0, 0.08 * sin(l1T * 0.4), 0.25);
             float zWeb = 0.48 / max(0.03, dWeb);
-            float webRings = smoothstep(0.86, 0.985, cos((zWeb * 1.6 * l1Den - l1T * 2.6) * PI));
-            float laneIdx = floor(mod((aq + PI) / TAU * 16.0, 16.0));
+            float webRings = smoothstep(0.86, 0.985, cos((zWeb * 1.6 * l1Den + l1T * 2.6) * PI));
+            float laneCoord = mod((aq + PI) / TAU * 16.0, 16.0);
+            float laneIdx = floor(laneCoord);
+            float laneLocal = fract(laneCoord) - 0.5;
             float webSpokes = smoothstep(0.90, 0.992, cos(aq * 16.0));
             float clawLane = floor(mod(l1T * 3.1, 16.0));
             float isClawLane = 1.0 - step(0.5, abs(laneIdx - clawLane));
-            float flipperHit = smoothstep(0.75, 0.98, sin(zWeb * 2.4 + l1T * 4.2 + laneIdx * 1.7)) * step(0.65, fract(laneIdx * 0.37));
+            // Red Flippers, Magenta Tankers, Green Spikers & Cyan Fuseballs advancing along the 16 lanes in the active Towards/Away direction
+            float flipperHit = smoothstep(0.76, 0.98, sin(zWeb * 2.4 + l1T * 3.6 + laneIdx * 1.7)) * step(0.55, fract(laneIdx * 0.37));
+            float tankerHit = smoothstep(0.82, 0.99, cos(zWeb * 1.9 + l1T * 2.8 + laneIdx * 2.3)) * step(abs(laneLocal), 0.28) * step(0.62, fract(laneIdx * 0.29 + 0.1));
+            float spikerRail = step(abs(laneLocal), 0.08) * step(1.2, zWeb) * step(0.70, fract(laneIdx * 0.41));
+            float zapperShot = isClawLane * step(abs(laneLocal), 0.14) * smoothstep(0.72, 0.99, sin(zWeb * 4.5 - uTime * 14.0));
             float fade = smoothstep(0.03, 0.14, dWeb);
             vec3 tCol = mix(tempBlue, tempYellow, isClawLane) * max(webRings, webSpokes)
-                      + tempRed * flipperHit * webSpokes * 1.25
+                      + tempRed * flipperHit * max(webSpokes, webRings) * 1.35
+                      + tempMagenta * tankerHit * 1.15
+                      + tempGreen * spikerRail * 0.95
+                      + vec3(1.0) * zapperShot * 1.25
                       + tempCyan * exp(-abs(dWeb - (0.58 + 0.08 * sin(aq * 5.0 + l1T))) * 45.0) * 0.65;
             col += tCol * fade * (0.82 + uBass * 0.36 + uBeat * 0.24) * l1Bright;
+        } else {
+            // Mode 11 (UI 24: Death Star 3D Warp Trench): 3D Rotating, Twisting & Warping Trench Corridor with Catwalk Ribs & Quad Lasers (Zero Cockpit)
+            float rollAng = l1T * 0.24 + sin(l1T * 0.52) * 0.68;
+            vec2 rp = rot2D(rollAng) * q;
+            float prelimDist = max(abs(rp.x) * 0.78, abs(rp.y) * 0.92);
+            float zPre = 0.32 / max(0.025, prelimDist);
+            // 3D sinusoidal tunnel bending & barrel warp along depth zPre
+            vec2 bend = vec2(
+                sin(zPre * 0.42 + l1T * 1.65) * 0.14,
+                cos(zPre * 0.34 - l1T * 1.35) * 0.11
+            ) * smoothstep(1.2, 0.04, prelimDist);
+            vec2 tp = rot2D(sin(zPre * 0.28 + l1T * 0.9) * 0.35) * (rp + bend);
+            float wallDist = max(abs(tp.x) * 0.80, abs(tp.y) * 0.96);
+            float octDist = max(wallDist, (abs(tp.x) + abs(tp.y)) * 0.62);
+            float zTrench = 0.30 / max(0.022, octDist);
+            float bayRibs = smoothstep(0.84, 0.985, cos((zTrench * 1.9 * l1Den + l1T * 3.8) * PI));
+            float catwalkGirders = smoothstep(0.92, 0.995, cos((zTrench * 0.48 * l1Den + l1T * 0.95) * PI))
+                                 * smoothstep(0.04, 0.32, abs(tp.x) + abs(tp.y));
+            float longRails = smoothstep(0.90, 0.992, cos(atan(tp.y, tp.x) * 8.0));
+            float greeblePanels = step(0.45, sin(zTrench * 5.5 + floor(atan(tp.y, tp.x) * 4.0) * 1.7)) * 0.24;
+            float fade = smoothstep(0.022, 0.14, octDist);
+            float quadLaser = exp(-abs(abs(tp.x) - abs(tp.y) * 0.88) * 115.0)
+                            * smoothstep(0.62, 0.99, sin(zTrench * 3.4 - uTime * 14.0));
+            vec3 trenchCol = mix(uCol0.rgb, uCol1.rgb, 0.5 + 0.5 * sin(zTrench * 0.35)) * (bayRibs + longRails * 0.72 + greeblePanels) * fade * 0.82
+                           + uCol2.rgb * catwalkGirders * fade * (0.85 + uBass * 0.45)
+                           + mix(vec3(1.0, 0.18, 0.14), vec3(0.18, 1.0, 0.32), step(0.0, tp.y)) * quadLaser * (0.95 + uBeat * 0.45);
+            col += trenchCol * (0.78 + uBass * 0.34) * l1Bright;
         }
     }
 

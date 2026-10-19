@@ -3130,17 +3130,19 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
         }
         ctx.restore()
 
-        var orb = rT * 0.58
-        var sep20 = Math.min(baseW, baseH) * 0.22 * warpMul
+        var orb = rT * 0.44
+        var breathe20 = 0.5 + 0.5 * Math.sin(rT * 0.68) + 0.25 * Math.sin(rT * 1.54 + bass * 1.6)
+        var wellSwell20 = clamp(0.45 + 0.95 * breathe20 + bass * 0.55 + beat * 0.45, 0.38, 2.25)
+        var sep20 = Math.min(baseW, baseH) * 0.20 * warpMul * (0.82 + 0.24 * breathe20)
         for (var bh = 0; bh < 2; bh++) {
             var sgn = (bh === 0) ? 1.0 : -1.0
             var bhX = cx + sgn * Math.cos(orb) * sep20
             var bhY = cy + sgn * Math.sin(orb) * sep20 * 0.68
-            var lensR = minDim * (0.20 + rEnv * 0.06) * warpMul
+            var lensR = minDim * (0.12 + 0.14 * wellSwell20 + rEnv * 0.05) * warpMul
             for (var lr = 4; lr >= 1; lr--) {
-                var rL = lensR * (lr / 4.0)
-                var lensScaleX = 0.90 + 0.10 * Math.cos(rT * 0.55 * tiltMul - lr * 0.4 + bh)
-                var lensScaleY = 0.90 + 0.10 * Math.sin(rT * 0.65 * tiltMul + lr * 0.5 + bh)
+                var rL = lensR * (lr / 4.0) * (0.88 + 0.18 * Math.sin(rT * 0.9 - lr * 0.45))
+                var lensScaleX = 0.88 + 0.16 * Math.cos(rT * 0.55 * tiltMul - lr * 0.4 + bh)
+                var lensScaleY = 0.88 + 0.16 * Math.sin(rT * 0.65 * tiltMul + lr * 0.5 + bh)
                 var lVar = (state.primaryVariantIndex + bh * 5 + lr * 2) % 16
                 var lImg = getVariantImgByIndex(variantImagesMap, lVar, imgPrimary)
                 var lSec = getVariantSectionOffset(lVar + bh * 3 + lr, snapIdx)
@@ -3157,7 +3159,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
                 ctx.rotate(sgn * (rT * 0.75 + (5 - lr) * 0.45 * warpMul))
                 if (lImg) {
                     ctx.globalAlpha = fgAlpha
-                    var mag = (1.10 + (5 - lr) * 0.14) * vpZoom
+                    var mag = (1.05 + (5 - lr) * 0.16 * wellSwell20) * vpZoom
                     ctx.drawImage(
                         lImg,
                         -baseW * 0.5 * mag + panShiftX + lSec.dx * baseW * 0.20,
@@ -3181,29 +3183,29 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
         }
 
     } else if (modeIdx === 20) {
-        // M21: Möbius Cylinder & Torus Tunnel Wrap (8 spinning 3D tunnel depth rings with half-twist phase)
+        // M21: Möbius Cylinder & Torus Tunnel Wrap (8 spinning 3D tunnel depth rings with calm half-twist phase)
         var tRings = 8
-        var tFlow = (rT * 0.36 * strobeMul) % 1.0
+        var tFlow = (rT * 0.14) % 1.0
         for (var tr = tRings - 1; tr >= 0; tr--) {
             var relD = (tr + 1.0 - tFlow) / tRings
-            var ringScale = 1.32 * (1.0 - relD * 0.74)
-            var mobiusTwist = rT * 0.38 * ((tr % 2 === 0) ? 1 : -1) + relD * Math.PI * 0.55 * tiltMul
-            var centreCurveX = cx + Math.cos(rT * 0.55 + relD * 3.2) * width * 0.12 * relD * warpMul
-            var centreCurveY = cy + Math.sin(rT * 0.45 + relD * 3.2) * height * 0.10 * relD * warpMul
+            var ringScale = 1.30 * (1.0 - relD * 0.72)
+            var mobiusTwist = rT * 0.16 * ((tr % 2 === 0) ? 1 : -1) + relD * Math.PI * 0.36 * tiltMul
+            var centreCurveX = cx + Math.cos(rT * 0.24 + relD * 2.6) * width * 0.08 * relD * warpMul
+            var centreCurveY = cy + Math.sin(rT * 0.20 + relD * 2.6) * height * 0.07 * relD * warpMul
             var rw = baseW * 0.48 * ringScale
             var rh = baseH * 0.48 * ringScale
-            var rPitch = Math.sin(mobiusTwist) * 0.45 * tiltMul
-            var rYaw = Math.cos(mobiusTwist) * 0.45 * tiltMul
-            var mp0 = project3DPoint(-rw, -rh, 0, rPitch, rYaw, mobiusTwist * 0.35, minDim * 1.4, centreCurveX, centreCurveY)
-            var mp1 = project3DPoint( rw, -rh, 0, rPitch, rYaw, mobiusTwist * 0.35, minDim * 1.4, centreCurveX, centreCurveY)
-            var mp2 = project3DPoint( rw,  rh, 0, rPitch, rYaw, mobiusTwist * 0.35, minDim * 1.4, centreCurveX, centreCurveY)
-            var mp3 = project3DPoint(-rw,  rh, 0, rPitch, rYaw, mobiusTwist * 0.35, minDim * 1.4, centreCurveX, centreCurveY)
+            var rPitch = Math.sin(mobiusTwist) * 0.32 * tiltMul
+            var rYaw = Math.cos(mobiusTwist) * 0.32 * tiltMul
+            var mp0 = project3DPoint(-rw, -rh, 0, rPitch, rYaw, mobiusTwist * 0.25, minDim * 1.4, centreCurveX, centreCurveY)
+            var mp1 = project3DPoint( rw, -rh, 0, rPitch, rYaw, mobiusTwist * 0.25, minDim * 1.4, centreCurveX, centreCurveY)
+            var mp2 = project3DPoint( rw,  rh, 0, rPitch, rYaw, mobiusTwist * 0.25, minDim * 1.4, centreCurveX, centreCurveY)
+            var mp3 = project3DPoint(-rw,  rh, 0, rPitch, rYaw, mobiusTwist * 0.25, minDim * 1.4, centreCurveX, centreCurveY)
             var mImg = getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + tr * 2) % 16, imgPrimary)
             drawTextured3DQuad(
                 ctx, mImg, mp0, mp1, mp2, mp3,
                 clamp(fgAlpha * (0.96 - relD * 0.50), 0.18, 1.0),
-                rgbaString(pal[tr % pal.length], 0.90 * neonAlpha),
-                2.2, null
+                rgbaString(pal[tr % pal.length], 0.55 * neonAlpha),
+                1.8, null
             )
         }
 

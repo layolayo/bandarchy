@@ -96,50 +96,133 @@ vec2 mirrorUV(vec2 uv) {
     );
 }
 
-// Applies the 16 photo variant transformations (V00..V15) in hardware when a mode shifts variant index
+// Applies the 16 photo variant transformations (V00..V15) in hardware matching STAGE1_EFFECT_IDS
 vec3 applyVariantStyle(vec3 rgb, vec2 uv, int vIdx) {
     int vid = clamp(vIdx, 0, 15);
-    if (vid == 0) return rgb;
-    float luma = dot(rgb, vec3(0.299, 0.587, 0.114));
-    if (vid == 1) {
-        return 1.0 - rgb;
-    } else if (vid <= 4) {
-        return clamp((rgb - 0.5) * 1.08 + 0.5, 0.0, 1.0);
+    float luma = clamp(dot(rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
+    float pixSat = max(rgb.r, max(rgb.g, rgb.b)) - min(rgb.r, min(rgb.g, rgb.b));
+    float snatchMask = smoothstep(0.08, 0.28, pixSat);
+    vec3 starkMono = vec3(smoothstep(0.08, 0.92, luma));
+    vec3 mutedSnatch = mix(starkMono, rgb, 0.65);
+
+    if (vid == 0) {
+        // 01_SinCity_Chroma_Snatch: High-contrast noir monochrome with selective colour snatch
+        return mix(vec3(smoothstep(0.12, 0.88, luma)), mutedSnatch, snatchMask);
+    } else if (vid == 1) {
+        // 02_White_Sector_Colour_Snatch: Alabaster darkroom negative inversion with upper-right colour window
+        vec3 invPaper = vec3(0.96 - smoothstep(0.08, 0.92, luma) * 0.86);
+        float win = step(0.48, uv.x) * step(uv.y, 0.52);
+        return mix(invPaper, mix(invPaper, mutedSnatch, 0.72), win * snatchMask);
+    } else if (vid == 2) {
+        // 03_Shadow_Void_Neon_Snatch: Deep obsidian shadow void with silver-cyan rim contours
+        float shadowCurve = pow(luma, 1.75) * 0.78;
+        float rim = smoothstep(0.58, 0.88, luma);
+        return mix(vec3(shadowCurve), mix(vec3(0.88, 0.93, 0.98), uCol0.rgb, 0.28), rim);
+    } else if (vid == 3) {
+        // 04_Slash_Window_Sector_Snatch: Brutalist diagonal slash window across dark charcoal plate
+        float slash = smoothstep(0.20, 0.17, abs((uv.x - uv.y) - 0.08));
+        vec3 outside = vec3(luma * 0.48);
+        vec3 inside = mix(vec3(1.0 - luma * 0.85), mutedSnatch, 0.55);
+        return mix(outside, inside, slash);
+    } else if (vid == 4) {
+        // 05_Omarchy_Cyber_Tritone_Stark: Crisp 3-tone architectural slate/silver tritone
+        vec3 obsidian = vec3(0.05, 0.07, 0.10);
+        vec3 slate = vec3(0.32, 0.38, 0.46);
+        vec3 silver = vec3(0.88, 0.91, 0.95);
+        return (luma < 0.42)
+            ? mix(obsidian, slate, luma / 0.42)
+            : mix(slate, silver, (luma - 0.42) / 0.58);
     } else if (vid == 5) {
-        return vec3(smoothstep(0.18, 0.82, luma));
+        // 06_Brutalist_Woodcut_Spot_Snatch: Binary linocut woodcut threshold with central spot accent
+        float grain = (hash21(floor(uv * vec2(180.0, 140.0))) - 0.5) * 0.10;
+        float cut = step(0.46, luma + grain);
+        vec3 wood = mix(vec3(0.05, 0.05, 0.07), vec3(0.93, 0.91, 0.86), cut);
+        float spot = smoothstep(0.28, 0.20, length(uv - vec2(0.5)));
+        return mix(wood, mix(wood, uCol0.rgb, 0.35), spot * cut);
     } else if (vid == 6) {
-        return abs(rgb * 2.0 - 1.0);
+        // 07_Sabattier_Solarised_Snatch: Darkroom Sabattier solarisation curve with Mackie contour line
+        float sol = abs(luma * 2.0 - 1.0);
+        float mackie = exp(-sol * 5.5);
+        vec3 selTone = vec3(0.82, 0.86, 0.92) * (1.0 - sol * 0.78) + vec3(0.95) * mackie * 0.45;
+        return clamp(selTone, 0.0, 1.0);
     } else if (vid == 7) {
-        return floor(rgb * 4.0 + 0.5) / 4.0;
+        // 08_Acid_Poster_4Sector_Snatch: 4-level screenprint posterisation with quadrant contrast split
+        float qLuma = floor(luma * 3.99) / 3.0;
+        bool altQuad = (uv.x > 0.5) != (uv.y > 0.5);
+        vec3 pBase = altQuad ? vec3(1.0 - qLuma * 0.82) : vec3(qLuma * 0.92);
+        return mix(pBase, uCol1.rgb, (qLuma > 0.65 && altQuad) ? 0.24 : 0.0);
     } else if (vid == 8) {
-        return mix(uCol0.rgb * 0.45, mix(uCol1.rgb, uCol2.rgb, smoothstep(0.45, 0.95, luma)), smoothstep(0.05, 0.65, luma));
+        // 09_Zine_Halftone_Colour_Snatch: Punk-zine angled halftone dot screen on newsprint
+        vec2 hGrid = rot2(0.42) * (uv * 88.0);
+        float dotDist = length(fract(hGrid) - 0.5) * 1.414;
+        float dotInk = smoothstep(luma * 0.96, luma * 0.96 + 0.14, dotDist);
+        vec3 paper = vec3(0.92, 0.90, 0.85);
+        vec3 ink = vec3(0.07, 0.08, 0.10);
+        return mix(paper, ink, dotInk);
     } else if (vid == 9) {
-        vec3 deep = vec3(0.03, 0.10, 0.26);
-        vec3 cyan = vec3(0.18, 0.62, 0.88);
-        vec3 paper = vec3(0.92, 0.96, 1.0);
-        return luma < 0.5 ? mix(deep, cyan, luma * 2.0) : mix(cyan, paper, (luma - 0.5) * 2.0);
+        // 10_Pulsar_Ridgeline_Colour_Snatch: CP-1919 elevation ridgeline survey over obsidian
+        float rows = 42.0;
+        float rY = fract(uv.y * rows);
+        float wave = clamp(0.16 + luma * 0.72, 0.08, 0.92);
+        float ridge = smoothstep(0.14, 0.0, abs(rY - wave));
+        float fillUnder = step(rY, wave) * 0.18 * luma;
+        return vec3(0.04, 0.05, 0.08) + vec3(0.86, 0.91, 0.96) * ridge + uCol2.rgb * fillUnder;
     } else if (vid == 10) {
-        return 0.5 + 0.5 * sin(vec3(luma * TAU * 1.5) + vec3(0.2, 2.3, 4.4));
+        // 11_Glitch_Sector_Chromatic_Shear: Horizontal strip datamosh with crisp edge split
+        float strip = hash21(vec2(floor(uv.y * 24.0), 3.7));
+        float edge = smoothstep(0.35, 0.75, abs(luma - 0.5) * 2.0);
+        vec3 baseMono = vec3(smoothstep(0.15, 0.85, luma));
+        return (strip > 0.68)
+            ? clamp(vec3(baseMono.r * 1.12, baseMono.g * 0.82, baseMono.b * (0.85 + 0.35 * edge)), 0.0, 1.0)
+            : baseMono * 0.88;
     } else if (vid == 11) {
-        return clamp(rgb * vec3(1.18, 0.94, 1.18), 0.0, 1.0);
+        // 12_CRT_Phosphor_Sector_Snatch: P4 monochrome CRT scanline & aperture grille
+        float scan = 0.52 + 0.48 * step(0.42, fract(uv.y * 96.0));
+        float grille = 0.84 + 0.16 * sin(uv.x * 320.0 * PI);
+        vec3 p4 = vec3(0.84, 0.90, 0.96) * smoothstep(0.06, 0.92, luma);
+        return p4 * scan * grille;
     } else if (vid == 12) {
-        return rgb * (0.78 + 0.22 * sin(uv.y * 240.0 * PI));
+        // 13_Obsidian_Neon_Edge_Snatch: Dark obsidian void with glowing architectural contour lines
+        float cLine = pow(abs(sin(luma * PI * 5.0)), 6.0);
+        vec3 voidBg = vec3(0.03, 0.04, 0.06) + vec3(luma * 0.22);
+        return voidBg + mix(vec3(0.85, 0.92, 0.98), uCol0.rgb, 0.35) * cLine * 0.88;
     } else if (vid == 13) {
-        return clamp(mix(rgb, rgb.gbr, 0.22), 0.0, 1.0);
+        // 14_Metallic_Relief_Sector_Snatch: Brushed titanium bas-relief emboss
+        float bevel = clamp(0.48 + (luma - 0.46) * 1.55 + sin((uv.x * 1.4 - uv.y) * 140.0) * 0.07, 0.0, 1.0);
+        float spec = pow(bevel, 3.0) * 0.35;
+        return clamp(vec3(0.70, 0.74, 0.80) * bevel + vec3(spec), 0.0, 1.0);
     } else if (vid == 14) {
-        return mix(uBgCol.rgb * 0.25, mix(uCol0.rgb, vec3(1.0), 0.65), smoothstep(0.36, 0.58, luma));
+        // 15_Braille_Matrix_Sector_Snatch: Tactile perforated Braille dot matrix on dark plate
+        vec2 grid = vec2(76.0, 52.0);
+        vec2 cell = floor(uv * grid);
+        vec2 local = fract(uv * grid) - 0.5;
+        float dotMask = smoothstep(0.38, 0.20, length(local));
+        float cellActive = step(0.22, luma + (hash21(cell) - 0.5) * 0.18);
+        vec3 dotCol = mix(vec3(0.86, 0.90, 0.94), uCol0.rgb, 0.22 * snatchMask);
+        return mix(vec3(0.04, 0.05, 0.07), dotCol * (0.45 + 0.55 * luma), dotMask * cellActive);
     }
-    vec3 dream = mix(uCol0.rgb, mix(uCol1.rgb, uCol2.rgb, uv.x), uv.y);
-    return mix(rgb, dream, 0.42);
+    // 16_Prism_Kaleidoscope_Sector_Snatch: 4-way crystalline diamond prism bevels
+    vec2 d = abs(uv - 0.5);
+    float facet = step(d.x, d.y);
+    float seam = smoothstep(0.03, 0.0, abs(d.x - d.y));
+    vec3 crystal = vec3(smoothstep(0.10, 0.90, luma)) * mix(0.78, 1.06, facet);
+    return clamp(crystal + vec3(0.85, 0.90, 0.96) * seam * 0.42, 0.0, 1.0);
 }
 
 vec2 applyVariantUV(vec2 uv, int vIdx) {
     int vid = clamp(vIdx, 0, 15);
     vec2 m = mirrorUV(uv);
-    if (vid == 2) return vec2(1.0 - m.x, m.y);
-    if (vid == 3) return vec2(m.x, 1.0 - m.y);
-    if (vid == 4) return abs(m * 2.0 - 1.0);
-    if (vid == 13) {
+    if (vid == 2) return vec2(abs(m.x - 0.5) * 2.0, m.y);
+    if (vid == 3) {
+        float inSlash = step(abs((m.x - m.y) - 0.08), 0.18);
+        return mix(m, clamp(m + vec2(0.035, -0.035), 0.0, 1.0), inSlash);
+    }
+    if (vid == 10) {
+        float row = floor(m.y * 24.0);
+        float shift = (hash21(vec2(row, 9.1)) - 0.5) * 0.09 * step(0.62, hash21(vec2(row, 2.3)));
+        return mirrorUV(vec2(m.x + shift, m.y));
+    }
+    if (vid == 15) {
         vec2 c = abs(m - 0.5);
         return (c.x > c.y) ? vec2(0.5 + c.y, 0.5 + c.x) : vec2(0.5 + c.x, 0.5 + c.y);
     }
@@ -189,7 +272,7 @@ vec2 applyMacroKinematics(vec2 uv, out float planeFade) {
     return outUV;
 }
 
-// Unified stage sampler: blends primary/secondary/prev/peer textures first, then applies variant style once.
+// Unified stage sampler: styles primary and secondary variants distinctly so all 16 variants are clear.
 // Called at most twice at the end of main() so SPIR-V compilation stays < 50 ms on Intel Arc / Mesa.
 vec4 sampleStageAt(vec2 rawUV, int variantOverride, float peerBlendOverride) {
     vec2 secUV = applyViewportSection(rawUV);
@@ -200,16 +283,26 @@ vec4 sampleStageAt(vec2 rawUV, int variantOverride, float peerBlendOverride) {
     vec2 uvPri = applyVariantUV(secUV, effPri);
     vec4 cPri = (uHasPrimary != 0)
         ? texture(texPrimary, uvPri)
-        : ((uHasPrev != 0) ? texture(texPrev, uvPri) : vec4(uCol0.rgb * 0.35, 1.0));
+        : ((uHasPrev != 0) ? texture(texPrev, uvPri) : vec4(uCol0.rgb * 0.25, 1.0));
+    if (!(isPinned && vPri == uVariantIndex)) {
+        cPri.rgb = applyVariantStyle(cPri.rgb, uvPri, effPri);
+    }
 
     if (uVariantMix > 0.001) {
         if (uPoolMode == 0 || uHasSecondary == 0) {
             int effSec = (isPinned && uSecondaryVariantIndex == uVariantIndex) ? 0 : uSecondaryVariantIndex;
             vec2 uvSec = applyVariantUV(secUV, effSec);
             vec4 cSec = (uHasPrimary != 0) ? texture(texPrimary, uvSec) : cPri;
+            if (!isPinned) {
+                cSec.rgb = applyVariantStyle(cSec.rgb, uvSec, effSec);
+            }
             cPri = mix(cPri, cSec, clamp(uVariantMix, 0.0, 1.0));
         } else {
+            int effSecPool = (isPinned && uSecondaryVariantIndex == uVariantIndex) ? 0 : uSecondaryVariantIndex;
             vec4 cSec = texture(texSecondary, uvPri);
+            if (!isPinned) {
+                cSec.rgb = applyVariantStyle(cSec.rgb, uvPri, effSecPool);
+            }
             cPri = mix(cPri, cSec, sin(clamp(uVariantMix, 0.0, 1.0) * PI) * 0.35 + clamp(uVariantMix, 0.0, 1.0) * 0.65);
         }
     }
@@ -220,14 +313,14 @@ vec4 sampleStageAt(vec2 rawUV, int variantOverride, float peerBlendOverride) {
     }
 
     if (uHasPeer != 0 && (uPoolMode > 0 || peerBlendOverride > 0.001)) {
-        vec2 peerUV = mirrorUV(secUV * 1.04 - 0.02 + vec2(sin(uTime * 0.35), cos(uTime * 0.29)) * 0.03);
+        vec2 peerUV = mirrorUV(secUV * 1.04 - 0.02 + vec2(sin(uRhythmPhase * 0.22), cos(uRhythmPhase * 0.18)) * 0.03);
         vec4 cPeer = texture(texPeer, peerUV);
         float pMix = peerBlendOverride;
         if (pMix <= 0.001) {
             if (uPoolMode == 1) {
                 pMix = 0.38 + 0.14 * sin(uRhythmPhase + secUV.x * PI);
             } else if (uPoolMode == 2) {
-                pMix = step(0.5, fract((secUV.x + secUV.y * 0.35) * 6.0 + uTime * 0.25)) * 0.75;
+                pMix = step(0.5, fract((secUV.x + secUV.y * 0.35) * 6.0 + uRhythmPhase * 0.18)) * 0.75;
             } else {
                 pMix = smoothstep(0.28, 0.78, length(secUV - 0.5) * 1.414) * 0.68;
             }
@@ -235,7 +328,6 @@ vec4 sampleStageAt(vec2 rawUV, int variantOverride, float peerBlendOverride) {
         cPri = mix(cPri, cPeer, clamp(pMix, 0.0, 1.0));
     }
 
-    cPri.rgb = applyVariantStyle(cPri.rgb, uvPri, effPri);
     return cPri;
 }
 
@@ -249,8 +341,9 @@ void main() {
     float spd = clamp(uMotionSpeed, 0.1, 3.0);
     float dep = clamp(uMotionDepth, 0.05, 2.5);
     float spr = clamp(uMotionSpread, 0.1, 2.5);
-    float t = uTime * spd;
+    // Use rhythm-integrated phase for t so audio-modulated uMotionSpeed never causes phase jumps
     float rPhase = uRhythmPhase;
+    float t = rPhase * 0.52;
     int mode = clamp(uMotionMode, 0, 24);
 
     float macroFade = 1.0;
@@ -655,27 +748,38 @@ void main() {
         var0 = uVariantIndex;
         specialCombine = 3;
     } else if (mode == 19) {
-        // M20: Event Horizon Gravitational Lens (Einstein ring black hole bending light around singularity)
-        vec2 bhPos = vec2(sin(rPhase * 0.55), cos(rPhase * 0.42)) * 0.16 * spr;
+        // M20: Event Horizon Gravitational Lens (breathing & swelling gravity well bending spacetime around singularity)
+        vec2 bhPos = vec2(sin(rPhase * 0.42), cos(rPhase * 0.31)) * 0.15 * spr;
         vec2 d = pa - bhPos;
         float dist = length(d) + 0.0001;
-        float rs = (0.08 + 0.05 * uBass) * dep;
-        float einstein = (rs * rs) / (dist + rs * 0.35);
-        vec2 swirled = rot2(rs * 2.2 / (dist + 0.06)) * (d * (1.0 - einstein / dist));
+        // Organic slow breathing + bass/beat swelling of the Schwarzschild radius & gravity well
+        float breatheWave = 0.5 + 0.5 * sin(rPhase * 0.68) + 0.26 * sin(rPhase * 1.54 + uBass * 1.6);
+        float wellSwell = clamp(0.42 + 0.96 * breatheWave + uBass * 0.62 + uBeatPulse * 0.52, 0.35, 2.35);
+        float rs = (0.055 + 0.145 * wellSwell) * clamp(dep, 0.35, 1.85);
+        float einstein = (rs * rs * (1.15 + 0.45 * breatheWave)) / (dist + rs * 0.32);
+        float tidalBreathe = 1.0 + 0.14 * sin(dist * 16.0 - rPhase * 2.2) * exp(-dist * 2.6) * wellSwell;
+        float swirlAng = (rs * (1.85 + 1.35 * wellSwell)) / (dist + 0.055);
+        vec2 swirled = rot2(swirlAng) * (d * clamp((1.0 - einstein / dist) * tidalBreathe, -1.65, 1.65));
         uv0 = vec2((swirled.x + bhPos.x) / aspect, swirled.y + bhPos.y) + 0.5;
-        float ringGlow = exp(-abs(dist - rs * 1.45) * 22.0);
-        float horizonMask = smoothstep(rs * 0.55, rs * 1.05, dist);
+        vec2 swirledInner = rot2(-swirlAng * 0.65) * (d * clamp((1.0 + einstein / (dist + rs * 0.45)), 0.35, 2.25));
+        uv1 = vec2((swirledInner.x + bhPos.x) / aspect, swirledInner.y + bhPos.y) + 0.5;
+        var1 = uSecondaryVariantIndex;
+        peer1 = (uPoolMode > 0) ? 0.65 : 0.0;
+        mix1 = smoothstep(rs * 2.35, rs * 1.02, dist) * smoothstep(rs * 0.48, rs * 0.95, dist) * 0.68;
+        float ringGlow = exp(-abs(dist - rs * 1.38) * (18.0 / max(0.55, wellSwell * 0.75)))
+                       + 0.45 * exp(-abs(dist - rs * 1.95) * 24.0) * breatheWave;
+        float horizonMask = smoothstep(rs * 0.46, rs * 1.04, dist);
         postScale = vec3(horizonMask);
-        postAdd = mix(uCol0.rgb, uCol2.rgb, 0.5) * ringGlow * (0.85 + 0.65 * uBeatPulse);
+        postAdd = mix(uCol0.rgb, uCol2.rgb, 0.5 + 0.5 * sin(rPhase * 0.8)) * ringGlow * (0.55 + 0.45 * uBeatPulse);
     } else if (mode == 20) {
-        // M21: Mobius Cylinder & Torus Tunnel Wrap
-        float u = (ang + PI) / TAU + t * 0.12;
-        float v = 1.0 / (r + 0.18 + 0.06 * sin(rPhase)) + t * 0.28;
-        float mobiusTwist = u + v * 0.35 * sin(rPhase * 0.4) * dep;
-        uv0 = vec2(mobiusTwist, v * 0.45);
-        float depthFog = smoothstep(0.04, 0.28, r);
-        tint0 = uBgCol.rgb * 0.25 + uCol0.rgb * 0.25;
-        tint0Mix = 1.0 - depthFog;
+        // M21: Mobius Cylinder & Torus Tunnel Wrap (calm, steady flow without rapid denominator oscillation)
+        float u = (ang + PI) / TAU + rPhase * 0.026;
+        float v = 0.68 / (r + 0.28 + 0.010 * sin(rPhase * 0.24)) + rPhase * 0.052;
+        float mobiusTwist = u + v * 0.14 * sin(rPhase * 0.18) * clamp(dep, 0.2, 1.35);
+        uv0 = vec2(mobiusTwist, v * 0.36);
+        float depthFog = smoothstep(0.04, 0.26, r);
+        tint0 = uBgCol.rgb * 0.35 + uCol0.rgb * 0.12;
+        tint0Mix = (1.0 - depthFog) * 0.45;
     } else if (mode == 21) {
         // M22: Liquid Acid Domain-Warp Melt
         vec2 w1 = vec2(
@@ -709,8 +813,8 @@ void main() {
         );
         uv0 = uv + grad * (0.045 + 0.055 * uBass) * dep * sin(rPhase * 2.0);
         float nodalLine = exp(-abs(chladni) * 7.5);
-        tint0 = uCol0.rgb * (0.75 + 0.5 * uTreble);
-        tint0Mix = nodalLine * 0.42 * dep;
+        tint0 = uCol0.rgb * (0.65 + 0.35 * uTreble);
+        tint0Mix = nodalLine * 0.24 * dep;
     } else {
         // M25: Hyperdrive Volumetric Radial Extrusion
         vec2 focal = vec2(sin(rPhase * 0.45), cos(rPhase * 0.38)) * 0.14 * spr;
@@ -722,7 +826,7 @@ void main() {
         var1 = uSecondaryVariantIndex;
         mix1 = 0.42;
         tint1 = uCol0.rgb;
-        tint1Mix = 0.22;
+        tint1Mix = 0.10;
         uv2 = focal + dir * (1.0 - 0.92 * strength) + 0.5;
         mix2 = 0.26;
     }
@@ -732,13 +836,13 @@ void main() {
     // =========================================================================
     vec4 col = sampleStageAt(uv0, var0, peer0);
     if (tint0Mix > 0.001) {
-        col.rgb = mix(col.rgb, tint0, clamp(tint0Mix, 0.0, 1.0));
+        col.rgb = mix(col.rgb, tint0, clamp(tint0Mix * 0.38, 0.0, 0.36));
     }
 
     if (mix1 > 0.001) {
         vec4 s1 = sampleStageAt(uv1, var1, peer1);
         if (tint1Mix > 0.001) {
-            s1.rgb = mix(s1.rgb, tint1, clamp(tint1Mix, 0.0, 1.0));
+            s1.rgb = mix(s1.rgb, tint1, clamp(tint1Mix * 0.38, 0.0, 0.32));
         }
         vec3 s2 = col.rgb;
         if (mix2 > 0.001) {
@@ -752,7 +856,7 @@ void main() {
             float l2 = dot(s2, vec3(0.299, 0.587, 0.114));
             vec3 base = (col.rgb + s1.rgb + s2) / 3.0;
             vec3 prism = l0 * uCol0.rgb + l1 * uCol1.rgb + l2 * uCol2.rgb;
-            col.rgb = mix(base, prism, 0.58);
+            col.rgb = mix(base, prism, 0.32);
         } else if (specialCombine == 2) {
             // M18: CRT RGB Tear
             col.rgb = vec3(s1.r, col.g, s2.b);
@@ -763,11 +867,11 @@ void main() {
             float keyMask = smoothstep(thresh - 0.16, thresh + 0.16, fgLuma);
             float edgeGlow = 1.0 - abs(keyMask * 2.0 - 1.0);
             col = mix(col, s1, keyMask);
-            col.rgb += uCol1.rgb * edgeGlow * 0.35 * (0.6 + uBeatPulse);
+            col.rgb += uCol1.rgb * edgeGlow * 0.22 * (0.6 + uBeatPulse);
         } else {
             col.rgb = mix(col.rgb, s1.rgb, clamp(mix1, 0.0, 1.0));
             if (mix2 > 0.001) {
-                col.rgb = mix(col.rgb, mix(s2, uCol2.rgb, 0.25), clamp(mix2, 0.0, 1.0));
+                col.rgb = mix(col.rgb, mix(s2, uCol2.rgb, 0.12), clamp(mix2, 0.0, 1.0));
             }
         }
     } else if (specialCombine == 3) {
@@ -776,15 +880,18 @@ void main() {
         float contourWave = sin(luma0 * TAU * (2.5 + 1.5 * spr) - rPhase * 2.2 + r * 4.0);
         float band = smoothstep(-0.15, 0.35, contourWave) * (0.50 + 0.50 * (uBass + uMid * 0.6));
         vec3 palWave = mix(uCol0.rgb, mix(uCol1.rgb, uCol2.rgb, 0.5 + 0.5 * sin(ang * 2.0 + rPhase)), luma0);
-        col.rgb = mix(col.rgb, col.rgb * 0.55 + palWave * 0.85, band * clamp(dep * 0.68, 0.22, 0.92));
+        col.rgb = mix(col.rgb, col.rgb * 0.72 + palWave * 0.38, band * clamp(dep * 0.42, 0.15, 0.55));
     }
 
-    col.rgb = col.rgb * postScale + postAdd;
+    col.rgb = col.rgb * postScale + postAdd * 0.55;
 
     // =========================================================================
     // PALETTE COLOUR-SNATCH BLOOM & 4-SECTOR TONAL OPACITY
+    // Keep stark monochrome sectors desaturated; only accent existing colour-snatch pixels
     // =========================================================================
     float luma = clamp(dot(col.rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
+    float pixChroma = max(col.r, max(col.g, col.b)) - min(col.r, min(col.g, col.b));
+    float chromaMask = smoothstep(0.06, 0.28, pixChroma);
 
     float wBlack = clamp(1.0 - luma * 2.20, 0.0, 1.0);
     float wWhite = clamp((luma - 0.45) * 1.85, 0.0, 1.0); // Upper 50% highlight range
@@ -793,8 +900,12 @@ void main() {
     vec3 palTarget = (luma < 0.50)
         ? mix(uCol0.rgb, uCol1.rgb, luma / 0.50)
         : mix(uCol1.rgb, uCol2.rgb, (luma - 0.50) / 0.50);
-    float snatchAmt = clamp(uPaletteBloom * (0.42 + 0.58 * (wMid + wWhite * 0.90)) * clamp(uColourSnatchOpacity, 0.0, 1.5), 0.0, 0.92);
-    col.rgb = mix(col.rgb, mix(col.rgb, palTarget, 0.72) + palTarget * 0.22 * uBeatPulse, snatchAmt);
+    float snatchAmt = clamp(uPaletteBloom * 0.26 * (0.08 + 0.92 * chromaMask) * (wMid + wWhite * 0.85) * clamp(uColourSnatchOpacity, 0.0, 1.4), 0.0, 0.38);
+    col.rgb = mix(col.rgb, mix(col.rgb, palTarget, 0.45) + palTarget * 0.10 * uBeatPulse * chromaMask, snatchAmt);
+
+    // Clamp overall photo saturation so stark darkroom photographs remain natural and crisp
+    float postLuma = clamp(dot(col.rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
+    col.rgb = mix(vec3(postLuma), col.rgb, 0.72);
 
     float tonalAlpha = wBlack * clamp(uBlackOpacity, 0.0, 1.5)
                      + wMid   * clamp(uMidOpacity,   0.0, 1.5)

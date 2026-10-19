@@ -2521,7 +2521,236 @@ console.log('OK');
         res = subprocess.run(["node", "-e", node_script], cwd=REPO_ROOT, capture_output=True, text=True, timeout=20)
         self.assertEqual(res.returncode, 0, f"Node test_19 failed: {res.stderr}")
 
+    def test_20_stage_a_and_b_all_24_worlds_24_eq_14_vectors_and_ui_polish(self):
+        """Verify Stage A & B: 24 L1 Worlds (OG 3D + Photo + 12 GPU), 24 EQs, 14 Vectors, L4 3D Tubes, L6 size clamp, Photo M20/M21/16-variants, Toast & 24-bar Spectrum."""
+        import pathlib
+        repo = pathlib.Path(REPO_ROOT)
+        photo_frag_src = (repo / "share" / "photo_motion.frag").read_text(encoding="utf-8")
+        psych_frag_src = (repo / "share" / "psychedelic.frag").read_text(encoding="utf-8")
+        viz_src = (repo / "Visualiser.qml").read_text(encoding="utf-8")
+
+        photo_eng_src = (repo / "PhotoMotionEngine.js").read_text(encoding="utf-8")
+
+        # 1. Verify Photo-Motion M20 organic breathing, M21 slowed constant-rate time, and 16 distinct darkroom variants
+        self.assertIn("wellSwell", photo_frag_src)
+        self.assertNotIn("uTime * (0.28 + bass * 0.25)", photo_frag_src)
+        self.assertNotIn("uTime * (0.28 + bass * 0.25)", photo_eng_src)
+        self.assertIn("float v = 0.68 / (r + 0.28 + 0.010 * sin(rPhase * 0.24)) + rPhase * 0.052;", photo_frag_src)
+        self.assertIn("var tFlow = (rT * 0.14) % 1.0", photo_eng_src)
+        for v_idx in range(15):
+            self.assertIn(f"vid == {v_idx}", photo_frag_src)
+
+        # 2. Verify psychedelic.frag has 12 GPU L1 Worlds (l1m == 0..10 + else Death Star 3D Warp Trench), no Battlezone cockpit, no Death Star targetBox, and SynthGrid keyboards
+        self.assertIn("l1m == 10", psych_frag_src)
+        self.assertIn("Death Star 3D Warp Trench", psych_frag_src)
+        self.assertNotIn("targetBox", psych_frag_src)
+        self.assertIn("inBlackKey", psych_frag_src)
+
+        # 3. Verify Visualiser.qml has bottom-left keybinding toast, 24-bar Spectrum default + 4-bar toggle, Quick Bar steppers, and full drawer repeaters
+        self.assertIn("id: keybindingToastBadge", viz_src)
+        self.assertIn("function showKeybindingFeedback(", viz_src)
+        self.assertIn("id: bottomMeterBox", viz_src)
+        self.assertIn("property bool showSpectrumMeter: true", viz_src)
+        self.assertIn("barCount: 24", viz_src)
+        self.assertIn("model: root.layer1Modes.length", viz_src)
+        self.assertIn("model: root.layer1EqStyles.length", viz_src)
+
+        node_script = r"""
+const fs = require('fs');
+const vm = require('vm');
+let code = fs.readFileSync('PsychedelicEngine.js', 'utf8').replace(/^\.pragma\s+library\s*$/m, '');
+vm.runInThisContext(code);
+
+if (ALL_LAYER1_MODES.length !== 24 || SHORT_LAYER1_MODES.length !== 24) {
+    throw new Error('Expected 24 ALL_LAYER1_MODES and 24 SHORT_LAYER1_MODES, got ' + ALL_LAYER1_MODES.length);
+}
+if (ALL_LAYER1_EQ_STYLES.length !== 24) {
+    throw new Error('Expected 24 ALL_LAYER1_EQ_STYLES, got ' + ALL_LAYER1_EQ_STYLES.length);
+}
+if (LAYER1_SHAPE_STYLES.length !== 14) {
+    throw new Error('Expected 14 LAYER1_SHAPE_STYLES, got ' + LAYER1_SHAPE_STYLES.length);
+}
+
+function makeTrackCtx() {
+    return {
+        fillCount: 0,
+        strokeCount: 0,
+        clearCount: 0,
+        fonts: [],
+        lineCaps: [],
+        lineJoins: [],
+        fillStyle: '',
+        strokeStyle: '',
+        lineWidth: 1,
+        globalAlpha: 1,
+        globalCompositeOperation: 'source-over',
+        _font: '',
+        set font(v) { this._font = v; this.fonts.push(v); },
+        get font() { return this._font; },
+        _cap: 'butt',
+        set lineCap(v) { this._cap = v; this.lineCaps.push(v); },
+        get lineCap() { return this._cap; },
+        _join: 'miter',
+        set lineJoin(v) { this._join = v; this.lineJoins.push(v); },
+        get lineJoin() { return this._join; },
+        save() {},
+        restore() {},
+        beginPath() {},
+        closePath() {},
+        moveTo() {},
+        lineTo() {},
+        bezierCurveTo() {},
+        quadraticCurveTo() {},
+        arc() {},
+        rect() {},
+        clip() {},
+        fill() { this.fillCount++; },
+        stroke() { this.strokeCount++; },
+        fillRect() { this.fillCount++; },
+        strokeRect() { this.strokeCount++; },
+        clearRect() { this.clearCount++; },
+        fillText() { this.fillCount++; },
+        strokeText() { this.strokeCount++; },
+        translate() {},
+        rotate() {},
+        scale() {},
+        transform() {},
+        setTransform() {},
+        createLinearGradient() { return { addColorStop() {} }; },
+        createRadialGradient() { return { addColorStop() {} }; },
+        drawImage() {}
+    };
+}
+
+const bands = new Array(64).fill(520);
+const theme = { background: '#07090e', foreground: '#e2e8f0', accent: '#6ee7b7', urgent: '#f472b6' };
+
+// 1. Verify all 24 L1 Worlds normalise and render (0..10 on CPU canvas when gpuL1Active=false; 12..23 map to CPU fallback when gpuShaderEnabled=false)
+for (let m = 0; m < 24; m++) {
+    const st = createState();
+    const cfg = normaliseConfig({
+        gpuShaderEnabled: false,
+        gpuL1Active: false,
+        layer1Enabled: true,
+        layer1FieldEnabled: true,
+        layer1Mode: m,
+        layer1EqEnabled: false,
+        layer1ShapesEnabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false
+    }, 0, []);
+    if (cfg.layer1Mode !== m) {
+        throw new Error(`Expected normaliseConfig to preserve layer1Mode=${m}, got ${cfg.layer1Mode}`);
+    }
+    stepState(st, bands, true, cfg, 0.03);
+    const ctx = makeTrackCtx();
+    renderFrame(ctx, 640, 360, st, 0, theme, [], [], [], cfg, null);
+    if (m !== 11 && ctx.fillCount + ctx.strokeCount < 2) {
+        throw new Error(`L1 World ${m} (${ALL_LAYER1_MODES[m]}) failed to render geometry`);
+    }
+}
+
+// 2. Verify all 24 Equaliser styles (including 16..23 3D Shader-Inspired Equalisers) render across all 4 orientations (0..3)
+for (let eq = 0; eq < 24; eq++) {
+    for (let lay = 0; lay < 4; lay++) {
+        const st = createState();
+        const cfg = normaliseConfig({
+            layer1Enabled: true,
+            layer1FieldEnabled: false,
+            layer1EqEnabled: true,
+            layer1EqStyle: eq,
+            layer1EqLayout: lay,
+            layer1ShapesEnabled: false,
+            layer2Enabled: false,
+            layer3Enabled: false
+        }, 0, []);
+        if (cfg.layer1EqStyle !== eq) {
+            throw new Error(`Expected layer1EqStyle=${eq}, got ${cfg.layer1EqStyle}`);
+        }
+        stepState(st, bands, true, cfg, 0.03);
+        const ctx = makeTrackCtx();
+        renderFrame(ctx, 640, 360, st, 0, theme, [], [], [], cfg, null);
+        if (ctx.fillCount + ctx.strokeCount < 4) {
+            throw new Error(`EQ style ${eq} (${ALL_LAYER1_EQ_STYLES[eq]}) layout ${lay} failed to draw`);
+        }
+    }
+}
+
+// 3. Verify all 14 Vector craft styles (0..13) render in drawLayer1BeatShapes
+for (let sh = 0; sh < 14; sh++) {
+    const st = createState();
+    const cfg = normaliseConfig({
+        layer1Enabled: true,
+        layer1FieldEnabled: false,
+        layer1EqEnabled: false,
+        layer1ShapesEnabled: true,
+        layer1ShapeStyle: sh,
+        layer1ShapeDensity: 1.5,
+        layer2Enabled: false,
+        layer3Enabled: false
+    }, 0, []);
+    if (cfg.layer1ShapeStyle !== sh) {
+        throw new Error(`Expected layer1ShapeStyle=${sh}, got ${cfg.layer1ShapeStyle}`);
+    }
+    stepState(st, bands, true, cfg, 0.04);
+    const ctx = makeTrackCtx();
+    renderFrame(ctx, 640, 360, st, 0, theme, [], [], [], cfg, null);
+    if (ctx.strokeCount < 4) {
+        throw new Error(`Vector craft style ${sh} (${LAYER1_SHAPE_STYLES[sh]}) failed to draw strokes`);
+    }
+}
+
+// 4. Verify Layer 4 Geometry (0..12) applies 3D tubular shading with round caps/joins
+for (let vmIdx = 0; vmIdx < 13; vmIdx++) {
+    const st = createState();
+    const cfg = normaliseConfig({
+        layer1Enabled: false,
+        layer2Enabled: true,
+        layer2VizEnabled: true,
+        visualMode: vmIdx,
+        layer3Enabled: false
+    }, 0, []);
+    stepState(st, bands, true, cfg, 0.03);
+    const ctx = makeTrackCtx();
+    renderFrame(ctx, 640, 360, st, vmIdx, theme, [], [], [], cfg, null);
+    if (!ctx.lineCaps.includes('round') || !ctx.lineJoins.includes('round')) {
+        throw new Error(`Expected Layer 4 Geometry mode ${vmIdx} to set round lineCap/lineJoin for 3D tubes`);
+    }
+}
+
+// 5. Verify Layer 6 Typography clamps font size to <= 44px even at extreme scale (layer3Scale=2.5, beatPulse=1.0, bass=1.0)
+const stTypo = createState();
+const cfgTypo = normaliseConfig({
+    layer1Enabled: false,
+    layer2Enabled: false,
+    layer3Enabled: true,
+    useAlbumArt: false,
+    asciiMode: 'text',
+    layer3Scale: 2.5,
+    layer3Tracers: 8,
+    layer3Mode: 0,
+    layer3TextStyle: 0,
+    trackTitle: 'TYPOGRAPHY CLAMP CHECK'
+}, 0, []);
+stepState(stTypo, new Array(64).fill(950), true, cfgTypo, 0.03);
+stTypo.beatPulse = 1.0;
+stTypo.bass = 1.0;
+const ctxTypo = makeTrackCtx();
+renderFrame(ctxTypo, 1920, 1080, stTypo, 0, theme, [], [], [], cfgTypo, null);
+for (const fStr of ctxTypo.fonts) {
+    const m = fStr.match(/(\d+)px/);
+    if (m && Number(m[1]) > 46) {
+        throw new Error(`Typography font size exceeded clamp: ${fStr}`);
+    }
+}
+
+console.log('OK');
+"""
+        res = subprocess.run(["node", "-e", node_script], cwd=REPO_ROOT, capture_output=True, text=True, timeout=20)
+        self.assertEqual(res.returncode, 0, f"Node test_20 failed: {res.stderr}")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
 

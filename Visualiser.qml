@@ -49,8 +49,8 @@ FocusScope {
 
     // Exposed engine metadata for callers and tests
     readonly property var modeNames: Engine.MODE_NAMES
-    readonly property var layer1Modes: Engine.LAYER1_MODES
-    readonly property var layer1EqStyles: Engine.LAYER1_EQ_STYLES
+    readonly property var layer1Modes: Engine.ALL_LAYER1_MODES
+    readonly property var layer1EqStyles: Engine.ALL_LAYER1_EQ_STYLES
     readonly property var layer1EqLayouts: Engine.LAYER1_EQ_LAYOUTS
     readonly property var layer1EqDampingNames: Engine.LAYER1_EQ_DAMPING
     readonly property var layer1ShapeStyles: Engine.LAYER1_SHAPE_STYLES
@@ -439,7 +439,19 @@ FocusScope {
         "9:SynthGrid",
         "10:PolyTunnel",
         "11:Tempest",
-        "12:StarkPhoto"
+        "12:StarkPhoto",
+        "13:ShdWarp",
+        "14:ShdSpiral",
+        "15:ShdFlame",
+        "16:ShdStars",
+        "17:ShdBZone",
+        "18:ShdTrench",
+        "19:ShdVoid",
+        "20:ShdTRON",
+        "21:ShdOutrun",
+        "22:ShdPoly",
+        "23:ShdTempest",
+        "24:3DWarpTrench"
     ]
 
     readonly property var photoMotionModes: PhotoMotion.PHOTO_MOTION_MODES
@@ -526,8 +538,17 @@ FocusScope {
         "Tralis City",
         "Aurora",
         "DNA Beam",
-        "Ferrofluid"
+        "Ferrofluid",
+        "3D Tubes",
+        "HyperRibbon",
+        "CyberSpine",
+        "HoloPrisms",
+        "WarpRings",
+        "MercuryWave",
+        "LaserHarp",
+        "SynthValley"
     ]
+    readonly property var shortVectorLabels: Engine.SHORT_LAYER1_SHAPE_STYLES
 
     readonly property var shortEqPosLabels: [
         "0: Bottom ▲",
@@ -663,7 +684,21 @@ FocusScope {
     signal requestPhotoImport(string sourceDir)
     signal requestPhotoRefreshStatus()
     signal requestPhotoPick(string category, string stem)
-    function suppressActionFeedback(message) {}
+    property bool _inKeybindingDispatch: false
+    property string keybindingToastText: ""
+    property real keybindingToastOpacity: 0.0
+    function showKeybindingFeedback(message) {
+        var txt = String(message || "").trim()
+        if (!txt) return
+        root.keybindingToastText = txt
+        root.keybindingToastOpacity = 1.0
+        keybindingToastTimer.restart()
+    }
+    function suppressActionFeedback(message) {
+        if (root._inKeybindingDispatch) {
+            root.showKeybindingFeedback(message)
+        }
+    }
 
     property var engineState: Engine.createState()
     property bool _internalLayerChange: false
@@ -1335,6 +1370,7 @@ FocusScope {
                     st.historyCursor = hi
                     root.requestPhotoPick(lockedCat, prevEntry.sourceStem)
                     clearCanvasImmediate()
+                    root.suppressActionFeedback("Photo [◀]: " + prevEntry.sourceStem + " (" + lockedCat + ")")
                     return
                 }
             }
@@ -1345,12 +1381,14 @@ FocusScope {
                     st.historyCursor = fi
                     root.requestPhotoPick(lockedCat, nextEntry.sourceStem)
                     clearCanvasImmediate()
+                    root.suppressActionFeedback("Photo [▶]: " + nextEntry.sourceStem + " (" + lockedCat + ")")
                     return
                 }
             }
         }
         root.requestPhotoPick(lockedCat, "")
         clearCanvasImmediate()
+        root.suppressActionFeedback("Photo [" + (direction < 0 ? "◀" : "▶") + "]: Next in " + lockedCat)
     }
 
     function stepPhotoCategoryByKey(direction) {
@@ -1939,7 +1977,7 @@ FocusScope {
         if (cfg.layerEqAutoRandomise !== undefined) root.layerEqAutoRandomise = Boolean(cfg.layerEqAutoRandomise)
         if (cfg.layerVectorsAutoRandomise !== undefined) root.layerVectorsAutoRandomise = Boolean(cfg.layerVectorsAutoRandomise)
         if (cfg.layer1FieldEnabled !== undefined) root.layer1FieldEnabled = Boolean(cfg.layer1FieldEnabled)
-        if (cfg.layer1Mode !== undefined) root.layer1Mode = Number(cfg.layer1Mode) % Engine.LAYER1_MODES.length
+        if (cfg.layer1Mode !== undefined) root.layer1Mode = Number(cfg.layer1Mode) % root.layer1Modes.length
         if (cfg.layer1Direction !== undefined) root.layer1Direction = Number(cfg.layer1Direction)
         if (cfg.layer1Persistence !== undefined) root.layer1Persistence = Number(cfg.layer1Persistence)
         if (cfg.layer1Speed !== undefined) root.layer1Speed = Number(cfg.layer1Speed)
@@ -1973,7 +2011,7 @@ FocusScope {
         }
         if (cfg.photoAudioLinks && typeof cfg.photoAudioLinks === "object") root.photoAudioLinks = cfg.photoAudioLinks
         if (cfg.layer1EqEnabled !== undefined) root.layer1EqEnabled = Boolean(cfg.layer1EqEnabled)
-        if (cfg.layer1EqStyle !== undefined) root.layer1EqStyle = Number(cfg.layer1EqStyle) % Engine.LAYER1_EQ_STYLES.length
+        if (cfg.layer1EqStyle !== undefined) root.layer1EqStyle = Number(cfg.layer1EqStyle) % root.layer1EqStyles.length
         if (cfg.layer1EqLayout !== undefined) root.layer1EqLayout = Number(cfg.layer1EqLayout) % Engine.LAYER1_EQ_LAYOUTS.length
         if (cfg.layer1EqScale !== undefined) root.layer1EqScale = Math.max(0.15, Math.min(2.25, Number(cfg.layer1EqScale) || 1.0))
         if (cfg.layer1EqSpin !== undefined) root.layer1EqSpin = Math.max(-2.50, Math.min(2.50, Number(cfg.layer1EqSpin)))
@@ -2162,9 +2200,9 @@ FocusScope {
     // -------------------------------------------------------------------------
     function saveCurrentL1Config() {
         var copy = (root.savedL1Configs || []).slice()
-        var fieldLabel = root.layer1FieldEnabled ? (Engine.LAYER1_MODES[root.layer1Mode] || "Field").split(" ")[0] : "NoField"
-        var eqLabel = root.layer1EqEnabled ? (Engine.LAYER1_EQ_STYLES[root.layer1EqStyle] || "EQ").split(" ")[0] : "NoEQ"
-        var shLabel = root.layer1ShapesEnabled ? (Engine.LAYER1_SHAPE_STYLES[root.layer1ShapeStyle] || "Shapes").split(" ")[0] : "NoShapes"
+        var fieldLabel = root.layer1FieldEnabled ? (root.layer1Modes[root.layer1Mode] || "Field").split(" ")[0] : "NoField"
+        var eqLabel = root.layer1EqEnabled ? (root.layer1EqStyles[root.layer1EqStyle] || "EQ").split(" ")[0] : "NoEQ"
+        var shLabel = root.layer1ShapesEnabled ? (root.layer1ShapeStyles[root.layer1ShapeStyle] || "Shapes").split(" ")[0] : "NoShapes"
         var item = {
             name: fieldLabel + " · " + eqLabel + " · " + shLabel,
             l1FieldEnabled: root.layer1FieldEnabled,
@@ -2222,7 +2260,7 @@ FocusScope {
         // Strictly update ONLY Layer #1 properties — NEVER touch Layer #2, Layer #3, or Layer #4!
         root.layer1Enabled = true
         if (item.l1FieldEnabled !== undefined) root.layer1FieldEnabled = Boolean(item.l1FieldEnabled)
-        if (item.l1Mode !== undefined) root.layer1Mode = Number(item.l1Mode) % Engine.LAYER1_MODES.length
+        if (item.l1Mode !== undefined) root.layer1Mode = Number(item.l1Mode) % root.layer1Modes.length
         if (item.l1Direction !== undefined) root.layer1Direction = Number(item.l1Direction)
         if (item.l1Persistence !== undefined) root.layer1Persistence = Number(item.l1Persistence)
         if (item.l1Speed !== undefined) root.layer1Speed = Number(item.l1Speed)
@@ -2247,7 +2285,7 @@ FocusScope {
         if (item.photoPaletteBloom !== undefined) root.photoPaletteBloom = Math.max(0.00, Math.min(2.50, Number(item.photoPaletteBloom)))
         if (item.photoWarpIntensity !== undefined) root.photoWarpIntensity = Math.max(0.00, Math.min(2.50, Number(item.photoWarpIntensity)))
         if (item.l1EqEnabled !== undefined) root.layer1EqEnabled = Boolean(item.l1EqEnabled)
-        if (item.l1EqStyle !== undefined) root.layer1EqStyle = Number(item.l1EqStyle) % Engine.LAYER1_EQ_STYLES.length
+        if (item.l1EqStyle !== undefined) root.layer1EqStyle = Number(item.l1EqStyle) % root.layer1EqStyles.length
         if (item.l1EqLayout !== undefined) root.layer1EqLayout = Number(item.l1EqLayout) % Engine.LAYER1_EQ_LAYOUTS.length
         if (item.l1EqScale !== undefined) root.layer1EqScale = Math.max(0.15, Math.min(2.25, Number(item.l1EqScale)))
         if (item.l1EqSpin !== undefined) root.layer1EqSpin = Math.max(-2.50, Math.min(2.50, Number(item.l1EqSpin)))
@@ -2519,7 +2557,7 @@ FocusScope {
             root.engineState.clearFeedbackFrames = 3
         }
         if (typeof gpuShaderStage !== "undefined" && gpuShaderStage) {
-            gpuShaderStage.uL1Enabled = (root.gpuShaderEnabled && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode < 11) ? 1.0 : 0.0
+            gpuShaderStage.uL1Enabled = (root.gpuShaderEnabled && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode >= 12) ? 1.0 : 0.0
         }
         if (root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11) {
             root.syncGpuPhotoTextures()
@@ -2687,7 +2725,7 @@ FocusScope {
             palette: root.paletteIndex,
             musicDrive: root.musicDrive,
             gpuShaderEnabled: root.gpuShaderEnabled,
-            gpuL1Active: Boolean(root.gpuShaderEnabled && root.layer1Enabled && root.layer1FieldEnabled),
+            gpuL1Active: Boolean(root.gpuShaderEnabled && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode >= 11),
             backdropEnabled: root.backdropEnabled,
             backdropMode: root.backdropMode,
             backdropSpeed: root.backdropSpeed,
@@ -2887,6 +2925,13 @@ FocusScope {
             }
         } else if (st._lastStepInfo && st._lastStepInfo.motionControlsRandomisedOnTimer) {
             root.applyRandomisedStateMotionToRoot(st)
+            if (!root.photoHoldActive) {
+                var lockedRandCtrlCat = root.resolveCurrentPhotoCategory()
+                root.photoActiveCategory = lockedRandCtrlCat
+                st.activeCategory = lockedRandCtrlCat
+                root.photoPreviousVariants = root.photoActiveVariants || ({})
+                root.requestPhotoPick(lockedRandCtrlCat, "")
+            }
         } else if (st._lastStepInfo && st._lastStepInfo.stepTriggeredOnBeat) {
             var lockedBeatCat = root.resolveCurrentPhotoCategory()
             root.photoActiveCategory = lockedBeatCat
@@ -2933,16 +2978,16 @@ FocusScope {
 
         root.layer1Enabled = Boolean(p.l1Enabled)
         root.layer1FieldEnabled = p.l1FieldEnabled !== undefined ? Boolean(p.l1FieldEnabled) : true
-        root.layer1Mode = Number(p.l1Mode || 0) % Engine.LAYER1_MODES.length
+        root.layer1Mode = Number(p.l1Mode || 0) % root.layer1Modes.length
         if (p.l1Direction !== undefined) root.layer1Direction = Number(p.l1Direction)
         root.layer1EqEnabled = p.l1EqEnabled !== undefined ? Boolean(p.l1EqEnabled) : true
-        root.layer1EqStyle = Number(p.l1EqStyle || 0) % Engine.LAYER1_EQ_STYLES.length
+        root.layer1EqStyle = Number(p.l1EqStyle || 0) % root.layer1EqStyles.length
         root.layer1EqLayout = Number(p.l1EqLayout || 0) % Engine.LAYER1_EQ_LAYOUTS.length
         root.layer1EqScale = p.l1EqScale !== undefined ? Math.max(0.15, Math.min(2.25, Number(p.l1EqScale))) : 1.0
         if (p.l1EqSpin !== undefined) root.layer1EqSpin = Math.max(-2.50, Math.min(2.50, Number(p.l1EqSpin)))
         root.layer1EqDamping = Number(p.l1EqDamping || 0) % Engine.LAYER1_EQ_DAMPING.length
         root.layer1ShapesEnabled = p.l1ShapesEnabled !== undefined ? Boolean(p.l1ShapesEnabled) : true
-        root.layer1ShapeStyle = Number(p.l1ShapeStyle || 0) % Engine.LAYER1_SHAPE_STYLES.length
+        root.layer1ShapeStyle = Number(p.l1ShapeStyle || 0) % root.layer1ShapeStyles.length
 
         root.layer2Enabled = Boolean(p.l2Enabled)
         root.layer2VizEnabled = p.l2VizEnabled !== undefined ? Boolean(p.l2VizEnabled) : true
@@ -3027,7 +3072,7 @@ FocusScope {
     function saveCurrentAsCollectivePreset() {
         var copy = root.collectivePresets.slice()
         var customNum = copy.length + 1
-        var l1Tag = root.layer1Enabled ? ("L1:" + (Engine.LAYER1_MODES[root.layer1Mode] || "").split(" ")[0]) : "L1:Off"
+        var l1Tag = root.layer1Enabled ? ("L1:" + (root.layer1Modes[root.layer1Mode] || "").split(" ")[0]) : "L1:Off"
         var l2Tag = root.layer2Enabled ? ("L2:" + (Engine.MODE_NAMES[root.visualMode] || "").split(" ")[0]) : "L2:Off"
         var l3Tag = root.layer3Enabled ? ("L3:" + (root.useAlbumArt ? "Art" : "Words")) : "L3:Off"
         var newPreset = {
@@ -3103,12 +3148,32 @@ FocusScope {
     }
 
     function cycleLayer1Mode(delta) {
-        var count = Engine.LAYER1_MODES.length
+        var count = root.layer1Modes.length
         root.layer1FieldEnabled = true
         root.syncLayer1MasterFromSubs()
         layer1Mode = (layer1Mode + delta + count) % count
         vizCanvas.requestPaint()
-        root.suppressActionFeedback("1: Worlds: " + Engine.LAYER1_MODES[layer1Mode])
+        root.suppressActionFeedback("1: Worlds: " + root.layer1Modes[layer1Mode])
+    }
+
+    function cycleLayer1EqStyle(delta) {
+        var count = root.layer1EqStyles.length
+        var step = (delta !== undefined && delta < 0) ? -1 : 1
+        root.layer1EqEnabled = true
+        root.syncLayer1MasterFromSubs()
+        root.layer1EqStyle = (root.layer1EqStyle + step + count) % count
+        vizCanvas.requestPaint()
+        root.suppressActionFeedback("2: Equaliser: " + root.layer1EqStyles[root.layer1EqStyle])
+    }
+
+    function cycleLayer1ShapeStyle(delta) {
+        var count = root.layer1ShapeStyles.length
+        var step = (delta !== undefined && delta < 0) ? -1 : 1
+        root.layer1ShapesEnabled = true
+        root.syncLayer1MasterFromSubs()
+        root.layer1ShapeStyle = (root.layer1ShapeStyle + step + count) % count
+        vizCanvas.requestPaint()
+        root.suppressActionFeedback("3: Vectors: " + root.layer1ShapeStyles[root.layer1ShapeStyle])
     }
 
     function cycleLayer3Mode(delta) {
@@ -3534,24 +3599,27 @@ FocusScope {
             return
         }
         var nowSec = root.engineState ? (Number(root.engineState.t) || 0.0) : 0.0
-        var nonPhotoCount = Math.max(1, Engine.LAYER1_MODES.length - 1)
+        var totalL1Modes = root.layer1Modes.length
+        var nonPhotoCount = Math.max(1, totalL1Modes - 1)
         root._internalLayerChange = true
         if (root.layer1PinnedByUser) {
             root.layer1FieldEnabled = true
-            var mRoll = Math.floor(Math.random() * Engine.LAYER1_MODES.length)
+            var mRoll = Math.floor(Math.random() * totalL1Modes)
             if (mRoll === PhotoMotion.LAYER1_WORLD12_INDEX && !PhotoMotion.shouldSelectWorld12Cameo(pSt, nowSec, 0.0)) {
                 mRoll = Math.floor(Math.random() * nonPhotoCount)
+                if (mRoll >= PhotoMotion.LAYER1_WORLD12_INDEX) mRoll = (mRoll + 1) % totalL1Modes
             }
             root.layer1Mode = mRoll
             root.layer1Density = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
             root.layer1Speed = Math.round((0.60 + Math.random() * 1.25) * 100) / 100
             root.layer1Direction = [1, -1, 0][Math.floor(Math.random() * 3)]
         } else {
-            var fRoll = Math.floor(Math.random() * (Engine.LAYER1_MODES.length + 1))
-            root.layer1FieldEnabled = (fRoll < Engine.LAYER1_MODES.length)
+            var fRoll = Math.floor(Math.random() * (totalL1Modes + 1))
+            root.layer1FieldEnabled = (fRoll < totalL1Modes)
             if (root.layer1FieldEnabled) {
                 if (fRoll === PhotoMotion.LAYER1_WORLD12_INDEX && !PhotoMotion.shouldSelectWorld12Cameo(pSt, nowSec, 0.0)) {
                     fRoll = Math.floor(Math.random() * nonPhotoCount)
+                    if (fRoll >= PhotoMotion.LAYER1_WORLD12_INDEX) fRoll = (fRoll + 1) % totalL1Modes
                 }
                 root.layer1Mode = fRoll
                 root.layer1Density = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
@@ -3579,15 +3647,15 @@ FocusScope {
         root._internalLayerChange = true
         if (root.layer2PinnedByUser) {
             root.layer1EqEnabled = true
-            root.layer1EqStyle = Math.floor(Math.random() * Engine.LAYER1_EQ_STYLES.length)
+            root.layer1EqStyle = Math.floor(Math.random() * root.layer1EqStyles.length)
             root.layer1EqLayout = Math.floor(Math.random() * Engine.LAYER1_EQ_LAYOUTS.length)
             root.layer1EqScale = Math.round((0.25 + Math.random() * 1.15) * 100) / 100
             root.layer1EqSpin = Math.round(((Math.random() < 0.35 ? -1.0 : 1.0) * (0.45 + Math.random() * 1.40)) * 100) / 100
             root.layer1EqDamping = Math.floor(Math.random() * Engine.LAYER1_EQ_DAMPING.length)
             root.layer1EqGain = Math.round((0.90 + Math.random() * 0.90) * 100) / 100
         } else {
-            var eqRoll = Math.floor(Math.random() * (Engine.LAYER1_EQ_STYLES.length + 1))
-            root.layer1EqEnabled = (eqRoll < Engine.LAYER1_EQ_STYLES.length)
+            var eqRoll = Math.floor(Math.random() * (root.layer1EqStyles.length + 1))
+            root.layer1EqEnabled = (eqRoll < root.layer1EqStyles.length)
             if (root.layer1EqEnabled) {
                 root.layer1EqStyle = eqRoll
                 root.layer1EqLayout = Math.floor(Math.random() * Engine.LAYER1_EQ_LAYOUTS.length)
@@ -3598,7 +3666,7 @@ FocusScope {
             }
             if (!root.layer1FieldEnabled && !root.layer1EqEnabled && !root.layer1ShapesEnabled && !root.hasOtherActiveLayer(1)) {
                 root.layer1EqEnabled = true
-                root.layer1EqStyle = Math.floor(Math.random() * Engine.LAYER1_EQ_STYLES.length)
+                root.layer1EqStyle = Math.floor(Math.random() * root.layer1EqStyles.length)
             }
         }
         root.syncLayer1MasterFromSubs()
@@ -4028,182 +4096,198 @@ FocusScope {
             }
             return
         }
-        if (event.key === Qt.Key_1) { root.toggleVisualiserLayerByNumber(1); event.accepted = true }
-        else if (event.key === Qt.Key_2) { root.toggleVisualiserLayerByNumber(2); event.accepted = true }
-        else if (event.key === Qt.Key_3) { root.toggleVisualiserLayerByNumber(3); event.accepted = true }
-        else if (event.key === Qt.Key_4) { root.toggleVisualiserLayerByNumber(4); event.accepted = true }
-        else if (event.key === Qt.Key_5) { root.toggleVisualiserLayerByNumber(5); event.accepted = true }
-        else if (event.key === Qt.Key_6) { root.toggleVisualiserLayerByNumber(6); event.accepted = true }
-        else if (event.key === Qt.Key_7) { visualMode = 6; event.accepted = true }
-        else if (event.key === Qt.Key_8) { visualMode = 7; event.accepted = true }
-        else if (event.key === Qt.Key_9) { visualMode = 8; event.accepted = true }
-        else if (event.key === Qt.Key_0) { visualMode = 9; event.accepted = true }
-        else if (event.key === Qt.Key_BraceLeft || event.text === "{") {
-            root.stepPhotoCategoryByKey(-1)
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_BraceRight || event.text === "}") {
-            root.stepPhotoCategoryByKey(1)
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_BracketLeft || event.text === "[") {
-            if (event.modifiers & Qt.ShiftModifier) {
+        root._inKeybindingDispatch = true
+        try {
+            if (event.key === Qt.Key_1) { root.toggleVisualiserLayerByNumber(1); event.accepted = true }
+            else if (event.key === Qt.Key_2) { root.toggleVisualiserLayerByNumber(2); event.accepted = true }
+            else if (event.key === Qt.Key_3) { root.toggleVisualiserLayerByNumber(3); event.accepted = true }
+            else if (event.key === Qt.Key_4) { root.toggleVisualiserLayerByNumber(4); event.accepted = true }
+            else if (event.key === Qt.Key_5) { root.toggleVisualiserLayerByNumber(5); event.accepted = true }
+            else if (event.key === Qt.Key_6) { root.toggleVisualiserLayerByNumber(6); event.accepted = true }
+            else if (event.key === Qt.Key_7) { visualMode = 6; root.suppressActionFeedback("4: Geometry: " + Engine.MODE_NAMES[visualMode]); event.accepted = true }
+            else if (event.key === Qt.Key_8) { visualMode = 7; root.suppressActionFeedback("4: Geometry: " + Engine.MODE_NAMES[visualMode]); event.accepted = true }
+            else if (event.key === Qt.Key_9) { visualMode = 8; root.suppressActionFeedback("4: Geometry: " + Engine.MODE_NAMES[visualMode]); event.accepted = true }
+            else if (event.key === Qt.Key_0) { visualMode = 9; root.suppressActionFeedback("4: Geometry: " + Engine.MODE_NAMES[visualMode]); event.accepted = true }
+            else if (event.key === Qt.Key_BraceLeft || event.text === "{") {
                 root.stepPhotoCategoryByKey(-1)
-            } else {
-                root.stepPhotoHistoryByKey(-1)
+                event.accepted = true
             }
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_BracketRight || event.text === "]") {
-            if (event.modifiers & Qt.ShiftModifier) {
+            else if (event.key === Qt.Key_BraceRight || event.text === "}") {
                 root.stepPhotoCategoryByKey(1)
-            } else {
-                root.stepPhotoHistoryByKey(1)
+                event.accepted = true
             }
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_Colon || event.text === ":" || (event.key === Qt.Key_Semicolon && (event.modifiers & Qt.ShiftModifier))) {
-            root.togglePhotoPlaneShearByKey()
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_Semicolon || event.text === ";") {
-            root.cyclePhotoPoolModeByKey(1)
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_AsciiTilde || event.text === "~") {
-            root.togglePhotoAutoMotionByKey()
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_Apostrophe || event.text === "'") {
-            if (event.modifiers & Qt.ShiftModifier) {
+            else if (event.key === Qt.Key_BracketLeft || event.text === "[") {
+                if (event.modifiers & Qt.ShiftModifier) {
+                    root.stepPhotoCategoryByKey(-1)
+                } else {
+                    root.stepPhotoHistoryByKey(-1)
+                }
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_BracketRight || event.text === "]") {
+                if (event.modifiers & Qt.ShiftModifier) {
+                    root.stepPhotoCategoryByKey(1)
+                } else {
+                    root.stepPhotoHistoryByKey(1)
+                }
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_Colon || event.text === ":" || (event.key === Qt.Key_Semicolon && (event.modifiers & Qt.ShiftModifier))) {
+                root.togglePhotoPlaneShearByKey()
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_Semicolon || event.text === ";") {
+                root.cyclePhotoPoolModeByKey(1)
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_AsciiTilde || event.text === "~") {
+                root.togglePhotoAutoMotionByKey()
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_Apostrophe || event.text === "'") {
+                if (event.modifiers & Qt.ShiftModifier) {
+                    root.cyclePhotoVariantEffect(-1)
+                } else {
+                    root.cyclePhotoMotionMode(-1)
+                }
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_NumberSign || event.text === "#") {
+                if (event.modifiers & Qt.ShiftModifier) {
+                    root.cyclePhotoVariantEffect(1)
+                } else {
+                    root.cyclePhotoMotionMode(1)
+                }
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_At || event.key === Qt.Key_QuoteDbl || event.text === "@" || event.text === "\"") {
                 root.cyclePhotoVariantEffect(-1)
-            } else {
-                root.cyclePhotoMotionMode(-1)
+                event.accepted = true
             }
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_NumberSign || event.text === "#") {
-            if (event.modifiers & Qt.ShiftModifier) {
-                root.cyclePhotoVariantEffect(1)
-            } else {
-                root.cyclePhotoMotionMode(1)
+            else if (event.key === Qt.Key_Backslash) { visualMode = 12; root.suppressActionFeedback("4: Geometry: " + Engine.MODE_NAMES[visualMode]); event.accepted = true }
+            else if (event.key === Qt.Key_M) {
+                cycleMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+                event.accepted = true
             }
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_At || event.key === Qt.Key_QuoteDbl || event.text === "@" || event.text === "\"") {
-            root.cyclePhotoVariantEffect(-1)
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_Backslash) { visualMode = 12; event.accepted = true }
-        else if (event.key === Qt.Key_M) {
-            cycleMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_G) {
-            cycleLayer1Mode((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_A) {
-            cycleLayer3Mode((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_C) {
-            cyclePalette((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_K) {
-            cycleTracers((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_Y) { randomiseVisuals(); event.accepted = true }
-        else if (event.key === Qt.Key_S) { triggerShatterImpulse(); event.accepted = true }
-        else if (event.key === Qt.Key_Q) {
-            root.toggleLayer3TextField("artist")
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_W) {
-            root.toggleLayer3TextField("track")
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_E) {
-            root.toggleLayer3TextField("album")
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_R) {
-            root.toggleLayer3TextField("statements")
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_T) {
-            cycleLayer3ColourMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_X) {
-            root.toggleAllRandomisations()
-            root.suppressActionFeedback("Auto-Morph: " + (root.allRandomisationsActive ? "ON" : "OFF"))
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_B) {
-            root.requestToggleAsciiMode()
-            root.suppressActionFeedback("ASCII Glyph Mode toggled")
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_D) {
-            if (event.modifiers & Qt.ShiftModifier) {
-                root.launchExternalTteTerminal()
-            } else {
-                root.activateAndCycleTteInCanvas()
+            else if (event.key === Qt.Key_G) {
+                cycleLayer1Mode((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+                event.accepted = true
             }
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_L) {
-            showLayerDrawer = !showLayerDrawer
-            if (showLayerDrawer) showHud = true
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_H) {
-            if ((event.modifiers & Qt.ShiftModifier) || (root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11)) {
-                root.triggerPhotoHoldByKey()
-            } else {
-                root.toggleHudVisibility()
+            else if (event.key === Qt.Key_A) {
+                cycleLayer3Mode((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+                event.accepted = true
             }
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_Z) {
-            root.toggleZenFullscreen()
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_Plus || event.key === Qt.Key_Equal) {
-            sensitivity = Math.min(3.0, Math.round((sensitivity + 0.15) * 100) / 100)
-            root.suppressActionFeedback("Audio Reactivity: " + sensitivity.toFixed(2) + "x")
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_Minus) {
-            sensitivity = Math.max(0.35, Math.round((sensitivity - 0.15) * 100) / 100)
-            root.suppressActionFeedback("Audio Reactivity: " + sensitivity.toFixed(2) + "x")
-            event.accepted = true
-        }
-        else if (event.key === Qt.Key_Space) { root.requestPlayPause(); event.accepted = true }
-        else if (event.key === Qt.Key_N || event.key === Qt.Key_Right) { root.requestNext(); event.accepted = true }
-        else if (event.key === Qt.Key_P || event.key === Qt.Key_Left) { root.requestPrev(); event.accepted = true }
-        else if (event.key === Qt.Key_F || event.key === Qt.Key_V) {
-            if (event.modifiers & Qt.ShiftModifier) {
+            else if (event.key === Qt.Key_C) {
+                cyclePalette((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_K) {
+                cycleTracers((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_Y) { randomiseVisuals(); event.accepted = true }
+            else if (event.key === Qt.Key_S) { triggerShatterImpulse(); event.accepted = true }
+            else if (event.key === Qt.Key_Q) {
+                root.toggleLayer3TextField("artist")
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_W) {
+                root.toggleLayer3TextField("track")
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_E) {
+                root.toggleLayer3TextField("album")
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_R) {
+                root.toggleLayer3TextField("statements")
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_T) {
+                cycleLayer3ColourMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_X) {
+                root.toggleAllRandomisations()
+                root.suppressActionFeedback("Auto-Morph: " + (root.allRandomisationsActive ? "ON" : "OFF"))
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_B) {
+                root.requestToggleAsciiMode()
+                root.suppressActionFeedback("ASCII Glyph Mode toggled")
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_D) {
+                if (event.modifiers & Qt.ShiftModifier) {
+                    root.launchExternalTteTerminal()
+                } else {
+                    root.activateAndCycleTteInCanvas()
+                }
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_L) {
+                showLayerDrawer = !showLayerDrawer
+                if (showLayerDrawer) showHud = true
+                root.suppressActionFeedback("Studio Control Panel [L]: " + (showLayerDrawer ? "OPEN" : "CLOSED"))
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_H) {
+                if ((event.modifiers & Qt.ShiftModifier) || (root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11)) {
+                    root.triggerPhotoHoldByKey()
+                } else {
+                    root.toggleHudVisibility()
+                }
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_Z) {
                 root.toggleZenFullscreen()
-            } else {
-                root.requestToggleFullscreen()
+                event.accepted = true
             }
-            event.accepted = true
+            else if (event.key === Qt.Key_Plus || event.key === Qt.Key_Equal) {
+                sensitivity = Math.min(3.0, Math.round((sensitivity + 0.15) * 100) / 100)
+                root.suppressActionFeedback("Audio Reactivity: " + sensitivity.toFixed(2) + "x")
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_Minus) {
+                sensitivity = Math.max(0.35, Math.round((sensitivity - 0.15) * 100) / 100)
+                root.suppressActionFeedback("Audio Reactivity: " + sensitivity.toFixed(2) + "x")
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_Space) { root.requestPlayPause(); event.accepted = true }
+            else if (event.key === Qt.Key_N || event.key === Qt.Key_Right) { root.requestNext(); event.accepted = true }
+            else if (event.key === Qt.Key_P || event.key === Qt.Key_Left) { root.requestPrev(); event.accepted = true }
+            else if (event.key === Qt.Key_F || event.key === Qt.Key_V) {
+                if (event.modifiers & Qt.ShiftModifier) {
+                    root.toggleZenFullscreen()
+                } else {
+                    root.requestToggleFullscreen()
+                }
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_Escape) {
+                if (root.showTracerPopover) root.showTracerPopover = false
+                else if (root.showStatementsEditor) root.showStatementsEditor = false
+                else if (root.showLayerDrawer) root.showLayerDrawer = false
+                else if (root.isFullscreen) {
+                    root.showHud = true
+                    root.requestToggleFullscreen()
+                }
+                else if (!root.showHud) root.showHud = true
+                else root.requestCloseVisualiser()
+                event.accepted = true
+            }
+        } finally {
+            root._inKeybindingDispatch = false
         }
-        else if (event.key === Qt.Key_Escape) {
-            if (root.showTracerPopover) root.showTracerPopover = false
-            else if (root.showStatementsEditor) root.showStatementsEditor = false
-            else if (root.showLayerDrawer) root.showLayerDrawer = false
-            else if (root.isFullscreen) {
-                root.showHud = true
-                root.requestToggleFullscreen()
-            }
-            else if (!root.showHud) root.showHud = true
-            else root.requestCloseVisualiser()
-            event.accepted = true
+    }
+
+    // Subtle keybinding feedback auto-fade timer (1.75s)
+    Timer {
+        id: keybindingToastTimer
+        interval: 1750
+        repeat: false
+        onTriggered: {
+            root.keybindingToastOpacity = 0.0
         }
     }
 
@@ -4253,47 +4337,52 @@ FocusScope {
             anchors.fill: parent
             focus: true
             Keys.onPressed: event => {
-                if (event.key === Qt.Key_Escape) {
-                    root.externalStageOpen = false
-                    root.suppressActionFeedback("Closed External VJ Stage Window")
-                    event.accepted = true
-                } else if (root.stageMode === "visualiser" && (event.modifiers === Qt.NoModifier) && event.key >= Qt.Key_1 && event.key <= Qt.Key_6) {
-                    root.toggleVisualiserLayerByNumber((event.key - Qt.Key_1) + 1)
-                    event.accepted = true
-                } else if (event.key === Qt.Key_BraceLeft || event.text === "{") {
-                    root.stepPhotoCategoryByKey(-1)
-                    event.accepted = true
-                } else if (event.key === Qt.Key_BraceRight || event.text === "}") {
-                    root.stepPhotoCategoryByKey(1)
-                    event.accepted = true
-                } else if (event.key === Qt.Key_BracketLeft || event.text === "[") {
-                    if (event.modifiers & Qt.ShiftModifier) root.stepPhotoCategoryByKey(-1)
-                    else root.stepPhotoHistoryByKey(-1)
-                    event.accepted = true
-                } else if (event.key === Qt.Key_BracketRight || event.text === "]") {
-                    if (event.modifiers & Qt.ShiftModifier) root.stepPhotoCategoryByKey(1)
-                    else root.stepPhotoHistoryByKey(1)
-                    event.accepted = true
-                } else if (event.key === Qt.Key_Colon || event.text === ":" || (event.key === Qt.Key_Semicolon && (event.modifiers & Qt.ShiftModifier))) {
-                    root.togglePhotoPlaneShearByKey()
-                    event.accepted = true
-                } else if (event.key === Qt.Key_Semicolon || event.text === ";") {
-                    root.cyclePhotoPoolModeByKey(1)
-                    event.accepted = true
-                } else if (event.key === Qt.Key_AsciiTilde || event.text === "~") {
-                    root.togglePhotoAutoMotionByKey()
-                    event.accepted = true
-                } else if (event.key === Qt.Key_Apostrophe || event.text === "'") {
-                    if (event.modifiers & Qt.ShiftModifier) root.cyclePhotoVariantEffect(-1)
-                    else root.cyclePhotoMotionMode(-1)
-                    event.accepted = true
-                } else if (event.key === Qt.Key_NumberSign || event.text === "#") {
-                    if (event.modifiers & Qt.ShiftModifier) root.cyclePhotoVariantEffect(1)
-                    else root.cyclePhotoMotionMode(1)
-                    event.accepted = true
-                } else if (event.key === Qt.Key_At || event.key === Qt.Key_QuoteDbl || event.text === "@" || event.text === "\"") {
-                    root.cyclePhotoVariantEffect(-1)
-                    event.accepted = true
+                root._inKeybindingDispatch = true
+                try {
+                    if (event.key === Qt.Key_Escape) {
+                        root.externalStageOpen = false
+                        root.suppressActionFeedback("Closed External VJ Stage Window")
+                        event.accepted = true
+                    } else if (root.stageMode === "visualiser" && (event.modifiers === Qt.NoModifier) && event.key >= Qt.Key_1 && event.key <= Qt.Key_6) {
+                        root.toggleVisualiserLayerByNumber((event.key - Qt.Key_1) + 1)
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_BraceLeft || event.text === "{") {
+                        root.stepPhotoCategoryByKey(-1)
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_BraceRight || event.text === "}") {
+                        root.stepPhotoCategoryByKey(1)
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_BracketLeft || event.text === "[") {
+                        if (event.modifiers & Qt.ShiftModifier) root.stepPhotoCategoryByKey(-1)
+                        else root.stepPhotoHistoryByKey(-1)
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_BracketRight || event.text === "]") {
+                        if (event.modifiers & Qt.ShiftModifier) root.stepPhotoCategoryByKey(1)
+                        else root.stepPhotoHistoryByKey(1)
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_Colon || event.text === ":" || (event.key === Qt.Key_Semicolon && (event.modifiers & Qt.ShiftModifier))) {
+                        root.togglePhotoPlaneShearByKey()
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_Semicolon || event.text === ";") {
+                        root.cyclePhotoPoolModeByKey(1)
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_AsciiTilde || event.text === "~") {
+                        root.togglePhotoAutoMotionByKey()
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_Apostrophe || event.text === "'") {
+                        if (event.modifiers & Qt.ShiftModifier) root.cyclePhotoVariantEffect(-1)
+                        else root.cyclePhotoMotionMode(-1)
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_NumberSign || event.text === "#") {
+                        if (event.modifiers & Qt.ShiftModifier) root.cyclePhotoVariantEffect(1)
+                        else root.cyclePhotoMotionMode(1)
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_At || event.key === Qt.Key_QuoteDbl || event.text === "@" || event.text === "\"") {
+                        root.cyclePhotoVariantEffect(-1)
+                        event.accepted = true
+                    }
+                } finally {
+                    root._inKeybindingDispatch = false
                 }
             }
             MouseArea {
@@ -4380,7 +4469,7 @@ FocusScope {
 
             // Explicitly push dynamic time, audio, and smoothly blended palette uniforms to GPU shader stages every frame
             // (since plain JS object mutations on root.engineState / root.photoState do not emit QML notify signals)
-            var l1WorldGpu = root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode < 11
+            var l1WorldGpu = root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode >= 12
             var l1PhotoGpu = root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11
             var l2FractalGpu = root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5
             if (root.stageMode === "visualiser" && root.gpuShaderEnabled) {
@@ -4444,6 +4533,13 @@ FocusScope {
                         }
                     } else if (stepInfo && stepInfo.motionControlsRandomisedOnTimer) {
                         root.applyRandomisedStateMotionToRoot(pSt)
+                        if (!root.photoHoldActive) {
+                            var lockedRandCtrlCat = root.resolveCurrentPhotoCategory()
+                            root.photoActiveCategory = lockedRandCtrlCat
+                            pSt.activeCategory = lockedRandCtrlCat
+                            root.photoPreviousVariants = root.photoActiveVariants || ({})
+                            root.requestPhotoPick(lockedRandCtrlCat, "")
+                        }
                         if (photoAutoMotionTimer.running) photoAutoMotionTimer.restart()
                     } else if (stepInfo && stepInfo.stepTriggeredOnBeat) {
                         var lockedBeatCat = root.resolveCurrentPhotoCategory()
@@ -4525,7 +4621,7 @@ FocusScope {
         }
     }
 
-    readonly property bool hasActiveCpuLayers: (root.layer1Enabled && ((!root.gpuShaderEnabled && root.layer1FieldEnabled) || root.layer1EqEnabled || root.layer1ShapesEnabled))
+    readonly property bool hasActiveCpuLayers: (root.layer1Enabled && ((!root.gpuShaderEnabled && root.layer1FieldEnabled) || (root.layer1FieldEnabled && root.layer1Mode < 11) || root.layer1EqEnabled || root.layer1ShapesEnabled))
         || (root.layer2Enabled && ((root.layer2VizEnabled && (!root.gpuShaderEnabled || root.visualMode !== 5)) || root.layer2TracersEnabled))
         || root.layer3Enabled
     property var _cachedFrameConfig: null
@@ -4545,6 +4641,13 @@ FocusScope {
             } else if (root.photoRandomiseMotionControls) {
                 PhotoMotion.randomiseMotionControlsForEvent(pSt)
                 root.applyRandomisedStateMotionToRoot(pSt)
+                if (!root.photoHoldActive) {
+                    var lockedRandCtrlCat2 = root.resolveCurrentPhotoCategory()
+                    root.photoActiveCategory = lockedRandCtrlCat2
+                    pSt.activeCategory = lockedRandCtrlCat2
+                    root.photoPreviousVariants = root.photoActiveVariants || ({})
+                    root.requestPhotoPick(lockedRandCtrlCat2, "")
+                }
                 pSt.autoMotionElapsedSec = 0.0
                 pSt.autoMotionAccumulatedPhase = 0.0
                 root.scheduleSaveVisualiserConfig()
@@ -4805,7 +4908,7 @@ FocusScope {
         ShaderEffect {
             id: gpuShaderStage
             anchors.fill: parent
-            visible: root.stageMode === "visualiser" && root.gpuShaderEnabled && ((root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode < 11) || root.layer4Enabled || (root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || (root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5))
+            visible: root.stageMode === "visualiser" && root.gpuShaderEnabled && ((root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode >= 12) || root.layer4Enabled || (root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || (root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5))
             fragmentShader: Qt.resolvedUrl("share/psychedelic.frag.qsb")
 
             property real uTime: 0.0
@@ -4817,7 +4920,7 @@ FocusScope {
             property real uBeat: 0.0
             property real uAspect: height > 0 ? (width / height) : 1.777
             property real uL1Enabled: 0.0
-            property real uL1Mode: root.layer1Mode
+            property real uL1Mode: Math.max(0, root.layer1Mode - 12)
             property real uL1Dim: root.layer1Dim
             property real uL1Speed: root.layer1Speed
             property real uL1Density: root.layer1Density
@@ -5000,6 +5103,39 @@ FocusScope {
                     root._cachedFrameConfig || root.currentConfig(),
                     vizCanvas
                 )
+            }
+        }
+
+        // Subtle bottom-left keybinding feedback overlay (fades out after ~1.75s)
+        Rectangle {
+            id: keybindingToastBadge
+            anchors.left: parent.left
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: 12
+            anchors.bottomMargin: (root.showHud && !root.externalStageOpen) ? 44 : 12
+            z: 20
+            visible: opacity > 0.01 && root.keybindingToastText.length > 0
+            opacity: root.keybindingToastOpacity
+            height: 22
+            width: Math.min(parent.width - 24, keybindingToastLabel.implicitWidth + 18)
+            radius: 5
+            color: Qt.rgba(root.backgroundColour.r, root.backgroundColour.g, root.backgroundColour.b, 0.72)
+            border.width: 1
+            border.color: Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.42)
+
+            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
+
+            Text {
+                id: keybindingToastLabel
+                anchors.centerIn: parent
+                width: Math.min(implicitWidth, parent.width - 14)
+                text: "⌨ " + root.keybindingToastText
+                textFormat: Text.PlainText
+                font.family: "JetBrainsMono Nerd Font"
+                font.pixelSize: 10
+                font.bold: true
+                color: root.accentColour
+                elide: Text.ElideRight
             }
         }
     }
@@ -5338,35 +5474,34 @@ FocusScope {
                     }
                 }
 
-                Repeater {
-                    model: root.shortL1FieldLabels
-                    delegate: VizPillButton {
-                        required property int index
-                        required property string modelData
-                        Layout.fillWidth: true
-                        pillHeight: 22
-                        fontSize: 8
-                        horizontalPad: 3
-                        text: modelData
-                        active: root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === index
-                        onClicked: {
-                            if (root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === index) {
-                                root.layer1FieldEnabled = false
-                                root.syncLayer1MasterFromSubs()
-                                root.clearCanvasImmediate()
-                            } else {
-                                root.layer1FieldEnabled = true
-                                root.syncLayer1MasterFromSubs()
-                                root.layer1Mode = index
-                                root.clearCanvasImmediate()
-                            }
-                        }
-                        onRightClicked: {
-                            root.layer1FieldEnabled = !root.layer1FieldEnabled
-                            root.syncLayer1MasterFromSubs()
-                            root.clearCanvasImmediate()
-                        }
-                    }
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "◀"
+                    active: root.layer1Enabled && root.layer1FieldEnabled
+                    onClicked: root.cycleLayer1Mode(-1)
+                }
+
+                VizPillButton {
+                    Layout.fillWidth: true
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 6
+                    text: "World " + (root.layer1Mode + 1) + "/" + root.layer1Modes.length + ": " + (root.layer1Modes[root.layer1Mode] || "MilkDrop")
+                    active: root.layer1Enabled && root.layer1FieldEnabled
+                    onClicked: root.cycleLayer1Mode(1)
+                    onRightClicked: root.cycleLayer1Mode(-1)
+                    onWheelScrolled: delta => root.cycleLayer1Mode(delta > 0 ? 1 : -1)
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "▶"
+                    active: root.layer1Enabled && root.layer1FieldEnabled
+                    onClicked: root.cycleLayer1Mode(1)
                 }
 
                 VizPillButton {
@@ -5450,12 +5585,32 @@ FocusScope {
                     visible: root.layer1Mode === 11
                     pillHeight: 22
                     fontSize: 9
+                    horizontalPad: 4
+                    text: "◀FX"
+                    active: root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11
+                    onClicked: root.cyclePhotoMotionMode(-1)
+                }
+
+                VizPillButton {
+                    visible: root.layer1Mode === 11
+                    pillHeight: 22
+                    fontSize: 9
                     horizontalPad: 5
                     text: "FX:" + (PhotoMotion.PHOTO_MOTION_MODES[root.photoMotionMode] ? PhotoMotion.PHOTO_MOTION_MODES[root.photoMotionMode].code : "M01")
                     active: root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11
                     onClicked: root.cyclePhotoMotionMode(1)
                     onRightClicked: root.cyclePhotoMotionMode(-1)
                     onWheelScrolled: delta => root.cyclePhotoMotionMode(delta > 0 ? 1 : -1)
+                }
+
+                VizPillButton {
+                    visible: root.layer1Mode === 11
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "FX▶"
+                    active: root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11
+                    onClicked: root.cyclePhotoMotionMode(1)
                 }
 
                 VizPillButton {
@@ -5523,7 +5678,7 @@ FocusScope {
             }
 
             // =================================================================
-            // ROW 2 — LAYER 2: EQUALISER (16 2D & Sculptural 3D EQ Styles + EqPos + EqSz + Spin + Gain + Rand)
+            // ROW 2 — LAYER 2: EQUALISER (24 2D & Sculptural 3D EQ Styles + EqPos + EqSz + Spin + Gain + Rand)
             // =================================================================
             RowLayout {
                 Layout.fillWidth: true
@@ -5544,6 +5699,15 @@ FocusScope {
                 }
 
                 VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "◀"
+                    active: root.layer1Enabled && root.layer1EqEnabled
+                    onClicked: root.cycleLayer1EqStyle(-1)
+                }
+
+                VizPillButton {
                     Layout.fillWidth: true
                     pillHeight: 22
                     fontSize: 9
@@ -5553,24 +5717,27 @@ FocusScope {
                     onClicked: {
                         if (!root.layer1EqEnabled) {
                             root.layer1EqEnabled = true
+                            root.syncLayer1MasterFromSubs()
+                            vizCanvas.requestPaint()
                         } else {
-                            root.layer1EqStyle = (root.layer1EqStyle + 1) % Engine.LAYER1_EQ_STYLES.length
+                            root.cycleLayer1EqStyle(1)
                         }
-                        root.syncLayer1MasterFromSubs()
-                        vizCanvas.requestPaint()
                     }
                     onRightClicked: {
                         root.layer1EqEnabled = !root.layer1EqEnabled
                         root.syncLayer1MasterFromSubs()
                         root.clearCanvasImmediate()
                     }
-                    onWheelScrolled: delta => {
-                        root.layer1EqEnabled = true
-                        root.syncLayer1MasterFromSubs()
-                        var nEq = Engine.LAYER1_EQ_STYLES.length
-                        root.layer1EqStyle = (root.layer1EqStyle + (delta > 0 ? 1 : -1) + nEq) % nEq
-                        vizCanvas.requestPaint()
-                    }
+                    onWheelScrolled: delta => root.cycleLayer1EqStyle(delta > 0 ? 1 : -1)
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "▶"
+                    active: root.layer1Enabled && root.layer1EqEnabled
+                    onClicked: root.cycleLayer1EqStyle(1)
                 }
 
                 VizPillButton {
@@ -5697,7 +5864,7 @@ FocusScope {
             }
 
             // =================================================================
-            // ROW 2 — LAYER 3: VECTORS (6 Wireframe Beat Shape Styles + ShDen + Scale + Spin + Rand)
+            // ROW 2 — LAYER 3: VECTORS (14 Wireframe Beat Shape & Arcade Craft Styles + ShDen + Scale + Rand)
             // =================================================================
             RowLayout {
                 Layout.fillWidth: true
@@ -5718,52 +5885,45 @@ FocusScope {
                 }
 
                 VizPillButton {
-                    Layout.fillWidth: true
                     pillHeight: 22
                     fontSize: 9
                     horizontalPad: 5
-                    text: "Shape:" + ((Engine.LAYER1_SHAPE_STYLES[root.layer1ShapeStyle] || "Polyhedra").split(" ")[0])
+                    text: "◀"
+                    active: root.layer1Enabled && root.layer1ShapesEnabled
+                    onClicked: root.cycleLayer1ShapeStyle(-1)
+                }
+
+                VizPillButton {
+                    Layout.fillWidth: true
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 6
+                    text: "Shape " + (root.layer1ShapeStyle + 1) + "/" + Engine.LAYER1_SHAPE_STYLES.length + ": " + (Engine.LAYER1_SHAPE_STYLES[root.layer1ShapeStyle] || "Polyhedra")
                     active: root.layer1Enabled && root.layer1ShapesEnabled
                     onClicked: {
                         if (!root.layer1ShapesEnabled) {
                             root.layer1ShapesEnabled = true
+                            root.syncLayer1MasterFromSubs()
+                            vizCanvas.requestPaint()
                         } else {
-                            root.layer1ShapeStyle = (root.layer1ShapeStyle + 1) % Engine.LAYER1_SHAPE_STYLES.length
+                            root.cycleLayer1ShapeStyle(1)
                         }
-                        root.syncLayer1MasterFromSubs()
-                        vizCanvas.requestPaint()
                     }
                     onRightClicked: {
                         root.layer1ShapesEnabled = !root.layer1ShapesEnabled
                         root.syncLayer1MasterFromSubs()
                         root.clearCanvasImmediate()
                     }
-                    onWheelScrolled: delta => {
-                        root.layer1ShapesEnabled = true
-                        root.syncLayer1MasterFromSubs()
-                        var nSh = Engine.LAYER1_SHAPE_STYLES.length
-                        root.layer1ShapeStyle = (root.layer1ShapeStyle + (delta > 0 ? 1 : -1) + nSh) % nSh
-                        vizCanvas.requestPaint()
-                    }
+                    onWheelScrolled: delta => root.cycleLayer1ShapeStyle(delta > 0 ? 1 : -1)
                 }
 
-                Repeater {
-                    model: Engine.LAYER1_SHAPE_STYLES
-                    delegate: VizPillButton {
-                        required property int index
-                        required property string modelData
-                        pillHeight: 22
-                        fontSize: 8
-                        horizontalPad: 4
-                        text: modelData.split(" ")[0]
-                        active: root.layer1Enabled && root.layer1ShapesEnabled && root.layer1ShapeStyle === index
-                        onClicked: {
-                            root.layer1ShapesEnabled = true
-                            root.syncLayer1MasterFromSubs()
-                            root.layer1ShapeStyle = index
-                            vizCanvas.requestPaint()
-                        }
-                    }
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "▶"
+                    active: root.layer1Enabled && root.layer1ShapesEnabled
+                    onClicked: root.cycleLayer1ShapeStyle(1)
                 }
 
                 VizPillButton {
@@ -5850,52 +6010,38 @@ FocusScope {
                     }
                 }
 
-                Repeater {
-                    model: root.shortModeLabels.length
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "◀"
+                    active: root.layer2Enabled && root.layer2VizEnabled
+                    onClicked: root.cycleMode(-1)
+                }
 
-                    delegate: Rectangle {
-                        required property int index
-                        readonly property bool isCurrent: root.visualMode === index && root.layer2Enabled && root.layer2VizEnabled
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 22
-                        radius: 4
-                        scale: modePillMouse.pressed ? 0.95 : 1.0
-                        color: isCurrent
-                            ? Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.28)
-                            : (modePillMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.04))
-                        border.width: isCurrent ? 1.5 : 1
-                        border.color: isCurrent ? root.accentColour : (modePillMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.3) : Qt.rgba(1, 1, 1, 0.12))
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: root.shortModeLabels[index]
-                            textFormat: Text.PlainText
-                            font.family: "JetBrainsMono Nerd Font"
-                            font.pixelSize: 8
-                            font.bold: parent.isCurrent
-                            color: parent.isCurrent ? root.accentColour : root.foregroundColour
-                            elide: Text.ElideRight
-                        }
-
-                        MouseArea {
-                            id: modePillMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                if (root.layer2Enabled && root.layer2VizEnabled && root.visualMode === index) {
-                                    root.layer2VizEnabled = false
-                                    root.clearCanvasImmediate()
-                                } else {
-                                    root.layer2Enabled = true
-                                    root.layer2VizEnabled = true
-                                    root.visualMode = index
-                                    root.clearCanvasImmediate()
-                                    root.forceActiveFocus()
-                                }
-                            }
-                        }
+                VizPillButton {
+                    Layout.fillWidth: true
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 6
+                    text: "Geometry " + (root.visualMode + 1) + "/" + root.modeNames.length + ": " + (root.modeNames[root.visualMode] || "Sacred Geometry")
+                    active: root.layer2Enabled && root.layer2VizEnabled
+                    onClicked: {
+                        root.layer2Enabled = true
+                        root.layer2VizEnabled = true
+                        root.cycleMode(1)
                     }
+                    onRightClicked: root.cycleMode(-1)
+                    onWheelScrolled: delta => root.cycleMode(delta > 0 ? 1 : -1)
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "▶"
+                    active: root.layer2Enabled && root.layer2VizEnabled
+                    onClicked: root.cycleMode(1)
                 }
 
                 VizPillButton {
@@ -6017,34 +6163,42 @@ FocusScope {
                     }
                 }
 
-                Repeater {
-                    model: root.shortL4ModeLabels
-                    delegate: VizPillButton {
-                        required property int index
-                        required property string modelData
-                        Layout.fillWidth: true
-                        pillHeight: 22
-                        fontSize: 8
-                        horizontalPad: 2
-                        text: modelData
-                        active: root.layer4Enabled && (root.layer4Mode === index || (root.layer4DualEnabled && root.layer4SecondaryMode === index))
-                        onClicked: {
-                            root.layer4Enabled = true
-                            root.backdropEnabled = true
-                            root.layer4Mode = index
-                            root.backdropMode = index
-                            vizCanvas.requestPaint()
-                            scheduleSaveVisualiserConfig()
-                        }
-                        onRightClicked: {
-                            root.layer4Enabled = true
-                            root.backdropEnabled = true
-                            root.layer4DualEnabled = true
-                            root.layer4SecondaryMode = index
-                            vizCanvas.requestPaint()
-                            scheduleSaveVisualiserConfig()
-                        }
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "◀"
+                    active: root.layer4Enabled
+                    onClicked: root.cycleLayer4Mode(-1)
+                }
+
+                VizPillButton {
+                    Layout.fillWidth: true
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 6
+                    text: "Vortex " + (root.layer4Mode + 1) + "/" + Engine.LAYER4_MODES.length + ": " + (Engine.LAYER4_MODES[root.layer4Mode] || "Wormhole")
+                        + (root.layer4DualEnabled ? (" + " + (root.shortL4ModeLabels[root.layer4SecondaryMode % root.shortL4ModeLabels.length] || "Hex")) : "")
+                    active: root.layer4Enabled
+                    onClicked: root.cycleLayer4Mode(1)
+                    onRightClicked: {
+                        root.layer4Enabled = true
+                        root.backdropEnabled = true
+                        root.layer4DualEnabled = true
+                        root.layer4SecondaryMode = (root.layer4SecondaryMode + 1) % Engine.LAYER4_MODES.length
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
                     }
+                    onWheelScrolled: delta => root.cycleLayer4Mode(delta > 0 ? 1 : -1)
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "▶"
+                    active: root.layer4Enabled
+                    onClicked: root.cycleLayer4Mode(1)
                 }
 
                 VizPillButton {
@@ -6103,7 +6257,7 @@ FocusScope {
             }
 
             // =================================================================
-            // ROW 2 — LAYER 6: TYPOGRAPHY (Art/Words × Braille/Block/Text × 16 Styles × 6 Spin Axes × 12 Modes + Tracers + Rand)
+            // ROW 2 — LAYER 6: TYPOGRAPHY (Art/Words × Braille/Block/Text × 21 Styles × 6 Spin Axes × 12 Modes + Tracers + Rand)
             // =================================================================
             RowLayout {
                 Layout.fillWidth: true
@@ -6234,24 +6388,34 @@ FocusScope {
                     onClicked: root.openStatementsEditorDrawer()
                 }
 
-                Repeater {
-                    model: root.shortL3ModeLabels
-                    delegate: VizPillButton {
-                        required property int index
-                        required property string modelData
-                        Layout.fillWidth: true
-                        pillHeight: 22
-                        fontSize: 8
-                        horizontalPad: 3
-                        text: modelData
-                        active: root.layer3Enabled && root.layer3Mode === index
-                        onClicked: {
-                            root.layer3Enabled = true
-                            root.layer3Mode = index
-                            if (index === 5) root.requestSelectTtfxEffect("random")
-                            vizCanvas.requestPaint()
-                        }
-                    }
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "◀"
+                    active: root.layer3Enabled
+                    onClicked: root.cycleLayer3Mode(-1)
+                }
+
+                VizPillButton {
+                    Layout.fillWidth: true
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "Mode " + (root.layer3Mode + 1) + "/" + root.layer3Modes.length + ": " + (root.shortL3ModeLabels[root.layer3Mode % root.shortL3ModeLabels.length] || "3D Spin")
+                    active: root.layer3Enabled
+                    onClicked: root.cycleLayer3Mode(1)
+                    onRightClicked: root.cycleLayer3Mode(-1)
+                    onWheelScrolled: delta => root.cycleLayer3Mode(delta > 0 ? 1 : -1)
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "▶"
+                    active: root.layer3Enabled
+                    onClicked: root.cycleLayer3Mode(1)
                 }
 
                 VizPillButton {
@@ -6691,10 +6855,10 @@ FocusScope {
                                     spacing: 5
 
                                     Repeater {
-                                        model: Engine.LAYER1_MODES.length
+                                        model: root.layer1Modes.length
                                         delegate: VizPillButton {
                                             required property int index
-                                            text: (index + 1) + ". " + Engine.LAYER1_MODES[index]
+                                            text: (index + 1) + ". " + root.layer1Modes[index]
                                             active: root.layer1FieldEnabled && root.layer1Mode === index
                                             horizontalPad: 7
                                             onClicked: {
@@ -7540,10 +7704,10 @@ FocusScope {
                                     spacing: 5
 
                                     Repeater {
-                                        model: Engine.LAYER1_EQ_STYLES.length
+                                        model: root.layer1EqStyles.length
                                         delegate: VizPillButton {
                                             required property int index
-                                            text: (index + 1) + ". " + Engine.LAYER1_EQ_STYLES[index]
+                                            text: (index + 1) + ". " + root.layer1EqStyles[index]
                                             active: root.layer1EqEnabled && root.layer1EqStyle === index
                                             horizontalPad: 7
                                             onClicked: {
@@ -9741,19 +9905,34 @@ FocusScope {
                     }
                 }
 
-                // Live 4-Bar Audio Telemetry Meter (BASS / MID / HIGH / BEAT)
+                // Live Audio Equaliser / Telemetry Box: 24-Bar Spectrum by default, click to toggle 4-Bar (B/M/H/!)
                 Rectangle {
-                    Layout.preferredWidth: 92
+                    id: bottomMeterBox
+                    property bool showSpectrumMeter: true
+                    Layout.preferredWidth: showSpectrumMeter ? 116 : 92
                     Layout.preferredHeight: 30
                     radius: 5
                     color: Qt.rgba(1, 1, 1, 0.05)
                     border.width: 1
                     border.color: root.liveBeat > 0.35 ? root.urgentColour : Qt.rgba(1, 1, 1, 0.14)
 
+                    Spectrum {
+                        anchors.fill: parent
+                        anchors.margins: 3
+                        visible: bottomMeterBox.showSpectrumMeter
+                        bands: root.spectrumBands
+                        active: root.playing && root.showHud && root.isFullscreen && bottomMeterBox.showSpectrumMeter
+                        barCount: 24
+                        accentColour: root.accentColour
+                        secondaryColour: "#38bdf8"
+                        peakColour: root.urgentColour
+                    }
+
                     RowLayout {
                         anchors.fill: parent
                         anchors.margins: 3
                         spacing: 4
+                        visible: !bottomMeterBox.showSpectrumMeter
 
                         Repeater {
                             model: 4
@@ -9790,6 +9969,15 @@ FocusScope {
                                     color: root.foregroundColour
                                 }
                             }
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            bottomMeterBox.showSpectrumMeter = !bottomMeterBox.showSpectrumMeter
+                            root.showKeybindingFeedback(bottomMeterBox.showSpectrumMeter ? "Bottom Bar: 24-Bar Equaliser" : "Bottom Bar: 4-Bar B/M/H/! Meter")
                         }
                     }
                 }
