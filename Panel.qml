@@ -1403,7 +1403,7 @@ Item {
                                             visible: albumCard.expanded
                                             clip: true
                                             spacing: 2
-                                            model: albumCard.tracksList
+                                            model: albumCard.expanded ? albumCard.tracksList : []
                                             currentIndex: albumCard.isKeyboardFocused ? root.focusedTrackIndex : -1
                                             onCurrentIndexChanged: {
                                                 if (currentIndex >= 0 && count > currentIndex) {

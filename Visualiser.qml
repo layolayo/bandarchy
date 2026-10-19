@@ -2513,6 +2513,7 @@ FocusScope {
     }
 
     function clearCanvasImmediate() {
+        if (root._applyingPersistedConfig) return
         root._cachedFrameConfig = root.currentConfig()
         if (root.engineState) {
             root.engineState.clearFeedbackFrames = 3

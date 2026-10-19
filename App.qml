@@ -1275,7 +1275,7 @@ ShellRoot {
                                                     visible: appAlbumCard.expanded
                                                     clip: true
                                                     spacing: 2
-                                                    model: appAlbumCard.tracksList
+                                                    model: appAlbumCard.expanded ? appAlbumCard.tracksList : []
                                                     currentIndex: appAlbumCard.isKeyboardFocused ? win.focusedTrackIndex : -1
                                                     onCurrentIndexChanged: {
                                                         if (currentIndex >= 0 && count > currentIndex) {

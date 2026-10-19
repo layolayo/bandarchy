@@ -673,17 +673,26 @@ void main() {
         int wallPat = clamp(int(floor(uL4WallPattern + 0.5)), 0, 4);
         vec2 cPos = (p - drift * 0.42) / zoom;
 
-        vec3 colPrimary = evalLayer4Mode(m1, cPos, sym, bIntensity, dir, twist, wallPat, col);
-        if (l4Active && uL4DualEnabled > 0.5) {
-            int m2 = clamp(int(floor(uL4SecondaryMode + 0.5)), 0, 15);
-            vec2 cPosSecondary = rot2D(0.38 * twist + uTime * 0.08 * dir) * cPos;
-            vec3 colSecondary = evalLayer4Mode(m2, cPosSecondary, max(2.0, sym + 2.0), bIntensity, -dir, -twist * 0.85, (wallPat + 1) % 5, col);
-            float mixW = clamp(uL4DualMix, 0.15, 0.85);
-            vec3 interfere = min(colPrimary, colSecondary) * (0.42 + 0.36 * uBass);
-            col = clamp(mix(colPrimary, colSecondary, mixW) + interfere, 0.0, 1.0);
-        } else {
-            col = colPrimary;
+        int m2 = clamp(int(floor(uL4SecondaryMode + 0.5)), 0, 15);
+        int dualPasses = (l4Active && uL4DualEnabled > 0.5) ? 2 : 1;
+        vec3 colPrimary = col;
+        for (int pass = 0; pass < dualPasses; ++pass) {
+            int mCur = (pass == 0) ? m1 : m2;
+            vec2 cPosCur = (pass == 0) ? cPos : (rot2D(0.38 * twist + uTime * 0.08 * dir) * cPos);
+            float symCur = (pass == 0) ? sym : max(2.0, sym + 2.0);
+            float dirCur = (pass == 0) ? dir : -dir;
+            float twistCur = (pass == 0) ? twist : (-twist * 0.85);
+            int wallPatCur = (pass == 0) ? wallPat : ((wallPat + 1) % 5);
+            vec3 evalCol = evalLayer4Mode(mCur, cPosCur, symCur, bIntensity, dirCur, twistCur, wallPatCur, col);
+            if (pass == 0) {
+                colPrimary = evalCol;
+            } else {
+                float mixW = clamp(uL4DualMix, 0.15, 0.85);
+                vec3 interfere = min(colPrimary, evalCol) * (0.42 + 0.36 * uBass);
+                colPrimary = clamp(mix(colPrimary, evalCol, mixW) + interfere, 0.0, 1.0);
+            }
         }
+        col = colPrimary;
     }
 
     // Subtle vignette for cinema depth
