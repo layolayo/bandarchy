@@ -305,17 +305,18 @@ void main() {
         float ghostRim = smoothstep(0.47, 0.50, max(abs(gp1.x), abs(gp1.y))) * step(max(abs(gp1.x), abs(gp1.y)), 0.52);
         postAdd = uCol0.rgb * ghostRim * 0.32;
     } else if (mode == 1) {
-        // M02: 4D Tesseract Folding Cube (outer cube + inner hypercube + 4 trapezium side walls)
-        float innerHalf = clamp((0.21 + 0.07 * sin(rPhase * 0.85) + uBass * 0.06) / max(0.5, spr * 0.85), 0.12, 0.36);
+        // M02: 4D Tesseract Folding Cube (outer cube + inner hypercube extended to 50% of tiled space + 4 trapezium side walls)
+        float innerHalf = clamp((0.35 + 0.05 * sin(rPhase * 0.85) + uBass * 0.04) / max(0.65, spr * 0.85), 0.28, 0.42);
         vec2 ap = abs(p);
         float maxC = max(ap.x, ap.y);
         if (maxC <= innerHalf) {
             uv0 = (p / (innerHalf * 2.0)) + 0.5;
             var0 = (uVariantIndex + 4) & 15;
             peer0 = uPoolMode > 0 ? 0.65 : 0.0;
-            float edge = smoothstep(innerHalf * 0.88, innerHalf, maxC);
+            float edge = smoothstep(innerHalf * 0.78, innerHalf, maxC);
             tint0 = uCol0.rgb;
-            tint0Mix = edge * 0.55;
+            tint0Mix = 0.14 + edge * 0.48;
+            postScale = vec3(1.10);
         } else {
             float wallT = clamp((maxC - innerHalf) / max(0.001, 0.5 - innerHalf), 0.0, 1.0);
             if (ap.x > ap.y) {
@@ -328,7 +329,7 @@ void main() {
                 var0 = (uVariantIndex + (p.y > 0.0 ? 6 : 8)) & 15;
             }
             float diagSeam = smoothstep(0.025, 0.0, abs(ap.x - ap.y));
-            postScale = vec3(0.62 + 0.38 * (1.0 - wallT * 0.55));
+            postScale = vec3(0.74 + 0.26 * (1.0 - wallT * 0.45));
             postAdd = uCol1.rgb * diagSeam * (0.35 + 0.35 * uBeatPulse);
         }
     } else if (mode == 2) {
@@ -359,83 +360,104 @@ void main() {
             }
         }
     } else if (mode == 3) {
-        // M04: Stroboscopic Shutter & Ghost Flicker (vertical shutter louvers + ghost echo)
+        // M04: Stroboscopic Shutter & Ghost Flicker (50% highlighted vertical shutter louvers + ghost echo)
         float blades = floor(10.0 + 6.0 * spr);
         float colIdx = floor(uv.x * blades);
         float localX = fract(uv.x * blades);
         float phase = rPhase * 2.4 + colIdx * 0.65 + uBeatPulse * 1.8;
-        float openAmt = 0.28 + 0.72 * abs(cos(phase * (0.6 + 0.4 * dep)));
+        float openAmt = 0.50 + 0.42 * abs(cos(phase * (0.6 + 0.4 * dep)));
         float centred = (localX - 0.5) / max(0.12, openAmt);
+        bool isHiBlade = (mod(colIdx + floor(rPhase * 1.5), 2.0) < 1.0);
         if (abs(centred) <= 0.5) {
             uv0 = vec2((colIdx + centred + 0.5) / blades, uv.y + sin(phase) * 0.03 * dep);
-            var0 = (mod(colIdx, 2.0) < 0.5) ? uVariantIndex : uSecondaryVariantIndex;
+            var0 = isHiBlade ? uSecondaryVariantIndex : uVariantIndex;
+            peer0 = (isHiBlade && uPoolMode > 0) ? 0.55 : 0.0;
+            postScale = isHiBlade ? vec3(1.10) : vec3(0.92);
+            tint0 = uCol0.rgb;
+            tint0Mix = isHiBlade ? (0.16 + 0.14 * uBeatPulse) : 0.0;
         } else {
             uv0 = uv + vec2(0.035 * sin(t * 1.8), -0.025 * cos(t * 1.4)) * spr;
             var0 = (uVariantIndex + 1) & 15;
             peer0 = 0.65;
-            postScale = vec3(0.55);
-            tint0 = uCol1.rgb * 0.45;
-            tint0Mix = 0.35;
+            postScale = vec3(0.72);
+            tint0 = uCol1.rgb * 0.65;
+            tint0Mix = 0.28;
         }
     } else if (mode == 4) {
-        // M05: Gyroscopic 3-Axis Card-Flip Cascade (grid of 3D flipping tiles)
+        // M05: Gyroscopic 3-Axis Card-Flip Cascade (grid of 3D flipping tiles with 50% highlighted tiled space)
         vec2 grid = vec2(floor(4.0 + 2.0 * spr), floor(3.0 + 2.0 * spr));
         vec2 cellId = floor(uv * grid);
         vec2 cellUV = fract(uv * grid) - 0.5;
         float wave = rPhase * 1.5 + cellId.x * 0.55 + cellId.y * 0.75 + uBass * 1.4;
         float flipCos = cos(wave * dep);
         float flipDir = (mod(cellId.x + cellId.y, 2.0) < 0.5) ? 1.0 : -1.0;
+        float isHiTile = step(0.0, sin(wave)); // 50% of the tiled grid space highlighted
         vec2 warpedCell = cellUV;
+        float cardSpan = mix(0.55, 1.0, abs(flipCos));
         if (flipDir > 0.0) {
-            warpedCell.x /= sign(flipCos) * max(0.16, abs(flipCos));
+            warpedCell.x /= sign(flipCos) * cardSpan;
         } else {
-            warpedCell.y /= sign(flipCos) * max(0.16, abs(flipCos));
+            warpedCell.y /= sign(flipCos) * cardSpan;
         }
         if (max(abs(warpedCell.x), abs(warpedCell.y)) <= 0.48) {
             uv0 = (cellId + warpedCell + 0.5) / grid;
-            var0 = (flipCos < 0.0) ? uSecondaryVariantIndex : uVariantIndex;
-            peer0 = (flipCos < 0.0 && uPoolMode > 0) ? 0.75 : 0.0;
-            postScale = vec3(0.65 + 0.35 * abs(flipCos));
+            var0 = (isHiTile > 0.5) ? uSecondaryVariantIndex : uVariantIndex;
+            peer0 = (isHiTile > 0.5 && uPoolMode > 0) ? 0.65 : 0.0;
+            postScale = vec3(mix(0.84, 1.12, isHiTile));
+            tint0 = uCol0.rgb;
+            tint0Mix = isHiTile * (0.18 + 0.16 * uBeatPulse);
         } else {
             uv0 = uv;
             var0 = (uVariantIndex + 5) & 15;
-            postScale = vec3(0.28);
+            postScale = vec3(0.62);
         }
     } else if (mode == 5) {
-        // M06: Chronos Time-Slice Slit-Scan (horizontal slits phase-delayed by audio & wave)
+        // M06: Chronos Time-Slice Slit-Scan (horizontal slits with 50% highlighted tiled bands)
         float slits = floor(22.0 + 14.0 * spr);
         float sIdx = floor(uv.y * slits);
         float sNorm = sIdx / slits;
         float delay = sin(sNorm * TAU * (1.2 + 0.6 * spr) - rPhase * 2.2) * (0.08 + 0.14 * dep * (0.5 + uBass));
         float shearX = (sNorm - 0.5) * 0.16 * sin(rPhase * 0.9) * dep;
         uv0 = vec2(uv.x + delay + shearX, uv.y + cos(sNorm * PI * 4.0 + t) * 0.015 * dep);
-        var0 = (mod(sIdx, 4.0) < 1.0) ? uSecondaryVariantIndex : uVariantIndex;
+        float isHiSlit = step(0.0, sin(sNorm * TAU * 2.0 - rPhase * 1.8)); // 50% of slits highlighted
+        var0 = (isHiSlit > 0.5) ? uSecondaryVariantIndex : uVariantIndex;
+        peer0 = (isHiSlit > 0.5 && uPoolMode > 0) ? 0.50 : 0.0;
+        postScale = vec3(mix(0.90, 1.10, isHiSlit));
+        tint0 = uCol0.rgb;
+        tint0Mix = isHiSlit * 0.16;
     } else if (mode == 6) {
         // M07: Sacred 8-Way Kaleidoscopic Mirror Fold
         float segs = 8.0;
         float a = ang + rPhase * 0.35 * dep;
         float sector = TAU / segs;
+        float secIdx = floor(mod(a, TAU) / sector);
         float fAng = mod(a, sector);
         if (fAng > sector * 0.5) fAng = sector - fAng;
         float rad = r * (0.85 + 0.25 * sin(rPhase + r * 4.0 * spr) * dep);
         uv0 = vec2(cos(fAng), sin(fAng)) * rad + 0.5 + vec2(sin(t * 0.31), cos(t * 0.27)) * 0.08 * spr;
+        float isHiWedge = (mod(secIdx, 2.0) < 1.0) ? 1.0 : 0.0; // 4 of 8 wedges (50%) highlighted
+        var0 = (isHiWedge > 0.5) ? uSecondaryVariantIndex : uVariantIndex;
         float seam = smoothstep(0.04, 0.0, min(fAng, sector * 0.5 - fAng));
+        postScale = vec3(mix(0.92, 1.08, isHiWedge));
         postAdd = uCol0.rgb * seam * (0.28 + 0.42 * uTreble);
     } else if (mode == 7) {
-        // M08: 4x4 All-16-Variants Mosaic Matrix (simultaneous 16-variant grid with beat expansion)
+        // M08: 4x4 All-16-Variants Mosaic Matrix (50% of the 16-tile grid highlighted simultaneously)
         vec2 mGrid = vec2(4.0, 4.0);
         vec2 mId = clamp(floor(uv * mGrid), vec2(0.0), vec2(3.0));
         vec2 mLocal = fract(uv * mGrid);
         int cellVar = int(mId.y * 4.0 + mId.x);
-        int focusCell = int(mod(floor(rPhase * 1.5), 16.0));
-        float isFocus = (cellVar == focusCell) ? 1.0 : 0.0;
-        float cellZoom = 1.0 + isFocus * 0.22 * (0.5 + uBeatPulse);
+        int focusStart = int(mod(floor(rPhase * 1.5), 16.0));
+        int relCell = (cellVar - focusStart + 16) & 15;
+        // Highlight 8 out of 16 tiles (50% of the tiled space)
+        float isFocus = (relCell < 8) ? 1.0 : 0.0;
+        float cellZoom = 1.0 + isFocus * 0.18 * (0.5 + uBeatPulse);
         uv0 = (mLocal - 0.5) / cellZoom + 0.5;
         var0 = cellVar;
-        peer0 = (cellVar % 3 == 0 && uPoolMode > 0) ? 0.5 : 0.0;
-        float border = smoothstep(0.46, 0.495, max(abs(mLocal.x - 0.5), abs(mLocal.y - 0.5)));
-        tint0 = mix(uBgCol.rgb * 0.3, uCol0.rgb, isFocus);
-        tint0Mix = border * 0.72;
+        peer0 = (isFocus > 0.5 && uPoolMode > 0) ? 0.55 : 0.0;
+        float border = smoothstep(0.44, 0.495, max(abs(mLocal.x - 0.5), abs(mLocal.y - 0.5)));
+        postScale = vec3(mix(0.86, 1.14, isFocus));
+        tint0 = mix(uCol1.rgb * 0.55, uCol0.rgb, isFocus);
+        tint0Mix = isFocus * (0.18 + 0.14 * uBeatPulse) + border * mix(0.32, 0.78, isFocus);
     } else if (mode == 8) {
         // M09: Infinite Droste Recursive Frame-In-Frame Spiral Tunnel
         float ratio = 0.62;
@@ -446,25 +468,32 @@ void main() {
         float spiralAng = (level - zoomLoop) * 0.24 * sin(rPhase * 0.5) * dep;
         vec2 dp = rot2(spiralAng) * (p / max(0.001, scale));
         uv0 = dp + 0.5;
+        float isHiFrame = (mod(abs(level), 2.0) < 1.0) ? 1.0 : 0.0; // 50% of nested frames highlighted
         var0 = (uVariantIndex + int(mod(abs(level), 4.0)) * 3) & 15;
-        float frameEdge = smoothstep(0.45, 0.495, max(abs(dp.x), abs(dp.y)));
-        tint0 = uCol1.rgb * (0.65 + 0.35 * uBeatPulse);
-        tint0Mix = frameEdge * 0.55;
+        float frameEdge = smoothstep(0.44, 0.495, max(abs(dp.x), abs(dp.y)));
+        postScale = vec3(mix(0.90, 1.10, isHiFrame));
+        tint0 = mix(uCol1.rgb, uCol0.rgb, isHiFrame) * (0.70 + 0.30 * uBeatPulse);
+        tint0Mix = isHiFrame * 0.14 + frameEdge * 0.58;
     } else if (mode == 9) {
-        // M10: Tectonic Counter-Sliding Mirror Strips (alternating horizontal/vertical slabs)
+        // M10: Tectonic Counter-Sliding Mirror Strips (alternating 50% highlighted horizontal/vertical slabs)
         float strips = floor(9.0 + 5.0 * spr);
         bool horiz = (sin(rPhase * 0.25) >= -0.2);
         float coord = horiz ? uv.y : uv.x;
         float sId = floor(coord * strips);
-        float dir = (mod(sId, 2.0) < 0.5) ? 1.0 : -1.0;
+        float dir = (mod(sId, 2.0) < 0.5) ? 1.0 : -1.0; // 50% of strips
+        float isHiStrip = (dir > 0.0) ? 1.0 : 0.0;
         float slide = dir * (0.12 + 0.18 * dep) * sin(rPhase * 1.4 + sId * 0.7 + uBass * 1.5);
         uv0 = uv;
         if (horiz) uv0.x += slide; else uv0.y += slide;
         var0 = (dir < 0.0) ? uSecondaryVariantIndex : uVariantIndex;
+        peer0 = (isHiStrip > 0.5 && uPoolMode > 0) ? 0.50 : 0.0;
         float seam = smoothstep(0.04, 0.0, abs(fract(coord * strips) - 0.5) - 0.46);
-        postAdd = uCol2.rgb * seam * 0.25;
+        postScale = vec3(mix(0.90, 1.10, isHiStrip));
+        tint0 = uCol0.rgb;
+        tint0Mix = isHiStrip * 0.15;
+        postAdd = uCol2.rgb * seam * 0.28;
     } else if (mode == 10) {
-        // M11: Hexagonal Honeycomb Prism Array
+        // M11: Hexagonal Honeycomb Prism Array (50% of honeycomb cells highlighted)
         float hexScale = 7.0 + 5.0 * spr;
         vec2 hp = pa * hexScale;
         const vec2 s = vec2(1.0, 1.7320508);
@@ -473,32 +502,41 @@ void main() {
         vec4 hex = (dot(hD.xy, hD.xy) < dot(hD.zw, hD.zw)) ? vec4(hD.xy, hC.xy) : vec4(hD.zw, hC.zw + 0.5);
         float cellR = length(hex.xy);
         float pulse = sin(rPhase * 1.8 + length(hex.zw) * 0.65) * dep;
+        float isHiHex = step(0.0, pulse); // 50% of honeycomb cells highlighted
         uv0 = uv + hex.xy * (0.06 + 0.08 * pulse) + vec2(cos(pulse), sin(pulse)) * 0.02 * uBass;
-        var0 = (uVariantIndex + int(mod(abs(hex.z + hex.w * 3.0), 4.0)) * 2) & 15;
-        float hexRim = smoothstep(0.42, 0.52, cellR);
-        tint0 = uCol0.rgb * (0.6 + 0.4 * uTreble);
-        tint0Mix = hexRim * 0.48;
+        var0 = (isHiHex > 0.5)
+            ? uSecondaryVariantIndex
+            : ((uVariantIndex + int(mod(abs(hex.z + hex.w * 3.0), 4.0)) * 2) & 15);
+        peer0 = (isHiHex > 0.5 && uPoolMode > 0) ? 0.55 : 0.0;
+        float hexRim = smoothstep(0.40, 0.52, cellR);
+        postScale = vec3(mix(0.88, 1.12, isHiHex));
+        tint0 = mix(uCol1.rgb, uCol0.rgb, isHiHex) * (0.65 + 0.35 * uTreble);
+        tint0Mix = isHiHex * 0.16 + hexRim * 0.52;
     } else if (mode == 11) {
-        // M12: Inception 4-Wall Architectural Box Fold (Floor, Ceiling, Left Wall, Right Wall + End Portal)
-        float portal = clamp(0.18 + 0.06 * sin(rPhase * 0.7) - 0.04 * dep, 0.10, 0.30);
+        // M12: Inception 4-Wall Architectural Box Fold (Portal extended to 50% of tiled space + 4 bright walls)
+        float portal = clamp(0.35 + 0.04 * sin(rPhase * 0.7) - 0.02 * dep, 0.28, 0.40);
         vec2 ap = abs(p);
         float m = max(ap.x, ap.y);
         if (m <= portal) {
             uv0 = (p / (portal * 2.0)) + 0.5;
             var0 = uSecondaryVariantIndex;
             peer0 = 0.6;
+            float portalRim = smoothstep(portal * 0.82, portal, m);
+            postScale = vec3(1.10);
+            tint0 = uCol0.rgb;
+            tint0Mix = 0.12 + portalRim * 0.42;
         } else {
             float depthT = (m - portal) / max(0.001, 0.5 - portal);
             float zWalk = fract(depthT - t * 0.28);
-            float wallLight = 0.68;
+            float wallLight = 0.82;
             if (ap.y >= ap.x) {
                 uv0 = vec2((p.x / max(0.001, ap.y)) * 0.5 + 0.5, zWalk);
-                wallLight = (p.y < 0.0) ? 0.78 : 0.92;
+                wallLight = (p.y < 0.0) ? 0.88 : 0.96;
             } else {
                 uv0 = vec2(zWalk, (p.y / max(0.001, ap.x)) * 0.5 + 0.5);
             }
             var0 = uVariantIndex;
-            postScale = vec3(wallLight * (0.45 + 0.55 * depthT));
+            postScale = vec3(wallLight * (0.72 + 0.28 * depthT));
         }
     } else if (mode == 12) {
         // M13: Tri-Vector Palette Channel Separation (3 independent offset & rotated colour ghosts)
@@ -512,7 +550,7 @@ void main() {
         mix2 = 1.0;
         specialCombine = 1;
     } else if (mode == 13) {
-        // M14: 48-Band Equaliser Venetian Shredder (vertical EQ columns displaced by audio)
+        // M14: 48-Band Equaliser Venetian Shredder (vertical EQ columns with 50% highlighted bands)
         float bands = 48.0;
         float bIdx = floor(uv.x * bands);
         float bNorm = bIdx / bands;
@@ -521,33 +559,44 @@ void main() {
             : mix(uMid, uTreble, (bNorm - 0.33) * 1.5);
         float wave = sin(bNorm * TAU * 3.0 + rPhase * 2.5) * 0.5 + 0.5;
         float yShift = (eqEnergy * (0.6 + 0.4 * wave) - 0.35) * 0.28 * dep * ((mod(bIdx, 2.0) < 0.5) ? 1.0 : -1.0);
+        float isHiBand = step(0.50, wave); // 50% of EQ bands highlighted
         uv0 = vec2(uv.x, uv.y + yShift);
-        var0 = (wave > 0.68 && uBeatPulse > 0.35) ? uSecondaryVariantIndex : uVariantIndex;
+        var0 = (isHiBand > 0.5) ? uSecondaryVariantIndex : uVariantIndex;
+        peer0 = (isHiBand > 0.5 && uPoolMode > 0) ? 0.55 : 0.0;
+        postScale = vec3(mix(0.88, 1.12, isHiBand));
+        tint0 = uCol0.rgb;
+        tint0Mix = isHiBand * (0.16 + 0.14 * uBeatPulse);
     } else if (mode == 14) {
-        // M15: Berlin Rave Shutter & Negative Strobe (quadrant/octant negative & solarised flash)
+        // M15: Berlin Rave Shutter & Negative Strobe (50% of the 4x3 tiled grid highlighted)
         vec2 qGrid = floor(uv * vec2(4.0, 3.0));
-        float cellHash = hash21(qGrid + floor(rPhase * (2.0 + spd)));
-        float strobeActive = step(0.62 - 0.28 * (uBeatPulse + uFlux), cellHash);
+        float cellHash = fract(hash21(qGrid) + floor(rPhase * (2.0 + spd)) * 0.37);
+        float strobeActive = step(0.50, cellHash); // 50% of tiled space highlighted
         var0 = (strobeActive > 0.5)
-            ? ((cellHash > 0.82) ? 1 : 6)
+            ? ((cellHash > 0.75) ? 1 : uSecondaryVariantIndex)
             : uVariantIndex;
         uv0 = uv + (strobeActive * (cellHash - 0.5) * 0.06 * dep);
-        peer0 = strobeActive * 0.5;
+        peer0 = strobeActive * 0.55;
+        postScale = vec3(mix(0.88, 1.14, strobeActive));
         tint0 = uCol0.rgb;
-        tint0Mix = strobeActive * 0.22 * uBeatPulse;
+        tint0Mix = strobeActive * (0.22 + 0.20 * uBeatPulse);
     } else if (mode == 15) {
-        // M16: Concentric Counter-Rotating Ring Shear (annular rings rotating in opposite directions)
+        // M16: Concentric Counter-Rotating Ring Shear (50% alternating rings highlighted)
         float rings = floor(6.0 + 4.0 * spr);
         float ringIdx = floor(r * rings);
-        float dir = (mod(ringIdx, 2.0) < 0.5) ? 1.0 : -1.0;
+        float dir = (mod(ringIdx, 2.0) < 0.5) ? 1.0 : -1.0; // 50% of concentric rings
+        float isHiRing = (dir > 0.0) ? 1.0 : 0.0;
         float rotAmt = dir * (0.35 + 0.45 * dep) * sin(rPhase * 0.9 + ringIdx * 0.65) + dir * uBass * 0.25;
         vec2 rp = rot2(rotAmt) * pa;
         uv0 = vec2(rp.x / aspect, rp.y) + 0.5;
         var0 = (dir < 0.0) ? uSecondaryVariantIndex : uVariantIndex;
+        peer0 = (isHiRing > 0.5 && uPoolMode > 0) ? 0.50 : 0.0;
         float ringEdge = smoothstep(0.04, 0.0, abs(fract(r * rings) - 0.5) - 0.46);
+        postScale = vec3(mix(0.90, 1.10, isHiRing));
+        tint0 = uCol0.rgb;
+        tint0Mix = isHiRing * 0.14;
         postAdd = uCol1.rgb * ringEdge * 0.32;
     } else if (mode == 16) {
-        // M17: Voronoi Glass Shatter & Beat Reform (polygonal shards blasting apart on beats)
+        // M17: Voronoi Glass Shatter & Beat Reform (50% of polygonal Voronoi shards highlighted)
         float vScale = 5.0 + 3.0 * spr;
         vec2 vp = pa * vScale;
         vec2 i_st = floor(vp);
@@ -576,11 +625,14 @@ void main() {
         }
         float shatter = (0.04 + 0.14 * (uBeatPulse + uBass * 0.7)) * dep;
         vec2 shardVec = normalize(m_id + 0.001) * shatter;
+        float isHiShard = step(0.50, fract(hash21(m_id) + floor(rPhase * 1.2) * 0.37)); // 50% of Voronoi shards highlighted
         uv0 = uv - shardVec + m_diff * 0.03 * dep;
-        var0 = (hash21(m_id) > 0.65) ? uSecondaryVariantIndex : uVariantIndex;
+        var0 = (isHiShard > 0.5) ? uSecondaryVariantIndex : uVariantIndex;
+        peer0 = (isHiShard > 0.5 && uPoolMode > 0) ? 0.55 : 0.0;
         float crack = smoothstep(0.08, 0.0, m_dist2 - m_dist);
+        postScale = vec3(mix(0.88, 1.12, isHiShard));
         tint0 = uCol0.rgb * (0.8 + 0.6 * uBeatPulse);
-        tint0Mix = crack * 0.75;
+        tint0Mix = isHiShard * 0.16 + crack * 0.75;
     } else if (mode == 17) {
         // M18: CRT Scanline Phase-Slip & Tracking Tear (VHS tracking bar, RGB split, horizontal jitter)
         float tearY = fract(t * 0.32);
@@ -719,12 +771,12 @@ void main() {
             }
         }
     } else if (specialCombine == 3) {
-        // M19: Palette Resonance Hyper-Enhancer
+        // M19: Palette Resonance Hyper-Enhancer (50% contour highlight band across the photo)
         float luma0 = dot(col.rgb, vec3(0.299, 0.587, 0.114));
         float contourWave = sin(luma0 * TAU * (2.5 + 1.5 * spr) - rPhase * 2.2 + r * 4.0);
-        float band = smoothstep(0.35, 0.95, contourWave) * (0.45 + 0.55 * (uBass + uMid * 0.6));
+        float band = smoothstep(-0.15, 0.35, contourWave) * (0.50 + 0.50 * (uBass + uMid * 0.6));
         vec3 palWave = mix(uCol0.rgb, mix(uCol1.rgb, uCol2.rgb, 0.5 + 0.5 * sin(ang * 2.0 + rPhase)), luma0);
-        col.rgb = mix(col.rgb, col.rgb * 0.55 + palWave * 0.85, band * clamp(dep * 0.65, 0.15, 0.92));
+        col.rgb = mix(col.rgb, col.rgb * 0.55 + palWave * 0.85, band * clamp(dep * 0.68, 0.22, 0.92));
     }
 
     col.rgb = col.rgb * postScale + postAdd;
@@ -734,14 +786,14 @@ void main() {
     // =========================================================================
     float luma = clamp(dot(col.rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
 
-    float wBlack = clamp(1.0 - luma * 2.35, 0.0, 1.0);
-    float wWhite = clamp((luma - 0.55) * 2.22, 0.0, 1.0);
+    float wBlack = clamp(1.0 - luma * 2.20, 0.0, 1.0);
+    float wWhite = clamp((luma - 0.45) * 1.85, 0.0, 1.0); // Upper 50% highlight range
     float wMid = clamp(1.0 - wBlack - wWhite, 0.0, 1.0);
 
-    vec3 palTarget = (luma < 0.45)
-        ? mix(uCol0.rgb, uCol1.rgb, luma / 0.45)
-        : mix(uCol1.rgb, uCol2.rgb, (luma - 0.45) / 0.55);
-    float snatchAmt = clamp(uPaletteBloom * (0.35 + 0.65 * (wMid + wWhite * 0.8)) * clamp(uColourSnatchOpacity, 0.0, 1.5), 0.0, 0.92);
+    vec3 palTarget = (luma < 0.50)
+        ? mix(uCol0.rgb, uCol1.rgb, luma / 0.50)
+        : mix(uCol1.rgb, uCol2.rgb, (luma - 0.50) / 0.50);
+    float snatchAmt = clamp(uPaletteBloom * (0.42 + 0.58 * (wMid + wWhite * 0.90)) * clamp(uColourSnatchOpacity, 0.0, 1.5), 0.0, 0.92);
     col.rgb = mix(col.rgb, mix(col.rgb, palTarget, 0.72) + palTarget * 0.22 * uBeatPulse, snatchAmt);
 
     float tonalAlpha = wBlack * clamp(uBlackOpacity, 0.0, 1.5)

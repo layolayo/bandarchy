@@ -1221,8 +1221,8 @@ function resolvePoolVariantImagesMap(state, baseVariantImagesMap, poolMaps) {
             var mergedRand = {}
             for (var j = 0; j < STAGE1_EFFECT_IDS.length; j++) {
                 var rSlotId = STAGE1_EFFECT_IDS[j]
-                // Alternate/blend current image's own variants with random category peer variants
-                if (j % 3 === 0 && baseVariantImagesMap[rSlotId]) {
+                // Alternate/blend 50% of current image's own variants with 50% random category peer variants
+                if (j % 2 === 0 && baseVariantImagesMap[rSlotId]) {
                     mergedRand[rSlotId] = baseVariantImagesMap[rSlotId]
                 } else {
                     mergedRand[rSlotId] = randMap[rSlotId] || baseVariantImagesMap[rSlotId]

@@ -794,9 +794,9 @@ ShellRoot {
                     Layout.fillHeight: true
                     spacing: (win.visualiserMaximised || appVisualiser.stageMode === "off") ? 0 : 12
 
-                    // Left Pane (expands to full width when stage is set to "off")
+                    // Left Pane (expands to full width when stage is set to "off"; capped at 50% in tiled space so the stage gets >=50%)
                     Rectangle {
-                        Layout.preferredWidth: appVisualiser.stageMode === "off" ? parent.width : 540
+                        Layout.preferredWidth: appVisualiser.stageMode === "off" ? parent.width : Math.min(540, Math.round(parent.width * 0.48))
                         Layout.fillWidth: appVisualiser.stageMode === "off"
                         Layout.fillHeight: true
                         visible: !win.visualiserMaximised
