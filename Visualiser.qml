@@ -128,6 +128,9 @@ FocusScope {
     property real layer1ShapeSpeed: 1.0
     property real layer1ShapeScale: 1.0
     property real layer1ShapeDensity: 1.0
+    property real layer1ShapeLifespan: 1.0
+    property real layer1ShapeFillRatio: 0.35
+    property bool showBottomHud: true
     readonly property bool allRandomisationsActive: root.autoCycle && root.layer1AutoRandomise && root.layerEqAutoRandomise && root.layerVectorsAutoRandomise && root.layer2AutoRandomise && root.layer3AutoRandomise && root.layer4AutoRandomise
     readonly property bool anyLayerAutoRandomiseActive: root.layer1AutoRandomise || root.layerEqAutoRandomise || root.layerVectorsAutoRandomise || root.layer2AutoRandomise || root.layer3AutoRandomise || root.layer4AutoRandomise
 
@@ -445,11 +448,11 @@ FocusScope {
         "14:ShdSpiral",
         "15:ShdFlame",
         "16:ShdStars",
-        "17:ShdBZone",
+        "17:ShdDNA",
         "18:ShdTrench",
         "19:ShdVoid",
         "20:ShdTRON",
-        "21:ShdOutrun",
+        "21:ShdOrrery",
         "22:ShdPoly",
         "23:ShdTempest",
         "24:3DWarpTrench"
@@ -1883,6 +1886,8 @@ FocusScope {
             layer1ShapeSpeed: root.layer1ShapeSpeed,
             layer1ShapeScale: root.layer1ShapeScale,
             layer1ShapeDensity: root.layer1ShapeDensity,
+            layer1ShapeLifespan: root.layer1ShapeLifespan,
+            layer1ShapeFillRatio: root.layer1ShapeFillRatio,
             layer2Enabled: root.layer2Enabled,
             layer2AutoRandomise: root.layer2AutoRandomise,
             layer2VizEnabled: root.layer2VizEnabled,
@@ -2033,6 +2038,8 @@ FocusScope {
         if (cfg.layer1ShapeSpeed !== undefined) root.layer1ShapeSpeed = Number(cfg.layer1ShapeSpeed)
         if (cfg.layer1ShapeScale !== undefined) root.layer1ShapeScale = Number(cfg.layer1ShapeScale)
         if (cfg.layer1ShapeDensity !== undefined) root.layer1ShapeDensity = Number(cfg.layer1ShapeDensity)
+        if (cfg.layer1ShapeLifespan !== undefined) root.layer1ShapeLifespan = Math.max(0.35, Math.min(3.00, Number(cfg.layer1ShapeLifespan)))
+        if (cfg.layer1ShapeFillRatio !== undefined) root.layer1ShapeFillRatio = Math.max(0.00, Math.min(1.00, Number(cfg.layer1ShapeFillRatio)))
 
         if (cfg.layer2Enabled !== undefined) root.layer2Enabled = Boolean(cfg.layer2Enabled)
         if (cfg.layer2AutoRandomise !== undefined) root.layer2AutoRandomise = Boolean(cfg.layer2AutoRandomise)
@@ -2177,6 +2184,8 @@ FocusScope {
         root.layer1ShapesEnabled = true
         root.layer1ShapeStyle = 0
         root.layer1ShapeDensity = 1.0
+        root.layer1ShapeLifespan = 1.0
+        root.layer1ShapeFillRatio = 0.35
         root.layer2Enabled = true
         root.layer2VizEnabled = true
         root.layer2TracersEnabled = true
@@ -2253,6 +2262,8 @@ FocusScope {
             l1ShapeSpeed: root.layer1ShapeSpeed,
             l1ShapeScale: root.layer1ShapeScale,
             l1ShapeDensity: root.layer1ShapeDensity,
+            l1ShapeLifespan: root.layer1ShapeLifespan,
+            l1ShapeFillRatio: root.layer1ShapeFillRatio,
             l1AutoRandomise: root.layer1AutoRandomise
         }
         copy.push(item)
@@ -2307,6 +2318,8 @@ FocusScope {
         if (item.l1ShapeSpeed !== undefined) root.layer1ShapeSpeed = Number(item.l1ShapeSpeed)
         if (item.l1ShapeScale !== undefined) root.layer1ShapeScale = Number(item.l1ShapeScale)
         if (item.l1ShapeDensity !== undefined) root.layer1ShapeDensity = Number(item.l1ShapeDensity)
+        if (item.l1ShapeLifespan !== undefined) root.layer1ShapeLifespan = Math.max(0.35, Math.min(3.00, Number(item.l1ShapeLifespan)))
+        if (item.l1ShapeFillRatio !== undefined) root.layer1ShapeFillRatio = Math.max(0.00, Math.min(1.00, Number(item.l1ShapeFillRatio)))
         if (item.l1AutoRandomise !== undefined) root.layer1AutoRandomise = Boolean(item.l1AutoRandomise)
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
@@ -2795,6 +2808,8 @@ FocusScope {
             layer1ShapeSpeed: root.layer1ShapeSpeed,
             layer1ShapeScale: root.layer1ShapeScale,
             layer1ShapeDensity: root.layer1ShapeDensity,
+            layer1ShapeLifespan: root.layer1ShapeLifespan,
+            layer1ShapeFillRatio: root.layer1ShapeFillRatio,
             layer2Enabled: root.layer2Enabled,
             layer2VizEnabled: root.layer2VizEnabled,
             layer2TracersEnabled: root.layer2TracersEnabled,
@@ -3032,6 +3047,8 @@ FocusScope {
             root.layer1ShapeSpeed = Number(p.l1ShapeSpeed !== undefined ? p.l1ShapeSpeed : 1.0)
             root.layer1ShapeScale = Number(p.l1ShapeScale !== undefined ? p.l1ShapeScale : 1.0)
             root.layer1ShapeDensity = Number(p.l1ShapeDensity !== undefined ? p.l1ShapeDensity : 1.0)
+            root.layer1ShapeLifespan = Number(p.l1ShapeLifespan !== undefined ? p.l1ShapeLifespan : 1.0)
+            root.layer1ShapeFillRatio = Number(p.l1ShapeFillRatio !== undefined ? p.l1ShapeFillRatio : 0.35)
             root.sensitivity = Number(p.sensitivity !== undefined ? p.sensitivity : 1.35)
             root.layer2Complexity = Number(p.l2Complexity !== undefined ? p.l2Complexity : 1.0)
             root.layer2Speed = Number(p.l2Speed !== undefined ? p.l2Speed : 1.0)
@@ -3118,6 +3135,8 @@ FocusScope {
             l1ShapeSpeed: root.layer1ShapeSpeed,
             l1ShapeScale: root.layer1ShapeScale,
             l1ShapeDensity: root.layer1ShapeDensity,
+            l1ShapeLifespan: root.layer1ShapeLifespan,
+            l1ShapeFillRatio: root.layer1ShapeFillRatio,
             l2Enabled: root.layer2Enabled,
             l2VizEnabled: root.layer2VizEnabled,
             l2Mode: root.visualMode,
@@ -3448,6 +3467,40 @@ FocusScope {
         }
     }
 
+    function toggleLayerRandomByNumber(layerNum) {
+        if (layerNum === 1) {
+            root.layer1AutoRandomise = !root.layer1AutoRandomise
+            if (root.layer1AutoRandomise) root.randomiseLayer1()
+            scheduleSaveVisualiserConfig()
+            root.suppressActionFeedback("1: Worlds Random: " + (root.layer1AutoRandomise ? "ON" : "OFF"))
+        } else if (layerNum === 2) {
+            root.layerEqAutoRandomise = !root.layerEqAutoRandomise
+            if (root.layerEqAutoRandomise) root.randomiseLayerEq()
+            scheduleSaveVisualiserConfig()
+            root.suppressActionFeedback("2: Equaliser Random: " + (root.layerEqAutoRandomise ? "ON" : "OFF"))
+        } else if (layerNum === 3) {
+            root.layerVectorsAutoRandomise = !root.layerVectorsAutoRandomise
+            if (root.layerVectorsAutoRandomise) root.randomiseLayerVectors()
+            scheduleSaveVisualiserConfig()
+            root.suppressActionFeedback("3: Vectors Random: " + (root.layerVectorsAutoRandomise ? "ON" : "OFF"))
+        } else if (layerNum === 4) {
+            root.layer2AutoRandomise = !root.layer2AutoRandomise
+            if (root.layer2AutoRandomise) root.randomiseLayer2()
+            scheduleSaveVisualiserConfig()
+            root.suppressActionFeedback("4: Geometry Random: " + (root.layer2AutoRandomise ? "ON" : "OFF"))
+        } else if (layerNum === 5) {
+            root.layer4AutoRandomise = !root.layer4AutoRandomise
+            if (root.layer4AutoRandomise) root.randomiseLayer4()
+            scheduleSaveVisualiserConfig()
+            root.suppressActionFeedback("5: Vortex Random: " + (root.layer4AutoRandomise ? "ON" : "OFF"))
+        } else if (layerNum === 6) {
+            root.layer3AutoRandomise = !root.layer3AutoRandomise
+            if (root.layer3AutoRandomise) root.randomiseLayer3()
+            scheduleSaveVisualiserConfig()
+            root.suppressActionFeedback("6: Typography Random: " + (root.layer3AutoRandomise ? "ON" : "OFF"))
+        }
+    }
+
     function toggleLayer3TextField(field) {
         if (field === "artist") {
             root.layer3ShowArtist = !root.layer3ShowArtist
@@ -3697,6 +3750,8 @@ FocusScope {
             root.layer1ShapeDensity = Math.round(vecDen * 100) / 100
             root.layer1ShapeSpeed = Math.round((0.55 + Math.random() * 1.25) * 100) / 100
             root.layer1ShapeSpin = Math.round(((Math.random() * 2.8) - 1.4) * 100) / 100
+            root.layer1ShapeLifespan = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
+            root.layer1ShapeFillRatio = Math.round((0.15 + Math.random() * 0.70) * 20) / 20
         } else {
             var shRoll = Math.floor(Math.random() * (Engine.LAYER1_SHAPE_STYLES.length + 1))
             root.layer1ShapesEnabled = (shRoll < Engine.LAYER1_SHAPE_STYLES.length)
@@ -3706,6 +3761,8 @@ FocusScope {
                 root.layer1ShapeDensity = Math.round(vecDen * 100) / 100
                 root.layer1ShapeSpeed = Math.round((0.55 + Math.random() * 1.25) * 100) / 100
                 root.layer1ShapeSpin = Math.round(((Math.random() * 2.8) - 1.4) * 100) / 100
+                root.layer1ShapeLifespan = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
+                root.layer1ShapeFillRatio = Math.round((0.15 + Math.random() * 0.70) * 20) / 20
             }
             if (!root.layer1FieldEnabled && !root.layer1EqEnabled && !root.layer1ShapesEnabled && !root.hasOtherActiveLayer(1)) {
                 root.layer1ShapesEnabled = true
@@ -4115,7 +4172,13 @@ FocusScope {
         }
         root._inKeybindingDispatch = true
         try {
-            if (event.key === Qt.Key_1) { root.toggleVisualiserLayerByNumber(1); event.accepted = true }
+            if ((event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_1 || event.key === Qt.Key_Exclam || event.text === "!")) { root.toggleLayerRandomByNumber(1); event.accepted = true }
+            else if ((event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_2 || event.key === Qt.Key_At || event.key === Qt.Key_QuoteDbl || event.text === "@" || event.text === "\"")) { root.toggleLayerRandomByNumber(2); event.accepted = true }
+            else if ((event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_3 || event.key === Qt.Key_NumberSign || event.key === Qt.Key_sterling || event.text === "#" || event.text === "£")) { root.toggleLayerRandomByNumber(3); event.accepted = true }
+            else if ((event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_4 || event.key === Qt.Key_Dollar || event.text === "$")) { root.toggleLayerRandomByNumber(4); event.accepted = true }
+            else if ((event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_5 || event.key === Qt.Key_Percent || event.text === "%")) { root.toggleLayerRandomByNumber(5); event.accepted = true }
+            else if ((event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_6 || event.key === Qt.Key_AsciiCircum || event.text === "^")) { root.toggleLayerRandomByNumber(6); event.accepted = true }
+            else if (event.key === Qt.Key_1) { root.toggleVisualiserLayerByNumber(1); event.accepted = true }
             else if (event.key === Qt.Key_2) { root.toggleVisualiserLayerByNumber(2); event.accepted = true }
             else if (event.key === Qt.Key_3) { root.toggleVisualiserLayerByNumber(3); event.accepted = true }
             else if (event.key === Qt.Key_4) { root.toggleVisualiserLayerByNumber(4); event.accepted = true }
@@ -4360,6 +4423,18 @@ FocusScope {
                         root.externalStageOpen = false
                         root.suppressActionFeedback("Closed External VJ Stage Window")
                         event.accepted = true
+                    } else if (root.stageMode === "visualiser" && (event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_1 || event.key === Qt.Key_Exclam || event.text === "!")) {
+                        root.toggleLayerRandomByNumber(1); event.accepted = true
+                    } else if (root.stageMode === "visualiser" && (event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_2 || event.key === Qt.Key_At || event.key === Qt.Key_QuoteDbl || event.text === "@" || event.text === "\"")) {
+                        root.toggleLayerRandomByNumber(2); event.accepted = true
+                    } else if (root.stageMode === "visualiser" && (event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_3 || event.key === Qt.Key_NumberSign || event.key === Qt.Key_sterling || event.text === "#" || event.text === "£")) {
+                        root.toggleLayerRandomByNumber(3); event.accepted = true
+                    } else if (root.stageMode === "visualiser" && (event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_4 || event.key === Qt.Key_Dollar || event.text === "$")) {
+                        root.toggleLayerRandomByNumber(4); event.accepted = true
+                    } else if (root.stageMode === "visualiser" && (event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_5 || event.key === Qt.Key_Percent || event.text === "%")) {
+                        root.toggleLayerRandomByNumber(5); event.accepted = true
+                    } else if (root.stageMode === "visualiser" && (event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_6 || event.key === Qt.Key_AsciiCircum || event.text === "^")) {
+                        root.toggleLayerRandomByNumber(6); event.accepted = true
                     } else if (root.stageMode === "visualiser" && (event.modifiers === Qt.NoModifier) && event.key >= Qt.Key_1 && event.key <= Qt.Key_6) {
                         root.toggleVisualiserLayerByNumber((event.key - Qt.Key_1) + 1)
                         event.accepted = true
@@ -4470,6 +4545,8 @@ FocusScope {
                 root.layer1Dim += (Number(tp.l1Dim || 0.16) - root.layer1Dim) * alpha
                 root.layer1EqGain += (Number(tp.l1EqGain || 1.25) - root.layer1EqGain) * alpha
                 root.layer1ShapeDensity += (Number(tp.l1ShapeDensity || 1.0) - root.layer1ShapeDensity) * alpha
+                root.layer1ShapeLifespan += (Number(tp.l1ShapeLifespan !== undefined ? tp.l1ShapeLifespan : 1.0) - root.layer1ShapeLifespan) * alpha
+                root.layer1ShapeFillRatio += (Number(tp.l1ShapeFillRatio !== undefined ? tp.l1ShapeFillRatio : 0.35) - root.layer1ShapeFillRatio) * alpha
                 root.sensitivity += (Number(tp.sensitivity || 1.35) - root.sensitivity) * alpha
                 root.layer2Complexity += (Number(tp.l2Complexity || 1.0) - root.layer2Complexity) * alpha
                 root.layer2Speed += (Number(tp.l2Speed || 1.0) - root.layer2Speed) * alpha
@@ -6000,6 +6077,56 @@ FocusScope {
                     }
                     onRightClicked: {
                         root.layer1ShapeScale = 1.0
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "Life:" + root.layer1ShapeLifespan.toFixed(1) + "x"
+                    active: root.layer1Enabled && root.layer1ShapesEnabled && Math.abs(root.layer1ShapeLifespan - 1.0) > 0.05
+                    onClicked: {
+                        var nextLf = root.layer1ShapeLifespan + 0.35
+                        if (nextLf > 3.05) nextLf = 0.35
+                        root.layer1ShapeLifespan = Math.round(nextLf * 100) / 100
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: {
+                        root.layer1ShapeLifespan = 1.0
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => {
+                        root.layer1ShapeLifespan = Math.max(0.35, Math.min(3.00, Math.round((root.layer1ShapeLifespan + (delta > 0 ? 0.20 : -0.20)) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "Fill:" + Math.round(root.layer1ShapeFillRatio * 100) + "%"
+                    active: root.layer1Enabled && root.layer1ShapesEnabled && root.layer1ShapeFillRatio > 0.02
+                    onClicked: {
+                        var nextFl = root.layer1ShapeFillRatio + 0.20
+                        if (nextFl > 1.05) nextFl = 0.0
+                        root.layer1ShapeFillRatio = Math.round(Math.min(1.0, nextFl) * 100) / 100
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: {
+                        root.layer1ShapeFillRatio = 0.35
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => {
+                        root.layer1ShapeFillRatio = Math.max(0.0, Math.min(1.0, Math.round((root.layer1ShapeFillRatio + (delta > 0 ? 0.10 : -0.10)) * 100) / 100))
                         vizCanvas.requestPaint()
                         scheduleSaveVisualiserConfig()
                     }
@@ -8041,6 +8168,33 @@ FocusScope {
                                             scheduleSaveVisualiserConfig()
                                         }
                                     }
+
+                                    LayerSlider {
+                                        label: "Time of Existence"
+                                        value: root.layer1ShapeLifespan
+                                        minValue: 0.35
+                                        maxValue: 3.00
+                                        unitSuffix: "x"
+                                        onValueEdited: v => {
+                                            root.layer1ShapeLifespan = v
+                                            vizCanvas.requestPaint()
+                                            scheduleSaveVisualiserConfig()
+                                        }
+                                    }
+
+                                    LayerSlider {
+                                        label: "Sides Filled (Opaque)"
+                                        value: Math.round(root.layer1ShapeFillRatio * 100)
+                                        minValue: 0
+                                        maxValue: 100
+                                        integerSteps: true
+                                        unitSuffix: "%"
+                                        onValueEdited: v => {
+                                            root.layer1ShapeFillRatio = Math.max(0.0, Math.min(1.0, Math.round(v) / 100.0))
+                                            vizCanvas.requestPaint()
+                                            scheduleSaveVisualiserConfig()
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -9773,7 +9927,7 @@ FocusScope {
         color: Qt.rgba(0.04, 0.05, 0.08, 0.88)
         border.width: 1
         border.color: Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.30)
-        visible: root.showHud && root.isFullscreen
+        visible: root.showHud && root.showBottomHud
 
         readonly property real trackRatio: root.duration > 0.5 ? Math.max(0.0, Math.min(1.0, root.position / root.duration)) : 0.0
         readonly property int trackPercent: Math.round(trackRatio * 100)
@@ -9855,7 +10009,6 @@ FocusScope {
                             if (root.duration > 0.5) {
                                 var ratio = Math.max(0.0, Math.min(1.0, mx / Math.max(1, seekBarTrack.width)))
                                 var targetSec = ratio * root.duration
-                                root.position = targetSec
                                 root.requestSeek(targetSec)
                                 vizCanvas.requestPaint()
                             }

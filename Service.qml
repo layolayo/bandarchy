@@ -183,6 +183,20 @@ Item {
         onTriggered: root.refreshStatus()
     }
 
+    // Smooth 250ms local playhead interpolation between mpv status polls
+    Timer {
+        id: playheadTickTimer
+        interval: 250
+        running: root.activelyPlaying
+        repeat: true
+        onTriggered: {
+            if (root.activelyPlaying) {
+                var nextPos = root.position + 0.25
+                root.position = (root.duration > 0.5) ? Math.min(root.duration, nextPos) : nextPos
+            }
+        }
+    }
+
     // Status process
     Process {
         id: statusProc
@@ -277,9 +291,9 @@ Item {
                     root.artPath = p.artPath || (fb ? (fb.artPath || "") : root.artPath)
                     root._batchUpdatingTrack = false
 
-                    root.position = (p.position !== undefined && Number(p.position) > 0)
-                        ? Number(p.position)
-                        : ((fb && fb.position) ? Number(fb.position) : 0.0)
+                    root.position = p.playing
+                        ? Math.max(0.0, Number(p.position) || 0.0)
+                        : ((p.position !== undefined && Number(p.position) > 0) ? Number(p.position) : ((fb && fb.position) ? Number(fb.position) : 0.0))
                     root.duration = Number(p.duration) || (fb && fb.duration ? Number(fb.duration) : 0.0)
                     root.volume = p.volume !== undefined ? Number(p.volume) : 100.0
                     root.playlistPos = (p.playlistPos !== undefined) ? (Number(p.playlistPos) || 0) : ((fb && fb.playlistPos) ? Number(fb.playlistPos) : 0)
@@ -1281,6 +1295,7 @@ Item {
         var idx = Number(trackIndex) || 0
         root._optimisticPlayUntil = Date.now() + 2400
         root.albumId = albumId || ""
+        root.position = 0.0
         root.playing = true
         root.paused = false
         for (var i = 0; i < root.albums.length; i++) {
@@ -1311,6 +1326,7 @@ Item {
         root._optimisticPlayUntil = Date.now() + 2400
         if (albumId) root.albumId = albumId
         root.trackId = trackId || ""
+        root.position = 0.0
         root.playing = true
         root.paused = false
         var args = ["play", "--track-id", trackId]
@@ -1322,6 +1338,7 @@ Item {
 
     function playPlaylist(playlistId, trackIndex, shuffle) {
         root._optimisticPlayUntil = Date.now() + 2400
+        root.position = 0.0
         root.playing = true
         root.paused = false
         var args = ["play", "--playlist", playlistId, "--track-index", String(trackIndex || 0)]
@@ -1333,6 +1350,7 @@ Item {
 
     function playScope(scope, shuffle) {
         root._optimisticPlayUntil = Date.now() + 2400
+        root.position = 0.0
         root.playing = true
         root.paused = false
         var args = ["play", "--scope", scope || "all"]
@@ -1509,6 +1527,7 @@ Item {
         root.notifyAction(wasActive ? "Paused playback" : "Resumed playback")
     }
     function nextTrack() {
+        root.position = 0.0
         if (!root.playing) {
             root._optimisticPlayUntil = Date.now() + 2400
             root.playing = true
@@ -1519,6 +1538,7 @@ Item {
         root.notifyAction("Next track 󰒭")
     }
     function prevTrack() {
+        root.position = 0.0
         if (!root.playing) {
             root._optimisticPlayUntil = Date.now() + 2400
             root.playing = true
@@ -1550,6 +1570,7 @@ Item {
         fastPlayPollTimer.restart()
     }
     function jumpQueue(idx) {
+        root.position = 0.0
         if (!root.playing) {
             root._optimisticPlayUntil = Date.now() + 2400
             root.playing = true

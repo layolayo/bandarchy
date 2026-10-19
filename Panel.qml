@@ -290,7 +290,13 @@ Item {
         }
 
         if (!hasCtrlOrAlt && (root.activeTab === 2 || isFsViz || panelVisualiser.stageMode === "visualiser")) {
-            if (event.key === Qt.Key_BraceLeft || event.text === "{") { panelVisualiser.stepPhotoCategoryByKey(-1); event.accepted = true; return }
+            if ((event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_1 || event.key === Qt.Key_Exclam || event.text === "!")) { panelVisualiser.toggleLayerRandomByNumber(1); event.accepted = true; return }
+            else if ((event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_2 || event.key === Qt.Key_At || event.key === Qt.Key_QuoteDbl || event.text === "@" || event.text === "\"")) { panelVisualiser.toggleLayerRandomByNumber(2); event.accepted = true; return }
+            else if ((event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_3 || event.key === Qt.Key_NumberSign || event.key === Qt.Key_sterling || event.text === "#" || event.text === "£")) { panelVisualiser.toggleLayerRandomByNumber(3); event.accepted = true; return }
+            else if ((event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_4 || event.key === Qt.Key_Dollar || event.text === "$")) { panelVisualiser.toggleLayerRandomByNumber(4); event.accepted = true; return }
+            else if ((event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_5 || event.key === Qt.Key_Percent || event.text === "%")) { panelVisualiser.toggleLayerRandomByNumber(5); event.accepted = true; return }
+            else if ((event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_6 || event.key === Qt.Key_AsciiCircum || event.text === "^")) { panelVisualiser.toggleLayerRandomByNumber(6); event.accepted = true; return }
+            else if (event.key === Qt.Key_BraceLeft || event.text === "{") { panelVisualiser.stepPhotoCategoryByKey(-1); event.accepted = true; return }
             else if (event.key === Qt.Key_BraceRight || event.text === "}") { panelVisualiser.stepPhotoCategoryByKey(1); event.accepted = true; return }
             else if (event.key === Qt.Key_BracketLeft || event.text === "[") {
                 if (event.modifiers & Qt.ShiftModifier) panelVisualiser.stepPhotoCategoryByKey(-1)
@@ -336,7 +342,7 @@ Item {
             else if (event.key === Qt.Key_K) { panelVisualiser.cycleTracers((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
             else if (event.key === Qt.Key_Y) { panelVisualiser.randomiseVisuals(); event.accepted = true }
             else if (event.key === Qt.Key_S) { panelVisualiser.triggerShatterImpulse(); event.accepted = true }
-            else if (event.key === Qt.Key_X) { panelVisualiser.autoCycle = !panelVisualiser.autoCycle; event.accepted = true }
+            else if (event.key === Qt.Key_X) { panelVisualiser.toggleAllRandomisations(); event.accepted = true }
             else if (event.key === Qt.Key_Q) { panelVisualiser.toggleLayer3TextField("artist"); event.accepted = true }
             else if (event.key === Qt.Key_W) { panelVisualiser.toggleLayer3TextField("track"); event.accepted = true }
             else if (event.key === Qt.Key_E) { panelVisualiser.toggleLayer3TextField("album"); event.accepted = true }
@@ -2113,6 +2119,7 @@ Item {
                         anchors.fill: parent
                         visible: (root.opened || root.standaloneMode) && root.activeTab === 2 && !(root.service && root.service.fullscreenVisualiserOpen)
                         isFullscreen: false
+                        showBottomHud: false
                         bands: (visible && root.service) ? root.service.spectrumBands : []
                         playing: root.service ? root.service.activelyPlaying : false
                         trackTitle: root.service ? root.service.trackTitle : ""
@@ -2598,12 +2605,12 @@ Item {
                             }
                         }
 
-                        // Live 24-Bar Mini Spectrum Strip (paused when Stage & Visualiser tab or fullscreen overlay is active)
+                        // Live 24-Bar Mini Spectrum Strip (paused only when fullscreen overlay is active)
                         Spectrum {
                             Layout.preferredWidth: 96
                             Layout.preferredHeight: 38
                             barCount: 24
-                            active: Boolean((root.opened || root.standaloneMode) && root.service && root.service.activelyPlaying && root.activeTab !== 2 && !root.service.fullscreenVisualiserOpen)
+                            active: Boolean((root.opened || root.standaloneMode) && root.service && root.service.activelyPlaying && !root.service.fullscreenVisualiserOpen)
                             bands: (active && root.service) ? root.service.spectrumBands : []
                             accentColour: root.colAccent
                             peakColour: root.colUrgent

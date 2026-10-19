@@ -929,7 +929,7 @@ console.log(JSON.stringify({ ok: true, maxFrameMs: maxMs }));
             engine_src = f.read()
 
         self.assertIn("property bool gpuShaderEnabled: true", viz_src)
-        self.assertIn("visible: root.showHud && root.isFullscreen", viz_src)
+        self.assertIn("visible: root.showHud && root.showBottomHud", viz_src)
         self.assertIn("function setAsciiSourceMode(", svc_src)
         self.assertIn("fastPlayPollTimer", svc_src)
         self.assertIn("applyOmarchyTheme", app_src)
@@ -2274,11 +2274,11 @@ console.log('OK');
             "G-Force Polar FlowField",
             "Cthugha Rave Flame",
             "Relativistic Starfield",
-            "Battlezone 1980",
+            "Hybrid DNA Helix Intelligence",
             "Death Star Trench",
             "BlackHole",
-            "TRON 1982 Grid",
-            "Outrun Canyon",
+            "Swooping & Rotational Banking 3D Surface Grid",
+            "Shader Dyson Hyper-Orrery",
             "Demoscene Polygon Tunnel",
             "Tempest & Asteroids",
         ):
@@ -2540,17 +2540,20 @@ console.log('OK');
         for v_idx in range(15):
             self.assertIn(f"vid == {v_idx}", photo_frag_src)
 
-        # 2. Verify psychedelic.frag has 12 GPU L1 Worlds (l1m == 0..10 + else Death Star 3D Warp Trench), no Battlezone cockpit, no Death Star targetBox, SynthGrid keyboards, and Battlezone/Death Star enemies & barriers
+        # 2. Verify psychedelic.frag has 12 GPU L1 Worlds (l1m == 0..10 + else Death Star 3D Warp Trench), no Battlezone cockpit, no Death Star targetBox, no SynthGrid keyboards, and new DNA/TRON/Orrery worlds
         self.assertIn("l1m == 10", psych_frag_src)
         self.assertIn("Death Star 3D Warp Trench", psych_frag_src)
         self.assertNotIn("targetBox", psych_frag_src)
-        self.assertIn("inBlackKey", psych_frag_src)
+        self.assertNotIn("inBlackKey", psych_frag_src)
+        self.assertIn("strandA", psych_frag_src)
+        self.assertIn("towerAcc", psych_frag_src)
+        self.assertIn("dCrystal", psych_frag_src)
         self.assertIn("catwalkBarriers", psych_frag_src)
         self.assertIn("tieShape", psych_frag_src)
         self.assertIn("tieShapeW", psych_frag_src)
-        self.assertIn("ufoSaucer", psych_frag_src)
+        self.assertIn("codonNode", psych_frag_src)
 
-        # 3. Verify Visualiser.qml has bottom-left keybinding toast, 24-bar Spectrum bound to root.bands + 4-bar toggle, Quick Bar steppers, and full drawer repeaters
+        # 3. Verify Visualiser.qml has bottom-left keybinding toast, 24-bar Spectrum bound to root.bands + 4-bar toggle, Quick Bar steppers, full drawer repeaters, Shift+1..6 random toggles, Vector lifespan/fill ratio, and intact position binding on seek
         self.assertIn("id: keybindingToastBadge", viz_src)
         self.assertIn("function showKeybindingFeedback(", viz_src)
         self.assertIn("property bool _inHudPillInteraction: false", viz_src)
@@ -2562,6 +2565,11 @@ console.log('OK');
         self.assertIn("barCount: 24", viz_src)
         self.assertIn("model: root.layer1Modes.length", viz_src)
         self.assertIn("model: root.layer1EqStyles.length", viz_src)
+        self.assertIn("function toggleLayerRandomByNumber(layerNum)", viz_src)
+        self.assertIn("property real layer1ShapeLifespan: 1.0", viz_src)
+        self.assertIn("property real layer1ShapeFillRatio: 0.35", viz_src)
+        self.assertIn("property bool showBottomHud: true", viz_src)
+        self.assertNotIn("root.position = targetSec", viz_src)
 
         node_script = r"""
 const fs = require('fs');
@@ -2605,8 +2613,8 @@ function makeTrackCtx() {
         restore() {},
         beginPath() {},
         closePath() {},
-        moveTo() {},
-        lineTo() {},
+        moveTo(x, y) { if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('NaN/non-finite moveTo: ' + x + ',' + y); },
+        lineTo(x, y) { if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('NaN/non-finite lineTo: ' + x + ',' + y); },
         bezierCurveTo() {},
         quadraticCurveTo() {},
         arc() {},
@@ -2833,6 +2841,37 @@ for (const fStr of ctxTypo.fonts) {
     const m = fStr.match(/(\d+)px/);
     if (m && Number(m[1]) > 46) {
         throw new Error(`Typography font size exceeded clamp: ${fStr}`);
+    }
+}
+
+// 7. Verify all 14 Layer 3 Vector craft styles (0..13) render finite coordinates and honour layer1ShapeLifespan & layer1ShapeFillRatio
+for (let shIdx = 0; shIdx < 14; shIdx++) {
+    const stVec = createState();
+    const cfgVec0 = normaliseConfig({
+        layer1Enabled: true,
+        layer1FieldEnabled: false,
+        layer1EqEnabled: false,
+        layer1ShapesEnabled: true,
+        layer1ShapeStyle: shIdx,
+        layer1ShapeDensity: 1.5,
+        layer1ShapeLifespan: 2.0,
+        layer1ShapeFillRatio: 0.0,
+        layer2Enabled: false,
+        layer3Enabled: false
+    }, 0, []);
+    if (Math.abs(cfgVec0.layer1ShapeLifespan - 2.0) > 0.01 || Math.abs(cfgVec0.layer1ShapeFillRatio - 0.0) > 0.01) {
+        throw new Error('normaliseConfig failed to preserve layer1ShapeLifespan / layer1ShapeFillRatio');
+    }
+    stepState(stVec, new Array(64).fill(900), true, cfgVec0, 0.04);
+    stVec.beatPulse = 0.9;
+    stepState(stVec, new Array(64).fill(900), true, cfgVec0, 0.04);
+    const ctxVec0 = makeTrackCtx();
+    renderFrame(ctxVec0, 640, 360, stVec, 0, theme, [], [], [], cfgVec0, null);
+    const cfgVec1 = normaliseConfig(Object.assign({}, cfgVec0, { layer1ShapeFillRatio: 0.85 }), 0, []);
+    const ctxVec1 = makeTrackCtx();
+    renderFrame(ctxVec1, 640, 360, stVec, 0, theme, [], [], [], cfgVec1, null);
+    if (ctxVec1.fillCount <= ctxVec0.fillCount) {
+        throw new Error(`Expected shapeStyle ${shIdx} with fillRatio=0.85 to fill more facets than fillRatio=0.0 (${ctxVec1.fillCount} vs ${ctxVec0.fillCount})`);
     }
 }
 

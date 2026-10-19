@@ -286,7 +286,13 @@ ShellRoot {
 
             var hasAltOrCtrl = Boolean(event.modifiers & (Qt.AltModifier | Qt.ControlModifier))
             if (!hasAltOrCtrl && (win.visualiserMaximised || appVisualiser.stageMode === "visualiser")) {
-                if (event.key === Qt.Key_1) { appVisualiser.toggleVisualiserLayerByNumber(1); event.accepted = true; return }
+                if ((event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_1 || event.key === Qt.Key_Exclam || event.text === "!")) { appVisualiser.toggleLayerRandomByNumber(1); event.accepted = true; return }
+                else if ((event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_2 || event.key === Qt.Key_At || event.key === Qt.Key_QuoteDbl || event.text === "@" || event.text === "\"")) { appVisualiser.toggleLayerRandomByNumber(2); event.accepted = true; return }
+                else if ((event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_3 || event.key === Qt.Key_NumberSign || event.key === Qt.Key_sterling || event.text === "#" || event.text === "£")) { appVisualiser.toggleLayerRandomByNumber(3); event.accepted = true; return }
+                else if ((event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_4 || event.key === Qt.Key_Dollar || event.text === "$")) { appVisualiser.toggleLayerRandomByNumber(4); event.accepted = true; return }
+                else if ((event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_5 || event.key === Qt.Key_Percent || event.text === "%")) { appVisualiser.toggleLayerRandomByNumber(5); event.accepted = true; return }
+                else if ((event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_6 || event.key === Qt.Key_AsciiCircum || event.text === "^")) { appVisualiser.toggleLayerRandomByNumber(6); event.accepted = true; return }
+                else if (event.key === Qt.Key_1) { appVisualiser.toggleVisualiserLayerByNumber(1); event.accepted = true; return }
                 else if (event.key === Qt.Key_2) { appVisualiser.toggleVisualiserLayerByNumber(2); event.accepted = true; return }
                 else if (event.key === Qt.Key_3) { appVisualiser.toggleVisualiserLayerByNumber(3); event.accepted = true; return }
                 else if (event.key === Qt.Key_4) { appVisualiser.toggleVisualiserLayerByNumber(4); event.accepted = true; return }
@@ -602,7 +608,7 @@ ShellRoot {
                 }
                 else if (event.key === Qt.Key_Y) { appVisualiser.randomiseVisuals(); event.accepted = true }
                 else if (event.key === Qt.Key_S) { appVisualiser.triggerShatterImpulse(); event.accepted = true }
-                else if (event.key === Qt.Key_X) { appVisualiser.autoCycle = !appVisualiser.autoCycle; event.accepted = true }
+                else if (event.key === Qt.Key_X) { appVisualiser.toggleAllRandomisations(); event.accepted = true }
                 else if (event.key === Qt.Key_Q) { appVisualiser.toggleLayer3TextField("artist"); event.accepted = true }
                 else if (event.key === Qt.Key_W) { appVisualiser.toggleLayer3TextField("track"); event.accepted = true }
                 else if (event.key === Qt.Key_E) { appVisualiser.toggleLayer3TextField("album"); event.accepted = true }

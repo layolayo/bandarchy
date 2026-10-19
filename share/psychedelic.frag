@@ -521,41 +521,67 @@ void main() {
             }
             col += starAcc * (0.75 + 0.45 * uBass) * l1Bright;
         } else if (l1m == 4) {
-            // Mode 4: Battlezone 1980 — Classic Atari Green Vector Horizon, Volcanoes, Advancing Tanks, Pyramid Obstacles & Flying Saucer (No Cockpit)
-            vec3 bzGreen = vec3(0.08, 1.0, 0.28);
-            vec3 bzRed = vec3(1.0, 0.16, 0.16);
-            float hy = qt_TexCoord0.y - 0.50;
-            float mtnH = (0.06 + 0.05 * sin(p.x * 3.8 + l1T * 0.25) + 0.035 * abs(cos(p.x * 8.2 - l1T * 0.12)));
-            float mtnLine = exp(-abs(hy + mtnH) * 95.0);
-            float horLine = exp(-abs(hy) * 110.0);
-            float gridVal = 0.0;
-            if (hy > 0.002) {
-                float z = 0.20 / max(0.004, hy);
-                float gx = p.x * z * (2.6 * l1Den) + l1T * 0.5;
-                float gz = z * (2.2 * l1Den) + l1T * 2.5;
-                gridVal = max(smoothstep(0.91, 0.99, cos(gx * PI)), smoothstep(0.89, 0.99, cos(gz * PI))) * smoothstep(0.003, 0.06, hy);
+            // Mode 4 (17:ShdDNA): Hybrid DNA Helix Intelligence — 3D Twisting Bioluminescent Double-Helix, Base-Pair Codon Rungs & Neural-Synaptic Lattice
+            vec2 dp = rot2D(sin(l1T * 0.22) * 0.38) * q;
+            float spineWave = sin(dp.y * 2.4 - l1T * 0.95) * 0.14 + cos(dp.y * 1.3 + l1T * 0.55) * 0.06;
+            float hx = dp.x - spineWave;
+            float pitch = (5.2 + 2.0 * l1Den);
+            float helPhase = dp.y * pitch - l1T * 2.6;
+            float amp = 0.24 + 0.05 * uBass + 0.03 * sin(dp.y * 3.0 + l1T);
+
+            // Primary 3D Double-Helix Backbones (Strand A & Strand B with front/back Z-depth sorting)
+            float xA = sin(helPhase) * amp;
+            float zA = cos(helPhase);
+            float xB = -xA;
+            float zB = -zA;
+            float dA = abs(hx - xA);
+            float dB = abs(hx - xB);
+            float strandA = exp(-dA * (38.0 - 10.0 * zA)) * (0.65 + 0.35 * zA);
+            float strandB = exp(-dB * (38.0 - 10.0 * zB)) * (0.65 + 0.35 * zB);
+            float strandCore = exp(-min(dA, dB) * 95.0);
+
+            // Base-Pair Hydrogen-Bond Rungs & Pulsing Codon Intelligence Nodes
+            float rungFreq = pitch * 2.0;
+            float rungCell = floor(dp.y * rungFreq / PI);
+            float rungLocal = abs(fract(dp.y * rungFreq / PI) - 0.5) * 2.0;
+            float spanX = max(0.015, abs(xA));
+            float inSpan = smoothstep(spanX + 0.02, spanX - 0.01, abs(hx));
+            float rungLine = exp(-rungLocal * 12.0) * inSpan;
+            float codonPulse = 0.5 + 0.5 * sin(rungCell * 1.7 + l1T * 4.5 + uBass * 3.0);
+            float codonNode = exp(-length(vec2(hx - sin(rungCell * 2.3) * spanX * 0.45, (fract(dp.y * rungFreq / PI) - 0.5) * 0.18)) * 42.0)
+                            * inSpan * (0.65 + 0.65 * codonPulse + 0.45 * uBeat);
+
+            // Secondary Flanking Evolutionary Helices & Neural-Synaptic Intelligence Filaments
+            float flankHelix = 0.0;
+            for (int fh = -1; fh <= 1; fh += 2) {
+                float fSign = float(fh);
+                float fx = dp.x - fSign * 0.58 + sin(dp.y * 3.2 + l1T * 1.2 * fSign) * 0.08;
+                float fPh = dp.y * (pitch * 1.25) + l1T * 1.9 * fSign;
+                float fAmp = 0.09 + 0.02 * uMid;
+                float fStrand = exp(-abs(fx - sin(fPh) * fAmp) * 52.0) + exp(-abs(fx + sin(fPh) * fAmp) * 52.0);
+                flankHelix += fStrand * 0.42;
             }
-            // Lead & flank wireframe tanks + turrets + cannon barrels in open field (zero cockpit/reticle)
-            vec2 tp = p - vec2(sin(l1T * 0.6) * 0.20, 0.15 + 0.04 * sin(l1T * 0.9));
-            float tankHull = exp(-abs(max(abs(tp.x) - 0.09, abs(tp.y) - 0.032)) * 140.0) * step(abs(tp.x), 0.11) * step(abs(tp.y), 0.048);
-            float tankTurret = exp(-abs(max(abs(tp.x) - 0.045, abs(tp.y + 0.045) - 0.018)) * 150.0) * step(abs(tp.x), 0.06) * step(abs(tp.y + 0.045), 0.03);
-            float tankBarrel = exp(-abs(tp.x) * 180.0) * step(-0.095, tp.y) * step(tp.y, -0.045);
-            // Second flank tank + field pyramid obstacle + airborne saucer UFO
-            vec2 tp2 = (p - vec2(-cos(l1T * 0.48) * 0.34, 0.08)) * 1.45;
-            float flankTank = exp(-abs(max(abs(tp2.x) - 0.08, abs(tp2.y) - 0.028)) * 135.0) * step(abs(tp2.x), 0.095) * step(abs(tp2.y), 0.042);
-            vec2 pyrP = p - vec2(cos(l1T * 0.35 + 1.4) * 0.30, 0.11);
-            float pyrEdge = exp(-abs(abs(pyrP.x) + (pyrP.y - 0.03) * 0.75) * 140.0) * step(abs(pyrP.x), 0.065) * step(abs(pyrP.y), 0.055);
-            vec2 ufoP = p - vec2(sin(l1T * 0.85 + 2.1) * 0.28, -0.14 + 0.02 * cos(l1T * 1.7));
-            float ufoSaucer = exp(-abs(length(vec2(ufoP.x * 0.65, ufoP.y * 2.2)) - 0.042) * 145.0);
-            col += (bzGreen * (mtnLine * 0.85 + horLine * 0.95 + gridVal * 0.72 + (tankHull + tankTurret + tankBarrel + flankTank + pyrEdge) * 0.95)
-                 + bzRed * ufoSaucer * (0.85 + uBeat * 0.40)) * (0.78 + uBass * 0.28) * l1Bright;
+            vec2 synUV = rot2D(0.45) * dp * (3.8 * sqrt(l1Den)) + vec2(sin(l1T * 0.4), -l1T * 0.55);
+            vec2 synId = floor(synUV);
+            vec2 synF = fract(synUV) - 0.5;
+            vec2 hSyn = hash2(synId);
+            vec2 synPos = (hSyn - 0.5) * 0.62 * sin(l1T * 1.4 + hSyn.x * TAU);
+            float synDist = length(synF - synPos);
+            float synapseNode = exp(-synDist * 24.0) * (0.5 + 0.5 * sin(l1T * 5.0 + hSyn.y * TAU));
+            float axonWeb = exp(-abs(synF.x * cos(hSyn.x * PI) + synF.y * sin(hSyn.x * PI)) * 28.0) * exp(-length(synF) * 2.5) * 0.38;
+
+            vec3 dnaCol = uCol0.rgb * (strandA * 1.15 + flankHelix * 0.75)
+                        + uCol1.rgb * (strandB * 1.15 + axonWeb * (0.75 + 0.45 * uMid))
+                        + mix(uCol2.rgb, vec3(0.88, 1.0, 0.96), 0.45) * (rungLine * (0.72 + 0.40 * codonPulse) + codonNode * 1.25 + synapseNode * (0.85 + 0.45 * uHigh))
+                        + vec3(0.95, 0.99, 1.0) * strandCore * (0.70 + 0.40 * uBeat);
+            col += dnaCol * (0.78 + uBass * 0.34) * l1Bright;
         } else if (l1m == 5) {
             // Mode 5: Shader Death Star Trench — 3D Perspective Trench Corridor, Catwalk Barriers, TIE Fighters & Laser Streaks (Zero Cockpit)
             vec2 tp = p - vec2(sin(l1T * 0.45) * 0.08, cos(l1T * 0.35) * 0.05);
             float wallDist = max(abs(tp.x) * 0.82, max(0.0, tp.y) * 1.15);
             float zTrench = 0.26 / max(0.025, wallDist);
             float bayRibs = smoothstep(0.86, 0.98, cos((zTrench * 1.8 * l1Den + l1T * 3.6) * PI));
-            float catwalkBarriers = smoothstep(0.92, 0.995, cos((zTrench * 0.52 * l1Den + l1T * 1.05) * PI))
+            float catwalkBarriers = smoothstep(0.94 - 0.03 * clamp(l1Den - 0.5, 0.0, 1.5), 0.995, cos((zTrench * 0.42 * l1Den + l1T * 1.05) * PI))
                                   * step(abs(tp.x), 0.38) * smoothstep(0.02, 0.16, abs(tp.y + 0.04));
             float longRails = smoothstep(0.90, 0.99, cos(tp.y / max(0.03, abs(tp.x)) * 6.0));
             float fade = smoothstep(0.025, 0.12, wallDist);
@@ -586,75 +612,149 @@ void main() {
             col += accCol * (0.78 + uBass * 0.32) * l1Bright;
             col *= smoothstep(ehR * 0.70, ehR * 0.96, rq);
         } else if (l1m == 7) {
-            // Mode 7: TRON 1982 Grid — 3D QuadraScan Game Grid, Light Cycle Jetwalls & Recognizer Arch
+            // Mode 7 (20:ShdTRON): Swooping & Rotational Banking 3D Surface Grid with Flying 3D Death Star Surface Defence Towers
             vec3 tronCyan = vec3(0.12, 0.88, 1.0);
-            vec3 tronOrange = vec3(1.0, 0.62, 0.05);
-            vec3 tronRed = vec3(1.0, 0.12, 0.22);
-            float hy = qt_TexCoord0.y - 0.48;
-            float hGlow = exp(-abs(hy) * 32.0) * 0.65;
-            col += tronCyan * hGlow * l1Bright;
-            if (hy > 0.002) {
-                float z = 0.24 / max(0.004, hy);
-                float gx = p.x * z * (2.4 * l1Den) + sin(l1T * 0.4) * 1.5;
-                float gz = z * (2.0 * l1Den) + l1T * 3.2;
-                float gLine = max(smoothstep(0.90, 0.99, cos(gx * PI)), smoothstep(0.88, 0.99, cos(gz * PI)));
-                float fade = smoothstep(0.002, 0.07, hy);
-                // Dual Light Cycle Jetwall ribbons (Cyan & Orange)
-                float wallC = exp(-abs(gx - 0.8) * 6.5) * step(hy, 0.42) * fade;
-                float wallO = exp(-abs(gx + 0.9) * 6.5) * step(hy, 0.38) * fade;
-                col += (tronCyan * (gLine * 0.72 + wallC * 0.95) + tronOrange * wallO * 0.95) * fade * (0.78 + uBass * 0.32) * l1Bright;
-            } else {
-                // Towering Red Recognizer silhouette above horizon
-                vec2 rp = vec2(p.x - sin(l1T * 0.35) * 0.22, hy + 0.14);
-                float legL = step(abs(rp.x + 0.09), 0.018) * step(abs(rp.y), 0.11);
-                float legR = step(abs(rp.x - 0.09), 0.018) * step(abs(rp.y), 0.11);
-                float bridge = step(abs(rp.x), 0.115) * step(abs(rp.y + 0.075), 0.022);
-                float head = step(abs(rp.x), 0.065) * step(abs(rp.y + 0.125), 0.016);
-                float recMask = clamp(legL + legR + bridge + head, 0.0, 1.0);
-                col += tronRed * recMask * (0.75 + uBeat * 0.35) * l1Bright;
-            }
-        } else if (l1m == 8) {
-            // Mode 8: SynthGrid Outrun Canyon — Segmented Horizon Sun, 3D Canyon Mountains & Beat-Reactive Side Synth Keyboards
-            float hy = qt_TexCoord0.y - 0.50;
-            // 1. Segmented Outrun Sun above horizon
-            vec2 sp = vec2(p.x, hy + 0.08);
-            float sunR = 0.22 + uBass * 0.03;
-            float sunDist = length(sp);
-            if (sunDist < sunR && hy < 0.02) {
-                float scanCut = step(0.28, fract((hy + 0.30) * 26.0));
-                vec3 sunCol = mix(uCol2.rgb, uCol0.rgb, clamp((-hy) / max(0.05, sunR), 0.0, 1.0));
-                col += sunCol * scanCut * (0.75 + uBass * 0.30) * l1Bright;
-            }
-            // 2. Canyon Mountain Walls, Neon Valley Grid & 3D Perspective Side Keyboards below horizon
-            if (hy > 0.002) {
-                float z = 0.22 / max(0.004, hy);
-                float gx = p.x * z * (2.5 * l1Den);
-                float gz = z * (2.0 * l1Den) + l1T * 2.8;
-                float gLine = max(smoothstep(0.89, 0.99, cos(gx * PI)), smoothstep(0.88, 0.99, cos(gz * PI)));
-                float canyonElev = max(0.0, abs(p.x) - 0.22) * (1.8 + 0.6 * sin(gz * 0.8));
-                vec3 floorCol = mix(uCol0.rgb, uCol1.rgb, clamp(canyonElev * 1.5, 0.0, 1.0));
-                float fade8 = smoothstep(0.002, 0.06, hy);
-                col += floorCol * gLine * fade8 * (0.74 + uBass * 0.36) * l1Bright;
+            vec3 towerYellow = vec3(1.0, 0.94, 0.12);
+            vec3 towerRed = vec3(1.0, 0.16, 0.22);
 
-                // 3D Perspective Synth Keyboards flanking both sides of the valley road
-                float sideSpan = abs(p.x) / max(0.12, hy * 1.65 + 0.08);
-                if (sideSpan > 0.32 && sideSpan < 0.92) {
-                    float keyId = floor(gz * 1.5);
-                    float keyFract = fract(gz * 1.5);
-                    float keyGap = smoothstep(0.08, 0.16, keyFract) * smoothstep(0.96, 0.88, keyFract);
-                    float keyPulse = 0.5 + 0.5 * sin(keyId * 1.35 - uTime * 5.2 + sign(p.x) * 1.1);
-                    float noteMod = mod(abs(keyId), 7.0);
-                    bool hasBlackKey = (noteMod < 1.5 || (noteMod > 2.5 && noteMod < 5.5));
-                    bool inBlackKey = hasBlackKey && (sideSpan > 0.58) && (abs(keyFract - 0.5) < 0.28);
-                    vec3 keyCol = inBlackKey
-                        ? (uCol2.rgb * (0.35 + 0.65 * uHigh))
-                        : mix(vec3(0.92, 0.95, 1.0), uCol0.rgb, keyPulse * (0.55 + 0.45 * uBass + 0.35 * uBeat));
-                    col += keyCol * keyGap * fade8 * (inBlackKey ? 0.55 : (0.48 + 0.42 * keyPulse * (uBass + uBeat * 0.6))) * l1Bright;
+            // Rotational banking roll & high-speed lateral turning swoop
+            float bankAng = sin(l1T * 0.68) * 0.34 + cos(l1T * 0.31) * 0.14;
+            float turnYaw = cos(l1T * 0.68) * 0.38 + sin(l1T * 0.34) * 0.16;
+            vec2 bp = rot2D(bankAng) * p;
+            float horizonOffset = -0.02 + sin(l1T * 0.45) * 0.05;
+            float hy = bp.y - horizonOffset;
+            float hGlow = exp(-abs(hy) * 36.0) * 0.68;
+            col += mix(tronCyan, uCol0.rgb, 0.35) * hGlow * l1Bright;
+
+            if (hy > 0.002) {
+                float z = 0.25 / max(0.004, hy);
+                float swoopCurve = turnYaw * z * 0.48 + sin(z * 0.32 - l1T * 1.8) * 0.26;
+                float gx = (bp.x * z + swoopCurve) * (2.2 * l1Den);
+                float gz = z * (2.0 * l1Den) + l1T * 3.8;
+                float gLine = max(smoothstep(0.89, 0.99, cos(gx * PI)), smoothstep(0.88, 0.99, cos(gz * PI)));
+                float fade = smoothstep(0.002, 0.07, hy);
+                // Swooping flight-corridor guide rails curving across the surface
+                float railL = exp(-abs(gx - 1.15) * 5.8) * fade;
+                float railR = exp(-abs(gx + 1.15) * 5.8) * fade;
+                vec3 surfCol = mix(tronCyan, uCol0.rgb, 0.35) * gLine * 0.76
+                             + towerYellow * (railL + railR) * 0.85;
+                col += surfCol * fade * (0.78 + uBass * 0.32) * l1Bright;
+            }
+
+            // 3D Wireframe Death Star Surface Defence Towers flying past on the banking surface
+            vec3 towerAcc = vec3(0.0);
+            for (int ti = 0; ti < 4; ti++) {
+                float fti = float(ti);
+                float uDepth = fract(l1T * 0.46 + fti * 0.25);
+                float persp = pow(uDepth, 1.75);
+                float side = (mod(fti, 2.0) < 0.5) ? -1.0 : 1.0;
+                float laneSpread = (ti < 2) ? 0.48 : 0.82;
+                float curveShift = -turnYaw * (1.0 - persp) * 0.36 - sin((1.0 - uDepth) * 2.2 - l1T * 1.8) * 0.10 * (1.0 - persp);
+                float towCX = curveShift + side * (0.045 + persp * laneSpread);
+                float baseY = horizonOffset + persp * 0.64;
+                float towW = 0.010 + persp * 0.078;
+                float towH = 0.032 + persp * 0.36;
+                float topY = baseY - towH;
+                float crownY = topY - towW * 0.65;
+                float depthShift = -side * towW * 0.38;
+
+                // Bounding check for fast per-pixel evaluation
+                if (abs(bp.x - towCX) < towW * 2.2 && bp.y > crownY - 0.04 && bp.y < baseY + 0.03) {
+                    float inShaftY = step(topY, bp.y) * step(bp.y, baseY);
+                    float inShaftX = step(abs(bp.x - towCX), towW * 1.05);
+                    // 4 vertical 3D wireframe columns (front pair + 3D inner depth pair)
+                    float colL = exp(-abs(bp.x - (towCX - towW)) * 185.0) * inShaftY;
+                    float colR = exp(-abs(bp.x - (towCX + towW)) * 185.0) * inShaftY;
+                    float colInL = exp(-abs(bp.x - (towCX - towW + depthShift)) * 195.0) * inShaftY * 0.78;
+                    float colInR = exp(-abs(bp.x - (towCX + towW + depthShift)) * 195.0) * inShaftY * 0.78;
+                    // Horizontal tier decks & X-braced lattice struts along the tower height
+                    float uY = clamp((bp.y - topY) / max(0.005, towH), 0.0, 1.0);
+                    float tierDecks = smoothstep(0.84, 0.99, cos(uY * 3.0 * PI)) * inShaftX * inShaftY;
+                    float xBrace1 = exp(-abs((bp.x - towCX) / max(0.004, towW) - (fract(uY * 2.0) * 2.0 - 1.0)) * 14.0) * inShaftX * inShaftY;
+                    float xBrace2 = exp(-abs((bp.x - towCX) / max(0.004, towW) + (fract(uY * 2.0) * 2.0 - 1.0)) * 14.0) * inShaftX * inShaftY;
+                    // Pyramidal laser turret crown at top of tower
+                    float inCrownY = step(crownY, bp.y) * step(bp.y, topY);
+                    float crownU = clamp((bp.y - crownY) / max(0.004, topY - crownY), 0.0, 1.0);
+                    float crownEdge = exp(-abs(abs(bp.x - towCX) - crownU * towW) * 190.0) * inCrownY;
+                    float roofRim = exp(-abs(bp.y - topY) * 190.0) * inShaftX;
+                    float baseRim = exp(-abs(bp.y - baseY) * 180.0) * inShaftX;
+                    float towFade = smoothstep(0.04, 0.18, uDepth) * smoothstep(0.99, 0.86, uDepth);
+
+                    towerAcc += (towerYellow * (colL + colR + colInL + colInR + (xBrace1 + xBrace2) * 0.65)
+                               + tronCyan * (tierDecks + roofRim + baseRim) * 1.10
+                               + towerRed * crownEdge * (1.15 + uBeat * 0.45)) * towFade;
                 }
             }
-            float mtnRidge = (0.04 + pow(max(0.0, abs(p.x) - 0.14), 1.35) * 0.55) * (0.75 + 0.25 * sin(p.x * 10.0 + l1T));
-            float ridgeGlow = exp(-abs(hy + mtnRidge) * 65.0);
-            col += uCol1.rgb * ridgeGlow * (0.72 + uMid * 0.32) * l1Bright;
+            // Streaking turret laser bolts firing across the banking sky
+            float laserStreak = exp(-abs(abs(bp.x) - abs(hy - 0.06) * 1.35) * 140.0) * step(hy, 0.05) * smoothstep(0.65, 0.99, sin(bp.y * 28.0 + l1T * 14.0));
+            col += (towerAcc + towerRed * laserStreak * (0.90 + uBeat * 0.45)) * (0.82 + uBass * 0.30) * l1Bright;
+        } else if (l1m == 8) {
+            // Mode 8 (21:ShdOrrery): Shader Dyson Hyper-Orrery & Ferrofluid Singularity — 3D Raymarched Morphing Star-Crystal, Precessing Gyroscope Gimbal Rings & Plasma Filaments
+            vec2 op = q;
+            float rO = length(op);
+            float aO = atan(op.y, op.x);
+
+            // 1. 3D Raymarched Morphing Ferrofluid Star-Crystal Singularity at the Core
+            vec3 ro = vec3(0.0, 0.0, 2.35);
+            vec3 rd = normalize(vec3(op, -1.55));
+            float tRay = 0.0;
+            float hitGlow = 0.0;
+            float minDist = 10.0;
+            vec3 hitPos = vec3(0.0);
+            for (int stp = 0; stp < 22; stp++) {
+                vec3 pos = ro + rd * tRay;
+                // 3-axis rotation of the harmonic ferrofluid polyhedron
+                pos.xz = rot2D(l1T * 0.62) * pos.xz;
+                pos.yz = rot2D(l1T * 0.44 + 0.5) * pos.yz;
+                float r3 = length(pos);
+                // Harmonic octahedral + ferrofluid spike displacement driven by bass/mid/beat
+                float oct = (abs(pos.x) + abs(pos.y) + abs(pos.z)) * 0.577;
+                float spikes = sin(pos.x * (7.0 + 2.0 * l1Den) + l1T * 2.2)
+                             * sin(pos.y * (7.0 + 2.0 * l1Den) - l1T * 1.9)
+                             * sin(pos.z * (7.0 + 2.0 * l1Den) + l1T * 1.5);
+                float coreR = 0.38 + 0.08 * uBass + 0.06 * uBeat;
+                float dCrystal = mix(r3, oct, 0.55) - coreR - spikes * (0.085 + 0.075 * uBass);
+                minDist = min(minDist, dCrystal);
+                hitGlow += exp(-max(0.0, dCrystal) * 14.0) * 0.055;
+                if (dCrystal < 0.008 || tRay > 3.6) {
+                    hitPos = pos;
+                    break;
+                }
+                tRay += dCrystal * 0.68;
+            }
+            vec3 coreCol = vec3(0.0);
+            if (minDist < 0.015) {
+                vec3 normC = normalize(hitPos + vec3(0.0001));
+                float fresnel = pow(1.0 - abs(dot(normC, rd)), 2.2);
+                float irid = 0.5 + 0.5 * sin(dot(normC, vec3(3.5, 4.2, 2.8)) * (2.0 + uBass) + l1T * 2.5);
+                coreCol = mix(uCol0.rgb, uCol1.rgb, irid) * (0.65 + 0.55 * fresnel)
+                        + mix(uCol2.rgb, vec3(1.0), 0.55) * pow(fresnel, 1.8) * (0.95 + 0.45 * uBeat);
+            }
+            coreCol += mix(uCol0.rgb, uCol2.rgb, 0.5 + 0.5 * sin(rO * 8.0 - l1T * 2.0)) * hitGlow * 0.85;
+
+            // 2. Three Interlocking 3D Precessing Dyson Gyroscope Gimbal Rings & Orbital Runes
+            vec3 gimbalCol = vec3(0.0);
+            int ringTotal = int(clamp(floor(2.0 + l1Den * 1.5), 2.0, 5.0));
+            for (int gi = 0; gi < 5; gi++) {
+                if (gi >= ringTotal) break;
+                float fgi = float(gi);
+                float ringRad = 0.48 + fgi * 0.17 + 0.03 * uBass;
+                float tiltA = l1T * (0.52 - fgi * 0.11) * (mod(fgi, 2.0) < 0.5 ? 1.0 : -1.0) + fgi * 1.1;
+                float pitchB = 1.35 + 1.45 * sin(l1T * 0.37 + fgi * 1.3);
+                vec2 gp = rot2D(tiltA) * op;
+                vec2 ellP = vec2(gp.x, gp.y * pitchB);
+                float dRing = abs(length(ellP) - ringRad);
+                float ringBeam = exp(-dRing * 75.0) + exp(-dRing * 18.0) * 0.35;
+                float runeAngle = atan(ellP.y, ellP.x);
+                float runeNodes = smoothstep(0.84, 0.99, cos(runeAngle * (6.0 + fgi * 2.0) - l1T * 3.2 * (mod(fgi, 2.0) < 0.5 ? 1.0 : -1.0)));
+                vec3 rTint = (gi % 3 == 0) ? uCol0.rgb : ((gi % 3 == 1) ? uCol1.rgb : uCol2.rgb);
+                gimbalCol += (rTint * ringBeam * (0.78 + 0.45 * runeNodes) + vec3(0.95, 0.98, 1.0) * ringBeam * runeNodes * 0.55);
+            }
+
+            // 3. Volumetric Plasma Filaments arcing between the Singularity Core and Dyson Rings
+            float plasmaArc = pow(0.5 + 0.5 * sin(aO * floor(5.0 + 2.0 * l1Den) + sin(rO * 9.0 - l1T * 3.8) * (1.6 + uBass * 1.2)), 4.5)
+                            * smoothstep(0.18, 0.38, rO) * exp(-max(0.0, rO - 0.55) * 2.8);
+            col += (coreCol + gimbalCol * (0.82 + 0.32 * uMid) + uCol2.rgb * plasmaArc * (0.85 + 0.55 * uBeat)) * (0.80 + uBass * 0.32) * l1Bright;
         } else if (l1m == 9) {
             // Mode 9: Demoscene Polygon Tunnel — Expanding Multi-Ring Geometric Polygon Tunnel & Struts
             float sides = 5.0 + mod(floor(uTime * 0.12), 4.0);
@@ -685,10 +785,14 @@ void main() {
             float webSpokes = smoothstep(0.90, 0.992, cos(aq * 16.0));
             float clawLane = floor(mod(l1T * 3.1, 16.0));
             float isClawLane = 1.0 - step(0.5, abs(laneIdx - clawLane));
+            // Scale enemy lane spawn thresholds with l1Den so low density (0.25..0.5) has only 1-2 sparse enemies
+            float flpThresh = clamp(0.92 - 0.32 * l1Den, 0.42, 0.90);
+            float tnkThresh = clamp(0.96 - 0.30 * l1Den, 0.50, 0.94);
+            float spkThresh = clamp(0.98 - 0.26 * l1Den, 0.58, 0.96);
             // Red Flippers, Magenta Tankers, Green Spikers & Cyan Fuseballs advancing along the 16 lanes in the active Towards/Away direction
-            float flipperHit = smoothstep(0.76, 0.98, sin(zWeb * 2.4 + l1T * 3.6 + laneIdx * 1.7)) * step(0.55, fract(laneIdx * 0.37));
-            float tankerHit = smoothstep(0.82, 0.99, cos(zWeb * 1.9 + l1T * 2.8 + laneIdx * 2.3)) * step(abs(laneLocal), 0.28) * step(0.62, fract(laneIdx * 0.29 + 0.1));
-            float spikerRail = step(abs(laneLocal), 0.08) * step(1.2, zWeb) * step(0.70, fract(laneIdx * 0.41));
+            float flipperHit = smoothstep(0.76, 0.98, sin(zWeb * 2.4 + l1T * 3.6 + laneIdx * 1.7)) * step(flpThresh, fract(laneIdx * 0.37));
+            float tankerHit = smoothstep(0.82, 0.99, cos(zWeb * 1.9 + l1T * 2.8 + laneIdx * 2.3)) * step(abs(laneLocal), 0.28) * step(tnkThresh, fract(laneIdx * 0.29 + 0.1));
+            float spikerRail = step(abs(laneLocal), 0.08) * step(1.2, zWeb) * step(spkThresh, fract(laneIdx * 0.41));
             float zapperShot = isClawLane * step(abs(laneLocal), 0.14) * smoothstep(0.72, 0.99, sin(zWeb * 4.5 - uTime * 14.0));
             float fade = smoothstep(0.03, 0.14, dWeb);
             vec3 tCol = mix(tempBlue, tempYellow, isClawLane) * max(webRings, webSpokes)
