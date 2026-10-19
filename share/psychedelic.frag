@@ -521,8 +521,9 @@ void main() {
             }
             col += starAcc * (0.75 + 0.45 * uBass) * l1Bright;
         } else if (l1m == 4) {
-            // Mode 4: Battlezone 1980 — Classic Atari Green Vector Horizon, Volcanoes, Tanks & Grid (No Cockpit)
+            // Mode 4: Battlezone 1980 — Classic Atari Green Vector Horizon, Volcanoes, Advancing Tanks, Pyramid Obstacles & Flying Saucer (No Cockpit)
             vec3 bzGreen = vec3(0.08, 1.0, 0.28);
+            vec3 bzRed = vec3(1.0, 0.16, 0.16);
             float hy = qt_TexCoord0.y - 0.50;
             float mtnH = (0.06 + 0.05 * sin(p.x * 3.8 + l1T * 0.25) + 0.035 * abs(cos(p.x * 8.2 - l1T * 0.12)));
             float mtnLine = exp(-abs(hy + mtnH) * 95.0);
@@ -534,21 +535,41 @@ void main() {
                 float gz = z * (2.2 * l1Den) + l1T * 2.5;
                 gridVal = max(smoothstep(0.91, 0.99, cos(gx * PI)), smoothstep(0.89, 0.99, cos(gz * PI))) * smoothstep(0.003, 0.06, hy);
             }
-            // Vector wireframe tank & turret silhouette in open field (zero cockpit/reticle)
-            vec2 tp = p - vec2(sin(l1T * 0.6) * 0.18, 0.14);
+            // Lead & flank wireframe tanks + turrets + cannon barrels in open field (zero cockpit/reticle)
+            vec2 tp = p - vec2(sin(l1T * 0.6) * 0.20, 0.15 + 0.04 * sin(l1T * 0.9));
             float tankHull = exp(-abs(max(abs(tp.x) - 0.09, abs(tp.y) - 0.032)) * 140.0) * step(abs(tp.x), 0.11) * step(abs(tp.y), 0.048);
             float tankTurret = exp(-abs(max(abs(tp.x) - 0.045, abs(tp.y + 0.045) - 0.018)) * 150.0) * step(abs(tp.x), 0.06) * step(abs(tp.y + 0.045), 0.03);
-            col += bzGreen * (mtnLine * 0.85 + horLine * 0.95 + gridVal * 0.72 + (tankHull + tankTurret) * 0.95) * (0.78 + uBass * 0.28) * l1Bright;
+            float tankBarrel = exp(-abs(tp.x) * 180.0) * step(-0.095, tp.y) * step(tp.y, -0.045);
+            // Second flank tank + field pyramid obstacle + airborne saucer UFO
+            vec2 tp2 = (p - vec2(-cos(l1T * 0.48) * 0.34, 0.08)) * 1.45;
+            float flankTank = exp(-abs(max(abs(tp2.x) - 0.08, abs(tp2.y) - 0.028)) * 135.0) * step(abs(tp2.x), 0.095) * step(abs(tp2.y), 0.042);
+            vec2 pyrP = p - vec2(cos(l1T * 0.35 + 1.4) * 0.30, 0.11);
+            float pyrEdge = exp(-abs(abs(pyrP.x) + (pyrP.y - 0.03) * 0.75) * 140.0) * step(abs(pyrP.x), 0.065) * step(abs(pyrP.y), 0.055);
+            vec2 ufoP = p - vec2(sin(l1T * 0.85 + 2.1) * 0.28, -0.14 + 0.02 * cos(l1T * 1.7));
+            float ufoSaucer = exp(-abs(length(vec2(ufoP.x * 0.65, ufoP.y * 2.2)) - 0.042) * 145.0);
+            col += (bzGreen * (mtnLine * 0.85 + horLine * 0.95 + gridVal * 0.72 + (tankHull + tankTurret + tankBarrel + flankTank + pyrEdge) * 0.95)
+                 + bzRed * ufoSaucer * (0.85 + uBeat * 0.40)) * (0.78 + uBass * 0.28) * l1Bright;
         } else if (l1m == 5) {
-            // Mode 5: Shader Death Star Trench — 3D Perspective Trench Corridor, Struts & Laser Streaks (Zero Cockpit)
+            // Mode 5: Shader Death Star Trench — 3D Perspective Trench Corridor, Catwalk Barriers, TIE Fighters & Laser Streaks (Zero Cockpit)
             vec2 tp = p - vec2(sin(l1T * 0.45) * 0.08, cos(l1T * 0.35) * 0.05);
             float wallDist = max(abs(tp.x) * 0.82, max(0.0, tp.y) * 1.15);
             float zTrench = 0.26 / max(0.025, wallDist);
             float bayRibs = smoothstep(0.86, 0.98, cos((zTrench * 1.8 * l1Den + l1T * 3.6) * PI));
+            float catwalkBarriers = smoothstep(0.92, 0.995, cos((zTrench * 0.52 * l1Den + l1T * 1.05) * PI))
+                                  * step(abs(tp.x), 0.38) * smoothstep(0.02, 0.16, abs(tp.y + 0.04));
             float longRails = smoothstep(0.90, 0.99, cos(tp.y / max(0.03, abs(tp.x)) * 6.0));
             float fade = smoothstep(0.025, 0.12, wallDist);
+            // Advancing TIE fighter silhouette (central cockpit pod + twin hex wing panels + wing strut)
+            float tieScale = 0.65 + 0.35 * fract(l1T * 0.42);
+            vec2 tieP = (tp - vec2(sin(l1T * 1.15) * 0.14, -0.05 + cos(l1T * 0.95) * 0.06)) / max(0.35, tieScale);
+            float tiePod = exp(-abs(length(tieP) - 0.028) * 160.0);
+            float tieStrut = exp(-abs(tieP.y) * 180.0) * step(abs(tieP.x), 0.068);
+            float tieWings = exp(-abs(abs(tieP.x) - 0.068) * 155.0) * step(abs(tieP.y), 0.058);
+            float tieShape = clamp(tiePod + tieStrut + tieWings, 0.0, 1.2);
             float laserLine = exp(-abs(abs(tp.x) - abs(tp.y) * 0.85) * 120.0) * step(0.0, tp.y) * smoothstep(0.6, 0.98, sin(zTrench * 3.0 + uTime * 12.0));
             vec3 trenchCol = uCol0.rgb * (bayRibs + longRails * 0.65) * fade * 0.78
+                           + uCol2.rgb * catwalkBarriers * fade * (0.85 + uBass * 0.42)
+                           + vec3(0.45, 0.88, 1.0) * tieShape * (0.90 + uBeat * 0.45)
                            + vec3(0.2, 1.0, 0.35) * laserLine * (0.85 + uBeat * 0.4);
             col += trenchCol * (0.75 + uBass * 0.32) * l1Bright;
         } else if (l1m == 6) {
@@ -700,8 +721,16 @@ void main() {
             float fade = smoothstep(0.022, 0.14, octDist);
             float quadLaser = exp(-abs(abs(tp.x) - abs(tp.y) * 0.88) * 115.0)
                             * smoothstep(0.62, 0.99, sin(zTrench * 3.4 - uTime * 14.0));
+            // Advancing TIE fighter enemy in the warping trench
+            float tieScaleW = 0.62 + 0.38 * fract(l1T * 0.48 + 0.3);
+            vec2 tiePW = (tp - vec2(sin(l1T * 1.25) * 0.12, cos(l1T * 0.92) * 0.08)) / max(0.35, tieScaleW);
+            float tiePodW = exp(-abs(length(tiePW) - 0.026) * 165.0);
+            float tieStrutW = exp(-abs(tiePW.y) * 185.0) * step(abs(tiePW.x), 0.064);
+            float tieWingsW = exp(-abs(abs(tiePW.x) - 0.064) * 155.0) * step(abs(tiePW.y), 0.055);
+            float tieShapeW = clamp(tiePodW + tieStrutW + tieWingsW, 0.0, 1.2);
             vec3 trenchCol = mix(uCol0.rgb, uCol1.rgb, 0.5 + 0.5 * sin(zTrench * 0.35)) * (bayRibs + longRails * 0.72 + greeblePanels) * fade * 0.82
                            + uCol2.rgb * catwalkGirders * fade * (0.85 + uBass * 0.45)
+                           + vec3(0.45, 0.88, 1.0) * tieShapeW * (0.92 + uBeat * 0.45)
                            + mix(vec3(1.0, 0.18, 0.14), vec3(0.18, 1.0, 0.32), step(0.0, tp.y)) * quadLaser * (0.95 + uBeat * 0.45);
             col += trenchCol * (0.78 + uBass * 0.34) * l1Bright;
         }

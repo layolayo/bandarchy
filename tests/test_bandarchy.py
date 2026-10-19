@@ -2540,17 +2540,25 @@ console.log('OK');
         for v_idx in range(15):
             self.assertIn(f"vid == {v_idx}", photo_frag_src)
 
-        # 2. Verify psychedelic.frag has 12 GPU L1 Worlds (l1m == 0..10 + else Death Star 3D Warp Trench), no Battlezone cockpit, no Death Star targetBox, and SynthGrid keyboards
+        # 2. Verify psychedelic.frag has 12 GPU L1 Worlds (l1m == 0..10 + else Death Star 3D Warp Trench), no Battlezone cockpit, no Death Star targetBox, SynthGrid keyboards, and Battlezone/Death Star enemies & barriers
         self.assertIn("l1m == 10", psych_frag_src)
         self.assertIn("Death Star 3D Warp Trench", psych_frag_src)
         self.assertNotIn("targetBox", psych_frag_src)
         self.assertIn("inBlackKey", psych_frag_src)
+        self.assertIn("catwalkBarriers", psych_frag_src)
+        self.assertIn("tieShape", psych_frag_src)
+        self.assertIn("tieShapeW", psych_frag_src)
+        self.assertIn("ufoSaucer", psych_frag_src)
 
-        # 3. Verify Visualiser.qml has bottom-left keybinding toast, 24-bar Spectrum default + 4-bar toggle, Quick Bar steppers, and full drawer repeaters
+        # 3. Verify Visualiser.qml has bottom-left keybinding toast, 24-bar Spectrum bound to root.bands + 4-bar toggle, Quick Bar steppers, and full drawer repeaters
         self.assertIn("id: keybindingToastBadge", viz_src)
         self.assertIn("function showKeybindingFeedback(", viz_src)
+        self.assertIn("property bool _inHudPillInteraction: false", viz_src)
+        self.assertIn("if (root._inKeybindingDispatch || (!root._inHudPillInteraction && !root._internalLayerChange))", viz_src)
         self.assertIn("id: bottomMeterBox", viz_src)
         self.assertIn("property bool showSpectrumMeter: true", viz_src)
+        self.assertIn("bands: root.bands", viz_src)
+        self.assertIn("readonly property var spectrumBands: root.bands", viz_src)
         self.assertIn("barCount: 24", viz_src)
         self.assertIn("model: root.layer1Modes.length", viz_src)
         self.assertIn("model: root.layer1EqStyles.length", viz_src)
@@ -2676,7 +2684,7 @@ for (let eq = 0; eq < 24; eq++) {
     }
 }
 
-// 3. Verify all 14 Vector craft styles (0..13) render in drawLayer1BeatShapes
+// 3. Verify all 14 Vector craft styles (0..13) render in drawLayer1BeatShapes, including in 17. ShdBattlezone (layer1Mode=16) and 5. Battlezone 1980 (layer1Mode=4)
 for (let sh = 0; sh < 14; sh++) {
     const st = createState();
     const cfg = normaliseConfig({
@@ -2698,9 +2706,93 @@ for (let sh = 0; sh < 14; sh++) {
     if (ctx.strokeCount < 4) {
         throw new Error(`Vector craft style ${sh} (${LAYER1_SHAPE_STYLES[sh]}) failed to draw strokes`);
     }
+
+    // Also verify 17. ShdBattlezone (layer1Mode=16, gpuL1Active=true) draws 3: Vectors
+    const stShdBz = createState();
+    const cfgShdBz = normaliseConfig({
+        gpuShaderEnabled: true,
+        gpuL1Active: true,
+        layer1Enabled: true,
+        layer1FieldEnabled: true,
+        layer1Mode: 16,
+        layer1EqEnabled: false,
+        layer1ShapesEnabled: true,
+        layer1ShapeStyle: sh,
+        layer2Enabled: false,
+        layer3Enabled: false
+    }, 0, []);
+    stepState(stShdBz, bands, true, cfgShdBz, 0.04);
+    const ctxShdBz = makeTrackCtx();
+    renderFrame(ctxShdBz, 640, 360, stShdBz, 0, theme, [], [], [], cfgShdBz, null);
+    if (ctxShdBz.strokeCount < 2) {
+        throw new Error(`ShdBattlezone (layer1Mode=16) failed to draw vector craft style ${sh}`);
+    }
+
+    // Also verify OG 5. Battlezone 1980 (layer1Mode=4, gpuL1Active=false) draws vector craft styles 6..13 via SUB-SYSTEM 3 in addition to field obstacles
+    if (sh >= 6) {
+        const stOgBz = createState();
+        const cfgOgBzNoShapes = normaliseConfig({
+            gpuShaderEnabled: true,
+            gpuL1Active: false,
+            layer1Enabled: true,
+            layer1FieldEnabled: true,
+            layer1Mode: 4,
+            layer1EqEnabled: false,
+            layer1ShapesEnabled: false,
+            layer1ShapeStyle: sh,
+            layer2Enabled: false,
+            layer3Enabled: false
+        }, 0, []);
+        stepState(stOgBz, bands, true, cfgOgBzNoShapes, 0.04);
+        const ctxNoSh = makeTrackCtx();
+        renderFrame(ctxNoSh, 640, 360, stOgBz, 0, theme, [], [], [], cfgOgBzNoShapes, null);
+
+        const stOgBzSh = createState();
+        const cfgOgBzSh = normaliseConfig({
+            gpuShaderEnabled: true,
+            gpuL1Active: false,
+            layer1Enabled: true,
+            layer1FieldEnabled: true,
+            layer1Mode: 4,
+            layer1EqEnabled: false,
+            layer1ShapesEnabled: true,
+            layer1ShapeStyle: sh,
+            layer2Enabled: false,
+            layer3Enabled: false
+        }, 0, []);
+        stepState(stOgBzSh, bands, true, cfgOgBzSh, 0.04);
+        const ctxWithSh = makeTrackCtx();
+        renderFrame(ctxWithSh, 640, 360, stOgBzSh, 0, theme, [], [], [], cfgOgBzSh, null);
+        if (ctxWithSh.strokeCount <= ctxNoSh.strokeCount) {
+            throw new Error(`OG Battlezone (layer1Mode=4) did not add SUB-SYSTEM 3 strokes for style ${sh}`);
+        }
+    }
 }
 
-// 4. Verify Layer 4 Geometry (0..12) applies 3D tubular shading with round caps/joins
+// 4. Verify Layer 5 Vortex (layer4Enabled=true) + OG vector world (layer1Mode=0) keeps gpuOn=true (clearRect instead of opaque fillRect) even if backdropEnabled is omitted
+{
+    const stVortex = createState();
+    const cfgVortex = {
+        gpuShaderEnabled: true,
+        gpuL1Active: false,
+        layer1Enabled: true,
+        layer1FieldEnabled: true,
+        layer1Mode: 0,
+        layer1EqEnabled: false,
+        layer1ShapesEnabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false,
+        layer4Enabled: true
+    };
+    stepState(stVortex, bands, true, cfgVortex, 0.03);
+    const ctxVortex = makeTrackCtx();
+    renderFrame(ctxVortex, 640, 360, stVortex, 0, theme, [], [], [], cfgVortex, null);
+    if (ctxVortex.clearCount < 1) {
+        throw new Error('Expected clearRect when layer4Enabled=true with OG vector world (layer1Mode=0)');
+    }
+}
+
+// 5. Verify Layer 4 Geometry (0..12) applies 3D tubular shading with round caps/joins
 for (let vmIdx = 0; vmIdx < 13; vmIdx++) {
     const st = createState();
     const cfg = normaliseConfig({
@@ -2718,7 +2810,7 @@ for (let vmIdx = 0; vmIdx < 13; vmIdx++) {
     }
 }
 
-// 5. Verify Layer 6 Typography clamps font size to <= 44px even at extreme scale (layer3Scale=2.5, beatPulse=1.0, bass=1.0)
+// 6. Verify Layer 6 Typography clamps font size to <= 44px even at extreme scale (layer3Scale=2.5, beatPulse=1.0, bass=1.0)
 const stTypo = createState();
 const cfgTypo = normaliseConfig({
     layer1Enabled: false,

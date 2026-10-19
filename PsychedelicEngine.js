@@ -2180,7 +2180,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
     var eqOn = cfg && cfg.layer1EqEnabled !== undefined ? Boolean(cfg.layer1EqEnabled) : (cfg && Number(cfg.layer1Mode) === 4)
     var shapesOn = cfg && cfg.layer1ShapesEnabled !== undefined ? Boolean(cfg.layer1ShapesEnabled) : true
     var l2On = cfg ? Boolean(cfg.layer2Enabled) : true
-    var l2BackdropOn = cfg ? Boolean(cfg.backdropEnabled) : false
+    var l2VizMode = cfg ? Number(cfg.layer2Mode !== undefined ? cfg.layer2Mode : cfg.mode) : 0
+    var l2BackdropOn = cfg ? Boolean(cfg.backdropEnabled || cfg.layer4Enabled || (l2On && cfg.layer2VizEnabled !== false && l2VizMode === 5)) : false
     var l3On = cfg ? Boolean(cfg.layer3Enabled) : true
     var rawL1Mode = cfg ? (((Number(cfg.layer1Mode) || 0) % ALL_LAYER1_MODES.length + ALL_LAYER1_MODES.length) % ALL_LAYER1_MODES.length) : 0
     var l1Mode = (rawL1Mode === 23) ? 5 : ((rawL1Mode >= 12) ? (rawL1Mode - 12) : rawL1Mode)
@@ -2720,8 +2721,39 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                             ctx.lineTo(bpRec[bEdgesBz[bei + 1]].x, bpRec[bEdgesBz[bei + 1]].y)
                         }
                     }
-                } else if (!shapesOn || activeShapeStyle === 0 || activeShapeStyle === 3) {
-                    // Style 0/3 or Default Battlezone Obstacles: 3D Sacred Polyhedra (Pyramids, Monolith Cubes & Octahedra/Prisms)
+                } else if (shapesOn && activeShapeStyle === 4) {
+                    // Style 4: 3D Merkaba Starbursts (Dual-Apex 3D Star Tetrahedra hovering & flying over the terrain)
+                    var pts2Bz = 12
+                    var starRingBz = []
+                    for (var svB = 0; svB < pts2Bz; svB++) {
+                        var ang2B = (svB / pts2Bz) * Math.PI * 2
+                        var r2B = (svB % 2 === 0) ? 1.0 : 0.48
+                        var szB = (svB % 2 === 0) ? ((svB % 4 === 0) ? 0.32 : -0.32) : 0.0
+                        var sPtB = project3DPoint(Math.cos(ang2B) * r2B, Math.sin(ang2B) * r2B, szB, rx, ry, rz, obX, hoverY, obScale * 1.2, 3.6)
+                        starRingBz.push(sPtB)
+                        if (svB === 0) ctx.moveTo(sPtB.x, sPtB.y); else ctx.lineTo(sPtB.x, sPtB.y)
+                    }
+                    ctx.closePath()
+                    var apexFB = project3DPoint(0, 0,  0.68, rx, ry, rz, obX, hoverY, obScale * 1.2, 3.6)
+                    var apexBB = project3DPoint(0, 0, -0.68, rx, ry, rz, obX, hoverY, obScale * 1.2, 3.6)
+                    for (var sv2B = 0; sv2B < pts2Bz; sv2B += 2) {
+                        ctx.moveTo(starRingBz[sv2B].x, starRingBz[sv2B].y); ctx.lineTo(apexFB.x, apexFB.y)
+                        ctx.moveTo(starRingBz[sv2B].x, starRingBz[sv2B].y); ctx.lineTo(apexBB.x, apexBB.y)
+                    }
+                } else if (shapesOn && activeShapeStyle === 5) {
+                    // Style 5: 3D Sonic Boom Rings (3D Gyroscopic Harmonic Portal Rings across the landscape & sky)
+                    var ringSegsBz = 24
+                    for (var rs2B = 0; rs2B <= ringSegsBz; rs2B++) {
+                        var ang1B = (rs2B / ringSegsBz) * Math.PI * 2
+                        var mod1B = 1.0 + Math.sin(ang1B * 4.0) * state.bass * 0.08
+                        var rzWaveB = Math.sin(ang1B * 3.0 + l1T * 2.5) * 0.18 * (0.4 + state.bass)
+                        var rp1B = project3DPoint(Math.cos(ang1B) * mod1B, Math.sin(ang1B) * mod1B, rzWaveB, rx * 0.65, ry * 0.65, rz, obX, hoverY, obScale * 1.25, 3.6)
+                        if (rs2B === 0) ctx.moveTo(rp1B.x, rp1B.y); else ctx.lineTo(rp1B.x, rp1B.y)
+                    }
+                    ctx.closePath()
+                } else {
+                    // Style 0/3 or Default Battlezone Obstacles (including when styles 6..13 are rendered by SUB-SYSTEM 3):
+                    // 3D Sacred Polyhedra (Pyramids, Monolith Cubes & Octahedra/Prisms)
                     if (ob % 3 === 1) {
                         var pyrV = [
                             [-1.0,  0.75, -1.0],
@@ -2773,36 +2805,6 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                             ctx.lineTo(botPtsBz[v3B].x, botPtsBz[v3B].y)
                         }
                     }
-                } else if (activeShapeStyle === 4) {
-                    // Style 4: 3D Merkaba Starbursts (Dual-Apex 3D Star Tetrahedra hovering & flying over the terrain)
-                    var pts2Bz = 12
-                    var starRingBz = []
-                    for (var svB = 0; svB < pts2Bz; svB++) {
-                        var ang2B = (svB / pts2Bz) * Math.PI * 2
-                        var r2B = (svB % 2 === 0) ? 1.0 : 0.48
-                        var szB = (svB % 2 === 0) ? ((svB % 4 === 0) ? 0.32 : -0.32) : 0.0
-                        var sPtB = project3DPoint(Math.cos(ang2B) * r2B, Math.sin(ang2B) * r2B, szB, rx, ry, rz, obX, hoverY, obScale * 1.2, 3.6)
-                        starRingBz.push(sPtB)
-                        if (svB === 0) ctx.moveTo(sPtB.x, sPtB.y); else ctx.lineTo(sPtB.x, sPtB.y)
-                    }
-                    ctx.closePath()
-                    var apexFB = project3DPoint(0, 0,  0.68, rx, ry, rz, obX, hoverY, obScale * 1.2, 3.6)
-                    var apexBB = project3DPoint(0, 0, -0.68, rx, ry, rz, obX, hoverY, obScale * 1.2, 3.6)
-                    for (var sv2B = 0; sv2B < pts2Bz; sv2B += 2) {
-                        ctx.moveTo(starRingBz[sv2B].x, starRingBz[sv2B].y); ctx.lineTo(apexFB.x, apexFB.y)
-                        ctx.moveTo(starRingBz[sv2B].x, starRingBz[sv2B].y); ctx.lineTo(apexBB.x, apexBB.y)
-                    }
-                } else {
-                    // Style 5: 3D Sonic Boom Rings (3D Gyroscopic Harmonic Portal Rings across the landscape & sky)
-                    var ringSegsBz = 24
-                    for (var rs2B = 0; rs2B <= ringSegsBz; rs2B++) {
-                        var ang1B = (rs2B / ringSegsBz) * Math.PI * 2
-                        var mod1B = 1.0 + Math.sin(ang1B * 4.0) * state.bass * 0.08
-                        var rzWaveB = Math.sin(ang1B * 3.0 + l1T * 2.5) * 0.18 * (0.4 + state.bass)
-                        var rp1B = project3DPoint(Math.cos(ang1B) * mod1B, Math.sin(ang1B) * mod1B, rzWaveB, rx * 0.65, ry * 0.65, rz, obX, hoverY, obScale * 1.25, 3.6)
-                        if (rs2B === 0) ctx.moveTo(rp1B.x, rp1B.y); else ctx.lineTo(rp1B.x, rp1B.y)
-                    }
-                    ctx.closePath()
                 }
                 ctx.stroke()
             }
@@ -5930,8 +5932,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
     // (Spawning at the distant vanishing point and moving all the way OFF screen;
     //  skipped when Battlezone `l1Mode === 4` is active since Mode 4 renders its own 3D terrain & airborne craft!)
     // =========================================================================
-    if (shapesOn && !(fieldOn && l1Mode === 4) && state.shockwaves.length > 0) {
-        var shapeStyle = cfg && cfg.layer1ShapeStyle !== undefined ? ((Number(cfg.layer1ShapeStyle) || 0) % LAYER1_SHAPE_STYLES.length) : 0
+    var shapeStyle = cfg && cfg.layer1ShapeStyle !== undefined ? ((Number(cfg.layer1ShapeStyle) || 0) % LAYER1_SHAPE_STYLES.length) : 0
+    if (shapesOn && (!(fieldOn && !gpuL1Active && l1Mode === 4) || shapeStyle >= 6) && state.shockwaves.length > 0) {
         var shapeSpin = cfg && cfg.layer1ShapeSpin !== undefined ? clamp(Number(cfg.layer1ShapeSpin), -2.5, 2.5) : 0.25
         var shapeScale = cfg && cfg.layer1ShapeScale !== undefined ? clamp(Number(cfg.layer1ShapeScale), 0.3, 2.5) : 1.0
         var shapeDensityDraw = cfg && cfg.layer1ShapeDensity !== undefined ? clamp(Number(cfg.layer1ShapeDensity), 0.25, 2.5) : 1.0

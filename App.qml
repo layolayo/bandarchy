@@ -575,7 +575,9 @@ ShellRoot {
                     event.accepted = true
                 }
                 else if (event.key === Qt.Key_At || event.key === Qt.Key_QuoteDbl || event.text === "@" || event.text === "\"") { appVisualiser.cyclePhotoVariantEffect(-1); event.accepted = true }
-                else if (event.key === Qt.Key_AsciiTilde || event.text === "~") { appVisualiser.cyclePhotoVariantEffect(1); event.accepted = true }
+                else if (event.key === Qt.Key_Colon || event.text === ":" || (event.key === Qt.Key_Semicolon && (event.modifiers & Qt.ShiftModifier))) { appVisualiser.togglePhotoPlaneShearByKey(); event.accepted = true }
+                else if (event.key === Qt.Key_Semicolon || event.text === ";") { appVisualiser.cyclePhotoPoolModeByKey(1); event.accepted = true }
+                else if (event.key === Qt.Key_AsciiTilde || event.text === "~") { appVisualiser.togglePhotoAutoMotionByKey(); event.accepted = true }
                 else if (event.key === Qt.Key_L) { appVisualiser.showLayerDrawer = !appVisualiser.showLayerDrawer; event.accepted = true }
                 else if (event.key === Qt.Key_H) {
                     if ((event.modifiers & Qt.ShiftModifier) || (appVisualiser.layer1Enabled && appVisualiser.layer1FieldEnabled && appVisualiser.layer1Mode === 11)) {

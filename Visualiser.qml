@@ -25,6 +25,7 @@ FocusScope {
     focus: true
 
     property var bands: []
+    readonly property var spectrumBands: root.bands
     property bool playing: false
     property string trackTitle: ""
     property string trackArtist: ""
@@ -685,6 +686,7 @@ FocusScope {
     signal requestPhotoRefreshStatus()
     signal requestPhotoPick(string category, string stem)
     property bool _inKeybindingDispatch: false
+    property bool _inHudPillInteraction: false
     property string keybindingToastText: ""
     property real keybindingToastOpacity: 0.0
     function showKeybindingFeedback(message) {
@@ -695,8 +697,16 @@ FocusScope {
         keybindingToastTimer.restart()
     }
     function suppressActionFeedback(message) {
-        if (root._inKeybindingDispatch) {
+        if (root._inKeybindingDispatch || (!root._inHudPillInteraction && !root._internalLayerChange)) {
             root.showKeybindingFeedback(message)
+        }
+    }
+    function runAsKeybinding(fn) {
+        root._inKeybindingDispatch = true
+        try {
+            if (typeof fn === "function") fn()
+        } finally {
+            root._inKeybindingDispatch = false
         }
     }
 
@@ -2919,10 +2929,6 @@ FocusScope {
             root.photoMotionMode = st.motionMode
             root.applyRandomisedStateMotionToRoot(st)
             root.requestPhotoPick(lockedAutoCat, "")
-            var autoModeObj = PhotoMotion.PHOTO_MOTION_MODES[root.photoMotionMode]
-            if (autoModeObj) {
-                root.suppressActionFeedback("🎲 Auto Photo-Motion [~]: " + autoModeObj.code + " · " + autoModeObj.name)
-            }
         } else if (st._lastStepInfo && st._lastStepInfo.motionControlsRandomisedOnTimer) {
             root.applyRandomisedStateMotionToRoot(st)
             if (!root.photoHoldActive) {
@@ -3594,7 +3600,8 @@ FocusScope {
             return
         }
         var pSt = root.syncPhotoStateFromRoot()
-        if ((root.photoHoldActive || (pSt && pSt.holdActive)) && root.layer1FieldEnabled && root.layer1Mode === PhotoMotion.LAYER1_WORLD12_INDEX) {
+        if ((root.photoHoldActive || (pSt && pSt.holdActive) || root.photoAutoMotionEvents || root.photoRandomiseMotionControls)
+            && root.layer1FieldEnabled && root.layer1Mode === PhotoMotion.LAYER1_WORLD12_INDEX) {
             root.randomisePhotoMotionSettings()
             return
         }
@@ -3985,15 +3992,25 @@ FocusScope {
                     root.forceActiveFocus()
                 }
                 flashTimer.restart()
-                if (mouse.button === Qt.RightButton) {
-                    pill.rightClicked()
-                } else {
-                    pill.clicked()
+                root._inHudPillInteraction = true
+                try {
+                    if (mouse.button === Qt.RightButton) {
+                        pill.rightClicked()
+                    } else {
+                        pill.clicked()
+                    }
+                } finally {
+                    root._inHudPillInteraction = false
                 }
             }
             onWheel: wheel => {
                 if (wheel.angleDelta.y !== 0) {
-                    pill.wheelScrolled(wheel.angleDelta.y > 0 ? 1 : -1)
+                    root._inHudPillInteraction = true
+                    try {
+                        pill.wheelScrolled(wheel.angleDelta.y > 0 ? 1 : -1)
+                    } finally {
+                        root._inHudPillInteraction = false
+                    }
                 }
             }
         }
@@ -4633,24 +4650,31 @@ FocusScope {
         running: root.visible && root.stageMode === "visualiser" && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11 && (root.photoAutoMotionEvents || root.photoRandomiseMotionControls) && !root.photoHoldActive
         repeat: true
         onTriggered: {
-            var pSt = root.syncPhotoStateFromRoot()
-            if (root.photoAutoMotionEvents) {
-                if ((Number(pSt.autoMotionElapsedSec) || 0.0) >= 1.5 || !pSt._lastStepInfo) {
-                    root.triggerRandomPhotoMotionEvent()
+            root._inHudPillInteraction = true
+            try {
+                var pSt = root.syncPhotoStateFromRoot()
+                if (root.photoAutoMotionEvents) {
+                    if ((Number(pSt.autoMotionElapsedSec) || 0.0) >= 1.5 || !pSt._lastStepInfo) {
+                        root.triggerRandomPhotoMotionEvent()
+                    }
+                } else if (root.photoRandomiseMotionControls) {
+                    if ((Number(pSt.autoMotionElapsedSec) || 0.0) >= 1.5 || !pSt._lastStepInfo) {
+                        PhotoMotion.randomiseMotionControlsForEvent(pSt)
+                        root.applyRandomisedStateMotionToRoot(pSt)
+                        if (!root.photoHoldActive) {
+                            var lockedRandCtrlCat2 = root.resolveCurrentPhotoCategory()
+                            root.photoActiveCategory = lockedRandCtrlCat2
+                            pSt.activeCategory = lockedRandCtrlCat2
+                            root.photoPreviousVariants = root.photoActiveVariants || ({})
+                            root.requestPhotoPick(lockedRandCtrlCat2, "")
+                        }
+                        pSt.autoMotionElapsedSec = 0.0
+                        pSt.autoMotionAccumulatedPhase = 0.0
+                        root.scheduleSaveVisualiserConfig()
+                    }
                 }
-            } else if (root.photoRandomiseMotionControls) {
-                PhotoMotion.randomiseMotionControlsForEvent(pSt)
-                root.applyRandomisedStateMotionToRoot(pSt)
-                if (!root.photoHoldActive) {
-                    var lockedRandCtrlCat2 = root.resolveCurrentPhotoCategory()
-                    root.photoActiveCategory = lockedRandCtrlCat2
-                    pSt.activeCategory = lockedRandCtrlCat2
-                    root.photoPreviousVariants = root.photoActiveVariants || ({})
-                    root.requestPhotoPick(lockedRandCtrlCat2, "")
-                }
-                pSt.autoMotionElapsedSec = 0.0
-                pSt.autoMotionAccumulatedPhase = 0.0
-                root.scheduleSaveVisualiserConfig()
+            } finally {
+                root._inHudPillInteraction = false
             }
         }
     }
@@ -4661,30 +4685,35 @@ FocusScope {
         running: root.visible && root.autoCycle && root.stageMode === "visualiser"
         repeat: true
         onTriggered: {
-            if (root.presetTransitionEnabled) {
-                root.cycleSelectedPreset(1)
-                return
-            }
-            if (root.layer2AutoRandomise) {
-                root.randomiseLayer2()
-            }
-            if (root.layer1AutoRandomise) {
-                root.randomiseLayer1()
-            }
-            if (root.layerEqAutoRandomise) {
-                root.randomiseLayerEq()
-            }
-            if (root.layerVectorsAutoRandomise) {
-                root.randomiseLayerVectors()
-            }
-            if (root.layer3AutoRandomise) {
-                root.randomiseLayer3()
-            }
-            if (root.layer4AutoRandomise) {
-                root.randomiseLayer4()
-            }
-            if (root.anyLayerAutoRandomiseActive) {
-                root.paletteIndex = (root.paletteIndex + 1) % Engine.PALETTE_NAMES.length
+            root._inHudPillInteraction = true
+            try {
+                if (root.presetTransitionEnabled) {
+                    root.cycleSelectedPreset(1)
+                    return
+                }
+                if (root.layer2AutoRandomise) {
+                    root.randomiseLayer2()
+                }
+                if (root.layer1AutoRandomise) {
+                    root.randomiseLayer1()
+                }
+                if (root.layerEqAutoRandomise) {
+                    root.randomiseLayerEq()
+                }
+                if (root.layerVectorsAutoRandomise) {
+                    root.randomiseLayerVectors()
+                }
+                if (root.layer3AutoRandomise) {
+                    root.randomiseLayer3()
+                }
+                if (root.layer4AutoRandomise) {
+                    root.randomiseLayer4()
+                }
+                if (root.anyLayerAutoRandomiseActive) {
+                    root.paletteIndex = (root.paletteIndex + 1) % Engine.PALETTE_NAMES.length
+                }
+            } finally {
+                root._inHudPillInteraction = false
             }
         }
     }
@@ -4695,7 +4724,12 @@ FocusScope {
         running: root.visible && root.presetTransitionEnabled && root.stageMode === "visualiser"
         repeat: true
         onTriggered: {
-            root.cycleSelectedPreset(1)
+            root._inHudPillInteraction = true
+            try {
+                root.cycleSelectedPreset(1)
+            } finally {
+                root._inHudPillInteraction = false
+            }
         }
     }
 
@@ -6691,7 +6725,7 @@ FocusScope {
 
                                             Text {
                                                 Layout.fillWidth: true
-                                                text: (presetData.l1Enabled ? ("1:Worlds:" + (Engine.LAYER1_MODES[presetData.l1Mode || 0] || "").split(" ")[0]) : "1:Worlds:OFF")
+                                                text: (presetData.l1Enabled ? ("1:Worlds:" + (root.layer1Modes[presetData.l1Mode || 0] || "").split(" ")[0]) : "1:Worlds:OFF")
                                                     + " · "
                                                     + (presetData.l2Enabled ? ("4:Geometry:" + (Engine.MODE_NAMES[presetData.l2Mode || 0] || "").split(" ")[0]) : "4:Geometry:OFF")
                                                     + " · "
@@ -9920,7 +9954,7 @@ FocusScope {
                         anchors.fill: parent
                         anchors.margins: 3
                         visible: bottomMeterBox.showSpectrumMeter
-                        bands: root.spectrumBands
+                        bands: root.bands
                         active: root.playing && root.showHud && root.isFullscreen && bottomMeterBox.showSpectrumMeter
                         barCount: 24
                         accentColour: root.accentColour
