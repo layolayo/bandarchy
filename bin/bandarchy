@@ -37,7 +37,16 @@ import zlib
 
 os.umask(0o077)
 
-if len(sys.argv) < 2 or sys.argv[1] not in ("status", "now", "cmd", "visualiser-config", "kill", "restart"):
+if len(sys.argv) < 2 or sys.argv[1] not in (
+    "status",
+    "now",
+    "cmd",
+    "visualiser-config",
+    "kill",
+    "restart",
+    "photo-pick",
+    "photo-status",
+):
     import concurrent.futures
     import ipaddress
     import sqlite3
@@ -4977,13 +4986,14 @@ def get_playback_state() -> dict:
         track_id = entry.get("id") or last.get("id") or ""
         art_path = entry.get("artPath") or last.get("artPath") or ""
         local_cand = str(entry.get("localPath") or entry.get("target") or last.get("localPath") or last.get("target") or "")
+        art_probed_idle = bool(entry.get("_artProbed") or (isinstance(last, dict) and last.get("_artProbed")))
         if local_cand and os.path.isfile(local_cand) and (
             not title
             or not artist
             or not album
-            or album.endswith(" — Singles")
+            or (not art_probed_idle and album.endswith(" — Singles"))
             or not art_path
-            or str(art_path).endswith(".svg")
+            or (str(art_path).endswith(".svg") and not art_probed_idle)
         ):
             fmeta = read_audio_metadata(local_cand, extract_art=(not art_path or str(art_path).endswith(".svg")))
             if fmeta.get("title") and (not title or re.match(r"^.+?\s+-\s+.+?\s+-\s+\d{1,3}\s+", title)):
@@ -5064,15 +5074,27 @@ def get_playback_state() -> dict:
     meta = mpv_get("metadata") or {}
     meta = {str(k).lower(): v for k, v in meta.items()} if isinstance(meta, dict) else {}
 
-    fmeta: dict = {}
-    local_media_path = path if (path and os.path.isfile(path)) else str(entry.get("localPath") or "")
-    if local_media_path and os.path.isfile(local_media_path):
-        need_art = not entry.get("artPath") or str(entry.get("artPath")).endswith(".svg")
-        fmeta = read_audio_metadata(local_media_path, extract_art=need_art)
-
     raw_entry_title = str(entry.get("title") or "")
     raw_entry_artist = str(entry.get("artist") or "")
     raw_entry_album = str(entry.get("album") or "")
+
+    fmeta: dict = {}
+    probed_now = False
+    local_media_path = path if (path and os.path.isfile(path)) else str(entry.get("localPath") or "")
+    if local_media_path and os.path.isfile(local_media_path):
+        art_probed = bool(entry.get("_artProbed"))
+        need_art = not entry.get("artPath") or (str(entry.get("artPath")).endswith(".svg") and not art_probed)
+        need_tags = (
+            not raw_entry_title
+            or bool(re.match(r"^.+?\s+-\s+.+?\s+-\s+\d{1,3}\s+", raw_entry_title))
+            or not raw_entry_artist
+            or raw_entry_artist in ("Local Artist", "Unknown Artist")
+            or not raw_entry_album
+            or (raw_entry_album.endswith(" — Singles") and not art_probed)
+        )
+        if need_art or need_tags:
+            fmeta = read_audio_metadata(local_media_path, extract_art=need_art)
+            probed_now = True
 
     meta_title = str(fmeta.get("title") or meta.get("title") or "")
     meta_artist = str(fmeta.get("artist") or fmeta.get("albumArtist") or meta.get("artist") or meta.get("album_artist") or "")
@@ -5108,6 +5130,8 @@ def get_playback_state() -> dict:
         eff_entry["artist"] = artist
         eff_entry["album"] = album
         eff_entry["artPath"] = art_path
+        if probed_now or entry.get("_artProbed"):
+            eff_entry["_artProbed"] = True
         if dur_val > 0:
             eff_entry["duration"] = dur_val
         record_history(eff_entry, position=time_pos, playlist_pos=matched_idx)
@@ -5122,6 +5146,9 @@ def get_playback_state() -> dict:
                 if v and q_tr.get(k) != v:
                     q_tr[k] = v
                     entry_meta_updated = True
+            if probed_now and not q_tr.get("_artProbed"):
+                q_tr["_artProbed"] = True
+                entry_meta_updated = True
         if prev_q_pos != matched_idx or abs(time_pos - prev_q_time) >= 1.5 or entry_meta_updated:
             queue["playlistPos"] = matched_idx
             queue["currentIndex"] = matched_idx
@@ -5177,7 +5204,7 @@ def _visualiser_settings_payload(settings: dict) -> dict:
         "backdropEnabled": l4_enabled,
         "backdropMode": l4_mode,
         "layer1Enabled": bool(settings.get("layer1Enabled", True)),
-        "layer1Mode": bounded_int(settings.get("layer1Mode"), 0, 0, 10),
+        "layer1Mode": bounded_int(settings.get("layer1Mode"), 0, 0, 11),
         "layer1EqStyle": bounded_int(settings.get("layer1EqStyle"), 0, 0, 15),
         "layer1EqLayout": bounded_int(settings.get("layer1EqLayout"), 0, 0, 3),
         "layer1EqScale": bounded_float(settings.get("layer1EqScale"), 1.0, 0.15, 2.25),
@@ -5693,7 +5720,7 @@ def cmd_ascii_art(args) -> None:
 
     lines: list[str] = []
     source_kind = "omarchy-ascii"
-    if use_album_art and mode in ("braille", "block") and art_lines:
+    if use_album_art and art_lines:
         lines = art_lines
         source_kind = "album-art"
     else:
@@ -6551,11 +6578,12 @@ def cmd_visualiser_config(args) -> None:
     })
 
 
-def _kill_bandarchy_processes() -> None:
-    try:
-        mpv_stop()
-    except Exception:
-        pass
+def _kill_bandarchy_processes(kill_mpv: bool = True) -> None:
+    if kill_mpv:
+        try:
+            mpv_stop()
+        except Exception:
+            pass
     import signal
 
     uid = os.getuid()
@@ -6565,6 +6593,7 @@ def _kill_bandarchy_processes() -> None:
         proc_entries = os.listdir("/proc")
     except OSError:
         proc_entries = []
+    killed_pids = []
     for entry in proc_entries:
         if not entry.isdigit():
             continue
@@ -6596,17 +6625,31 @@ def _kill_bandarchy_processes() -> None:
                 and any(("bandarchy" in p or "io.github.layolayo.bandarchy" in p) and p.endswith("cava.conf") for p in parts)
             )
             is_bandarchy_mpv = (
-                exe_name == "mpv"
+                kill_mpv
+                and exe_name == "mpv"
                 and ("--audio-client-name=Bandarchy" in parts or any("bandarchy.sock" in p for p in parts))
             )
             if is_bandarchy_ui or is_bandarchy_cava or is_bandarchy_mpv:
                 os.kill(pid, signal.SIGTERM)
+                killed_pids.append(pid)
         except OSError:
             continue
+    if killed_pids:
+        for _ in range(8):
+            alive = [p for p in killed_pids if os.path.exists(f"/proc/{p}")]
+            if not alive:
+                break
+            time.sleep(0.05)
+        for p in killed_pids:
+            if os.path.exists(f"/proc/{p}"):
+                try:
+                    os.kill(p, signal.SIGKILL)
+                except OSError:
+                    pass
 
 
 def cmd_kill(args) -> None:
-    _kill_bandarchy_processes()
+    _kill_bandarchy_processes(kill_mpv=True)
     emit({"action": "kill", "status": "stopped"})
 
 
@@ -6625,7 +6668,7 @@ def _resolve_plugin_root() -> str:
 
 
 def cmd_restart(args) -> None:
-    _kill_bandarchy_processes()
+    _kill_bandarchy_processes(kill_mpv=False)
     time.sleep(0.2)
     root_dir = _resolve_plugin_root()
     app_qml = os.path.join(root_dir, "App.qml")
@@ -6649,6 +6692,195 @@ def cmd_restart(args) -> None:
     emit({"action": "restart", "status": "restarted"})
 
 
+def _resolve_photo_import_script() -> str:
+    root_dir = _resolve_plugin_root()
+    candidates = (
+        os.path.join(root_dir, "share", "photo_engine", "bandarchy_photo_import.py"),
+        "/usr/share/bandarchy/photo_engine/bandarchy_photo_import.py",
+        "/usr/share/omarchy/plugins/io.github.layolayo.bandarchy/share/photo_engine/bandarchy_photo_import.py",
+        os.path.join(HOME, "Pictures", "bandarchy", "bandarchy_photo_import.py"),
+    )
+    for cand in candidates:
+        if os.path.isfile(cand) and not os.path.islink(cand):
+            return cand
+    die("bandarchy_photo_import.py not found in share/photo_engine/")
+    return ""
+
+
+def _load_photo_import_module():
+    script_path = _resolve_photo_import_script()
+    script_dir = os.path.dirname(script_path)
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
+    import bandarchy_photo_import as bpi
+
+    return bpi
+
+
+def _emit_photo_pipeline_payload(parsed: dict) -> None:
+    if not parsed.get("ok", True):
+        die(str(parsed.get("error") or "photo pipeline command failed"))
+    parsed.setdefault("status", "ok")
+    cats_dict = (
+        parsed.get("categories")
+        if isinstance(parsed.get("categories"), dict)
+        else (
+            parsed.get("categories_summary")
+            if isinstance(parsed.get("categories_summary"), dict)
+            else None
+        )
+    )
+    if isinstance(cats_dict, dict):
+        tot_imp = int(
+            parsed.get(
+                "total_imported_sources",
+                sum(int(v.get("imported_count", 0)) for v in cats_dict.values() if isinstance(v, dict)),
+            )
+        )
+        tot_proc = int(
+            parsed.get(
+                "total_processed_outputs",
+                sum(int(v.get("processed_count", 0)) for v in cats_dict.values() if isinstance(v, dict)),
+            )
+        )
+        cat_counts: dict[str, int] = {"all": tot_imp}
+        for k, v in cats_dict.items():
+            if isinstance(v, dict):
+                cat_counts[k] = int(v.get("imported_count", 0))
+        parsed["categoryCounts"] = cat_counts
+        parsed["totalOriginals"] = tot_imp
+        parsed["totalProcessed"] = tot_proc
+        custom_info = cats_dict.get("custom") if isinstance(cats_dict.get("custom"), dict) else {}
+        root_dir = str(parsed.get("root_dir") or os.path.join(HOME, "Pictures", "bandarchy"))
+        parsed["customDir"] = str(
+            custom_info.get("drop_in_dir") or os.path.join(root_dir, "categories", "custom")
+        )
+    if "imported_sources_count" in parsed:
+        parsed["importedOriginals"] = int(parsed.get("imported_sources_count", 0))
+    if "generated_outputs_count" in parsed:
+        parsed["generatedVariants"] = int(parsed.get("generated_outputs_count", 0))
+    if "source_stem" in parsed:
+        parsed["sourceStem"] = str(parsed.get("source_stem") or "")
+    if "activeVariants" not in parsed:
+        if isinstance(parsed.get("variants"), dict) and parsed["variants"]:
+            parsed["activeVariants"] = parsed["variants"]
+        else:
+            imp_list = parsed.get("imported") or parsed.get("deduplicated")
+            if isinstance(imp_list, list) and imp_list:
+                first_imp = imp_list[0]
+                if isinstance(first_imp, dict) and isinstance(first_imp.get("outputs"), list):
+                    av_map: dict[str, str] = {}
+                    for out_item in first_imp["outputs"]:
+                        if isinstance(out_item, dict):
+                            eff_key = out_item.get("effect")
+                            p_val = out_item.get("output_path") or out_item.get("path")
+                            if eff_key and p_val:
+                                av_map[str(eff_key)] = str(p_val)
+                    parsed["activeVariants"] = av_map
+    emit(parsed)
+
+
+def _run_photo_import_cli(extra_args: list[str], timeout_sec: int = 180) -> None:
+    script_path = _resolve_photo_import_script()
+    cmd = [sys.executable, script_path, *extra_args, "--json"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_sec)
+    except subprocess.TimeoutExpired:
+        die("photo pipeline timed out")
+        return
+    raw_out = (r.stdout or "").strip()
+    if raw_out:
+        last_line = raw_out.splitlines()[-1].strip()
+        try:
+            parsed = json.loads(last_line)
+            if isinstance(parsed, dict):
+                _emit_photo_pipeline_payload(parsed)
+                return
+        except Exception:
+            pass
+    if r.returncode != 0:
+        err_msg = (r.stderr or raw_out or "photo pipeline failed").strip()
+        die(err_msg)
+    emit({"status": "ok"})
+
+
+def _resolve_photo_base_dir(explicit_base_dir: str | None = None) -> str:
+    if explicit_base_dir:
+        return os.path.abspath(os.path.expanduser(str(explicit_base_dir)))
+    env_override = (os.environ.get("BANDARCHY_PICTURES_DIR") or "").strip()
+    if env_override:
+        return os.path.abspath(os.path.expanduser(env_override))
+    xdg_pics = (os.environ.get("XDG_PICTURES_DIR") or "").strip()
+    if xdg_pics:
+        return os.path.join(os.path.abspath(os.path.expanduser(xdg_pics)), "bandarchy")
+    return os.path.join(HOME, "Pictures", "bandarchy")
+
+
+def cmd_photo_status(args) -> None:
+    base_dir = _resolve_photo_base_dir(getattr(args, "base_dir", None))
+    bpi = _load_photo_import_module()
+    try:
+        if getattr(args, "init_dirs", False):
+            bpi.ensure_directory_structure(base_dir)
+        parsed = bpi.rebuild_manifests(base_dir)
+    except Exception as exc:
+        die(str(exc))
+        return
+    _emit_photo_pipeline_payload(parsed)
+
+
+def cmd_photo_import(args) -> None:
+    base_dir = _resolve_photo_base_dir(getattr(args, "base_dir", None))
+    src_dir = getattr(args, "source_dir", None) or getattr(args, "source_dir_opt", None)
+    if src_dir:
+        src_dir_abs = os.path.abspath(os.path.expanduser(str(src_dir).strip()))
+        if os.path.isdir(src_dir_abs) and not os.path.islink(src_dir_abs):
+            custom_drop = os.path.join(base_dir, "categories", "custom")
+            os.makedirs(custom_drop, mode=0o755, exist_ok=True)
+            if os.path.abspath(custom_drop) != src_dir_abs:
+                for entry in sorted(os.listdir(src_dir_abs)):
+                    if entry.startswith("."):
+                        continue
+                    ext = os.path.splitext(entry)[1].lower()
+                    if ext not in (".jpg", ".jpeg", ".png", ".webp"):
+                        continue
+                    s_file = os.path.join(src_dir_abs, entry)
+                    if os.path.isfile(s_file) and not os.path.islink(s_file):
+                        shutil.copy2(s_file, os.path.join(custom_drop, entry))
+    extra: list[str] = ["--import", "--base-dir", base_dir]
+    if getattr(args, "category", None):
+        extra.extend(["--category", str(args.category)])
+    if getattr(args, "effects", None):
+        extra.extend(["--effects", str(args.effects)])
+    max_dim = getattr(args, "max_size", None) or getattr(args, "max_dim", None)
+    if max_dim is not None:
+        extra.extend(["--max-dim", str(int(max_dim))])
+    sources_dir = os.path.join(base_dir, "sources")
+    if getattr(args, "seed_from_sources", False) or (getattr(args, "ensure_demo", False) and os.path.isdir(sources_dir)):
+        extra.append("--seed-from-sources")
+    if getattr(args, "force_seed", False):
+        extra.append("--force-seed")
+    _run_photo_import_cli(extra, timeout_sec=240)
+
+
+def cmd_photo_pick(args) -> None:
+    base_dir = _resolve_photo_base_dir(getattr(args, "base_dir", None))
+    bpi = _load_photo_import_module()
+    try:
+        parsed = bpi.pick_category_photo(
+            base_dir,
+            category=str(getattr(args, "category", None) or "all"),
+            effect=str(args.effect) if getattr(args, "effect", None) else None,
+            stem=str(args.stem) if getattr(args, "stem", None) else None,
+            exclude_stem=str(args.exclude_stem) if getattr(args, "exclude_stem", None) else None,
+            seed=int(args.seed) if getattr(args, "seed", None) is not None else None,
+        )
+    except Exception as exc:
+        die(str(exc))
+        return
+    _emit_photo_pipeline_payload(parsed)
+
+
 def main() -> None:
     if len(sys.argv) == 1:
         sys.argv.append("restart")
@@ -6662,6 +6894,33 @@ def main() -> None:
     sub.add_parser("status").set_defaults(func=cmd_status)
     sub.add_parser("kill", help="stop all Bandarchy UI, cava, and mpv processes").set_defaults(func=cmd_kill)
     sub.add_parser("restart", help="restart standalone Bandarchy player window").set_defaults(func=cmd_restart)
+
+    p = sub.add_parser("photo-status", help="rebuild photo category manifests and return pending/imported/processed counts")
+    p.add_argument("--base-dir", help="override ~/Pictures/bandarchy root directory")
+    p.add_argument("--init-dirs", action="store_true", help="ensure category directories exist")
+    p.set_defaults(func=cmd_photo_status)
+
+    p = sub.add_parser("photo-import", help="translate new raw photos in ~/Pictures/bandarchy/categories/ across all 16 Stark effects")
+    p.add_argument("source_dir", nargs="?", default=None, help="optional custom folder of raw images to copy into categories/custom/")
+    p.add_argument("--source-dir", dest="source_dir_opt", default=None, help="optional custom folder of raw images to copy into categories/custom/")
+    p.add_argument("--ensure-demo", action="store_true", help="seed categories from sources/ if available")
+    p.add_argument("--category", default="all", help="category slug (brutalist, architecture, nature, objects, cyberpunk, characters, custom, or all)")
+    p.add_argument("--effects", help="comma-separated list of effect IDs (defaults to all 16)")
+    p.add_argument("--max-dim", type=int, default=960, help="maximum dimension in pixels for translated PNGs")
+    p.add_argument("--max-size", type=int, default=None, help="alias for --max-dim")
+    p.add_argument("--seed-from-sources", action="store_true", help="seed categories from sources/ before importing")
+    p.add_argument("--force-seed", action="store_true", help="force re-seeding from sources/")
+    p.add_argument("--base-dir", help="override ~/Pictures/bandarchy root directory")
+    p.set_defaults(func=cmd_photo_import)
+
+    p = sub.add_parser("photo-pick", help="pick a translated Stark photograph and return its 16 variant paths")
+    p.add_argument("--category", default="all", help="category slug or all")
+    p.add_argument("--effect", help="specific Stark effect ID (01..16)")
+    p.add_argument("--stem", help="specific source_stem")
+    p.add_argument("--exclude-stem", help="exclude a specific source_stem when picking randomly")
+    p.add_argument("--seed", type=int, help="deterministic RNG seed")
+    p.add_argument("--base-dir", help="override ~/Pictures/bandarchy root directory")
+    p.set_defaults(func=cmd_photo_pick)
 
     p = sub.add_parser("visualiser-config", help="get or atomically persist visualiser configuration and saved L1/L2/L3 layer items")
     p.add_argument("--get", action="store_true", help="read ~/.config/bandarchy/visualiser.json")

@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Window
 import "PsychedelicEngine.js" as Engine
+import "PhotoMotionEngine.js" as PhotoMotion
 
 // Visualiser.qml — 4-Stage Deck & 3-Layer Configurable Audio-Reactive
 // Psychedelic Visualiser for Bandarchy (`io.github.layolayo.bandarchy`).
@@ -194,7 +195,7 @@ FocusScope {
     property bool statementsEditorBulkMode: false
     property int editingStatementIndex: -1
     property string statementEditorStatusText: ""
-    readonly property bool textInputFocused: Boolean(statementSingleInput.activeFocus || statementBulkEdit.activeFocus)
+    readonly property bool textInputFocused: Boolean(statementSingleInput.activeFocus || statementBulkEdit.activeFocus || customPhotoPathInput.activeFocus)
     property alias layer3UseArt: root.useAlbumArt
     property alias layer3AsciiMode: root.asciiMode
     property real layer3Dismantle: 1.15
@@ -437,8 +438,76 @@ FocusScope {
         "8:TRON 1982",
         "9:SynthGrid",
         "10:PolyTunnel",
-        "11:Tempest"
+        "11:Tempest",
+        "12:StarkPhoto"
     ]
+
+    readonly property var photoMotionModes: PhotoMotion.PHOTO_MOTION_MODES
+    readonly property var shortPhotoMotionLabels: PhotoMotion.SHORT_PHOTO_MOTION_LABELS
+    readonly property var stage1PhotoEffects: PhotoMotion.STAGE1_EFFECT_IDS
+    readonly property var photoPoolModes: PhotoMotion.PHOTO_POOL_MODES
+    readonly property var photoAudioResponderDefs: PhotoMotion.AUDIO_RESPONDER_PHOTO_LINKS
+
+    // Layer #1 Mode #12 ("Stark Photo Realm") — Dedicated Photo-Tools State & Library Properties
+    property var photoState: PhotoMotion.createPhotoMotionState()
+    property var photoCategories: PhotoMotion.DEFAULT_PHOTO_CATEGORIES
+    property var photoCategoryCounts: ({ "all": 0, "brutalist": 0, "architecture": 0, "nature": 0, "objects": 0, "cyberpunk": 0, "characters": 0, "custom": 0 })
+    property string photoActiveCategory: "all"
+    property string photoActiveStem: ""
+    property var photoActiveVariants: ({})
+    property var photoSameEffectPeers: ({})
+    property var photoSameEffectByVariant: ({})
+    property var photoRandomPoolPeers: ({})
+    property var photoPreviousVariants: ({})
+    property int photoTotalProcessed: 0
+    property int photoTotalOriginals: 0
+    property string photoCustomDir: "~/Pictures/bandarchy/categories/custom"
+    property bool photoBusy: false
+    property string photoStatusMessage: "Ready — drop photos into categories or import a custom folder"
+    property bool showCustomPhotoImportBar: false
+    property int photoMotionMode: 0 // 0..24 (M01..M25)
+    property int photoPoolMode: 0 // 0 = Effects of Same Image, 1 = Images of Same Effect, 2 = Randomisation of 1 & 2 (';' key)
+    property bool photoPlaneShearEnabled: false // ':' key: Controlled 3D Plane Shearing ON/OFF (default OFF = clean un-sheared quads)
+    property real photoPlaneShear: 0.00 // 0.00..2.00x Controlled 3D Plane Shearing intensity
+    property bool photoAutoMotionEvents: false // '~' key: Dedicated Photo-Engine Effect Randomisation
+    property bool photoRandomiseMotionControls: false // Switch: when ON, randomises movement controls on every effect change; when OFF, restores user settings
+    property real photoEffectChangeIntervalSec: 18.0 // 4.0..60.0s Dedicated Photo-Engine Effect Randomisation interval
+    property int photoPinnedVariant: -1 // -1 = Auto-Strobe all 16 slots of the active pool, 0..15 = pinned variant
+    property real photoOpacity: 0.88 // 0.05..1.00 master photo opacity
+    property real photoFadeDuration: 0.35 // 0.00..6.00s cross-fade duration
+    property real photoStrobeSpeed: 1.00 // 0.10..4.00x 16-variant strobe rate
+    property real photoBlackOpacity: 1.00 // 0.00..1.00 obsidian shadow sector opacity
+    property real photoMidOpacity: 1.00 // 0.00..1.00 silver mid-tone sector opacity
+    property real photoWhiteOpacity: 1.00 // 0.00..1.00 chalk highlight sector opacity
+    property real photoColourSnatchOpacity: 1.00 // 0.00..1.00 snatched neon colour sector opacity
+    property real photoMotionActivity: 1.00 // 0.10..3.00x master motion activity & rhythm speed
+    property real photoXyzTilt: 1.00 // 0.00..2.50x 3D XYZ plane tilt
+    property real photoZoomPunch: 1.15 // 0.25..2.50x Z-depth zoom punch
+    property real photoPaletteBloom: 1.20 // 0.00..2.50x palette resonance neon bloom
+    property real photoWarpIntensity: 1.00 // 0.00..2.50x world-bending warp intensity
+    property bool _applyingRandomPhotoMotion: false
+    property var userPhotoMotionSettings: ({
+        "photoMotionActivity": 1.00,
+        "photoStrobeSpeed": 1.00,
+        "photoFadeDuration": 0.35,
+        "photoXyzTilt": 1.00,
+        "photoZoomPunch": 1.15,
+        "photoPaletteBloom": 1.20,
+        "photoWarpIntensity": 1.00
+    })
+    property bool photoHoldActive: false
+    property real photoHoldRemainingSec: 0.0
+    property var photoAudioLinks: ({
+        "l_photo_motion_activity": { "source": 0, "method": "+", "amount": 0.55 },
+        "l_photo_opacity": { "source": 0, "method": "+", "amount": 0.50 },
+        "l_photo_strobe_rate": { "source": 0, "method": "+", "amount": 0.65 },
+        "l_photo_xyz_tilt": { "source": 0, "method": "~", "amount": 0.55 },
+        "l_photo_zoom_punch": { "source": 0, "method": "+", "amount": 0.70 },
+        "l_photo_palette_bloom": { "source": 0, "method": "+", "amount": 0.60 },
+        "l_photo_warp_melt": { "source": 0, "method": "+", "amount": 0.60 },
+        "l_photo_plane_shear": { "source": 0, "method": "+", "amount": 0.65 },
+        "l_photo_step_trigger": { "source": 0, "method": "⚡", "amount": 1.00 }
+    })
 
     readonly property var shortEqLabels: [
         "Skyline",
@@ -543,8 +612,14 @@ FocusScope {
         "Y2K Metal",
         "Copperbar",
         "Bio Spore",
-        "Quantum"
+        "Quantum",
+        "ASCII Black Block",
+        "ASCII White Block",
+        "ASCII Transparent",
+        "ASCII Colour Knockout",
+        "ASCII Cell Matrix"
     ]
+    readonly property var shortL3TextStyleLabels: root.shortL3StyleLabels
 
     readonly property var ttfxEffectsList: [
         "waves",
@@ -584,6 +659,9 @@ FocusScope {
     signal requestReloadStatementsFile()
     signal requestSaveStatements(var statementsArray)
     signal requestResetStatements()
+    signal requestPhotoImport(string sourceDir)
+    signal requestPhotoRefreshStatus()
+    signal requestPhotoPick(string category, string stem)
     function suppressActionFeedback(message) {}
 
     property var engineState: Engine.createState()
@@ -691,12 +769,815 @@ FocusScope {
     property string _lastEmittedConfigJson: ""
     property bool _suppressPersistedEcho: false
 
+    property var _loadedCanvasImageUrls: []
+    property var _loadedCanvasImageSet: ({})
+    readonly property int _maxCachedCanvasImages: 20
+
+    Timer {
+        id: photoPreloadDebounceTimer
+        interval: 16
+        repeat: false
+        onTriggered: root.preloadPhotoVariantsIntoCanvas()
+    }
+
+    function schedulePreloadPhotoVariants() {
+        photoPreloadDebounceTimer.restart()
+    }
+
+    function unloadAllCanvasImages() {
+        if (typeof vizCanvas !== "undefined" && vizCanvas && typeof vizCanvas.unloadImage === "function") {
+            var urls = root._loadedCanvasImageUrls || []
+            for (var i = 0; i < urls.length; i++) {
+                if (urls[i]) {
+                    vizCanvas.unloadImage(urls[i])
+                }
+            }
+        }
+        root._loadedCanvasImageUrls = []
+        root._loadedCanvasImageSet = ({})
+    }
+
+    onVisibleChanged: {
+        if (root.visible && root.stageMode === "visualiser" && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11) {
+            root.schedulePreloadPhotoVariants()
+        } else if (!root.visible) {
+            root.unloadAllCanvasImages()
+        }
+    }
+
+    onPhotoActiveVariantsChanged: {
+        root.schedulePreloadPhotoVariants()
+    }
+    onPhotoSameEffectPeersChanged: {
+        root.schedulePreloadPhotoVariants()
+    }
+    onPhotoSameEffectByVariantChanged: {
+        root.schedulePreloadPhotoVariants()
+    }
+    onPhotoRandomPoolPeersChanged: {
+        root.schedulePreloadPhotoVariants()
+    }
+    onPhotoMotionModeChanged: {
+        if (root.photoState) root.photoState.motionMode = root.photoMotionMode
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
+    }
+    onPhotoPoolModeChanged: {
+        if (root.photoState) root.photoState.poolMode = root.photoPoolMode
+        root.preloadPhotoVariantsIntoCanvas()
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
+    }
+    onPhotoPlaneShearEnabledChanged: {
+        if (root.photoState) root.photoState.photoPlaneShearEnabled = root.photoPlaneShearEnabled
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+    onPhotoPlaneShearChanged: {
+        if (root.photoState) root.photoState.photoPlaneShear = root.photoPlaneShear
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+    onPhotoEffectChangeIntervalSecChanged: {
+        if (root.photoState) {
+            root.photoState.photoEffectChangeIntervalSec = root.photoEffectChangeIntervalSec
+            root.photoState.autoMotionMinDwellSec = root.photoEffectChangeIntervalSec
+        }
+        scheduleSaveVisualiserConfig()
+    }
+    function recordUserPhotoMotionSetting(key, val) {
+        if (root._applyingRandomPhotoMotion) return
+        var copy = Object.assign({
+            "photoMotionActivity": 1.00,
+            "photoStrobeSpeed": 1.00,
+            "photoFadeDuration": 0.35,
+            "photoXyzTilt": 1.00,
+            "photoZoomPunch": 1.15,
+            "photoPaletteBloom": 1.20,
+            "photoWarpIntensity": 1.00
+        }, root.userPhotoMotionSettings || ({}))
+        copy[key] = val
+        root.userPhotoMotionSettings = copy
+        if (root.photoState) {
+            root.photoState.userMotionSettings = Object.assign({}, copy)
+        }
+    }
+
+    function captureUserPhotoMotionBaseline() {
+        var snap = {
+            "photoMotionActivity": root.photoMotionActivity,
+            "photoStrobeSpeed": root.photoStrobeSpeed,
+            "photoFadeDuration": root.photoFadeDuration,
+            "photoXyzTilt": root.photoXyzTilt,
+            "photoZoomPunch": root.photoZoomPunch,
+            "photoPaletteBloom": root.photoPaletteBloom,
+            "photoWarpIntensity": root.photoWarpIntensity
+        }
+        root.userPhotoMotionSettings = snap
+        if (root.photoState) {
+            root.photoState.userMotionSettings = Object.assign({}, snap)
+        }
+    }
+
+    function restoreUserPhotoMotionSettings() {
+        var u = root.userPhotoMotionSettings || (root.photoState && root.photoState.userMotionSettings) || null
+        if (!u) return
+        root._applyingRandomPhotoMotion = true
+        if (u.photoMotionActivity !== undefined) root.photoMotionActivity = Number(u.photoMotionActivity)
+        if (u.photoStrobeSpeed !== undefined) root.photoStrobeSpeed = Number(u.photoStrobeSpeed)
+        if (u.photoFadeDuration !== undefined) root.photoFadeDuration = Number(u.photoFadeDuration)
+        if (u.photoXyzTilt !== undefined) root.photoXyzTilt = Number(u.photoXyzTilt)
+        if (u.photoZoomPunch !== undefined) root.photoZoomPunch = Number(u.photoZoomPunch)
+        if (u.photoPaletteBloom !== undefined) root.photoPaletteBloom = Number(u.photoPaletteBloom)
+        if (u.photoWarpIntensity !== undefined) root.photoWarpIntensity = Number(u.photoWarpIntensity)
+        root._applyingRandomPhotoMotion = false
+        if (root.photoState) {
+            PhotoMotion.restoreUserPhotoMotionSettings(root.photoState)
+        }
+    }
+
+    function applyRandomisedStateMotionToRoot(st) {
+        if (!st) return
+        root._applyingRandomPhotoMotion = true
+        if (st.photoMotionActivity !== undefined) root.photoMotionActivity = Number(st.photoMotionActivity)
+        if (st.photoStrobeSpeed !== undefined) root.photoStrobeSpeed = Number(st.photoStrobeSpeed)
+        if (st.photoFadeDuration !== undefined) root.photoFadeDuration = Number(st.photoFadeDuration)
+        if (st.photoXyzTilt !== undefined) root.photoXyzTilt = Number(st.photoXyzTilt)
+        if (st.photoZoomPunch !== undefined) root.photoZoomPunch = Number(st.photoZoomPunch)
+        if (st.photoPaletteBloom !== undefined) root.photoPaletteBloom = Number(st.photoPaletteBloom)
+        if (st.photoWarpIntensity !== undefined) root.photoWarpIntensity = Number(st.photoWarpIntensity)
+        root._applyingRandomPhotoMotion = false
+    }
+
+    onPhotoAutoMotionEventsChanged: {
+        if (root.photoState) {
+            root.photoState.autoMotionEvents = root.photoAutoMotionEvents
+            root.photoState.autoMotionElapsedSec = 0.0
+            root.photoState.autoMotionAccumulatedPhase = 0.0
+        }
+        if (!root.photoAutoMotionEvents && !root.photoRandomiseMotionControls && !root._applyingPersistedConfig) {
+            root.restoreUserPhotoMotionSettings()
+        }
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
+    }
+    onPhotoRandomiseMotionControlsChanged: {
+        if (root.photoState) {
+            root.photoState.randomiseMotionControls = root.photoRandomiseMotionControls
+        }
+        if (!root.photoRandomiseMotionControls && !root._applyingPersistedConfig) {
+            root.restoreUserPhotoMotionSettings()
+        }
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
+    }
+    onPhotoMotionActivityChanged: {
+        if (root.photoState) root.photoState.photoMotionActivity = root.photoMotionActivity
+        root.recordUserPhotoMotionSetting("photoMotionActivity", root.photoMotionActivity)
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+    onPhotoPinnedVariantChanged: {
+        if (root.photoState) root.photoState.pinnedStage1EffectIndex = root.photoPinnedVariant
+        root.preloadPhotoVariantsIntoCanvas()
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
+    }
+    onPhotoOpacityChanged: {
+        if (root.photoState) root.photoState.photoOpacity = root.photoOpacity
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+    onPhotoFadeDurationChanged: {
+        if (root.photoState) root.photoState.photoFadeDuration = root.photoFadeDuration
+        root.recordUserPhotoMotionSetting("photoFadeDuration", root.photoFadeDuration)
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+    onPhotoStrobeSpeedChanged: {
+        if (root.photoState) root.photoState.photoStrobeSpeed = root.photoStrobeSpeed
+        root.recordUserPhotoMotionSetting("photoStrobeSpeed", root.photoStrobeSpeed)
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+    onPhotoBlackOpacityChanged: {
+        if (root.photoState) root.photoState.photoBlackOpacity = root.photoBlackOpacity
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+    onPhotoMidOpacityChanged: {
+        if (root.photoState) root.photoState.photoMidOpacity = root.photoMidOpacity
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+    onPhotoWhiteOpacityChanged: {
+        if (root.photoState) root.photoState.photoWhiteOpacity = root.photoWhiteOpacity
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+    onPhotoColourSnatchOpacityChanged: {
+        if (root.photoState) root.photoState.photoColourSnatchOpacity = root.photoColourSnatchOpacity
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+    onPhotoXyzTiltChanged: {
+        if (root.photoState) root.photoState.photoXyzTilt = root.photoXyzTilt
+        root.recordUserPhotoMotionSetting("photoXyzTilt", root.photoXyzTilt)
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+    onPhotoZoomPunchChanged: {
+        if (root.photoState) root.photoState.photoZoomPunch = root.photoZoomPunch
+        root.recordUserPhotoMotionSetting("photoZoomPunch", root.photoZoomPunch)
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+    onPhotoPaletteBloomChanged: {
+        if (root.photoState) root.photoState.photoPaletteBloom = root.photoPaletteBloom
+        root.recordUserPhotoMotionSetting("photoPaletteBloom", root.photoPaletteBloom)
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+    onPhotoWarpIntensityChanged: {
+        if (root.photoState) root.photoState.photoWarpIntensity = root.photoWarpIntensity
+        root.recordUserPhotoMotionSetting("photoWarpIntensity", root.photoWarpIntensity)
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+    }
+
+    function _trackAndLoadCanvasImage(url) {
+        if (!url || typeof vizCanvas === "undefined" || !vizCanvas || typeof vizCanvas.loadImage !== "function") return
+        if (!root.visible || root.stageMode !== "visualiser" || !root.layer1Enabled || !root.layer1FieldEnabled || root.layer1Mode !== 11) return
+        var lru = root._loadedCanvasImageUrls
+        var existingIdx = lru.indexOf(url)
+        if (existingIdx !== -1) {
+            if (existingIdx !== lru.length - 1) {
+                lru.splice(existingIdx, 1)
+                lru.push(url)
+            }
+        } else {
+            lru.push(url)
+            while (lru.length > root._maxCachedCanvasImages) {
+                var evictUrl = lru.shift()
+                if (evictUrl && evictUrl !== url) {
+                    delete root._loadedCanvasImageSet[evictUrl]
+                    if (typeof vizCanvas.unloadImage === "function") {
+                        vizCanvas.unloadImage(evictUrl)
+                    }
+                }
+            }
+        }
+        if (root._loadedCanvasImageSet[url]) return
+        if (vizCanvas.isImageLoaded(url)) {
+            root._loadedCanvasImageSet[url] = true
+            return
+        }
+        if (!vizCanvas.isImageLoading(url)) {
+            vizCanvas.loadImage(url)
+        }
+    }
+
+    function _evictUnreferencedCanvasImages(keepDictList) {
+        if (typeof vizCanvas === "undefined" || !vizCanvas || typeof vizCanvas.unloadImage !== "function") return
+        var keep = {}
+        for (var d = 0; d < keepDictList.length; d++) {
+            var dict = keepDictList[d]
+            if (!dict || typeof dict !== "object") continue
+            var ks = Object.keys(dict)
+            for (var i = 0; i < ks.length; i++) {
+                var p = String(dict[ks[i]] || "")
+                if (p && p.indexOf("/") === 0) {
+                    keep["file://" + p] = true
+                }
+            }
+        }
+        var nextLru = []
+        var lru = root._loadedCanvasImageUrls || []
+        for (var j = 0; j < lru.length; j++) {
+            var u = lru[j]
+            if (keep[u]) {
+                nextLru.push(u)
+            } else if (u) {
+                delete root._loadedCanvasImageSet[u]
+                vizCanvas.unloadImage(u)
+            }
+        }
+        root._loadedCanvasImageUrls = nextLru
+    }
+
+    function _preloadPathDictIntoCanvas(pathDict) {
+        if (!pathDict || typeof pathDict !== "object") return
+        if (!root.visible || root.stageMode !== "visualiser" || !root.layer1Enabled || !root.layer1FieldEnabled || root.layer1Mode !== 11) return
+        var keys = Object.keys(pathDict)
+        for (var i = 0; i < keys.length; i++) {
+            var p = String(pathDict[keys[i]] || "")
+            if (p && p.indexOf("/") === 0) {
+                root._trackAndLoadCanvasImage("file://" + p)
+            }
+        }
+    }
+
+    function inferCategoryFromVariants(vars) {
+        if (!vars || typeof vars !== "object") return ""
+        var keys = Object.keys(vars)
+        for (var i = 0; i < keys.length; i++) {
+            var p = String(vars[keys[i]] || "")
+            var m = p.match(/\/processed\/([^\/]+)\/[^\/]+$/)
+            if (m && m[1] && m[1] !== "all") {
+                return m[1]
+            }
+        }
+        return ""
+    }
+
+    function resolveCurrentPhotoCategory() {
+        var fromVars = root.inferCategoryFromVariants(root.photoActiveVariants)
+        if (fromVars) return fromVars
+        if (root.photoActiveCategory && root.photoActiveCategory !== "all") {
+            return root.photoActiveCategory
+        }
+        var st = root.photoState
+        if (st) {
+            var resolved = PhotoMotion.resolveCurrentCategoryForStep(st)
+            if (resolved && resolved !== "all") return resolved
+        }
+        return "brutalist"
+    }
+
+    function preloadPhotoVariantsIntoCanvas() {
+        var vars = root.photoActiveVariants || ({})
+        var inferredCat = root.inferCategoryFromVariants(vars)
+        if (inferredCat && !root.photoActiveCategory) {
+            root.photoActiveCategory = inferredCat
+        }
+        var activePoolDict = vars
+        if (root.photoPoolMode === 1) {
+            var byVar = root.photoSameEffectByVariant || ({})
+            var pinnedIdx = (root.photoPinnedVariant >= 0 && root.photoPinnedVariant < PhotoMotion.STAGE1_EFFECT_IDS.length)
+                ? root.photoPinnedVariant
+                : 0
+            var effKey = PhotoMotion.STAGE1_EFFECT_IDS[pinnedIdx] || PhotoMotion.STAGE1_EFFECT_IDS[0]
+            activePoolDict = byVar[effKey] || root.photoSameEffectPeers || vars
+        } else if (root.photoPoolMode === 2) {
+            activePoolDict = root.photoRandomPoolPeers || vars
+        }
+        var prevPrimaryOnly = {}
+        var prevVars = root.photoPreviousVariants || ({})
+        var stPre = root.photoState
+        var curEffId = PhotoMotion.STAGE1_EFFECT_IDS[stPre ? ((stPre.primaryVariantIndex || 0) % 16) : 0]
+        if (prevVars[curEffId]) {
+            prevPrimaryOnly[curEffId] = prevVars[curEffId]
+        }
+        root._evictUnreferencedCanvasImages([activePoolDict, prevPrimaryOnly])
+        root._preloadPathDictIntoCanvas(activePoolDict)
+        var st = root.syncPhotoStateFromRoot()
+        if (st && root.photoActiveStem) {
+            var entryCat = inferredCat || root.resolveCurrentPhotoCategory()
+            if (st.currentSourceStem !== root.photoActiveStem) {
+                st.previousSourceStem = st.currentSourceStem || ""
+                st.currentSourceStem = root.photoActiveStem
+                st.snapshotCrossfadeProgress = 0.0
+                if (typeof PhotoMotion.rollSnapshotFocalSection === "function") {
+                    PhotoMotion.rollSnapshotFocalSection(st)
+                }
+            }
+            if (!Array.isArray(st.historyStack)) st.historyStack = []
+            var curIdx = (typeof st.historyCursor === "number") ? st.historyCursor : -1
+            var curEntry = (curIdx >= 0 && curIdx < st.historyStack.length) ? st.historyStack[curIdx] : null
+            if (!curEntry || curEntry.sourceStem !== root.photoActiveStem) {
+                if (curIdx >= 0 && curIdx < st.historyStack.length - 1) {
+                    st.historyStack = st.historyStack.slice(0, curIdx + 1)
+                }
+                st.historyStack.push({
+                    category: entryCat,
+                    sourceStem: root.photoActiveStem,
+                    variantPaths: Object.assign({}, vars)
+                })
+                if (st.historyStack.length > 64) {
+                    st.historyStack.shift()
+                }
+                st.historyCursor = st.historyStack.length - 1
+            }
+        }
+        if (typeof vizCanvas !== "undefined" && vizCanvas) {
+            vizCanvas.requestPaint()
+        }
+    }
+
+    function syncPhotoStateFromRoot() {
+        if (!root.photoState) {
+            root.photoState = PhotoMotion.createPhotoMotionState()
+        }
+        var st = root.photoState
+        st.categories = (root.photoCategories && root.photoCategories.length > 0) ? root.photoCategories : PhotoMotion.DEFAULT_PHOTO_CATEGORIES
+        st.categoryCounts = root.photoCategoryCounts || ({})
+        st.activeCategory = root.photoActiveCategory || root.inferCategoryFromVariants(root.photoActiveVariants) || "brutalist"
+        st.motionMode = root.photoMotionMode
+        st.poolMode = root.photoPoolMode
+        st.photoPlaneShearEnabled = root.photoPlaneShearEnabled
+        st.photoPlaneShear = root.photoPlaneShear
+        st.autoMotionEvents = root.photoAutoMotionEvents
+        st.randomiseMotionControls = root.photoRandomiseMotionControls
+        st.photoEffectChangeIntervalSec = root.photoEffectChangeIntervalSec
+        st.autoMotionMinDwellSec = root.photoEffectChangeIntervalSec
+        st.pinnedStage1EffectIndex = root.photoPinnedVariant
+        st.photoOpacity = root.photoOpacity
+        st.photoFadeDuration = root.photoFadeDuration
+        st.photoStrobeSpeed = root.photoStrobeSpeed
+        st.photoBlackOpacity = root.photoBlackOpacity
+        st.photoMidOpacity = root.photoMidOpacity
+        st.photoWhiteOpacity = root.photoWhiteOpacity
+        st.photoColourSnatchOpacity = root.photoColourSnatchOpacity
+        st.photoMotionActivity = root.photoMotionActivity
+        st.photoXyzTilt = root.photoXyzTilt
+        st.photoZoomPunch = root.photoZoomPunch
+        st.photoPaletteBloom = root.photoPaletteBloom
+        st.photoWarpIntensity = root.photoWarpIntensity
+        if (root.userPhotoMotionSettings && typeof root.userPhotoMotionSettings === "object" && !st.userMotionSettings) {
+            st.userMotionSettings = Object.assign({}, root.userPhotoMotionSettings)
+        }
+        st.audioLinks = root.photoAudioLinks || st.audioLinks
+        return st
+    }
+
+    function ensurePhotoLayerActive() {
+        if (root.stageMode !== "visualiser") {
+            root.setStage("visualiser")
+        }
+        root.layer1FieldEnabled = true
+        root.syncLayer1MasterFromSubs()
+        if (root.layer1Mode !== 11) {
+            root.layer1Mode = 11
+        }
+        if (!root.photoActiveStem || Object.keys(root.photoActiveVariants || ({})).length === 0) {
+            root.requestPhotoPick(root.resolveCurrentPhotoCategory(), "")
+        }
+    }
+
+    function stepPhotoHistoryByKey(direction) {
+        root.ensurePhotoLayerActive()
+        var st = root.syncPhotoStateFromRoot()
+        var lockedCat = root.resolveCurrentPhotoCategory()
+        root.photoActiveCategory = lockedCat
+        st.activeCategory = lockedCat
+        root.photoPreviousVariants = root.photoActiveVariants || ({})
+        st.holdActive = false
+        st.holdRemainingSec = 0.0
+        st.autoMotionElapsedSec = 0.0
+        st.autoMotionAccumulatedPhase = 0.0
+        root.photoHoldActive = false
+        root.photoHoldRemainingSec = 0.0
+        if (!Array.isArray(st.historyStack)) st.historyStack = []
+        if (direction < 0 && st.historyCursor > 0) {
+            for (var hi = st.historyCursor - 1; hi >= 0; hi--) {
+                var prevEntry = st.historyStack[hi]
+                if (prevEntry && prevEntry.sourceStem && (!prevEntry.category || prevEntry.category === "all" || prevEntry.category === lockedCat)) {
+                    st.historyCursor = hi
+                    root.requestPhotoPick(lockedCat, prevEntry.sourceStem)
+                    clearCanvasImmediate()
+                    return
+                }
+            }
+        } else if (direction >= 0 && st.historyCursor >= 0 && st.historyCursor < st.historyStack.length - 1) {
+            for (var fi = st.historyCursor + 1; fi < st.historyStack.length; fi++) {
+                var nextEntry = st.historyStack[fi]
+                if (nextEntry && nextEntry.sourceStem && (!nextEntry.category || nextEntry.category === "all" || nextEntry.category === lockedCat)) {
+                    st.historyCursor = fi
+                    root.requestPhotoPick(lockedCat, nextEntry.sourceStem)
+                    clearCanvasImmediate()
+                    return
+                }
+            }
+        }
+        root.requestPhotoPick(lockedCat, "")
+        clearCanvasImmediate()
+    }
+
+    function stepPhotoCategoryByKey(direction) {
+        root.ensurePhotoLayerActive()
+        var st = root.syncPhotoStateFromRoot()
+        root.photoPreviousVariants = root.photoActiveVariants || ({})
+        var res = PhotoMotion.stepPhotoCategory(st, direction, function(cat) {
+            root.photoActiveCategory = cat || "brutalist"
+            root.requestPhotoPick(root.photoActiveCategory, "")
+            return {
+                category: root.photoActiveCategory,
+                sourceStem: "",
+                asyncPending: true,
+                variantPaths: root.photoActiveVariants || ({})
+            }
+        })
+        if (res && res.category) {
+            root.photoActiveCategory = res.category
+        }
+        var nextHoldActive = Boolean(st.holdActive)
+        if (root.photoHoldActive !== nextHoldActive) {
+            root.photoHoldActive = nextHoldActive
+        }
+        var nextHoldRem = nextHoldActive ? Math.ceil(Number(st.holdRemainingSec) || 0.0) : 0.0
+        if (Math.ceil(root.photoHoldRemainingSec) !== nextHoldRem) {
+            root.photoHoldRemainingSec = nextHoldRem
+        }
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
+        if (res && res.message) {
+            root.suppressActionFeedback(res.message)
+        }
+    }
+
+    function selectPhotoCategory(catName) {
+        root.ensurePhotoLayerActive()
+        var cat = String(catName || "brutalist").toLowerCase()
+        var st = root.syncPhotoStateFromRoot()
+        st.activeCategory = cat
+        st.holdActive = false
+        st.holdRemainingSec = 0.0
+        root.photoActiveCategory = cat
+        root.photoHoldActive = false
+        root.photoHoldRemainingSec = 0.0
+        root.photoPreviousVariants = root.photoActiveVariants || ({})
+        root.requestPhotoPick(cat, "")
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
+    }
+
+    function triggerPhotoHoldByKey() {
+        root.ensurePhotoLayerActive()
+        var st = root.syncPhotoStateFromRoot()
+        var res = PhotoMotion.triggerPhotoHoldOneMinute(st, true)
+        root.photoHoldActive = Boolean(st.holdActive)
+        root.photoHoldRemainingSec = Number(st.holdRemainingSec) || 0.0
+        vizCanvas.requestPaint()
+        if (res && res.message) {
+            root.suppressActionFeedback(res.message)
+        }
+    }
+
+    function cyclePhotoPoolModeByKey(delta) {
+        root.ensurePhotoLayerActive()
+        var st = root.syncPhotoStateFromRoot()
+        var res = PhotoMotion.cyclePhotoPoolMode(st, delta)
+        if (res) {
+            root.photoPoolMode = res.poolMode
+        }
+        root.preloadPhotoVariantsIntoCanvas()
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
+        if (res && res.message) {
+            root.suppressActionFeedback(res.message)
+        }
+    }
+
+    function cyclePhotoPoolMode(delta) {
+        root.cyclePhotoPoolModeByKey(delta)
+    }
+
+    function togglePhotoPlaneShearByKey(forceEnabled) {
+        root.ensurePhotoLayerActive()
+        var st = root.syncPhotoStateFromRoot()
+        var res = PhotoMotion.togglePhotoPlaneShear(st, forceEnabled)
+        if (res) {
+            root.photoPlaneShearEnabled = Boolean(res.planeShearEnabled)
+            if (root.photoPlaneShearEnabled && root.photoPlaneShear <= 0.02) {
+                root.photoPlaneShear = Number(st.photoPlaneShear) || 1.00
+            }
+        }
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+        if (res && res.message) {
+            root.suppressActionFeedback(res.message)
+        }
+    }
+
+    function togglePhotoAutoMotionByKey(forceEnabled) {
+        root.ensurePhotoLayerActive()
+        var wasEnabled = Boolean(root.photoAutoMotionEvents)
+        var nextEnabled = (forceEnabled !== undefined) ? Boolean(forceEnabled) : !wasEnabled
+        if (!wasEnabled && nextEnabled) {
+            root.captureUserPhotoMotionBaseline()
+        }
+        var st = root.syncPhotoStateFromRoot()
+        var res = PhotoMotion.togglePhotoAutoMotionEvents(st, nextEnabled)
+        if (res) {
+            root.photoAutoMotionEvents = Boolean(res.autoMotionEvents)
+        }
+        if (root.photoAutoMotionEvents) {
+            root.triggerRandomPhotoMotionEvent()
+        } else {
+            root.restoreUserPhotoMotionSettings()
+            vizCanvas.requestPaint()
+            scheduleSaveVisualiserConfig()
+        }
+        if (res && res.message) {
+            root.suppressActionFeedback(res.message)
+        }
+    }
+
+    function togglePhotoEffectAutoRandomiseByKey(forceEnabled) {
+        root.togglePhotoAutoMotionByKey(forceEnabled)
+    }
+
+    function togglePhotoAutoMotionEvents(forceEnabled) {
+        root.togglePhotoAutoMotionByKey(forceEnabled)
+    }
+
+    function triggerRandomPhotoMotionEvent() {
+        root.ensurePhotoLayerActive()
+        var st = root.syncPhotoStateFromRoot()
+        var lockedCat = root.resolveCurrentPhotoCategory()
+        root.photoActiveCategory = lockedCat
+        st.activeCategory = lockedCat
+        root.photoPreviousVariants = root.photoActiveVariants || ({})
+        var asyncDispatched = false
+        var res = PhotoMotion.triggerRandomPhotoMotionEvent(st, function(cat) {
+            asyncDispatched = true
+            root.requestPhotoPick(lockedCat, "")
+            return {
+                category: lockedCat,
+                sourceStem: "",
+                asyncPending: true,
+                variantPaths: root.photoActiveVariants || ({})
+            }
+        })
+        if (!asyncDispatched) {
+            root.requestPhotoPick(lockedCat, "")
+        }
+        root.photoMotionMode = st.motionMode
+        root.applyRandomisedStateMotionToRoot(st)
+        root.photoHoldActive = false
+        root.photoHoldRemainingSec = 0.0
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
+        if (res && res.message) {
+            root.suppressActionFeedback(res.message)
+        }
+    }
+
+    function togglePhotoRandomiseMotionControls(forceEnabled) {
+        root.ensurePhotoLayerActive()
+        var wasEnabled = Boolean(root.photoRandomiseMotionControls)
+        var nextEnabled = (forceEnabled !== undefined) ? Boolean(forceEnabled) : !wasEnabled
+        if (!wasEnabled && nextEnabled) {
+            root.captureUserPhotoMotionBaseline()
+        }
+        var st = root.syncPhotoStateFromRoot()
+        var res = PhotoMotion.togglePhotoRandomiseMotionControls(st, nextEnabled)
+        if (res) {
+            root.photoRandomiseMotionControls = Boolean(res.randomiseMotionControls)
+        }
+        if (root.photoRandomiseMotionControls) {
+            root.applyRandomisedStateMotionToRoot(st)
+        } else {
+            root.restoreUserPhotoMotionSettings()
+        }
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+        if (res && res.message) {
+            root.suppressActionFeedback(res.message)
+        }
+    }
+
+    function selectPhotoMotionMode(modeIndex, preserveImage) {
+        root.ensurePhotoLayerActive()
+        var total = PhotoMotion.PHOTO_MOTION_MODES.length
+        var nextIdx = ((Math.floor(Number(modeIndex) || 0) % total) + total) % total
+        var st = root.syncPhotoStateFromRoot()
+        var lockedCat = root.resolveCurrentPhotoCategory()
+        root.photoActiveCategory = lockedCat
+        st.activeCategory = lockedCat
+        root.photoMotionMode = nextIdx
+        st.motionMode = nextIdx
+        st.autoMotionElapsedSec = 0.0
+        st.autoMotionAccumulatedPhase = 0.0
+        if (root.photoRandomiseMotionControls) {
+            PhotoMotion.randomiseMotionControlsForEvent(st)
+            root.applyRandomisedStateMotionToRoot(st)
+        }
+        // Step ONLY the master photograph within the current category (keep category and effect-image unchanged)
+        if (!preserveImage && !root.photoHoldActive && !(st.holdActive && st.holdRemainingSec > 0.0)) {
+            root.photoPreviousVariants = root.photoActiveVariants || ({})
+            root.requestPhotoPick(lockedCat, "")
+        }
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
+        var mObj = PhotoMotion.PHOTO_MOTION_MODES[root.photoMotionMode]
+        if (mObj) {
+            root.suppressActionFeedback("Photo FX: " + mObj.code + " · " + mObj.name)
+        }
+    }
+
+    function cyclePhotoMotionMode(delta) {
+        root.ensurePhotoLayerActive()
+        if (root.photoAutoMotionEvents) {
+            root.triggerRandomPhotoMotionEvent()
+            return
+        }
+        var st = root.syncPhotoStateFromRoot()
+        var lockedCat = root.resolveCurrentPhotoCategory()
+        root.photoActiveCategory = lockedCat
+        st.activeCategory = lockedCat
+        var step = (delta !== undefined && delta < 0) ? -1 : 1
+        var isHeld = Boolean(root.photoHoldActive || (st.holdActive && st.holdRemainingSec > 0.0))
+        if (!isHeld) {
+            root.photoPreviousVariants = root.photoActiveVariants || ({})
+        }
+        var asyncDispatched = false
+        var res = PhotoMotion.stepPhotoMotionMode(st, step, function(cat) {
+            asyncDispatched = true
+            root.requestPhotoPick(lockedCat, "")
+            return {
+                category: lockedCat,
+                sourceStem: "",
+                asyncPending: true,
+                variantPaths: root.photoActiveVariants || ({})
+            }
+        }, true)
+        if (!isHeld && !asyncDispatched) {
+            root.requestPhotoPick(lockedCat, "")
+        }
+        root.photoMotionMode = st.motionMode
+        if (root.photoRandomiseMotionControls) {
+            root.applyRandomisedStateMotionToRoot(st)
+        }
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
+        if (res && res.message) {
+            root.suppressActionFeedback(res.message)
+        }
+    }
+
+    function cyclePhotoVariantEffect(delta) {
+        root.ensurePhotoLayerActive()
+        var total = PhotoMotion.STAGE1_EFFECT_IDS.length + 1 // -1 (Auto-Strobe All 16) + 0..15 (V01..V16)
+        var step = (delta !== undefined && delta < 0) ? -1 : 1
+        var cur = (root.photoPinnedVariant < 0) ? 0 : (root.photoPinnedVariant + 1)
+        var next = ((cur + step) % total + total) % total
+        root.photoPinnedVariant = next - 1
+        if (root.photoState) root.photoState.pinnedStage1EffectIndex = root.photoPinnedVariant
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
+        var vLabel = (root.photoPinnedVariant < 0)
+            ? "Auto-Strobe All 16 Slots"
+            : ("V" + (root.photoPinnedVariant < 9 ? ("0" + (root.photoPinnedVariant + 1)) : (root.photoPinnedVariant + 1)) + " · " + PhotoMotion.STAGE1_EFFECT_IDS[root.photoPinnedVariant])
+        root.suppressActionFeedback("Stark Darkroom Variant: " + vLabel)
+    }
+
+    function randomisePhotoMotionSettings() {
+        root.ensurePhotoLayerActive()
+        var lockedCat = root.resolveCurrentPhotoCategory()
+        root.photoActiveCategory = lockedCat
+        var total = PhotoMotion.PHOTO_MOTION_MODES.length
+        root.photoMotionMode = Math.floor(Math.random() * total)
+        var userAct = (root.userPhotoMotionSettings && root.userPhotoMotionSettings.photoMotionActivity !== undefined)
+            ? Number(root.userPhotoMotionSettings.photoMotionActivity)
+            : 1.00
+        root._applyingRandomPhotoMotion = true
+        root.photoMotionActivity = Math.round(Math.max(0.25, Math.min(2.60, userAct * (0.70 + Math.random() * 0.75))) * 100) / 100
+        root.photoStrobeSpeed = Math.round((0.55 + Math.random() * 1.35) * 100) / 100
+        root.photoFadeDuration = Math.round((0.20 + Math.random() * 1.30) * 100) / 100
+        root.photoXyzTilt = Math.round((0.55 + Math.random() * 1.15) * 100) / 100
+        root.photoZoomPunch = Math.round((0.75 + Math.random() * 0.95) * 100) / 100
+        root.photoPaletteBloom = Math.round((0.85 + Math.random() * 1.05) * 100) / 100
+        root.photoWarpIntensity = Math.round((0.55 + Math.random() * 1.15) * 100) / 100
+        root._applyingRandomPhotoMotion = false
+        if (!root.photoHoldActive) {
+            root.photoPreviousVariants = root.photoActiveVariants || ({})
+            root.requestPhotoPick(lockedCat, "")
+        }
+        root.syncPhotoStateFromRoot()
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
+    }
+
+    function cyclePhotoAudioLinkSource(linkId) {
+        var curMap = Object.assign({}, root.photoAudioLinks || ({}))
+        var cur = Object.assign({ source: 0, method: "+", amount: 0.55 }, curMap[linkId] || ({}))
+        cur.source = ((Number(cur.source) || 0) + 1) % 8
+        curMap[linkId] = cur
+        root.photoAudioLinks = curMap
+        if (root.photoState) root.photoState.audioLinks = curMap
+        scheduleSaveVisualiserConfig()
+    }
+
+    function cyclePhotoAudioLinkMethod(linkId) {
+        var methods = ["+", "-", "~", "⚡"]
+        var curMap = Object.assign({}, root.photoAudioLinks || ({}))
+        var cur = Object.assign({ source: 0, method: "+", amount: 0.55 }, curMap[linkId] || ({}))
+        var idx = methods.indexOf(String(cur.method || "+"))
+        cur.method = methods[(idx + 1) % methods.length]
+        curMap[linkId] = cur
+        root.photoAudioLinks = curMap
+        if (root.photoState) root.photoState.audioLinks = curMap
+        scheduleSaveVisualiserConfig()
+    }
+
     function selectL3SourceOrGlyph(modeStr) {
         var m = String(modeStr || "").toLowerCase()
         root.layer3Enabled = true
         if (m === "art") {
             root.useAlbumArt = true
-            if (root.asciiMode !== "braille" && root.asciiMode !== "block" && root.asciiMode !== "text") {
+            // Album cover art strictly uses the Braille or Block engines — never Crisp Text
+            if (root.asciiMode !== "braille" && root.asciiMode !== "block") {
                 root.asciiMode = "braille"
             }
         } else if (m === "words") {
@@ -709,6 +1590,7 @@ FocusScope {
         } else if (m === "block") {
             root.asciiMode = "block"
         } else if (m === "text" || m === "crisp") {
+            root.useAlbumArt = false
             root.asciiMode = "text"
         }
         if (root.engineState) {
@@ -811,6 +1693,29 @@ FocusScope {
             layer1Speed: root.layer1Speed,
             layer1Density: root.layer1Density,
             layer1Dim: root.layer1Dim,
+            photoActiveCategory: root.photoActiveCategory,
+            photoMotionMode: root.photoMotionMode,
+            photoPoolMode: root.photoPoolMode,
+            photoPlaneShearEnabled: root.photoPlaneShearEnabled,
+            photoPlaneShear: root.photoPlaneShear,
+            photoAutoMotionEvents: root.photoAutoMotionEvents,
+            photoRandomiseMotionControls: root.photoRandomiseMotionControls,
+            photoEffectChangeIntervalSec: root.photoEffectChangeIntervalSec,
+            photoPinnedVariant: root.photoPinnedVariant,
+            photoOpacity: root.photoOpacity,
+            photoFadeDuration: root.photoFadeDuration,
+            photoStrobeSpeed: root.photoStrobeSpeed,
+            photoBlackOpacity: root.photoBlackOpacity,
+            photoMidOpacity: root.photoMidOpacity,
+            photoWhiteOpacity: root.photoWhiteOpacity,
+            photoColourSnatchOpacity: root.photoColourSnatchOpacity,
+            photoMotionActivity: root.photoMotionActivity,
+            photoXyzTilt: root.photoXyzTilt,
+            photoZoomPunch: root.photoZoomPunch,
+            photoPaletteBloom: root.photoPaletteBloom,
+            photoWarpIntensity: root.photoWarpIntensity,
+            userPhotoMotionSettings: root.userPhotoMotionSettings,
+            photoAudioLinks: root.photoAudioLinks,
             layer1EqEnabled: root.layer1EqEnabled,
             layer1EqStyle: root.layer1EqStyle,
             layer1EqLayout: root.layer1EqLayout,
@@ -934,6 +1839,33 @@ FocusScope {
         if (cfg.layer1Speed !== undefined) root.layer1Speed = Number(cfg.layer1Speed)
         if (cfg.layer1Density !== undefined) root.layer1Density = Number(cfg.layer1Density)
         if (cfg.layer1Dim !== undefined) root.layer1Dim = Number(cfg.layer1Dim)
+        if (cfg.photoActiveCategory !== undefined) root.photoActiveCategory = String(cfg.photoActiveCategory || "all")
+        if (cfg.photoMotionMode !== undefined) root.photoMotionMode = Number(cfg.photoMotionMode) % PhotoMotion.PHOTO_MOTION_MODES.length
+        if (cfg.photoPoolMode !== undefined) root.photoPoolMode = ((Math.floor(Number(cfg.photoPoolMode) || 0) % 3) + 3) % 3
+        if (cfg.photoPlaneShearEnabled !== undefined) root.photoPlaneShearEnabled = Boolean(cfg.photoPlaneShearEnabled)
+        if (cfg.photoPlaneShear !== undefined) root.photoPlaneShear = Math.max(0.00, Math.min(2.00, Number(cfg.photoPlaneShear)))
+        if (cfg.photoAutoMotionEvents !== undefined) root.photoAutoMotionEvents = Boolean(cfg.photoAutoMotionEvents)
+        if (cfg.photoRandomiseMotionControls !== undefined) root.photoRandomiseMotionControls = Boolean(cfg.photoRandomiseMotionControls)
+        if (cfg.photoEffectChangeIntervalSec !== undefined) root.photoEffectChangeIntervalSec = Math.max(4.0, Math.min(60.0, Number(cfg.photoEffectChangeIntervalSec)))
+        if (cfg.photoPinnedVariant !== undefined) root.photoPinnedVariant = Math.max(-1, Math.min(15, Math.round(Number(cfg.photoPinnedVariant))))
+        if (cfg.photoOpacity !== undefined) root.photoOpacity = Math.max(0.05, Math.min(1.00, Number(cfg.photoOpacity)))
+        if (cfg.photoFadeDuration !== undefined) root.photoFadeDuration = Math.max(0.00, Math.min(6.00, Number(cfg.photoFadeDuration)))
+        if (cfg.photoStrobeSpeed !== undefined) root.photoStrobeSpeed = Math.max(0.10, Math.min(4.00, Number(cfg.photoStrobeSpeed)))
+        if (cfg.photoBlackOpacity !== undefined) root.photoBlackOpacity = Math.max(0.00, Math.min(1.00, Number(cfg.photoBlackOpacity)))
+        if (cfg.photoMidOpacity !== undefined) root.photoMidOpacity = Math.max(0.00, Math.min(1.00, Number(cfg.photoMidOpacity)))
+        if (cfg.photoWhiteOpacity !== undefined) root.photoWhiteOpacity = Math.max(0.00, Math.min(1.00, Number(cfg.photoWhiteOpacity)))
+        if (cfg.photoColourSnatchOpacity !== undefined) root.photoColourSnatchOpacity = Math.max(0.00, Math.min(1.00, Number(cfg.photoColourSnatchOpacity)))
+        if (cfg.photoMotionActivity !== undefined) root.photoMotionActivity = Math.max(0.10, Math.min(3.00, Number(cfg.photoMotionActivity)))
+        if (cfg.photoXyzTilt !== undefined) root.photoXyzTilt = Math.max(0.00, Math.min(2.50, Number(cfg.photoXyzTilt)))
+        if (cfg.photoZoomPunch !== undefined) root.photoZoomPunch = Math.max(0.25, Math.min(2.50, Number(cfg.photoZoomPunch)))
+        if (cfg.photoPaletteBloom !== undefined) root.photoPaletteBloom = Math.max(0.00, Math.min(2.50, Number(cfg.photoPaletteBloom)))
+        if (cfg.photoWarpIntensity !== undefined) root.photoWarpIntensity = Math.max(0.00, Math.min(2.50, Number(cfg.photoWarpIntensity)))
+        if (cfg.userPhotoMotionSettings && typeof cfg.userPhotoMotionSettings === "object") {
+            root.userPhotoMotionSettings = cfg.userPhotoMotionSettings
+        } else if (!root.photoAutoMotionEvents && !root.photoRandomiseMotionControls) {
+            root.captureUserPhotoMotionBaseline()
+        }
+        if (cfg.photoAudioLinks && typeof cfg.photoAudioLinks === "object") root.photoAudioLinks = cfg.photoAudioLinks
         if (cfg.layer1EqEnabled !== undefined) root.layer1EqEnabled = Boolean(cfg.layer1EqEnabled)
         if (cfg.layer1EqStyle !== undefined) root.layer1EqStyle = Number(cfg.layer1EqStyle) % Engine.LAYER1_EQ_STYLES.length
         if (cfg.layer1EqLayout !== undefined) root.layer1EqLayout = Number(cfg.layer1EqLayout) % Engine.LAYER1_EQ_LAYOUTS.length
@@ -984,7 +1916,8 @@ FocusScope {
         if (cfg.useAlbumArt !== undefined) root.useAlbumArt = Boolean(cfg.useAlbumArt)
         if (cfg.asciiMode !== undefined) {
             var am = String(cfg.asciiMode).toLowerCase()
-            root.asciiMode = (am === "block" || am === "text") ? am : "braille"
+            var nextAm = (am === "block" || am === "text") ? am : "braille"
+            root.asciiMode = (root.useAlbumArt && nextAm === "text") ? "braille" : nextAm
         }
         if (cfg.layer3Dismantle !== undefined) root.layer3Dismantle = Number(cfg.layer3Dismantle)
         if (cfg.layer3Rebuild !== undefined) root.layer3Rebuild = Number(cfg.layer3Rebuild)
@@ -1006,6 +1939,7 @@ FocusScope {
         if (Array.isArray(cfg.savedL4Configs)) root.savedL4Configs = cfg.savedL4Configs
         if (Array.isArray(cfg.collectivePresets) && cfg.collectivePresets.length > 0) root.collectivePresets = cfg.collectivePresets
 
+        root.syncPhotoStateFromRoot()
         root.syncLayer1MasterFromSubs()
         root._applyingPersistedConfig = false
         if (isLegacyV2) {
@@ -1063,6 +1997,24 @@ FocusScope {
         root.layer1Direction = 1
         root.layer1Speed = 1.0
         root.layer1Density = 1.0
+        root.photoMotionMode = 0
+        root.photoPoolMode = 0
+        root.photoPlaneShearEnabled = false
+        root.photoPlaneShear = 0.00
+        root.photoAutoMotionEvents = false
+        root.photoEffectChangeIntervalSec = 18.0
+        root.photoPinnedVariant = -1
+        root.photoOpacity = 0.88
+        root.photoFadeDuration = 0.35
+        root.photoStrobeSpeed = 1.00
+        root.photoBlackOpacity = 1.00
+        root.photoMidOpacity = 1.00
+        root.photoWhiteOpacity = 1.00
+        root.photoColourSnatchOpacity = 1.00
+        root.photoXyzTilt = 1.00
+        root.photoZoomPunch = 1.15
+        root.photoPaletteBloom = 1.20
+        root.photoWarpIntensity = 1.00
         root.layer1EqEnabled = true
         root.layer1EqStyle = 0
         root.layer1EqLayout = 0
@@ -1116,6 +2068,24 @@ FocusScope {
             l1Speed: root.layer1Speed,
             l1Density: root.layer1Density,
             l1Dim: root.layer1Dim,
+            photoMotionMode: root.photoMotionMode,
+            photoPoolMode: root.photoPoolMode,
+            photoPlaneShearEnabled: root.photoPlaneShearEnabled,
+            photoPlaneShear: root.photoPlaneShear,
+            photoAutoMotionEvents: root.photoAutoMotionEvents,
+            photoEffectChangeIntervalSec: root.photoEffectChangeIntervalSec,
+            photoPinnedVariant: root.photoPinnedVariant,
+            photoOpacity: root.photoOpacity,
+            photoFadeDuration: root.photoFadeDuration,
+            photoStrobeSpeed: root.photoStrobeSpeed,
+            photoBlackOpacity: root.photoBlackOpacity,
+            photoMidOpacity: root.photoMidOpacity,
+            photoWhiteOpacity: root.photoWhiteOpacity,
+            photoColourSnatchOpacity: root.photoColourSnatchOpacity,
+            photoXyzTilt: root.photoXyzTilt,
+            photoZoomPunch: root.photoZoomPunch,
+            photoPaletteBloom: root.photoPaletteBloom,
+            photoWarpIntensity: root.photoWarpIntensity,
             l1EqEnabled: root.layer1EqEnabled,
             l1EqStyle: root.layer1EqStyle,
             l1EqLayout: root.layer1EqLayout,
@@ -1152,6 +2122,24 @@ FocusScope {
         if (item.l1Speed !== undefined) root.layer1Speed = Number(item.l1Speed)
         if (item.l1Density !== undefined) root.layer1Density = Number(item.l1Density)
         if (item.l1Dim !== undefined) root.layer1Dim = Number(item.l1Dim)
+        if (item.photoMotionMode !== undefined) root.photoMotionMode = Number(item.photoMotionMode) % PhotoMotion.PHOTO_MOTION_MODES.length
+        if (item.photoPoolMode !== undefined) root.photoPoolMode = ((Math.floor(Number(item.photoPoolMode) || 0) % 3) + 3) % 3
+        if (item.photoPlaneShearEnabled !== undefined) root.photoPlaneShearEnabled = Boolean(item.photoPlaneShearEnabled)
+        if (item.photoPlaneShear !== undefined) root.photoPlaneShear = Math.max(0.00, Math.min(2.00, Number(item.photoPlaneShear)))
+        if (item.photoAutoMotionEvents !== undefined) root.photoAutoMotionEvents = Boolean(item.photoAutoMotionEvents)
+        if (item.photoEffectChangeIntervalSec !== undefined) root.photoEffectChangeIntervalSec = Math.max(4.0, Math.min(60.0, Number(item.photoEffectChangeIntervalSec)))
+        if (item.photoPinnedVariant !== undefined) root.photoPinnedVariant = Math.max(-1, Math.min(15, Math.round(Number(item.photoPinnedVariant))))
+        if (item.photoOpacity !== undefined) root.photoOpacity = Math.max(0.05, Math.min(1.00, Number(item.photoOpacity)))
+        if (item.photoFadeDuration !== undefined) root.photoFadeDuration = Math.max(0.00, Math.min(6.00, Number(item.photoFadeDuration)))
+        if (item.photoStrobeSpeed !== undefined) root.photoStrobeSpeed = Math.max(0.10, Math.min(4.00, Number(item.photoStrobeSpeed)))
+        if (item.photoBlackOpacity !== undefined) root.photoBlackOpacity = Math.max(0.00, Math.min(1.00, Number(item.photoBlackOpacity)))
+        if (item.photoMidOpacity !== undefined) root.photoMidOpacity = Math.max(0.00, Math.min(1.00, Number(item.photoMidOpacity)))
+        if (item.photoWhiteOpacity !== undefined) root.photoWhiteOpacity = Math.max(0.00, Math.min(1.00, Number(item.photoWhiteOpacity)))
+        if (item.photoColourSnatchOpacity !== undefined) root.photoColourSnatchOpacity = Math.max(0.00, Math.min(1.00, Number(item.photoColourSnatchOpacity)))
+        if (item.photoXyzTilt !== undefined) root.photoXyzTilt = Math.max(0.00, Math.min(2.50, Number(item.photoXyzTilt)))
+        if (item.photoZoomPunch !== undefined) root.photoZoomPunch = Math.max(0.25, Math.min(2.50, Number(item.photoZoomPunch)))
+        if (item.photoPaletteBloom !== undefined) root.photoPaletteBloom = Math.max(0.00, Math.min(2.50, Number(item.photoPaletteBloom)))
+        if (item.photoWarpIntensity !== undefined) root.photoWarpIntensity = Math.max(0.00, Math.min(2.50, Number(item.photoWarpIntensity)))
         if (item.l1EqEnabled !== undefined) root.layer1EqEnabled = Boolean(item.l1EqEnabled)
         if (item.l1EqStyle !== undefined) root.layer1EqStyle = Number(item.l1EqStyle) % Engine.LAYER1_EQ_STYLES.length
         if (item.l1EqLayout !== undefined) root.layer1EqLayout = Number(item.l1EqLayout) % Engine.LAYER1_EQ_LAYOUTS.length
@@ -1460,7 +2448,15 @@ FocusScope {
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
-    onLayer1ModeChanged: { clearCanvasImmediate(); scheduleSaveVisualiserConfig() }
+    onLayer1ModeChanged: {
+        if (root.layer1Mode === 11) {
+            root.schedulePreloadPhotoVariants()
+        } else {
+            root.unloadAllCanvasImages()
+        }
+        clearCanvasImmediate()
+        scheduleSaveVisualiserConfig()
+    }
     onLayer1EqStyleChanged: { clearCanvasImmediate(); scheduleSaveVisualiserConfig() }
     onLayer1EqLayoutChanged: { clearCanvasImmediate(); scheduleSaveVisualiserConfig() }
     onLayer1ShapeStyleChanged: { clearCanvasImmediate(); scheduleSaveVisualiserConfig() }
@@ -1660,8 +2656,128 @@ FocusScope {
             layer3Scale: root.layer3Scale,
             layer3Tracers: root.layer3Tracers,
             layer3AutoRandomise: root.layer3AutoRandomise,
-            autoCycle: root.autoCycle
+            autoCycle: root.autoCycle,
+            photoMotionRenderCallback: function(ctx, w, h, engState, palette, cfgObj) {
+                return root.renderPhotoStageToCanvas(ctx, w, h, engState, palette, cfgObj)
+            }
         }
+    }
+
+    function _loadPathDictUrls(pathDict) {
+        var out = {}
+        if (!pathDict || typeof pathDict !== "object") return out
+        var loadedSet = root._loadedCanvasImageSet
+        var keys = Object.keys(pathDict)
+        for (var i = 0; i < keys.length; i++) {
+            var k = keys[i]
+            var p = String(pathDict[k] || "")
+            if (p && p.indexOf("/") === 0) {
+                var url = "file://" + p
+                if (loadedSet[url]) {
+                    out[k] = url
+                } else if (typeof vizCanvas !== "undefined" && vizCanvas && typeof vizCanvas.isImageLoaded === "function") {
+                    if (vizCanvas.isImageLoaded(url)) {
+                        loadedSet[url] = true
+                        out[k] = url
+                    } else {
+                        root._trackAndLoadCanvasImage(url)
+                    }
+                }
+            }
+        }
+        return out
+    }
+
+    function renderPhotoStageToCanvas(ctx, w, h, engState, palette, cfgObj) {
+        var st = root.syncPhotoStateFromRoot()
+        var activeVars = root.photoActiveVariants || ({})
+        var prevVars = root.photoPreviousVariants || ({})
+        var pinnedIdx = (root.photoPinnedVariant >= 0 && root.photoPinnedVariant < PhotoMotion.STAGE1_EFFECT_IDS.length)
+            ? root.photoPinnedVariant
+            : ((Math.floor(Number(st.primaryVariantIndex) || 0) % PhotoMotion.STAGE1_EFFECT_IDS.length + PhotoMotion.STAGE1_EFFECT_IDS.length) % PhotoMotion.STAGE1_EFFECT_IDS.length)
+        var activeEffId = PhotoMotion.STAGE1_EFFECT_IDS[pinnedIdx] || PhotoMotion.STAGE1_EFFECT_IDS[0]
+
+        var loadedMap = {}
+        var poolMaps = null
+        if (root.photoPoolMode === 1) {
+            var byVarLoaded = {}
+            var rawByVar = root.photoSameEffectByVariant || ({})
+            var targetSameMap = rawByVar[activeEffId] || root.photoSameEffectPeers || activeVars
+            var loadedSame = root._loadPathDictUrls(targetSameMap)
+            byVarLoaded[activeEffId] = loadedSame
+            loadedMap = loadedSame
+            poolMaps = {
+                sameEffectPeers: loadedSame,
+                sameEffectByVariant: byVarLoaded,
+                randomPoolPeers: {}
+            }
+        } else if (root.photoPoolMode === 2) {
+            var loadedRand = root._loadPathDictUrls(root.photoRandomPoolPeers || activeVars)
+            loadedMap = loadedRand
+            poolMaps = {
+                sameEffectPeers: {},
+                sameEffectByVariant: {},
+                randomPoolPeers: loadedRand
+            }
+        } else {
+            loadedMap = root._loadPathDictUrls(activeVars)
+        }
+
+        var prevLoadedMap = {}
+        if ((Number(st.snapshotCrossfadeProgress) || 0.0) < 0.99 && prevVars[activeEffId]) {
+            var prevUrl = "file://" + String(prevVars[activeEffId])
+            if (root._loadedCanvasImageSet[prevUrl] || (typeof vizCanvas !== "undefined" && vizCanvas && vizCanvas.isImageLoaded(prevUrl))) {
+                root._loadedCanvasImageSet[prevUrl] = true
+                prevLoadedMap[activeEffId] = prevUrl
+            }
+        }
+        if (Object.keys(loadedMap).length === 0 && Object.keys(prevLoadedMap).length > 0) {
+            loadedMap = prevLoadedMap
+        }
+        var hasLoadedImg = Object.keys(loadedMap).length > 0
+
+        var audioTel = {
+            bass: engState ? (engState.bassSmooth || 0.0) : root.liveBass,
+            mid: engState ? (engState.midSmooth || 0.0) : root.liveMid,
+            high: engState ? (engState.highSmooth || 0.0) : root.liveHigh,
+            beat: engState ? (engState.beatPulse || 0.0) : root.liveBeat,
+            spectrum: root.bands || []
+        }
+        PhotoMotion.renderPhotoMotionLayer(
+            ctx,
+            w,
+            h,
+            st,
+            loadedMap,
+            root.paletteIndex,
+            root.currentTheme(),
+            audioTel,
+            prevLoadedMap,
+            poolMaps
+        )
+        if (st._lastStepInfo && st._lastStepInfo.autoMotionEventTriggered) {
+            var lockedAutoCat = root.resolveCurrentPhotoCategory()
+            root.photoActiveCategory = lockedAutoCat
+            st.activeCategory = lockedAutoCat
+            root.photoPreviousVariants = root.photoActiveVariants || ({})
+            root.photoMotionMode = st.motionMode
+            root.applyRandomisedStateMotionToRoot(st)
+            root.requestPhotoPick(lockedAutoCat, "")
+            var autoModeObj = PhotoMotion.PHOTO_MOTION_MODES[root.photoMotionMode]
+            if (autoModeObj) {
+                root.suppressActionFeedback("🎲 Auto Photo-Motion [~]: " + autoModeObj.code + " · " + autoModeObj.name)
+            }
+        } else if (st._lastStepInfo && st._lastStepInfo.motionControlsRandomisedOnTimer) {
+            root.applyRandomisedStateMotionToRoot(st)
+        } else if (st._lastStepInfo && st._lastStepInfo.stepTriggeredOnBeat) {
+            var lockedBeatCat = root.resolveCurrentPhotoCategory()
+            root.photoActiveCategory = lockedBeatCat
+            st.activeCategory = lockedBeatCat
+            root.requestPhotoPick(lockedBeatCat, "")
+        }
+        root.photoHoldActive = Boolean(st.holdActive)
+        root.photoHoldRemainingSec = Number(st.holdRemainingSec) || 0.0
+        return hasLoadedImg
     }
 
     function currentTheme() {
@@ -1888,6 +3004,9 @@ FocusScope {
         var step = (delta !== undefined && delta < 0) ? -1 : 1
         root.layer3TextStyle = (root.layer3TextStyle + step + count) % count
         root.layer3Enabled = true
+        if (root.useAlbumArt || root.asciiMode !== "text") {
+            root.selectL3SourceOrGlyph("text")
+        }
         vizCanvas.requestPaint()
         root.suppressActionFeedback("Text Style: " + Engine.LAYER3_TEXT_STYLES[root.layer3TextStyle])
     }
@@ -2290,10 +3409,21 @@ FocusScope {
         if (root.layer1PinnedByUser && !root.layer1FieldEnabled) {
             return
         }
+        var pSt = root.syncPhotoStateFromRoot()
+        if ((root.photoHoldActive || (pSt && pSt.holdActive)) && root.layer1FieldEnabled && root.layer1Mode === PhotoMotion.LAYER1_WORLD12_INDEX) {
+            root.randomisePhotoMotionSettings()
+            return
+        }
+        var nowSec = root.engineState ? (Number(root.engineState.t) || 0.0) : 0.0
+        var nonPhotoCount = Math.max(1, Engine.LAYER1_MODES.length - 1)
         root._internalLayerChange = true
         if (root.layer1PinnedByUser) {
             root.layer1FieldEnabled = true
-            root.layer1Mode = Math.floor(Math.random() * Engine.LAYER1_MODES.length)
+            var mRoll = Math.floor(Math.random() * Engine.LAYER1_MODES.length)
+            if (mRoll === PhotoMotion.LAYER1_WORLD12_INDEX && !PhotoMotion.shouldSelectWorld12Cameo(pSt, nowSec, 0.0)) {
+                mRoll = Math.floor(Math.random() * nonPhotoCount)
+            }
+            root.layer1Mode = mRoll
             root.layer1Density = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
             root.layer1Speed = Math.round((0.60 + Math.random() * 1.25) * 100) / 100
             root.layer1Direction = [1, -1, 0][Math.floor(Math.random() * 3)]
@@ -2301,6 +3431,9 @@ FocusScope {
             var fRoll = Math.floor(Math.random() * (Engine.LAYER1_MODES.length + 1))
             root.layer1FieldEnabled = (fRoll < Engine.LAYER1_MODES.length)
             if (root.layer1FieldEnabled) {
+                if (fRoll === PhotoMotion.LAYER1_WORLD12_INDEX && !PhotoMotion.shouldSelectWorld12Cameo(pSt, nowSec, 0.0)) {
+                    fRoll = Math.floor(Math.random() * nonPhotoCount)
+                }
                 root.layer1Mode = fRoll
                 root.layer1Density = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
                 root.layer1Speed = Math.round((0.60 + Math.random() * 1.25) * 100) / 100
@@ -2308,8 +3441,11 @@ FocusScope {
             }
             if (!root.layer1FieldEnabled && !root.layer1EqEnabled && !root.layer1ShapesEnabled && !root.hasOtherActiveLayer(1)) {
                 root.layer1FieldEnabled = true
-                root.layer1Mode = Math.floor(Math.random() * Engine.LAYER1_MODES.length)
+                root.layer1Mode = Math.floor(Math.random() * nonPhotoCount)
             }
+        }
+        if (root.layer1FieldEnabled && root.layer1Mode === PhotoMotion.LAYER1_WORLD12_INDEX) {
+            root.randomisePhotoMotionSettings()
         }
         root.syncLayer1MasterFromSubs()
         root._internalLayerChange = false
@@ -2658,6 +3794,9 @@ FocusScope {
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             cursorShape: Qt.PointingHandCursor
             onClicked: mouse => {
+                if (!root.textInputFocused) {
+                    root.forceActiveFocus()
+                }
                 flashTimer.restart()
                 if (mouse.button === Qt.RightButton) {
                     pill.rightClicked()
@@ -2780,8 +3919,62 @@ FocusScope {
         else if (event.key === Qt.Key_8) { visualMode = 7; event.accepted = true }
         else if (event.key === Qt.Key_9) { visualMode = 8; event.accepted = true }
         else if (event.key === Qt.Key_0) { visualMode = 9; event.accepted = true }
-        else if (event.key === Qt.Key_BracketLeft) { visualMode = 10; event.accepted = true }
-        else if (event.key === Qt.Key_BracketRight) { visualMode = 11; event.accepted = true }
+        else if (event.key === Qt.Key_BraceLeft || event.text === "{") {
+            root.stepPhotoCategoryByKey(-1)
+            event.accepted = true
+        }
+        else if (event.key === Qt.Key_BraceRight || event.text === "}") {
+            root.stepPhotoCategoryByKey(1)
+            event.accepted = true
+        }
+        else if (event.key === Qt.Key_BracketLeft || event.text === "[") {
+            if (event.modifiers & Qt.ShiftModifier) {
+                root.stepPhotoCategoryByKey(-1)
+            } else {
+                root.stepPhotoHistoryByKey(-1)
+            }
+            event.accepted = true
+        }
+        else if (event.key === Qt.Key_BracketRight || event.text === "]") {
+            if (event.modifiers & Qt.ShiftModifier) {
+                root.stepPhotoCategoryByKey(1)
+            } else {
+                root.stepPhotoHistoryByKey(1)
+            }
+            event.accepted = true
+        }
+        else if (event.key === Qt.Key_Colon || event.text === ":" || (event.key === Qt.Key_Semicolon && (event.modifiers & Qt.ShiftModifier))) {
+            root.togglePhotoPlaneShearByKey()
+            event.accepted = true
+        }
+        else if (event.key === Qt.Key_Semicolon || event.text === ";") {
+            root.cyclePhotoPoolModeByKey(1)
+            event.accepted = true
+        }
+        else if (event.key === Qt.Key_AsciiTilde || event.text === "~") {
+            root.togglePhotoAutoMotionByKey()
+            event.accepted = true
+        }
+        else if (event.key === Qt.Key_Apostrophe || event.text === "'") {
+            if (event.modifiers & Qt.ShiftModifier) {
+                root.cyclePhotoVariantEffect(-1)
+            } else {
+                root.cyclePhotoMotionMode(-1)
+            }
+            event.accepted = true
+        }
+        else if (event.key === Qt.Key_NumberSign || event.text === "#") {
+            if (event.modifiers & Qt.ShiftModifier) {
+                root.cyclePhotoVariantEffect(1)
+            } else {
+                root.cyclePhotoMotionMode(1)
+            }
+            event.accepted = true
+        }
+        else if (event.key === Qt.Key_At || event.key === Qt.Key_QuoteDbl || event.text === "@" || event.text === "\"") {
+            root.cyclePhotoVariantEffect(-1)
+            event.accepted = true
+        }
         else if (event.key === Qt.Key_Backslash) { visualMode = 12; event.accepted = true }
         else if (event.key === Qt.Key_M) {
             cycleMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
@@ -2849,7 +4042,11 @@ FocusScope {
             event.accepted = true
         }
         else if (event.key === Qt.Key_H) {
-            root.toggleHudVisibility()
+            if ((event.modifiers & Qt.ShiftModifier) || (root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11)) {
+                root.triggerPhotoHoldByKey()
+            } else {
+                root.toggleHudVisibility()
+            }
             event.accepted = true
         }
         else if (event.key === Qt.Key_Z) {
@@ -2943,6 +4140,40 @@ FocusScope {
                     event.accepted = true
                 } else if (root.stageMode === "visualiser" && (event.modifiers === Qt.NoModifier) && event.key >= Qt.Key_1 && event.key <= Qt.Key_6) {
                     root.toggleVisualiserLayerByNumber((event.key - Qt.Key_1) + 1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_BraceLeft || event.text === "{") {
+                    root.stepPhotoCategoryByKey(-1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_BraceRight || event.text === "}") {
+                    root.stepPhotoCategoryByKey(1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_BracketLeft || event.text === "[") {
+                    if (event.modifiers & Qt.ShiftModifier) root.stepPhotoCategoryByKey(-1)
+                    else root.stepPhotoHistoryByKey(-1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_BracketRight || event.text === "]") {
+                    if (event.modifiers & Qt.ShiftModifier) root.stepPhotoCategoryByKey(1)
+                    else root.stepPhotoHistoryByKey(1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Colon || event.text === ":" || (event.key === Qt.Key_Semicolon && (event.modifiers & Qt.ShiftModifier))) {
+                    root.togglePhotoPlaneShearByKey()
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Semicolon || event.text === ";") {
+                    root.cyclePhotoPoolModeByKey(1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_AsciiTilde || event.text === "~") {
+                    root.togglePhotoAutoMotionByKey()
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Apostrophe || event.text === "'") {
+                    if (event.modifiers & Qt.ShiftModifier) root.cyclePhotoVariantEffect(-1)
+                    else root.cyclePhotoMotionMode(-1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_NumberSign || event.text === "#") {
+                    if (event.modifiers & Qt.ShiftModifier) root.cyclePhotoVariantEffect(1)
+                    else root.cyclePhotoMotionMode(1)
+                    event.accepted = true
+                } else if (event.key === Qt.Key_At || event.key === Qt.Key_QuoteDbl || event.text === "@" || event.text === "\"") {
+                    root.cyclePhotoVariantEffect(-1)
                     event.accepted = true
                 }
             }
@@ -3375,7 +4606,7 @@ FocusScope {
         Canvas {
             id: vizCanvas
             readonly property int maxInternalW: 1280
-            readonly property int effectiveTargetW: Math.min(maxInternalW, Math.max(320, root.renderResW))
+            readonly property int effectiveTargetW: Math.min((root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11) ? 860 : maxInternalW, Math.max(320, root.renderResW))
             readonly property real stageW: Math.max(64, stageViewport.width)
             readonly property real stageH: Math.max(48, stageViewport.height)
             readonly property real renderScale: stageW > effectiveTargetW ? (effectiveTargetW / Math.max(1, stageW)) : 1.0
@@ -3391,6 +4622,7 @@ FocusScope {
             visible: root.stageMode === "visualiser" && root.hasActiveCpuLayers
             renderTarget: Canvas.Image
             renderStrategy: Canvas.Threaded
+            onImageLoaded: requestPaint()
 
             onPaint: {
                 var ctx = getContext("2d")
@@ -3850,6 +5082,65 @@ FocusScope {
                         root.layer1Density = Math.max(0.25, Math.min(2.0, Math.round((root.layer1Density + delta * 0.15) * 100) / 100))
                         vizCanvas.requestPaint()
                         scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    visible: root.layer1Mode === 11
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "FX:" + (PhotoMotion.PHOTO_MOTION_MODES[root.photoMotionMode] ? PhotoMotion.PHOTO_MOTION_MODES[root.photoMotionMode].code : "M01")
+                    active: root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11
+                    onClicked: root.cyclePhotoMotionMode(1)
+                    onRightClicked: root.cyclePhotoMotionMode(-1)
+                    onWheelScrolled: delta => root.cyclePhotoMotionMode(delta > 0 ? 1 : -1)
+                }
+
+                VizPillButton {
+                    visible: root.layer1Mode === 11
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "; " + (PhotoMotion.PHOTO_POOL_MODES[root.photoPoolMode % 3] ? PhotoMotion.PHOTO_POOL_MODES[root.photoPoolMode % 3].shortName : "1:SameImg")
+                    active: root.photoPoolMode > 0
+                    onClicked: root.cyclePhotoPoolModeByKey(1)
+                    onRightClicked: root.cyclePhotoPoolModeByKey(-1)
+                    onWheelScrolled: delta => root.cyclePhotoPoolModeByKey(delta > 0 ? 1 : -1)
+                }
+
+                VizPillButton {
+                    visible: root.layer1Mode === 11
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: root.photoPlaneShearEnabled ? (":Shear:" + Math.round(root.photoPlaneShear * 100) + "%") : ":Shear:OFF"
+                    active: root.photoPlaneShearEnabled
+                    onClicked: root.togglePhotoPlaneShearByKey()
+                    onRightClicked: {
+                        root.photoPlaneShearEnabled = false
+                        root.photoPlaneShear = 0.0
+                    }
+                    onWheelScrolled: delta => {
+                        root.photoPlaneShearEnabled = true
+                        root.photoPlaneShear = Math.max(0.0, Math.min(2.0, Math.round((root.photoPlaneShear + (delta > 0 ? 0.10 : -0.10)) * 100) / 100))
+                        if (root.photoPlaneShear <= 0.01) root.photoPlaneShearEnabled = false
+                    }
+                }
+
+                VizPillButton {
+                    visible: root.layer1Mode === 11
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: root.photoAutoMotionEvents
+                        ? ("󰒟 ~FXRand:" + Math.round(root.photoEffectChangeIntervalSec) + "s")
+                        : "󰒟 ~FXRand:OFF"
+                    active: root.photoAutoMotionEvents
+                    onClicked: root.togglePhotoAutoMotionByKey()
+                    onRightClicked: root.triggerRandomPhotoMotionEvent()
+                    onWheelScrolled: delta => {
+                        root.photoEffectChangeIntervalSec = Math.max(4.0, Math.min(60.0, Math.round(root.photoEffectChangeIntervalSec + (delta > 0 ? 2.0 : -2.0))))
                     }
                 }
 
@@ -4481,7 +5772,7 @@ FocusScope {
                     fontSize: 9
                     horizontalPad: 4
                     text: "⣿ Braille"
-                    active: root.asciiMode !== "block" && root.asciiMode !== "text"
+                    active: root.asciiMode === "braille" || (root.useAlbumArt && root.asciiMode !== "block")
                     onClicked: root.selectL3SourceOrGlyph("braille")
                 }
 
@@ -4499,7 +5790,7 @@ FocusScope {
                     fontSize: 9
                     horizontalPad: 4
                     text: "󰬴 Crisp Text"
-                    active: root.asciiMode === "text"
+                    active: !root.useAlbumArt && root.asciiMode === "text"
                     onClicked: root.selectL3SourceOrGlyph("text")
                 }
 
@@ -5110,6 +6401,626 @@ FocusScope {
                                             scheduleSaveVisualiserConfig()
                                         }
                                     }
+                                }
+                            }
+                        }
+
+                        // =====================================================
+                        // DEDICATED SEPARATE SECTION FOR PHOTO-TOOLS IN STUDIO CONTROLS FOR L1
+                        // (World #12: "Stark Photo Realm" — 16 Darkroom Variants × 25 3D Motion Modes)
+                        // =====================================================
+                        Rectangle {
+                            id: l1PhotoToolsSection
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: photoToolsStudioCol.implicitHeight + 16
+                            radius: 6
+                            color: Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.07)
+                            border.width: 1
+                            border.color: (root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11)
+                                ? root.accentColour
+                                : Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.35)
+
+                            ColumnLayout {
+                                id: photoToolsStudioCol
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                spacing: 7
+
+                                // Row 1: Photo-Tools Header + Activate Mode 12 + Live Library Readout
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 6
+
+                                    Text {
+                                        text: "󰄀 L1 PHOTO-TOOLS STUDIO — 12. STARK PHOTO REALM"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 10
+                                        font.bold: true
+                                        color: root.accentColour
+                                    }
+
+                                    VizPillButton {
+                                        text: (root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11)
+                                            ? "󰄬 12. Stark Photo Realm: ACTIVE"
+                                            : "󰄀 Activate 12. Stark Photo Realm"
+                                        active: root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11
+                                        pillHeight: 22
+                                        horizontalPad: 8
+                                        onClicked: {
+                                            root.layer1FieldEnabled = true
+                                            root.syncLayer1MasterFromSubs()
+                                            root.layer1Mode = 11
+                                            root.requestPhotoRefreshStatus()
+                                            root.clearCanvasImmediate()
+                                            scheduleSaveVisualiserConfig()
+                                        }
+                                    }
+
+                                    Item { Layout.fillWidth: true }
+
+                                    Text {
+                                        text: (root.photoActiveStem ? ("Photo: " + root.photoActiveStem + " · ") : "")
+                                            + "Cat: " + (PhotoMotion.PHOTO_CATEGORY_LABELS[root.photoActiveCategory] || root.photoActiveCategory)
+                                            + " · Processed: " + root.photoTotalProcessed + " (×16)"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 9
+                                        color: Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.80)
+                                        elide: Text.ElideRight
+                                    }
+                                }
+
+                                // Row 2: Photo Stepping, 1-Minute Hold, Pool Mode (;), Plane Shear (:), FX Auto-Random (~) + Import Custom Folder
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+
+                                    VizPillButton {
+                                        text: "◀ Prev Photo ["
+                                        pillHeight: 22
+                                        horizontalPad: 7
+                                        onClicked: root.stepPhotoHistoryByKey(-1)
+                                    }
+
+                                    VizPillButton {
+                                        text: "Next Photo ] ▶"
+                                        pillHeight: 22
+                                        horizontalPad: 7
+                                        onClicked: root.stepPhotoHistoryByKey(1)
+                                    }
+
+                                    VizPillButton {
+                                        text: root.photoHoldActive
+                                            ? ("󰏤 HOLD 1m (" + Math.ceil(root.photoHoldRemainingSec) + "s) [H]")
+                                            : "󰐊 Hold 1m [H]"
+                                        active: root.photoHoldActive
+                                        urgent: root.photoHoldActive
+                                        pillHeight: 22
+                                        horizontalPad: 8
+                                        onClicked: root.triggerPhotoHoldByKey()
+                                    }
+
+                                    VizPillButton {
+                                        text: "◀ Cat {"
+                                        pillHeight: 22
+                                        horizontalPad: 7
+                                        onClicked: root.stepPhotoCategoryByKey(-1)
+                                    }
+
+                                    VizPillButton {
+                                        text: "Cat } ▶"
+                                        pillHeight: 22
+                                        horizontalPad: 7
+                                        onClicked: root.stepPhotoCategoryByKey(1)
+                                    }
+
+                                    VizPillButton {
+                                        text: root.photoAutoMotionEvents
+                                            ? ("󰒟 FX Rand [~]: ON (" + Math.round(root.photoEffectChangeIntervalSec) + "s)")
+                                            : "󰒟 FX Rand [~]: OFF"
+                                        active: root.photoAutoMotionEvents
+                                        pillHeight: 22
+                                        horizontalPad: 8
+                                        onClicked: root.togglePhotoAutoMotionByKey()
+                                        onRightClicked: root.triggerRandomPhotoMotionEvent()
+                                    }
+
+                                    VizPillButton {
+                                        text: root.photoPlaneShearEnabled
+                                            ? ("󰔡 Plane Shear [:]: ON (" + Math.round(root.photoPlaneShear * 100) + "%)")
+                                            : "󰔡 Plane Shear [:]: OFF (Clean)"
+                                        active: root.photoPlaneShearEnabled
+                                        pillHeight: 22
+                                        horizontalPad: 8
+                                        onClicked: root.togglePhotoPlaneShearByKey()
+                                    }
+
+                                    VizPillButton {
+                                        text: root.photoRandomiseMotionControls
+                                            ? "󰒟 Rand Photo Motion: ON"
+                                            : "󰒟 Rand Photo Motion: OFF"
+                                        active: root.photoRandomiseMotionControls
+                                        pillHeight: 22
+                                        horizontalPad: 8
+                                        onClicked: root.togglePhotoRandomiseMotionControls()
+                                        onRightClicked: root.randomisePhotoMotionSettings()
+                                    }
+
+                                    VizPillButton {
+                                        text: root.photoBusy ? "󰑓 Processing..." : "󰑓 Refresh Library"
+                                        active: root.photoBusy
+                                        pillHeight: 22
+                                        horizontalPad: 7
+                                        onClicked: root.requestPhotoRefreshStatus()
+                                    }
+
+                                    VizPillButton {
+                                        text: root.showCustomPhotoImportBar ? "󰋺 Custom Import ▲" : "󰋺 Import Custom Folder ▼"
+                                        active: root.showCustomPhotoImportBar
+                                        pillHeight: 22
+                                        horizontalPad: 7
+                                        onClicked: {
+                                            root.showCustomPhotoImportBar = !root.showCustomPhotoImportBar
+                                        }
+                                    }
+                                }
+
+                                // Row 2b: Multi-Image / Multi-Effect Pool Mode Selector (`;` Keybinding)
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+
+                                    Text {
+                                        text: "Image/Effect Pool (;):"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 9
+                                        font.bold: true
+                                        color: root.accentColour
+                                        height: 22
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+
+                                    Repeater {
+                                        model: PhotoMotion.PHOTO_POOL_MODES.length
+                                        delegate: VizPillButton {
+                                            required property int index
+                                            readonly property var poolEntry: PhotoMotion.PHOTO_POOL_MODES[index]
+                                            text: poolEntry ? poolEntry.name : ("Pool " + (index + 1))
+                                            active: root.photoPoolMode === index
+                                            pillHeight: 22
+                                            fontSize: 9
+                                            horizontalPad: 8
+                                            onClicked: {
+                                                root.ensurePhotoLayerActive()
+                                                root.photoPoolMode = index
+                                                if (root.photoState) root.photoState.poolMode = index
+                                                root.preloadPhotoVariantsIntoCanvas()
+                                                root.clearCanvasImmediate()
+                                                scheduleSaveVisualiserConfig()
+                                                if (poolEntry) {
+                                                    root.suppressActionFeedback("Photo Pool [;]: " + poolEntry.name)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Optional Custom Folder Import Bar (copies & processes into gitignored custom/ folder)
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: customImportRow.implicitHeight + 12
+                                    visible: root.showCustomPhotoImportBar
+                                    radius: 5
+                                    color: Qt.rgba(0, 0, 0, 0.35)
+                                    border.width: 1
+                                    border.color: Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.35)
+
+                                    RowLayout {
+                                        id: customImportRow
+                                        anchors.fill: parent
+                                        anchors.margins: 6
+                                        spacing: 6
+
+                                        Text {
+                                            text: "Source Folder:"
+                                            textFormat: Text.PlainText
+                                            font.family: "JetBrainsMono Nerd Font"
+                                            font.pixelSize: 9
+                                            font.bold: true
+                                            color: root.accentColour
+                                        }
+
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 24
+                                            radius: 4
+                                            color: Qt.rgba(1, 1, 1, 0.07)
+                                            border.width: 1
+                                            border.color: customPhotoPathInput.activeFocus ? root.accentColour : Qt.rgba(1, 1, 1, 0.18)
+
+                                            TextInput {
+                                                id: customPhotoPathInput
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 6
+                                                anchors.rightMargin: 6
+                                                verticalAlignment: TextInput.AlignVCenter
+                                                text: root.photoCustomDir || "~/Pictures"
+                                                font.family: "JetBrainsMono Nerd Font"
+                                                font.pixelSize: 10
+                                                color: root.foregroundColour
+                                                selectByMouse: true
+                                                clip: true
+                                                onAccepted: {
+                                                    root.requestPhotoImport(customPhotoPathInput.text)
+                                                }
+                                            }
+                                        }
+
+                                        VizPillButton {
+                                            text: root.photoBusy ? "󰑓 Importing..." : "󰋺 Import & Build 16 Variants"
+                                            active: !root.photoBusy
+                                            pillHeight: 24
+                                            horizontalPad: 8
+                                            onClicked: {
+                                                root.requestPhotoImport(customPhotoPathInput.text)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Row 3: Category Filter Pills (All · Brutalist · Architecture · Nature · Objects · Cyberpunk · Characters · Custom)
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+
+                                    Text {
+                                        text: "Categories ({ / }):"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 9
+                                        font.bold: true
+                                        color: root.foregroundColour
+                                        height: 22
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+
+                                    Repeater {
+                                        model: PhotoMotion.DEFAULT_PHOTO_CATEGORIES.length
+                                        delegate: VizPillButton {
+                                            required property int index
+                                            readonly property string catKey: PhotoMotion.DEFAULT_PHOTO_CATEGORIES[index]
+                                            readonly property string catLabel: PhotoMotion.PHOTO_CATEGORY_LABELS[catKey] || catKey
+                                            readonly property int catCount: (root.photoCategoryCounts && root.photoCategoryCounts[catKey] !== undefined)
+                                                ? Number(root.photoCategoryCounts[catKey])
+                                                : 0
+                                            text: catLabel + " (" + catCount + ")"
+                                            active: root.photoActiveCategory === catKey
+                                            pillHeight: 22
+                                            fontSize: 9
+                                            horizontalPad: 7
+                                            onClicked: root.selectPhotoCategory(catKey)
+                                        }
+                                    }
+                                }
+
+                                // Row 4: 25 Audio-Reactive 3D Photo Motion & World-Bending Modes (M01..M25)
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
+
+                                        Text {
+                                            text: "25 3D Photo-Effects (' / #):"
+                                            textFormat: Text.PlainText
+                                            font.family: "JetBrainsMono Nerd Font"
+                                            font.pixelSize: 9
+                                            font.bold: true
+                                            color: root.accentColour
+                                        }
+
+                                        VizPillButton {
+                                            text: root.photoAutoMotionEvents
+                                                ? ("󰒟 Auto FX Rand [~]: ON (" + Math.round(root.photoEffectChangeIntervalSec) + "s)")
+                                                : "󰒟 Auto FX Rand [~]: OFF"
+                                            active: root.photoAutoMotionEvents
+                                            pillHeight: 20
+                                            fontSize: 9
+                                            horizontalPad: 6
+                                            onClicked: root.togglePhotoAutoMotionByKey()
+                                            onRightClicked: root.triggerRandomPhotoMotionEvent()
+                                        }
+
+                                        VizPillButton {
+                                            text: root.photoAutoMotionEvents ? "󰒟 Next Event '" : "◀ Effect '"
+                                            pillHeight: 20
+                                            fontSize: 9
+                                            horizontalPad: 6
+                                            onClicked: root.cyclePhotoMotionMode(-1)
+                                        }
+
+                                        VizPillButton {
+                                            text: root.photoAutoMotionEvents ? "Next Event # 󰒟" : "Effect # ▶"
+                                            pillHeight: 20
+                                            fontSize: 9
+                                            horizontalPad: 6
+                                            onClicked: root.cyclePhotoMotionMode(1)
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: {
+                                                var mObj = PhotoMotion.PHOTO_MOTION_MODES[root.photoMotionMode % PhotoMotion.PHOTO_MOTION_MODES.length]
+                                                return mObj ? (mObj.code + " · " + mObj.name + " (" + mObj.group + ")") : ""
+                                            }
+                                            textFormat: Text.PlainText
+                                            font.family: "JetBrainsMono Nerd Font"
+                                            font.pixelSize: 9
+                                            color: Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.82)
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+
+                                    Flow {
+                                        Layout.fillWidth: true
+                                        spacing: 4
+
+                                        Repeater {
+                                            model: PhotoMotion.PHOTO_MOTION_MODES.length
+                                            delegate: VizPillButton {
+                                                required property int index
+                                                readonly property var modeEntry: PhotoMotion.PHOTO_MOTION_MODES[index]
+                                                text: modeEntry ? modeEntry.shortLabel : ("M" + (index + 1))
+                                                active: root.photoMotionMode === index
+                                                pillHeight: 21
+                                                fontSize: 8
+                                                horizontalPad: 5
+                                                onClicked: {
+                                                    root.selectPhotoMotionMode(index, false)
+                                                }
+                                                onRightClicked: {
+                                                    root.selectPhotoMotionMode(index, true)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Row 5: 16 Stark Darkroom Variant Selector (Auto-Strobe All 16 vs Pinned V01..V16)
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    Text {
+                                        text: "16 Stark Variants (Shift+' / #):"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 9
+                                        font.bold: true
+                                        color: root.foregroundColour
+                                        height: 21
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+
+                                    VizPillButton {
+                                        text: "󰑐 Auto-Strobe All 16"
+                                        active: root.photoPinnedVariant < 0
+                                        pillHeight: 21
+                                        fontSize: 8
+                                        horizontalPad: 6
+                                        onClicked: {
+                                            root.ensurePhotoLayerActive()
+                                            root.photoPinnedVariant = -1
+                                            root.clearCanvasImmediate()
+                                            scheduleSaveVisualiserConfig()
+                                        }
+                                    }
+
+                                    Repeater {
+                                        model: PhotoMotion.STAGE1_EFFECT_IDS.length
+                                        delegate: VizPillButton {
+                                            required property int index
+                                            readonly property string effId: PhotoMotion.STAGE1_EFFECT_IDS[index]
+                                            text: "V" + (index < 9 ? ("0" + (index + 1)) : (index + 1))
+                                            active: root.photoPinnedVariant === index
+                                            pillHeight: 21
+                                            fontSize: 8
+                                            horizontalPad: 5
+                                            onClicked: {
+                                                root.ensurePhotoLayerActive()
+                                                root.photoPinnedVariant = (root.photoPinnedVariant === index) ? -1 : index
+                                                root.clearCanvasImmediate()
+                                                scheduleSaveVisualiserConfig()
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Row 6: Photo Opacity, Sector Opacity, Cross-Fade, Effect Change Interval, Plane Shear & 3D Kinematics Sliders
+                                GridLayout {
+                                    Layout.fillWidth: true
+                                    columns: 2
+                                    columnSpacing: 16
+                                    rowSpacing: 5
+
+                                    LayerSlider {
+                                        label: "Motion Activity / Speed"
+                                        value: root.photoMotionActivity
+                                        minValue: 0.10
+                                        maxValue: 3.00
+                                        unitSuffix: "x"
+                                        onValueEdited: v => { root.photoMotionActivity = v }
+                                    }
+
+                                    LayerSlider {
+                                        label: "Effect Change Interval (~)"
+                                        value: root.photoEffectChangeIntervalSec
+                                        minValue: 4.00
+                                        maxValue: 60.00
+                                        unitSuffix: "s"
+                                        onValueEdited: v => { root.photoEffectChangeIntervalSec = Math.round(v) }
+                                    }
+
+                                    LayerSlider {
+                                        label: "Controlled Plane Shear (:)"
+                                        value: root.photoPlaneShear
+                                        minValue: 0.00
+                                        maxValue: 2.00
+                                        unitSuffix: "x"
+                                        onValueEdited: v => {
+                                            root.photoPlaneShear = v
+                                            root.photoPlaneShearEnabled = (v > 0.01)
+                                        }
+                                    }
+
+                                    LayerSlider {
+                                        label: "Master Photo Opacity"
+                                        value: root.photoOpacity
+                                        minValue: 0.05
+                                        maxValue: 1.00
+                                        onValueEdited: v => { root.photoOpacity = v }
+                                    }
+
+                                    LayerSlider {
+                                        label: "Cross-Fade Duration"
+                                        value: root.photoFadeDuration
+                                        minValue: 0.00
+                                        maxValue: 6.00
+                                        unitSuffix: "s"
+                                        onValueEdited: v => { root.photoFadeDuration = v }
+                                    }
+
+                                    LayerSlider {
+                                        label: "16-Variant Strobe Rate"
+                                        value: root.photoStrobeSpeed
+                                        minValue: 0.10
+                                        maxValue: 4.00
+                                        unitSuffix: "x"
+                                        onValueEdited: v => { root.photoStrobeSpeed = v }
+                                    }
+
+                                    LayerSlider {
+                                        label: "Colour Snatch Opacity"
+                                        value: root.photoColourSnatchOpacity
+                                        minValue: 0.00
+                                        maxValue: 1.00
+                                        onValueEdited: v => { root.photoColourSnatchOpacity = v }
+                                    }
+
+                                    LayerSlider {
+                                        label: "Obsidian Black Opacity"
+                                        value: root.photoBlackOpacity
+                                        minValue: 0.00
+                                        maxValue: 1.00
+                                        onValueEdited: v => { root.photoBlackOpacity = v }
+                                    }
+
+                                    LayerSlider {
+                                        label: "Silver Mid-Tone Opacity"
+                                        value: root.photoMidOpacity
+                                        minValue: 0.00
+                                        maxValue: 1.00
+                                        onValueEdited: v => { root.photoMidOpacity = v }
+                                    }
+
+                                    LayerSlider {
+                                        label: "Chalk White Opacity"
+                                        value: root.photoWhiteOpacity
+                                        minValue: 0.00
+                                        maxValue: 1.00
+                                        onValueEdited: v => { root.photoWhiteOpacity = v }
+                                    }
+
+                                    LayerSlider {
+                                        label: "3D XYZ Plane Tilt"
+                                        value: root.photoXyzTilt
+                                        minValue: 0.00
+                                        maxValue: 2.50
+                                        unitSuffix: "x"
+                                        onValueEdited: v => { root.photoXyzTilt = v }
+                                    }
+
+                                    LayerSlider {
+                                        label: "Z-Depth Kick Punch"
+                                        value: root.photoZoomPunch
+                                        minValue: 0.25
+                                        maxValue: 2.50
+                                        unitSuffix: "x"
+                                        onValueEdited: v => { root.photoZoomPunch = v }
+                                    }
+
+                                    LayerSlider {
+                                        label: "Palette Neon Bloom"
+                                        value: root.photoPaletteBloom
+                                        minValue: 0.00
+                                        maxValue: 2.50
+                                        unitSuffix: "x"
+                                        onValueEdited: v => { root.photoPaletteBloom = v }
+                                    }
+
+                                    LayerSlider {
+                                        label: "World-Bending Warp"
+                                        value: root.photoWarpIntensity
+                                        minValue: 0.00
+                                        maxValue: 2.50
+                                        unitSuffix: "x"
+                                        onValueEdited: v => { root.photoWarpIntensity = v }
+                                    }
+                                }
+
+                                // Row 7: Opt-In Audio-Responder Links for Photo-Tools
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+
+                                    Text {
+                                        text: "Photo Audio-Responder Links:"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 9
+                                        font.bold: true
+                                        color: root.accentColour
+                                        height: 21
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+
+                                    Repeater {
+                                        model: PhotoMotion.AUDIO_RESPONDER_PHOTO_LINKS.length
+                                        delegate: VizPillButton {
+                                            required property int index
+                                            readonly property var linkDef: PhotoMotion.AUDIO_RESPONDER_PHOTO_LINKS[index]
+                                            readonly property var linkState: (root.photoAudioLinks && linkDef && root.photoAudioLinks[linkDef.id])
+                                                ? root.photoAudioLinks[linkDef.id]
+                                                : ({ source: 0, method: "+", amount: 0.5 })
+                                            readonly property var srcNames: ["Off", "Energy", "Bass", "Mid", "High", "Beat", "Band", "Drop"]
+                                            text: (linkDef ? linkDef.label : "") + ": " + (srcNames[Number(linkState.source) || 0] || "Off") + " (" + (linkState.method || "+") + ")"
+                                            active: (Number(linkState.source) || 0) > 0
+                                            pillHeight: 21
+                                            fontSize: 8
+                                            horizontalPad: 6
+                                            onClicked: {
+                                                if (linkDef) root.cyclePhotoAudioLinkSource(linkDef.id)
+                                            }
+                                            onRightClicked: {
+                                                if (linkDef) root.cyclePhotoAudioLinkMethod(linkDef.id)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Status Footer Line
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "Status: " + root.photoStatusMessage + " · Custom folder (gitignored): " + root.photoCustomDir
+                                    textFormat: Text.PlainText
+                                    font.family: "JetBrainsMono Nerd Font"
+                                    font.pixelSize: 8
+                                    color: Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.65)
+                                    elide: Text.ElideRight
                                 }
                             }
                         }
@@ -6147,7 +8058,7 @@ FocusScope {
 
                             VizPillButton {
                                 text: "⣿ Braille"
-                                active: root.asciiMode !== "block" && root.asciiMode !== "text"
+                                active: root.asciiMode !== "block" && (root.useAlbumArt || root.asciiMode !== "text")
                                 onClicked: root.selectL3SourceOrGlyph("braille")
                             }
 
@@ -6159,7 +8070,7 @@ FocusScope {
 
                             VizPillButton {
                                 text: "󰬴 Crisp Text"
-                                active: root.asciiMode === "text"
+                                active: !root.useAlbumArt && root.asciiMode === "text"
                                 onClicked: root.selectL3SourceOrGlyph("text")
                             }
 
@@ -6640,7 +8551,7 @@ FocusScope {
                             spacing: 5
 
                             Text {
-                                text: "Psychedelic / Techno / Dance Style (16):"
+                                text: "Psychedelic / Techno / Dance / ASCII Style (21):"
                                 textFormat: Text.PlainText
                                 font.family: "JetBrainsMono Nerd Font"
                                 font.pixelSize: 10
@@ -6657,6 +8568,9 @@ FocusScope {
                                     horizontalPad: 7
                                     onClicked: {
                                         root.layer3TextStyle = index
+                                        if (root.useAlbumArt || root.asciiMode !== "text") {
+                                            root.selectL3SourceOrGlyph("text")
+                                        }
                                         vizCanvas.requestPaint()
                                         scheduleSaveVisualiserConfig()
                                     }

@@ -264,22 +264,20 @@ ShellRoot {
                 return
             }
 
-            if (win.visualiserMaximised) return
-
-            if (event.key === Qt.Key_Slash) {
+            if (event.key === Qt.Key_Slash && !win.visualiserMaximised) {
                 win.leftTab = 0
                 appSearch.forceActiveFocus()
                 appSearch.selectAll()
                 event.accepted = true
                 return
             }
-            if (event.key === Qt.Key_Tab) {
+            if (event.key === Qt.Key_Tab && !win.visualiserMaximised) {
                 win.leftTab = (win.leftTab + 1) % 4
                 appRootRect.forceActiveFocus()
                 event.accepted = true
                 return
             }
-            if (event.key === Qt.Key_Backtab) {
+            if (event.key === Qt.Key_Backtab && !win.visualiserMaximised) {
                 win.leftTab = (win.leftTab + 3) % 4
                 appRootRect.forceActiveFocus()
                 event.accepted = true
@@ -287,7 +285,7 @@ ShellRoot {
             }
 
             var hasAltOrCtrl = Boolean(event.modifiers & (Qt.AltModifier | Qt.ControlModifier))
-            if (!hasAltOrCtrl && appVisualiser.stageMode === "visualiser") {
+            if (!hasAltOrCtrl && (win.visualiserMaximised || appVisualiser.stageMode === "visualiser")) {
                 if (event.key === Qt.Key_1) { appVisualiser.toggleVisualiserLayerByNumber(1); event.accepted = true; return }
                 else if (event.key === Qt.Key_2) { appVisualiser.toggleVisualiserLayerByNumber(2); event.accepted = true; return }
                 else if (event.key === Qt.Key_3) { appVisualiser.toggleVisualiserLayerByNumber(3); event.accepted = true; return }
@@ -299,7 +297,41 @@ ShellRoot {
                 else if (event.key === Qt.Key_E) { appVisualiser.toggleLayer3TextField("album"); event.accepted = true; return }
                 else if (event.key === Qt.Key_R) { appVisualiser.toggleLayer3TextField("statements"); event.accepted = true; return }
                 else if (event.key === Qt.Key_T) { appVisualiser.cycleLayer3ColourMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true; return }
-            } else {
+                else if (event.key === Qt.Key_BraceLeft || event.text === "{") { appVisualiser.stepPhotoCategoryByKey(-1); event.accepted = true; return }
+                else if (event.key === Qt.Key_BraceRight || event.text === "}") { appVisualiser.stepPhotoCategoryByKey(1); event.accepted = true; return }
+                else if (event.key === Qt.Key_BracketLeft || event.text === "[") {
+                    if (event.modifiers & Qt.ShiftModifier) appVisualiser.stepPhotoCategoryByKey(-1)
+                    else appVisualiser.stepPhotoHistoryByKey(-1)
+                    event.accepted = true; return
+                }
+                else if (event.key === Qt.Key_BracketRight || event.text === "]") {
+                    if (event.modifiers & Qt.ShiftModifier) appVisualiser.stepPhotoCategoryByKey(1)
+                    else appVisualiser.stepPhotoHistoryByKey(1)
+                    event.accepted = true; return
+                }
+                else if (event.key === Qt.Key_Apostrophe || event.text === "'") {
+                    if (event.modifiers & Qt.ShiftModifier) appVisualiser.cyclePhotoVariantEffect(-1)
+                    else appVisualiser.cyclePhotoMotionMode(-1)
+                    event.accepted = true; return
+                }
+                else if (event.key === Qt.Key_NumberSign || event.text === "#") {
+                    if (event.modifiers & Qt.ShiftModifier) appVisualiser.cyclePhotoVariantEffect(1)
+                    else appVisualiser.cyclePhotoMotionMode(1)
+                    event.accepted = true; return
+                }
+                else if (event.key === Qt.Key_Colon || event.text === ":" || (event.key === Qt.Key_Semicolon && (event.modifiers & Qt.ShiftModifier))) {
+                    appVisualiser.togglePhotoPlaneShearByKey(); event.accepted = true; return
+                }
+                else if (event.key === Qt.Key_Semicolon || event.text === ";") {
+                    appVisualiser.cyclePhotoPoolMode(1); event.accepted = true; return
+                }
+                else if (event.key === Qt.Key_At || event.key === Qt.Key_QuoteDbl || event.text === "@" || event.text === "\"") {
+                    appVisualiser.cyclePhotoVariantEffect(-1); event.accepted = true; return
+                }
+                else if (event.key === Qt.Key_AsciiTilde || event.text === "~") {
+                    appVisualiser.togglePhotoEffectAutoRandomiseByKey(); event.accepted = true; return
+                }
+            } else if (!win.visualiserMaximised) {
                 if (event.key === Qt.Key_1) {
                     win.leftTab = 0
                     appRootRect.forceActiveFocus()
@@ -323,9 +355,9 @@ ShellRoot {
                 }
             }
 
-            if (win.leftTab === 0) {
+            if (!win.visualiserMaximised && win.leftTab === 0) {
                 var albums = service.albums || []
-                if (albums.length === 0) return
+                if (albums.length > 0) {
                 var curIdx = Math.max(0, Math.min(albums.length - 1, win.focusedAlbumIndex))
                 win.focusedAlbumIndex = curIdx
                 var curAlbum = albums[curIdx]
@@ -411,7 +443,8 @@ ShellRoot {
                         event.accepted = true
                     }
                 }
-            } else if (win.leftTab === 1) {
+                }
+            } else if (!win.visualiserMaximised && win.leftTab === 1) {
                 var smartTracks = (service.smartPlaylist && service.smartPlaylist.tracks) ? service.smartPlaylist.tracks : []
                 var customPls = service.playlists || []
                 var curPl = (customPls.length > 0 && win.focusedPlaylistIndex >= 0 && win.focusedPlaylistIndex < customPls.length)
@@ -503,7 +536,7 @@ ShellRoot {
                         event.accepted = true
                     }
                 }
-            } else if (win.leftTab === 2) {
+            } else if (!win.visualiserMaximised && win.leftTab === 2) {
                 if (event.key === Qt.Key_Down || event.key === Qt.Key_J || event.key === Qt.Key_Right) {
                     appVisualiser.cycleMode(1)
                     event.accepted = true
@@ -519,8 +552,39 @@ ShellRoot {
                 else if (event.key === Qt.Key_A) { appVisualiser.cycleLayer3Mode((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
                 else if (event.key === Qt.Key_C) { appVisualiser.cyclePalette((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
                 else if (event.key === Qt.Key_K) { appVisualiser.cycleTracers((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
+                else if (event.key === Qt.Key_BraceLeft || event.text === "{") { appVisualiser.stepPhotoCategoryByKey(-1); event.accepted = true }
+                else if (event.key === Qt.Key_BraceRight || event.text === "}") { appVisualiser.stepPhotoCategoryByKey(1); event.accepted = true }
+                else if (event.key === Qt.Key_BracketLeft || event.text === "[") {
+                    if (event.modifiers & Qt.ShiftModifier) appVisualiser.stepPhotoCategoryByKey(-1)
+                    else appVisualiser.stepPhotoHistoryByKey(-1)
+                    event.accepted = true
+                }
+                else if (event.key === Qt.Key_BracketRight || event.text === "]") {
+                    if (event.modifiers & Qt.ShiftModifier) appVisualiser.stepPhotoCategoryByKey(1)
+                    else appVisualiser.stepPhotoHistoryByKey(1)
+                    event.accepted = true
+                }
+                else if (event.key === Qt.Key_Apostrophe || event.text === "'") {
+                    if (event.modifiers & Qt.ShiftModifier) appVisualiser.cyclePhotoVariantEffect(-1)
+                    else appVisualiser.cyclePhotoMotionMode(-1)
+                    event.accepted = true
+                }
+                else if (event.key === Qt.Key_NumberSign || event.text === "#") {
+                    if (event.modifiers & Qt.ShiftModifier) appVisualiser.cyclePhotoVariantEffect(1)
+                    else appVisualiser.cyclePhotoMotionMode(1)
+                    event.accepted = true
+                }
+                else if (event.key === Qt.Key_At || event.key === Qt.Key_QuoteDbl || event.text === "@" || event.text === "\"") { appVisualiser.cyclePhotoVariantEffect(-1); event.accepted = true }
+                else if (event.key === Qt.Key_AsciiTilde || event.text === "~") { appVisualiser.cyclePhotoVariantEffect(1); event.accepted = true }
                 else if (event.key === Qt.Key_L) { appVisualiser.showLayerDrawer = !appVisualiser.showLayerDrawer; event.accepted = true }
-                else if (event.key === Qt.Key_H) { appVisualiser.toggleHudVisibility(); event.accepted = true }
+                else if (event.key === Qt.Key_H) {
+                    if ((event.modifiers & Qt.ShiftModifier) || (appVisualiser.layer1Enabled && appVisualiser.layer1FieldEnabled && appVisualiser.layer1Mode === 11)) {
+                        appVisualiser.triggerPhotoHoldByKey()
+                    } else {
+                        appVisualiser.toggleHudVisibility()
+                    }
+                    event.accepted = true
+                }
                 else if (event.key === Qt.Key_Z) {
                     if (win.visualiserMaximised && !appVisualiser.showHud) {
                         appVisualiser.showHud = true
@@ -2262,6 +2326,19 @@ ShellRoot {
                             useAlbumArt: service.useAlbumArt
                             asciiMode: service.asciiMode
                             asciiSource: service.asciiSource
+                            photoCategories: service.photoCategories
+                            photoCategoryCounts: service.photoCategoryCounts
+                            photoActiveCategory: service.photoActiveCategory
+                            photoActiveStem: service.photoActiveStem
+                            photoActiveVariants: service.photoActiveVariants
+                            photoSameEffectPeers: service.photoSameEffectPeers
+                            photoSameEffectByVariant: service.photoSameEffectByVariant
+                            photoRandomPoolPeers: service.photoRandomPoolPeers
+                            photoTotalProcessed: service.photoTotalProcessed
+                            photoTotalOriginals: service.photoTotalOriginals
+                            photoCustomDir: service.photoCustomDir
+                            photoBusy: service.photoBusy
+                            photoStatusMessage: service.photoStatusMessage
                             accentColour: win.colAccent
                             urgentColour: win.colUrgent
                             foregroundColour: win.colFg
@@ -2305,6 +2382,15 @@ ShellRoot {
                             }
                             onRequestResetStatements: {
                                 service.resetStatementsFile()
+                            }
+                            onRequestPhotoImport: srcDir => {
+                                service.importPhotos(srcDir)
+                            }
+                            onRequestPhotoRefreshStatus: {
+                                service.refreshPhotoStatus()
+                            }
+                            onRequestPhotoPick: (cat, stem) => {
+                                service.pickPhoto(cat, stem)
                             }
 
                             Connections {

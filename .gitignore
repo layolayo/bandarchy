@@ -5,3 +5,24 @@ pkg/
 src/
 *.pkg.tar*
 .DS_Store
+
+# Bandarchy Photo Layer — exclude all custom photo folders, user categories, and processed/imported assets
+custom/
+**/custom/
+**/custom/**
+Custom/
+**/Custom/
+**/Custom/**
+categories/
+**/categories/
+**/categories/**
+processed/
+**/processed/
+**/processed/**
+imported/
+**/imported/
+**/imported/**
+photo_manifest.json
+bandarchy_photo_manifest.json
+photo_layer_state.json
+

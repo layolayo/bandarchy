@@ -19,7 +19,8 @@ sha256sums=()
 
 package() {
   local plugindir="${pkgdir}/usr/share/omarchy/plugins/io.github.layolayo.bandarchy"
-  install -dm755 "${plugindir}/bin" "${plugindir}/share" "${pkgdir}/usr/bin" "${pkgdir}/usr/share/applications"
+  install -dm755 "${plugindir}/bin" "${plugindir}/share" "${plugindir}/share/photo_engine" \
+                 "${pkgdir}/usr/share/bandarchy/photo_engine" "${pkgdir}/usr/bin" "${pkgdir}/usr/share/applications"
 
   install -m644 "${startdir}/manifest.json" "${plugindir}/manifest.json"
   install -m644 "${startdir}/Service.qml" "${plugindir}/Service.qml"
@@ -30,8 +31,21 @@ package() {
   install -m644 "${startdir}/Spectrum.qml" "${plugindir}/Spectrum.qml"
   install -m644 "${startdir}/Vinyl.qml" "${plugindir}/Vinyl.qml"
   install -m644 "${startdir}/PsychedelicEngine.js" "${plugindir}/PsychedelicEngine.js"
+  install -m644 "${startdir}/PhotoMotionEngine.js" "${plugindir}/PhotoMotionEngine.js"
   install -m644 "${startdir}/icon.svg" "${plugindir}/icon.svg"
   install -m644 "${startdir}/share/cava.conf" "${plugindir}/share/cava.conf"
+  if [ -f "${startdir}/share/psychedelic.frag" ]; then
+    install -m644 "${startdir}/share/psychedelic.frag" "${plugindir}/share/psychedelic.frag"
+  fi
+  if [ -f "${startdir}/share/statements.txt" ]; then
+    install -m644 "${startdir}/share/statements.txt" "${plugindir}/share/statements.txt"
+  fi
+  install -m755 "${startdir}/share/photo_engine/bandarchy_photo_import.py" "${plugindir}/share/photo_engine/bandarchy_photo_import.py"
+  install -m644 "${startdir}/share/photo_engine/"effects_family*.py "${plugindir}/share/photo_engine/"
+  install -m644 "${startdir}/share/photo_engine/"photo_motion_group*.py "${plugindir}/share/photo_engine/"
+  install -m755 "${startdir}/share/photo_engine/bandarchy_photo_import.py" "${pkgdir}/usr/share/bandarchy/photo_engine/bandarchy_photo_import.py"
+  install -m644 "${startdir}/share/photo_engine/"effects_family*.py "${pkgdir}/usr/share/bandarchy/photo_engine/"
+  install -m644 "${startdir}/share/photo_engine/"photo_motion_group*.py "${pkgdir}/usr/share/bandarchy/photo_engine/"
   install -m755 "${startdir}/bin/bandarchy" "${plugindir}/bin/bandarchy"
   install -m755 "${startdir}/bin/bandarchy-player" "${plugindir}/bin/bandarchy-player"
 

@@ -289,6 +289,39 @@ Item {
             return
         }
 
+        if (!hasCtrlOrAlt && (root.activeTab === 2 || isFsViz || panelVisualiser.stageMode === "visualiser")) {
+            if (event.key === Qt.Key_BraceLeft || event.text === "{") { panelVisualiser.stepPhotoCategoryByKey(-1); event.accepted = true; return }
+            else if (event.key === Qt.Key_BraceRight || event.text === "}") { panelVisualiser.stepPhotoCategoryByKey(1); event.accepted = true; return }
+            else if (event.key === Qt.Key_BracketLeft || event.text === "[") {
+                if (event.modifiers & Qt.ShiftModifier) panelVisualiser.stepPhotoCategoryByKey(-1)
+                else panelVisualiser.stepPhotoHistoryByKey(-1)
+                event.accepted = true; return
+            }
+            else if (event.key === Qt.Key_BracketRight || event.text === "]") {
+                if (event.modifiers & Qt.ShiftModifier) panelVisualiser.stepPhotoCategoryByKey(1)
+                else panelVisualiser.stepPhotoHistoryByKey(1)
+                event.accepted = true; return
+            }
+            else if (event.key === Qt.Key_Apostrophe || event.text === "'") {
+                if (event.modifiers & Qt.ShiftModifier) panelVisualiser.cyclePhotoVariantEffect(-1)
+                else panelVisualiser.cyclePhotoMotionMode(-1)
+                event.accepted = true; return
+            }
+            else if (event.key === Qt.Key_NumberSign || event.text === "#") {
+                if (event.modifiers & Qt.ShiftModifier) panelVisualiser.cyclePhotoVariantEffect(1)
+                else panelVisualiser.cyclePhotoMotionMode(1)
+                event.accepted = true; return
+            }
+            else if (event.key === Qt.Key_Colon || event.text === ":" || (event.key === Qt.Key_Semicolon && (event.modifiers & Qt.ShiftModifier))) {
+                panelVisualiser.togglePhotoPlaneShearByKey(); event.accepted = true; return
+            }
+            else if (event.key === Qt.Key_Semicolon || event.text === ";") {
+                panelVisualiser.cyclePhotoPoolModeByKey(1); event.accepted = true; return
+            }
+            else if (event.key === Qt.Key_At || event.key === Qt.Key_QuoteDbl || event.text === "@" || event.text === "\"") { panelVisualiser.cyclePhotoVariantEffect(-1); event.accepted = true; return }
+            else if (event.key === Qt.Key_AsciiTilde || event.text === "~") { panelVisualiser.togglePhotoAutoMotionByKey(); event.accepted = true; return }
+        }
+
         if (root.activeTab === 2 || isFsViz) {
             if (event.key === Qt.Key_1) { panelVisualiser.toggleVisualiserLayerByNumber(1); event.accepted = true }
             else if (event.key === Qt.Key_2) { panelVisualiser.toggleVisualiserLayerByNumber(2); event.accepted = true }
@@ -311,7 +344,14 @@ Item {
             else if (event.key === Qt.Key_T) { panelVisualiser.cycleLayer3ColourMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1); event.accepted = true }
             else if (event.key === Qt.Key_B) { if (root.service) root.service.toggleAsciiMode(); event.accepted = true }
             else if (event.key === Qt.Key_D) { panelVisualiser.toggleInCanvasTte(); event.accepted = true }
-            else if (event.key === Qt.Key_H) { panelVisualiser.toggleHudVisibility(); event.accepted = true }
+            else if (event.key === Qt.Key_H) {
+                if ((event.modifiers & Qt.ShiftModifier) || (panelVisualiser.layer1Enabled && panelVisualiser.layer1FieldEnabled && panelVisualiser.layer1Mode === 11)) {
+                    panelVisualiser.triggerPhotoHoldByKey()
+                } else {
+                    panelVisualiser.toggleHudVisibility()
+                }
+                event.accepted = true
+            }
             else if (event.key === Qt.Key_Z) {
                 panelVisualiser.showHud = false
                 if (root.service) root.service.fullscreenVisualiserOpen = !root.service.fullscreenVisualiserOpen
@@ -629,6 +669,19 @@ Item {
                 useAlbumArt: root.service ? root.service.useAlbumArt : false
                 asciiMode: root.service ? root.service.asciiMode : "braille"
                 asciiSource: root.service ? root.service.asciiSource : "album-art"
+                photoCategories: root.service ? root.service.photoCategories : []
+                photoCategoryCounts: root.service ? root.service.photoCategoryCounts : ({})
+                photoActiveCategory: root.service ? root.service.photoActiveCategory : "all"
+                photoActiveStem: root.service ? root.service.photoActiveStem : ""
+                photoActiveVariants: root.service ? root.service.photoActiveVariants : ({})
+                photoSameEffectPeers: root.service ? root.service.photoSameEffectPeers : ({})
+                photoSameEffectByVariant: root.service ? root.service.photoSameEffectByVariant : ({})
+                photoRandomPoolPeers: root.service ? root.service.photoRandomPoolPeers : ({})
+                photoTotalProcessed: root.service ? root.service.photoTotalProcessed : 0
+                photoTotalOriginals: root.service ? root.service.photoTotalOriginals : 0
+                photoCustomDir: root.service ? root.service.photoCustomDir : ""
+                photoBusy: root.service ? root.service.photoBusy : false
+                photoStatusMessage: root.service ? root.service.photoStatusMessage : ""
                 accentColour: root.colAccent
                 urgentColour: root.colUrgent
                 foregroundColour: root.colFg
@@ -672,6 +725,15 @@ Item {
                 }
                 onRequestResetStatements: {
                     if (root.service) root.service.resetStatementsFile()
+                }
+                onRequestPhotoImport: srcDir => {
+                    if (root.service) root.service.importPhotos(srcDir)
+                }
+                onRequestPhotoRefreshStatus: {
+                    if (root.service) root.service.refreshPhotoStatus()
+                }
+                onRequestPhotoPick: (cat, stem) => {
+                    if (root.service) root.service.pickPhoto(cat, stem)
                 }
 
                 Connections {
@@ -2051,7 +2113,7 @@ Item {
                         anchors.fill: parent
                         visible: (root.opened || root.standaloneMode) && root.activeTab === 2 && !(root.service && root.service.fullscreenVisualiserOpen)
                         isFullscreen: false
-                        bands: root.service ? root.service.spectrumBands : []
+                        bands: (visible && root.service) ? root.service.spectrumBands : []
                         playing: root.service ? root.service.activelyPlaying : false
                         trackTitle: root.service ? root.service.trackTitle : ""
                         trackArtist: root.service ? root.service.trackArtist : ""
@@ -2067,6 +2129,19 @@ Item {
                         useAlbumArt: root.service ? root.service.useAlbumArt : false
                         asciiMode: root.service ? root.service.asciiMode : "braille"
                         asciiSource: root.service ? root.service.asciiSource : "album-art"
+                        photoCategories: root.service ? root.service.photoCategories : []
+                        photoCategoryCounts: root.service ? root.service.photoCategoryCounts : ({})
+                        photoActiveCategory: root.service ? root.service.photoActiveCategory : "all"
+                        photoActiveStem: root.service ? root.service.photoActiveStem : ""
+                        photoActiveVariants: root.service ? root.service.photoActiveVariants : ({})
+                        photoSameEffectPeers: root.service ? root.service.photoSameEffectPeers : ({})
+                        photoSameEffectByVariant: root.service ? root.service.photoSameEffectByVariant : ({})
+                        photoRandomPoolPeers: root.service ? root.service.photoRandomPoolPeers : ({})
+                        photoTotalProcessed: root.service ? root.service.photoTotalProcessed : 0
+                        photoTotalOriginals: root.service ? root.service.photoTotalOriginals : 0
+                        photoCustomDir: root.service ? root.service.photoCustomDir : ""
+                        photoBusy: root.service ? root.service.photoBusy : false
+                        photoStatusMessage: root.service ? root.service.photoStatusMessage : ""
                         accentColour: root.colAccent
                         urgentColour: root.colUrgent
                         foregroundColour: root.colFg
@@ -2111,6 +2186,15 @@ Item {
                         }
                         onRequestResetStatements: {
                             if (root.service) root.service.resetStatementsFile()
+                        }
+                        onRequestPhotoImport: srcDir => {
+                            if (root.service) root.service.importPhotos(srcDir)
+                        }
+                        onRequestPhotoRefreshStatus: {
+                            if (root.service) root.service.refreshPhotoStatus()
+                        }
+                        onRequestPhotoPick: (cat, stem) => {
+                            if (root.service) root.service.pickPhoto(cat, stem)
                         }
 
                         Connections {
@@ -2519,8 +2603,8 @@ Item {
                             Layout.preferredWidth: 96
                             Layout.preferredHeight: 38
                             barCount: 24
-                            bands: root.service ? root.service.spectrumBands : []
-                            active: Boolean(root.service && root.service.activelyPlaying && root.activeTab !== 2 && !root.service.fullscreenVisualiserOpen)
+                            active: Boolean((root.opened || root.standaloneMode) && root.service && root.service.activelyPlaying && root.activeTab !== 2 && !root.service.fullscreenVisualiserOpen)
+                            bands: (active && root.service) ? root.service.spectrumBands : []
                             accentColour: root.colAccent
                             peakColour: root.colUrgent
                         }

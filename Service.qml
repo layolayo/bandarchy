@@ -140,6 +140,21 @@ Item {
     property var visualiserConfig: ({})
     property bool visualiserConfigLoaded: false
 
+    // Stark Photo Realm (Layer 1 Mode 12) state
+    property var photoCategories: ["all", "brutalist", "architecture", "nature", "objects", "cyberpunk", "characters", "custom"]
+    property var photoCategoryCounts: ({ "all": 0, "brutalist": 0, "architecture": 0, "nature": 0, "objects": 0, "cyberpunk": 0, "characters": 0, "custom": 0 })
+    property string photoActiveCategory: "all"
+    property string photoActiveStem: ""
+    property var photoActiveVariants: ({})
+    property var photoSameEffectPeers: ({})
+    property var photoSameEffectByVariant: ({})
+    property var photoRandomPoolPeers: ({})
+    property int photoTotalProcessed: 0
+    property int photoTotalOriginals: 0
+    property string photoCustomDir: "~/Pictures/bandarchy/categories/custom"
+    property bool photoBusy: false
+    property string photoStatusMessage: ""
+
     // 60 FPS 64-band Cava spectrum
     property var spectrumBands: []
 
@@ -149,9 +164,7 @@ Item {
         loadVisualiserConfig()
         refreshStatus()
         loadCollection("all", "")
-        loadPlaylists()
-        refreshSmartPlaylist("radio", "")
-        refreshAsciiArt()
+        refreshPhotoStatus()
     }
 
     property bool _batchUpdatingTrack: false
@@ -819,6 +832,9 @@ Item {
 
     function setUseAlbumArt(useArt) {
         root.useAlbumArt = Boolean(useArt)
+        if (root.useAlbumArt && root.asciiMode === "text") {
+            root.asciiMode = "braille"
+        }
         if (root.asciiMode !== "braille" && root.asciiMode !== "block" && root.asciiMode !== "text") {
             root.asciiMode = "braille"
         }
@@ -832,6 +848,9 @@ Item {
 
     function setAsciiGlyphMode(glyphMode) {
         root.asciiMode = (glyphMode === "block") ? "block" : ((glyphMode === "text") ? "text" : "braille")
+        if (root.asciiMode === "text") {
+            root.useAlbumArt = false
+        }
         Quickshell.execDetached([
             root.binPath, "auth",
             "--use-album-art", root.useAlbumArt ? "1" : "0",
@@ -845,14 +864,23 @@ Item {
     }
 
     function toggleAsciiMode() {
-        var styles = ["braille", "block", "text"]
-        var idx = styles.indexOf(root.asciiMode)
-        if (idx < 0) idx = 0
-        if (idx < styles.length - 1) {
-            root.asciiMode = styles[idx + 1]
+        if (root.useAlbumArt) {
+            if (root.asciiMode === "braille") {
+                root.asciiMode = "block"
+            } else {
+                root.useAlbumArt = false
+                root.asciiMode = "braille"
+            }
         } else {
-            root.asciiMode = "braille"
-            root.useAlbumArt = !root.useAlbumArt
+            var styles = ["braille", "block", "text"]
+            var idx = styles.indexOf(root.asciiMode)
+            if (idx < 0) idx = 0
+            if (idx < styles.length - 1) {
+                root.asciiMode = styles[idx + 1]
+            } else {
+                root.useAlbumArt = true
+                root.asciiMode = "braille"
+            }
         }
         Quickshell.execDetached([
             root.binPath, "auth",
@@ -868,11 +896,15 @@ Item {
             root.useAlbumArt = false
         } else if (m === "art") {
             root.useAlbumArt = true
+            if (root.asciiMode === "text") {
+                root.asciiMode = "braille"
+            }
         } else if (m === "block") {
             root.asciiMode = "block"
         } else if (m === "braille") {
             root.asciiMode = "braille"
         } else if (m === "text" || m === "crisp") {
+            root.useAlbumArt = false
             root.asciiMode = "text"
         } else if (m === "art-braille") {
             root.useAlbumArt = true
@@ -881,7 +913,7 @@ Item {
             root.useAlbumArt = true
             root.asciiMode = "block"
         } else if (m === "art-text") {
-            root.useAlbumArt = true
+            root.useAlbumArt = false
             root.asciiMode = "text"
         } else if (m === "words-braille") {
             root.useAlbumArt = false
@@ -893,6 +925,9 @@ Item {
             root.useAlbumArt = false
             root.asciiMode = "text"
         }
+        if (root.useAlbumArt && root.asciiMode === "text") {
+            root.asciiMode = "braille"
+        }
         if (root.asciiMode !== "braille" && root.asciiMode !== "block" && root.asciiMode !== "text") {
             root.asciiMode = "braille"
         }
@@ -902,6 +937,134 @@ Item {
             "--ascii-mode", root.asciiMode
         ])
         refreshAsciiArt()
+    }
+
+    // Stark Photo Realm (Layer 1 Mode 12) background processes & commands
+    Process {
+        id: photoStatusProc
+        property string outBuf: ""
+        stdout: SplitParser {
+            onRead: line => { photoStatusProc.outBuf += line }
+        }
+        onExited: {
+            var raw = photoStatusProc.outBuf.trim()
+            photoStatusProc.outBuf = ""
+            if (!raw) return
+            try {
+                var d = JSON.parse(raw)
+                if (d && d.ok) {
+                    if (d.standard_categories && d.standard_categories.length > 0) {
+                        root.photoCategories = ["all"].concat(d.standard_categories)
+                    } else if (d.categories && Array.isArray(d.categories) && d.categories.length > 0) {
+                        root.photoCategories = d.categories
+                    } else if (d.categories && typeof d.categories === "object") {
+                        root.photoCategories = ["all"].concat(Object.keys(d.categories))
+                    }
+                    if (d.categoryCounts) root.photoCategoryCounts = d.categoryCounts
+                    root.photoTotalProcessed = Number(d.totalProcessed || 0)
+                    root.photoTotalOriginals = Number(d.totalOriginals || 0)
+                    if (d.customDir) root.photoCustomDir = String(d.customDir)
+                    if (!root.photoActiveStem && root.photoTotalProcessed > 0) {
+                        root.pickPhoto(root.photoActiveCategory, "")
+                    }
+                }
+            } catch (e) {}
+        }
+    }
+
+    Process {
+        id: photoImportProc
+        property string outBuf: ""
+        stdout: SplitParser {
+            onRead: line => { photoImportProc.outBuf += line }
+        }
+        onExited: {
+            root.photoBusy = false
+            var raw = photoImportProc.outBuf.trim()
+            photoImportProc.outBuf = ""
+            if (!raw) return
+            try {
+                var d = JSON.parse(raw)
+                if (d && d.ok) {
+                    if (d.categoryCounts) root.photoCategoryCounts = d.categoryCounts
+                    root.photoTotalProcessed = Number(d.totalProcessed || root.photoTotalProcessed || 0)
+                    root.photoTotalOriginals = Number(d.totalOriginals || root.photoTotalOriginals || 0)
+                    var impCount = Number(d.importedOriginals !== undefined ? d.importedOriginals : 0)
+                    var genCount = Number(d.generatedVariants !== undefined ? d.generatedVariants : 0)
+                    root.photoStatusMessage = "Imported " + impCount + " originals (" + genCount + " new variants)"
+                    root.notifyAction("Stark Photo Realm: " + root.photoStatusMessage)
+                    root.pickPhoto(root.photoActiveCategory, "")
+                } else if (d && d.error) {
+                    root.photoStatusMessage = "Import error: " + String(d.error)
+                    root.notifyAction(root.photoStatusMessage)
+                }
+            } catch (e) {}
+            root.refreshPhotoStatus()
+        }
+    }
+
+    Process {
+        id: photoPickProc
+        property string outBuf: ""
+        property string requestedCategory: "all"
+        stdout: SplitParser {
+            onRead: line => { photoPickProc.outBuf += line }
+        }
+        onExited: {
+            var raw = photoPickProc.outBuf.trim()
+            photoPickProc.outBuf = ""
+            if (!raw) return
+            try {
+                var d = JSON.parse(raw)
+                if (d && d.ok) {
+                    if (photoPickProc.requestedCategory && photoPickProc.requestedCategory !== "all" && d.category) {
+                        root.photoActiveCategory = String(d.category)
+                    }
+                    if (d.sourceStem) root.photoActiveStem = String(d.sourceStem)
+                    if (d.variants) root.photoActiveVariants = d.variants
+                    if (d.sameEffectPeers) root.photoSameEffectPeers = d.sameEffectPeers
+                    if (d.sameEffectByVariant) root.photoSameEffectByVariant = d.sameEffectByVariant
+                    if (d.randomPoolPeers) root.photoRandomPoolPeers = d.randomPoolPeers
+                }
+            } catch (e) {}
+        }
+    }
+
+    function refreshPhotoStatus() {
+        if (photoStatusProc.running) return
+        photoStatusProc.outBuf = ""
+        photoStatusProc.command = [root.binPath, "photo-status"]
+        photoStatusProc.running = true
+    }
+
+    function importPhotos(sourceDir) {
+        if (photoImportProc.running) return
+        root.photoBusy = true
+        root.photoStatusMessage = "Importing & generating 16 monochrome variants…"
+        root.notifyAction(root.photoStatusMessage)
+        photoImportProc.outBuf = ""
+        var cmd = [root.binPath, "photo-import", "--ensure-demo"]
+        if (sourceDir && String(sourceDir).trim().length > 0) {
+            cmd.push("--source-dir", String(sourceDir).trim())
+        }
+        photoImportProc.command = cmd
+        photoImportProc.running = true
+    }
+
+    function pickPhoto(category, stem) {
+        if (photoPickProc.running) photoPickProc.running = false
+        photoPickProc.outBuf = ""
+        var cat = (category && String(category).trim().length > 0) ? String(category).trim() : (root.photoActiveCategory || "all")
+        root.photoActiveCategory = cat
+        photoPickProc.requestedCategory = cat
+        var cmd = [root.binPath, "photo-pick", "--category", cat]
+        if (stem && String(stem).trim().length > 0) {
+            cmd.push("--stem", String(stem).trim())
+        } else if (root.photoActiveStem && String(root.photoActiveStem).trim().length > 0) {
+            cmd.push("--exclude-stem", String(root.photoActiveStem).trim())
+        }
+        photoPickProc.command = cmd
+        photoPickProc.running = true
     }
 
     function cycleLayer3Source() {

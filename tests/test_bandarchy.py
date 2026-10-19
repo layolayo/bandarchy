@@ -968,7 +968,7 @@ function makeMockCtx() {
 }
 
         const state = createState();
-if (LAYER1_MODES.length !== 11) throw new Error('Expected 11 LAYER1_MODES, got ' + LAYER1_MODES.length);
+if (LAYER1_MODES.length !== 12) throw new Error('Expected 12 LAYER1_MODES, got ' + LAYER1_MODES.length);
 if (LAYER1_EQ_STYLES.length !== 16) throw new Error('Expected 16 LAYER1_EQ_STYLES, got ' + LAYER1_EQ_STYLES.length);
 if (LAYER1_EQ_LAYOUTS.length !== 4) throw new Error('Expected 4 LAYER1_EQ_LAYOUTS, got ' + LAYER1_EQ_LAYOUTS.length);
 if (MODE_NAMES.length !== 13) throw new Error('Expected 13 Layer 2 MODE_NAMES, got ' + MODE_NAMES.length);
@@ -994,9 +994,9 @@ for (let i = 0; i < 40; i++) {
     prevMatrix = state.matrixTime;
 }
 
-// Verify all 11 L1 Field modes (0..10) render geometry
+// Verify all 12 L1 Field modes (0..11) render geometry
 const theme = { accent: '#ffab00', urgent: '#ff4a6b', foreground: '#e2e8f0', background: '#08080c' };
-for (let l1m = 0; l1m < 11; l1m++) {
+for (let l1m = 0; l1m < 12; l1m++) {
     const ctx = makeMockCtx();
     const cfg = normaliseConfig({ layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: l1m, layer1EqEnabled: true, layer1EqStyle: 6, layer2Enabled: false, layer3Enabled: false }, 0, []);
     renderFrame(ctx, 640, 360, state, 0, theme, [], 'album-art', [], cfg, null);
@@ -1703,7 +1703,490 @@ console.log('OK');
 
         self.run_cli("cmd", "stop")
 
+    def test_16_layer6_braille_block_no_text_and_l1_photo_tools_studio(self):
+        # 1. Verify .gitignore excludes all custom/ photo folders and processed photo outputs
+        with open(os.path.join(REPO_ROOT, ".gitignore"), "r", encoding="utf-8") as f:
+            gitignore_src = f.read()
+        for pat in ("custom/", "**/custom/", "**/custom/**", "categories/", "processed/", "photo_manifest.json"):
+            self.assertIn(pat, gitignore_src, f"Missing {pat} in .gitignore")
+
+        # 2. Verify dedicated L1 Photo-Tools Studio section and keybindings in Visualiser.qml, App.qml, Panel.qml, Service.qml
+        with open(os.path.join(REPO_ROOT, "Visualiser.qml"), "r", encoding="utf-8") as f:
+            viz_src = f.read()
+        with open(os.path.join(REPO_ROOT, "Service.qml"), "r", encoding="utf-8") as f:
+            svc_src = f.read()
+        with open(os.path.join(REPO_ROOT, "App.qml"), "r", encoding="utf-8") as f:
+            app_src = f.read()
+        with open(os.path.join(REPO_ROOT, "Panel.qml"), "r", encoding="utf-8") as f:
+            panel_src = f.read()
+
+        for expected in (
+            'import "PhotoMotionEngine.js" as PhotoMotion',
+            '"12:StarkPhoto"',
+            "id: l1PhotoToolsSection",
+            "󰄀 L1 PHOTO-TOOLS STUDIO — 12. STARK PHOTO REALM",
+            "function stepPhotoHistoryByKey(",
+            "function stepPhotoCategoryByKey(",
+            "function triggerPhotoHoldByKey()",
+            "function renderPhotoStageToCanvas(",
+            "Qt.Key_BraceLeft",
+            "Qt.Key_BraceRight",
+            "Qt.Key_BracketLeft",
+            "Qt.Key_BracketRight",
+            "signal requestPhotoImport(",
+            "signal requestPhotoRefreshStatus()",
+            "signal requestPhotoPick(",
+        ):
+            self.assertIn(expected, viz_src, f"Missing {expected} in Visualiser.qml")
+
+        # Verify l1PhotoToolsSection is placed inside Tab 1 (activeConfigLayer === 1) before Tab 2 (activeConfigLayer === 2)
+        tab1_idx = viz_src.index("visible: root.activeConfigLayer === 1")
+        photo_sec_idx = viz_src.index("id: l1PhotoToolsSection")
+        tab2_idx = viz_src.index("visible: root.activeConfigLayer === 2")
+        self.assertTrue(tab1_idx < photo_sec_idx < tab2_idx, "l1PhotoToolsSection must be inside Tab 1 (L1 Studio controls)")
+
+        for expected_svc in (
+            "function refreshPhotoStatus()",
+            "function importPhotos(",
+            "function pickPhoto(",
+            "property var photoActiveVariants:",
+        ):
+            self.assertIn(expected_svc, svc_src, f"Missing {expected_svc} in Service.qml")
+
+        for name, src in (("App.qml", app_src), ("Panel.qml", panel_src)):
+            self.assertIn("onRequestPhotoImport:", src, f"{name} must bind onRequestPhotoImport")
+            self.assertIn("onRequestPhotoRefreshStatus:", src, f"{name} must bind onRequestPhotoRefreshStatus")
+            self.assertIn("onRequestPhotoPick:", src, f"{name} must bind onRequestPhotoPick")
+            self.assertIn("photoSameEffectPeers:", src, f"{name} must bind photoSameEffectPeers")
+            self.assertIn("photoSameEffectByVariant:", src, f"{name} must bind photoSameEffectByVariant")
+            self.assertIn("photoRandomPoolPeers:", src, f"{name} must bind photoRandomPoolPeers")
+            self.assertIn('event.text === "{"', src, f"{name} must check event.text for '{{'")
+            self.assertIn('event.text === "}"', src, f"{name} must check event.text for '}}'")
+            self.assertIn('event.text === "["', src, f"{name} must check event.text for '['")
+            self.assertIn('event.text === "]"', src, f"{name} must check event.text for ']'")
+            self.assertIn('event.text === "\'"', src, f"{name} must check event.text for '\\''")
+            self.assertIn('event.text === "#"', src, f"{name} must check event.text for '#'")
+            self.assertIn('event.text === ":"', src, f"{name} must check event.text for ':'")
+            self.assertIn('event.text === ";"', src, f"{name} must check event.text for ';'")
+            self.assertIn('event.text === "~"', src, f"{name} must check event.text for '~'")
+
+        self.assertIn("win.visualiserMaximised || appVisualiser.stageMode === \"visualiser\"", app_src)
+        self.assertIn("function ensurePhotoLayerActive()", viz_src)
+        self.assertIn("property bool photoAutoMotionEvents:", viz_src)
+        self.assertIn("function triggerRandomPhotoMotionEvent()", viz_src)
+        self.assertIn('"characters"', viz_src)
+        self.assertIn('"characters"', svc_src)
+
+        # 3. Verify CLI photo-status, photo-import (into custom/ category), and photo-pick subcommands
+        st_res = self.run_cli("photo-status", "--init-dirs")
+        self.assertTrue(st_res["ok"])
+        self.assertIn("custom", st_res["categories"])
+        self.assertIn("characters", st_res["categories"])
+
+        # Create a synthetic test image in a temp folder and import it into custom/
+        from PIL import Image
+        custom_src_dir = os.path.join(self.tmp_root, "user_custom_photos")
+        os.makedirs(custom_src_dir, exist_ok=True)
+        test_img_path = os.path.join(custom_src_dir, "neon_band_portrait.png")
+        img = Image.new("RGB", (96, 64), (18, 20, 26))
+        for y in range(16, 48):
+            for x in range(24, 72):
+                img.putpixel((x, y), (240, 45, 160) if (x + y) % 3 == 0 else (235, 240, 250))
+        img.save(test_img_path)
+
+        imp_res = self.run_cli("photo-import", custom_src_dir, "--max-size", "96")
+        self.assertTrue(imp_res["ok"])
+        self.assertGreaterEqual(imp_res["totalProcessed"], 1)
+        self.assertEqual(len(imp_res["activeVariants"]), 16)
+
+        pick_res = self.run_cli("photo-pick", "--category", "custom")
+        self.assertTrue(pick_res["ok"])
+        self.assertEqual(pick_res["category"], "custom")
+        self.assertEqual(len(pick_res["variants"]), 16)
+        self.assertIn("sameEffectPeers", pick_res)
+        self.assertIn("sameEffectByVariant", pick_res)
+        self.assertIn("randomPoolPeers", pick_res)
+
+        # 4. Verify in Node.js:
+        #    (a) Layer 6 (`drawLayer3AlbumArt`) NEVER calls fillText or strokeText when using Art, Braille, or Block
+        #        (even if asciiMode='text' with useAlbumArt=true or layer3ShowStatements=true)
+        #    (b) PhotoMotionEngine.js has 25 modes (M01..M25), 16 Stage-1 effects, keybindings [, ], H (60s hold), {, },
+        #        characters category, Auto Photo-Motion / Random Events, and renders all 25 modes cleanly in QQuickContext2D
+        if shutil.which("node"):
+            node_script = r"""
+const fs = require('fs');
+let engCode = fs.readFileSync('PsychedelicEngine.js', 'utf8').replace(/^\.pragma library\s*/m, '');
+eval(engCode);
+
+const state = createState();
+const theme = { accent: '#6ee7b7', urgent: '#f472b6', foreground: '#e2e8f0', background: '#07090e' };
+const brailleArt = Array.from({length: 12}, () => '⣿⣷⣯⣟⡿⢿⣻⣽'.repeat(4));
+const bannerWords = Array.from({length: 10}, () => '█▀▄░▒▓ STARK REALM ▓▒░▄▀█');
+
+function makeStrictCtx() {
+    return {
+        rectCount: 0, fillCount: 0, fillRectCount: 0, strokeCount: 0, fillTextCount: 0, strokeTextCount: 0,
+        drawImageCount: 0, clipCount: 0, transformCount: 0, destOutCount: 0,
+        fillTextStyles: [], fillRectStyles: [],
+        fillStyle: '', strokeStyle: '', lineWidth: 1, globalAlpha: 1, globalCompositeOperation: 'source-over',
+        save() {}, restore() {}, translate() {}, rotate() {}, scale() {},
+        transform() { this.transformCount++; },
+        clip() { this.clipCount++; },
+        beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, arc() {},
+        rect() { this.rectCount++; },
+        fill() { this.fillCount++; },
+        stroke() { this.strokeCount++; },
+        fillRect() { this.fillCount++; this.fillRectCount++; this.fillRectStyles.push(this.fillStyle); },
+        clearRect() {},
+        drawImage() { this.drawImageCount++; },
+        fillText() {
+            this.fillTextCount++;
+            this.fillTextStyles.push(this.fillStyle);
+            if (this.globalCompositeOperation === 'destination-out') this.destOutCount++;
+        },
+        strokeText() { this.strokeTextCount++; },
+        createLinearGradient() { return { addColorStop() {} }; },
+        createRadialGradient() { return { addColorStop() {} }; }
+    };
+}
+
+// Test Art (with braille, block, and even accidental 'text'), and Words (with braille and block):
+// NONE of these may ever call fillText or strokeText!
+const pureCellCombos = [
+    { useAlbumArt: true, asciiMode: 'braille', layer3ShowStatements: true },
+    { useAlbumArt: true, asciiMode: 'block', layer3ShowStatements: true },
+    { useAlbumArt: true, asciiMode: 'text', layer3ShowStatements: true },
+    { useAlbumArt: false, asciiMode: 'braille', layer3ShowStatements: true },
+    { useAlbumArt: false, asciiMode: 'block', layer3ShowStatements: true }
+];
+
+for (const combo of pureCellCombos) {
+    for (let m = 0; m < LAYER3_MODES.length; m++) {
+        const ctx = makeStrictCtx();
+        const cfg = normaliseConfig({
+            layer1Enabled: false, layer2Enabled: false, layer3Enabled: true,
+            layer3Mode: m,
+            useAlbumArt: combo.useAlbumArt,
+            asciiMode: combo.asciiMode,
+            layer3ShowStatements: combo.layer3ShowStatements,
+            statementText: 'NO TEXT OVERLAY IN BRAILLE OR BLOCK',
+            artLines: brailleArt,
+            bannerLines: bannerWords
+        }, 0, combo.useAlbumArt ? brailleArt : bannerWords);
+        stepState(state, new Array(64).fill(420), true, cfg, 0.016);
+        renderFrame(ctx, 640, 360, state, 0, theme, combo.useAlbumArt ? brailleArt : bannerWords, combo.useAlbumArt ? 'album-art' : 'banner', [], cfg, null);
+        if (ctx.fillTextCount !== 0 || ctx.strokeTextCount !== 0) {
+            throw new Error(`Forbidden text draw in combo=${JSON.stringify(combo)} mode=${m}: fillText=${ctx.fillTextCount} strokeText=${ctx.strokeTextCount}`);
+        }
+        if (ctx.rectCount < 5) {
+            throw new Error(`Expected Braille/Block rect cells in combo=${JSON.stringify(combo)} mode=${m}, got rectCount=${ctx.rectCount}`);
+        }
+    }
+}
+
+// Now verify PhotoMotionEngine.js (25 modes, 16 variants, [, ], H, {, }, characters, Auto Photo-Motion)
+let photoCode = fs.readFileSync('PhotoMotionEngine.js', 'utf8').replace(/^\.pragma library\s*/m, '');
+const PhotoMotion = (new Function(photoCode + '; return { DEFAULT_PHOTO_CATEGORIES, PHOTO_CATEGORY_LABELS, PHOTO_MOTION_MODES, STAGE1_EFFECT_IDS, PHOTO_POOL_MODES, createPhotoMotionState, stepPhotoMotionState, renderPhotoMotionLayer, triggerPhotoHoldOneMinute, stepPhotoImageHistory, stepPhotoCategory, triggerRandomPhotoMotionEvent, drawTextured3DQuad, render3DPhotoCube, setActiveQuadShear, togglePhotoPlaneShear, cyclePhotoPoolMode, togglePhotoAutoMotionEvents, togglePhotoEffectAutoRandomise, togglePhotoRandomiseMotionControls, captureUserPhotoMotionSettings, restoreUserPhotoMotionSettings, randomiseMotionControlsForEvent, stepPhotoMotionMode, cyclePhotoMotionMode, selectPhotoMotionMode, resolvePoolVariantImagesMap, resolveMultiPhotoPool, rollSnapshotFocalSection, getVariantSectionOffset };'))();
+
+if (PhotoMotion.PHOTO_MOTION_MODES.length !== 25) {
+    throw new Error('Expected 25 PHOTO_MOTION_MODES, got ' + PhotoMotion.PHOTO_MOTION_MODES.length);
+}
+if (PhotoMotion.STAGE1_EFFECT_IDS.length !== 16) {
+    throw new Error('Expected 16 STAGE1_EFFECT_IDS, got ' + PhotoMotion.STAGE1_EFFECT_IDS.length);
+}
+if (!PhotoMotion.DEFAULT_PHOTO_CATEGORIES.includes('characters') || PhotoMotion.PHOTO_CATEGORY_LABELS.characters !== 'Characters') {
+    throw new Error('Expected characters category in DEFAULT_PHOTO_CATEGORIES and PHOTO_CATEGORY_LABELS');
+}
+
+const pState = PhotoMotion.createPhotoMotionState();
+let pickSeq = 0;
+const mockPicker = (cat) => ({ category: cat, sourceStem: 'stem_' + (++pickSeq), variantPaths: {} });
+
+const snap0X = pState.snapshotFocalX;
+const snap0Y = pState.snapshotFocalY;
+if (Math.hypot(snap0X, snap0Y) < 0.35) {
+    throw new Error('Initial snapshot focal section must be off-centre, got (' + snap0X + ', ' + snap0Y + ')');
+}
+const fwd1 = PhotoMotion.stepPhotoImageHistory(pState, 1, mockPicker);
+const snap1X = pState.snapshotFocalX;
+const snap1Y = pState.snapshotFocalY;
+if (Math.hypot(snap1X, snap1Y) < 0.40 || (Math.abs(snap1X - snap0X) < 0.05 && Math.abs(snap1Y - snap0Y) < 0.05)) {
+    throw new Error('Stepping photo snapshot must select a new off-centre section, got (' + snap1X + ', ' + snap1Y + ')');
+}
+const fwd2 = PhotoMotion.stepPhotoImageHistory(pState, 1, mockPicker);
+if (Math.hypot(pState.snapshotFocalX, pState.snapshotFocalY) < 0.40 || (Math.abs(pState.snapshotFocalX - snap1X) < 0.05 && Math.abs(pState.snapshotFocalY - snap1Y) < 0.05)) {
+    throw new Error('Second photo snapshot must select a distinct off-centre section');
+}
+const back1 = PhotoMotion.stepPhotoImageHistory(pState, -1, mockPicker);
+if (back1.entry.sourceStem !== fwd1.entry.sourceStem) {
+    throw new Error('History [ step backward mismatch');
+}
+
+const holdOn = PhotoMotion.triggerPhotoHoldOneMinute(pState, false);
+if (!holdOn.holdActive || Math.abs(holdOn.holdRemainingSec - 60.0) > 0.01) {
+    throw new Error('Expected 60s hold on H');
+}
+// Stepping photo releases 1-minute hold immediately
+PhotoMotion.stepPhotoImageHistory(pState, 1, mockPicker);
+if (pState.holdActive) {
+    throw new Error('Stepping photo with ] must release 1-minute hold');
+}
+
+const catNext = PhotoMotion.stepPhotoCategory(pState, 1, mockPicker);
+if (catNext.category !== 'brutalist') {
+    throw new Error('Expected category brutalist on }, got ' + catNext.category);
+}
+
+// Verify Auto Photo-Motion / Random Events:
+// 1. Pressing '/# when random events is active calls triggerRandomPhotoMotionEvent, which picks a new motionMode AND steps the image
+const prevMode = pState.motionMode;
+const prevStem = pState.currentSourceStem;
+const randEv = PhotoMotion.triggerRandomPhotoMotionEvent(pState, mockPicker, () => 0.42);
+if (pState.motionMode === prevMode || pState.currentSourceStem === prevStem) {
+    throw new Error('triggerRandomPhotoMotionEvent must change motionMode and step to next photo');
+}
+// 2. When autoMotionEvents is enabled, it respects photoEffectChangeIntervalSec without being blocked by slow variantStrobePhase
+pState.autoMotionEvents = true;
+pState.photoEffectChangeIntervalSec = 4.0;
+const modeBeforeCycle = pState.motionMode;
+const stemBeforeCycle = pState.currentSourceStem;
+const earlyStep = PhotoMotion.stepPhotoMotionState(pState, 0.1, { bass: 0.5, mid: 0.5, high: 0.5, beat: 0.5 }, mockPicker);
+if (earlyStep.autoMotionEventTriggered || pState.motionMode !== modeBeforeCycle) {
+    throw new Error('autoMotionEvents switched too early before photoEffectChangeIntervalSec');
+}
+pState.autoMotionElapsedSec = 4.05;
+const fullPassStep = PhotoMotion.stepPhotoMotionState(pState, 0.1, { bass: 0.5, mid: 0.5, high: 0.5, beat: 0.5 }, mockPicker);
+if (!fullPassStep.autoMotionEventTriggered || pState.motionMode === modeBeforeCycle || pState.currentSourceStem === stemBeforeCycle) {
+    throw new Error('autoMotionEvents must switch motionMode and step photo once photoEffectChangeIntervalSec elapses');
+}
+pState.autoMotionEvents = false;
+
+const mockVariants = {};
+for (let vi = 0; vi < PhotoMotion.STAGE1_EFFECT_IDS.length; vi++) {
+    mockVariants[PhotoMotion.STAGE1_EFFECT_IDS[vi]] = { width: 320, height: 240, id: vi };
+}
+
+// Step physics state so 3D rotation angles and flips are active
+PhotoMotion.stepPhotoMotionState(pState, 0.1, { bass: 0.85, mid: 0.65, high: 0.75, beat: 0.9 }, mockPicker);
+
+// Render all 25 Photo Motion modes through L1 Mode 11 callback
+for (let pm = 0; pm < 25; pm++) {
+    pState.motionMode = pm;
+    const ctx = makeStrictCtx();
+    const cfg = normaliseConfig({
+        layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: 11,
+        layer1EqEnabled: false, layer1ShapesEnabled: false,
+        layer2Enabled: false, layer3Enabled: false,
+        photoMotionRenderCallback: function(c, w, h) {
+            PhotoMotion.renderPhotoMotionLayer(c, w, h, pState, mockVariants, pm % 30, theme, { bass: 0.7, mid: 0.5, high: 0.6, beat: 0.8 });
+            return true;
+        }
+    }, pm % 30, []);
+    renderFrame(ctx, 640, 360, state, 0, theme, [], 'album-art', [], cfg, null);
+    if (ctx.drawImageCount < 1) {
+        throw new Error('PhotoMotion mode ' + pm + ' failed to draw photo image');
+    }
+    if (ctx.fillCount + ctx.strokeCount < 2) {
+        throw new Error('PhotoMotion mode ' + pm + ' failed to draw geometry/strobe');
+    }
+    if (pm === 0 && (ctx.clipCount < 5 || ctx.transformCount < 5)) {
+        throw new Error('M01 must render 3D textured quads + receding ghost planes via clip+transform, got clip=' + ctx.clipCount);
+    }
+    if (pm === 1 && (ctx.clipCount < 12 || ctx.transformCount < 12 || ctx.strokeCount < 13)) {
+        throw new Error('M02 must render 6 outer + 6 inner 3D cube faces and 4D struts, got clip=' + ctx.clipCount + ' stroke=' + ctx.strokeCount);
+    }
+}
+
+// Verify 3D cube front vs back face winding & passFilter ('front' vs 'back') with clean un-sheared default (3 quads = 3 drawImages) and sheared mode (6 triangles = 6 drawImages)
+const ctxFront = makeStrictCtx();
+const ctxBack = makeStrictCtx();
+PhotoMotion.setActiveQuadShear(false, 0.0);
+PhotoMotion.render3DPhotoCube(ctxFront, 320, 180, 90, 0.35, 0.45, 0.1, 450, mockVariants, mockVariants.V01_STARK_THRESHOLD, 0, 0.9, ['#ff0055', '#00ffcc'], 0.9, 0.15, 'front');
+PhotoMotion.render3DPhotoCube(ctxBack, 320, 180, 90, 0.35, 0.45, 0.1, 450, mockVariants, mockVariants.V01_STARK_THRESHOLD, 0, 0.9, ['#ff0055', '#00ffcc'], 0.9, 0.15, 'back');
+if (ctxFront.drawImageCount !== 3 || ctxBack.drawImageCount !== 3) {
+    throw new Error('Expected 3 un-sheared front quads (3 drawImages) and 3 back quads (3 drawImages), got front=' + ctxFront.drawImageCount + ' back=' + ctxBack.drawImageCount);
+}
+const ctxShearFront = makeStrictCtx();
+PhotoMotion.setActiveQuadShear(true, 0.85);
+PhotoMotion.render3DPhotoCube(ctxShearFront, 320, 180, 90, 0.35, 0.45, 0.1, 450, mockVariants, mockVariants.V01_STARK_THRESHOLD, 0, 0.9, ['#ff0055', '#00ffcc'], 0.9, 0.15, 'front');
+PhotoMotion.setActiveQuadShear(false, 0.0);
+if (ctxShearFront.drawImageCount !== 6) {
+    throw new Error('Expected 3 sheared front faces (6 triangle drawImages) when planeShearEnabled=true, got ' + ctxShearFront.drawImageCount);
+}
+
+// Verify ":" togglePhotoPlaneShear, ";" cyclePhotoPoolMode (3 modes), "~" togglePhotoEffectAutoRandomise, and image iteration on effect change
+const ctrlState = PhotoMotion.createPhotoMotionState();
+if (ctrlState.planeShearEnabled !== false || ctrlState.planeShearAmount !== 0.0 || ctrlState.poolMode !== 0 || ctrlState.effectAutoRandomise !== false) {
+    throw new Error('Unexpected initial photo motion state defaults');
+}
+const shearOn = PhotoMotion.togglePhotoPlaneShear(ctrlState);
+if (!shearOn.enabled || shearOn.amount <= 0) {
+    throw new Error('togglePhotoPlaneShear should enable plane shear and assign a non-zero default amount');
+}
+const pool1 = PhotoMotion.cyclePhotoPoolMode(ctrlState, 1);
+const pool2 = PhotoMotion.cyclePhotoPoolMode(ctrlState, 1);
+const pool0 = PhotoMotion.cyclePhotoPoolMode(ctrlState, 1);
+if (pool1.mode !== 1 || pool2.mode !== 2 || pool0.mode !== 0) {
+    throw new Error('cyclePhotoPoolMode must cycle 0 -> 1 -> 2 -> 0');
+}
+const autoOn = PhotoMotion.togglePhotoEffectAutoRandomise(ctrlState);
+if (!autoOn.enabled) {
+    throw new Error('togglePhotoEffectAutoRandomise must enable dedicated photo effect randomiser');
+}
+let pickedOnEffectStep = 0;
+PhotoMotion.cyclePhotoMotionMode(ctrlState, 1, (cat) => {
+    pickedOnEffectStep++;
+    return { category: cat, sourceStem: 'stepped_stem_' + pickedOnEffectStep, variantPaths: mockVariants };
+});
+if (pickedOnEffectStep !== 1 || ctrlState.currentSourceStem !== 'stepped_stem_1') {
+    throw new Error('cyclePhotoMotionMode must iterate/randomise the main photograph within the active category');
+}
+
+// Verify Layer 6 (6: Typography) 21 LAYER3_TEXT_STYLES (all 16 original at 0..15 including #6 Acid Glitch IDM at index 5 + 5 added ASCII styles at 16..20)
+if (LAYER3_TEXT_STYLES.length !== 21 ||
+    SHORT_LAYER3_TEXT_STYLES.length !== 21 ||
+    LAYER3_TEXT_STYLES[5] !== 'Acid Glitch IDM' ||
+    LAYER3_TEXT_STYLES[16] !== 'ASCII Black Block / White Text' ||
+    LAYER3_TEXT_STYLES[17] !== 'ASCII White Back / Black Text' ||
+    LAYER3_TEXT_STYLES[18] !== 'ASCII Transparent Back / Text' ||
+    LAYER3_TEXT_STYLES[19] !== 'ASCII Coloured Back / Transparent Text' ||
+    LAYER3_TEXT_STYLES[20] !== 'ASCII Cell Matrix') {
+    throw new Error('Expected 21 LAYER3_TEXT_STYLES (0..15 original + 16..20 5 ASCII variants)');
+}
+for (let st = 0; st < 21; st++) {
+    for (let cm = 0; cm < 6; cm++) {
+        const ctxTypo = makeStrictCtx();
+        const cfgTypo = normaliseConfig({
+            layer1Enabled: false, layer2Enabled: false, layer3Enabled: true,
+            useAlbumArt: false, asciiMode: 'text', layer3Tracers: 1,
+            layer3Mode: st % 12, layer3TextStyle: st, layer3ColourMode: cm,
+            layer3ShowArtist: false, layer3ShowTrack: true, layer3ShowAlbum: false, layer3ShowStatements: false,
+            trackTitle: 'BANDARCHY TEST'
+        }, 0, []);
+        const palTypo = buildPalette(theme, state.hueShift, cfgTypo.palette);
+        drawLayer3AlbumArt(ctxTypo, 640, 360, state, palTypo, cfgTypo, [], []);
+        if (ctxTypo.fillTextCount < 1) {
+            throw new Error('Typography style ' + st + ' colourMode ' + cm + ' failed to render text');
+        }
+        // Styles 16, 17, 19 must render a single line-level block strip per row (1 fillRect for 1 row with layer3Tracers=1)
+        if ((st === 16 || st === 17 || st === 19) && ctxTypo.fillRectCount !== 1) {
+            throw new Error('Line-level ASCII style ' + st + ' must draw 1 line-level fillRect per row, got ' + ctxTypo.fillRectCount);
+        }
+        // Style 18 ("ASCII Transparent Back / Text") must strictly have zero filled rectangles (transparent background)
+        if (st === 18 && ctxTypo.fillRectCount !== 0) {
+            throw new Error('Style 18 (ASCII Transparent Back / Text) must have 0 fillRect calls, got ' + ctxTypo.fillRectCount);
+        }
+        // Style 19 ("ASCII Coloured Back / Transparent Text") must punch out transparent glyphs via destination-out inside line-level coloured block
+        if (st === 19 && (ctxTypo.destOutCount < 1 || ctxTypo.fillRectCount !== 1)) {
+            throw new Error('Style 19 (ASCII Coloured Back / Transparent Text) must draw line-level coloured block and destination-out glyph knockout');
+        }
+        // Style 20 ("ASCII Cell Matrix") must render character-level mixed cells (multiple per-character fillRects + destination-out knockout cells)
+        if (st === 20 && (ctxTypo.fillRectCount < 4 || ctxTypo.destOutCount < 1)) {
+            throw new Error('Style 20 (ASCII Cell Matrix) must mix character-level blocks and knockout cells, got fillRect=' + ctxTypo.fillRectCount + ' destOut=' + ctxTypo.destOutCount);
+        }
+    }
+}
+// Verify shifting palette (paletteIndex > 0) shifts Style 16 text colour and Style 17 block colour
+const ctxS16Default = makeStrictCtx();
+const ctxS16Shifted = makeStrictCtx();
+const cfg16Def = normaliseConfig({
+    layer1Enabled: false, layer2Enabled: false, layer3Enabled: true,
+    useAlbumArt: false, asciiMode: 'text', palette: 0, layer3Tracers: 1,
+    layer3Mode: 0, layer3TextStyle: 16, layer3ColourMode: 0,
+    layer3ShowArtist: false, layer3ShowTrack: true, layer3ShowAlbum: false, trackTitle: 'ASCII'
+}, 0, []);
+const cfg16Shf = normaliseConfig({
+    layer1Enabled: false, layer2Enabled: false, layer3Enabled: true,
+    useAlbumArt: false, asciiMode: 'text', palette: 3, layer3Tracers: 1,
+    layer3Mode: 0, layer3TextStyle: 16, layer3ColourMode: 0,
+    layer3ShowArtist: false, layer3ShowTrack: true, layer3ShowAlbum: false, trackTitle: 'ASCII'
+}, 3, []);
+drawLayer3AlbumArt(ctxS16Default, 640, 360, state, buildPalette(theme, state.hueShift, 0), cfg16Def, [], []);
+drawLayer3AlbumArt(ctxS16Shifted, 640, 360, state, buildPalette(theme, state.hueShift, 3), cfg16Shf, [], []);
+if (ctxS16Default.fillTextStyles[0] !== '#FFFFFF' || ctxS16Shifted.fillTextStyles[0] === '#FFFFFF') {
+    throw new Error('Style 16 must default to #FFFFFF text and shift text colour when palette changes');
+}
+const ctxS17Default = makeStrictCtx();
+const ctxS17Shifted = makeStrictCtx();
+const cfg17Def = normaliseConfig({
+    layer1Enabled: false, layer2Enabled: false, layer3Enabled: true,
+    useAlbumArt: false, asciiMode: 'text', palette: 0, layer3Tracers: 1,
+    layer3Mode: 0, layer3TextStyle: 17, layer3ColourMode: 0,
+    layer3ShowArtist: false, layer3ShowTrack: true, layer3ShowAlbum: false, trackTitle: 'ASCII'
+}, 0, []);
+const cfg17Shf = normaliseConfig({
+    layer1Enabled: false, layer2Enabled: false, layer3Enabled: true,
+    useAlbumArt: false, asciiMode: 'text', palette: 3, layer3Tracers: 1,
+    layer3Mode: 0, layer3TextStyle: 17, layer3ColourMode: 0,
+    layer3ShowArtist: false, layer3ShowTrack: true, layer3ShowAlbum: false, trackTitle: 'ASCII'
+}, 3, []);
+drawLayer3AlbumArt(ctxS17Default, 640, 360, state, buildPalette(theme, state.hueShift, 0), cfg17Def, [], []);
+drawLayer3AlbumArt(ctxS17Shifted, 640, 360, state, buildPalette(theme, state.hueShift, 3), cfg17Shf, [], []);
+if (ctxS17Default.fillRectStyles[0] === ctxS17Shifted.fillRectStyles[0]) {
+    throw new Error('Style 17 must shift its line-level backing block colour when palette changes');
+}
+
+
+// Verify degenerate edge-on quad guard in drawTextured3DQuad does not call transform with singular matrix
+const ctxDegenerate = makeStrictCtx();
+const colPt = { x: 200, y: 150 };
+PhotoMotion.drawTextured3DQuad(ctxDegenerate, mockVariants.V01_STARK_THRESHOLD, colPt, colPt, colPt, colPt, 0.9, '#ffffff', 2.0, null);
+if (ctxDegenerate.transformCount !== 0) {
+    throw new Error('Expected degenerate 0-area quad to skip singular ctx.transform, got ' + ctxDegenerate.transformCount);
+}
+
+// Verify asyncPending picker does not push duplicate stale stems onto historyStack
+const asyncState = PhotoMotion.createPhotoMotionState();
+PhotoMotion.stepPhotoImageHistory(asyncState, 1, () => ({ category: 'brutalist', sourceStem: 'photo_1', variantPaths: {} }));
+PhotoMotion.stepPhotoImageHistory(asyncState, 1, () => ({ category: 'brutalist', sourceStem: 'photo_2', variantPaths: {} }));
+const histLenBeforeAsync = asyncState.historyStack.length;
+PhotoMotion.triggerRandomPhotoMotionEvent(asyncState, () => ({ category: 'brutalist', sourceStem: '', asyncPending: true }), () => 0.5);
+if (asyncState.historyStack.length !== histLenBeforeAsync) {
+    throw new Error('asyncPending pick must not push duplicate stale stem onto historyStack');
+}
+
+// Verify stepping backward with [ in category A then switching category with } truncates forward history from category A
+PhotoMotion.stepPhotoImageHistory(asyncState, -1, mockPicker);
+if (asyncState.currentSourceStem !== 'photo_1') {
+    throw new Error('Expected step backward to photo_1, got ' + asyncState.currentSourceStem);
+}
+const catSwitchRes = PhotoMotion.stepPhotoCategory(asyncState, 1, (cat) => ({ category: cat, sourceStem: 'new_cat_photo', variantPaths: {} }));
+if (asyncState.currentSourceStem !== 'new_cat_photo' || asyncState.historyStack[asyncState.historyCursor].category !== catSwitchRes.category) {
+    throw new Error('stepPhotoCategory after [ backward step must pick from the new category instead of stale forward history');
+}
+
+// Verify user motion settings (including photoMotionActivity) are saved when FX Rand [~] or Rand Photo Motion is turned ON,
+// randomised during events/mode steps, and restored when switched OFF
+const actState = PhotoMotion.createPhotoMotionState();
+actState.photoMotionActivity = 1.65;
+actState.photoXyzTilt = 1.80;
+actState.photoWarpIntensity = 1.45;
+actState.photoStrobeSpeed = 2.10;
+PhotoMotion.togglePhotoRandomiseMotionControls(actState, true, () => 0.15);
+if (!actState.randomiseMotionControls || (actState.photoMotionActivity === 1.65 && actState.photoXyzTilt === 1.80)) {
+    throw new Error('Expected togglePhotoRandomiseMotionControls(true) to enable persistent toggle and randomise live motion controls');
+}
+const prevTiltAfterToggle = actState.photoXyzTilt;
+PhotoMotion.stepPhotoMotionMode(actState, 1, mockPicker, true);
+if (!actState.randomiseMotionControls) {
+    throw new Error('randomiseMotionControls must stay ON across effect mode changes');
+}
+PhotoMotion.togglePhotoRandomiseMotionControls(actState, false);
+if (actState.randomiseMotionControls ||
+    Math.abs(actState.photoMotionActivity - 1.65) > 1e-6 ||
+    Math.abs(actState.photoXyzTilt - 1.80) > 1e-6 ||
+    Math.abs(actState.photoWarpIntensity - 1.45) > 1e-6 ||
+    Math.abs(actState.photoStrobeSpeed - 2.10) > 1e-6) {
+    throw new Error('Switching Rand Photo Motion OFF must restore user motion settings, got ' + JSON.stringify(actState));
+}
+
+console.log('OK');
+"""
+            res = subprocess.run(["node", "-e", node_script], cwd=REPO_ROOT, capture_output=True, text=True, timeout=20)
+            self.assertEqual(res.returncode, 0, f"Node test_16 failed: {res.stderr}")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
 

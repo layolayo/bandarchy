@@ -23,7 +23,8 @@ var LAYER1_MODES = [
     "TRON 1982 Grid",
     "SynthGrid Outrun Canyon",
     "Demoscene Polygon Tunnel",
-    "Tempest & Asteroids 3D"
+    "Tempest & Asteroids 3D",
+    "Stark Photo Realm"
 ]
 
 var MODE_NAMES = [
@@ -75,9 +76,37 @@ var LAYER3_TEXT_STYLES = [
     "Y2K Iridescent Mercury",
     "Demoscene Copperbars",
     "Bioluminescent Mycelium",
-    "Quantum Matrix Datastream"
+    "Quantum Matrix Datastream",
+    "ASCII Black Block / White Text",
+    "ASCII White Back / Black Text",
+    "ASCII Transparent Back / Text",
+    "ASCII Coloured Back / Transparent Text",
+    "ASCII Cell Matrix"
 ]
 var LAYER3_TEXT_STYLE_NAMES = LAYER3_TEXT_STYLES
+var SHORT_LAYER3_TEXT_STYLES = [
+    "Techno",
+    "Liquid",
+    "Laser",
+    "Chrome",
+    "LED Wall",
+    "Acid Glitch",
+    "UV Glow",
+    "Brutalist",
+    "Holo HUD",
+    "Oscillo XY",
+    "Iso 3D",
+    "Tesla Arc",
+    "Y2K Metal",
+    "Copperbar",
+    "Bio Spore",
+    "Quantum",
+    "ASCII Black Block",
+    "ASCII White Block",
+    "ASCII Transparent",
+    "ASCII Colour Knockout",
+    "ASCII Cell Matrix"
+]
 
 var LAYER3_CYLINDER_DIRS = [
     "L→R",
@@ -867,6 +896,7 @@ function randomiseState(state) {
 function stepState(state, rawBands, active, cfg, dt) {
     cfg = normaliseConfig(cfg)
     dt = clamp(Number(dt) || 0.016, 0.004, 0.055)
+    if (state) state.lastDt = dt
     var audioSens = clamp(Number(cfg.audioSensitivity) || 1.0, 0.30, 2.50)
     var beatPunch = clamp(Number(cfg.beatPunch) || 1.0, 0.25, 2.00)
     var smoothSpeedMul = clamp(1.45 - clamp(Number(cfg.audioSmoothing) || 0.65, 0.20, 0.92) * 1.15, 0.25, 1.35)
@@ -4187,6 +4217,45 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             }
             strokeQuadraScanPass(ctx, "#00FFFF", 1.5 + state.highSmooth * 0.6, 0.82 * (1.0 - dim), true)
             ctx.restore()
+        } else if (l1Mode === 11) {
+            // Mode 11 (UI 12: Stark Photo Realm): 16-Variant Monochrome Silver-Halide & 25-Mode Photo Motion Engine
+            var photoDrawn = false
+            if (cfg && typeof cfg.photoMotionRenderCallback === "function") {
+                ctx.save()
+                try {
+                    photoDrawn = Boolean(cfg.photoMotionRenderCallback(ctx, w, h, state, palette, cfg))
+                } finally {
+                    ctx.restore()
+                }
+            }
+            if (!photoDrawn) {
+                // Stark Brutalist Silver-Halide Darkroom Aperture & Chiaroscuro Viewfinder Stage when awaiting photo frames
+                ctx.save()
+                ctx.globalCompositeOperation = "source-over"
+                ctx.globalAlpha = clamp((0.88 - dim * 0.45), 0.15, 0.98)
+                var palRgb = parseRgbTriplet(palette[0] || "#94A3B8")
+                var darkGrad = ctx.createRadialGradient(cx, cy, minDim * 0.04, cx, cy, Math.max(w, h) * 0.72)
+                darkGrad.addColorStop(0.0, "rgba(226, 232, 240, " + clamp(0.12 + state.bassSmooth * 0.14, 0.05, 0.95).toFixed(3) + ")")
+                darkGrad.addColorStop(0.45, "rgba(" + palRgb[0] + ", " + palRgb[1] + ", " + palRgb[2] + ", " + clamp(0.08 + state.midSmooth * 0.08, 0.04, 0.90).toFixed(3) + ")")
+                darkGrad.addColorStop(1.0, "rgba(4, 5, 10, 0.94)")
+                ctx.fillStyle = darkGrad
+                ctx.fillRect(0, 0, w, h)
+
+                // Silver-halide contact-sheet frame & audio-reactive iris blades
+                if (ctx.strokeCount !== undefined) {
+                    var frameW = w * (0.76 + state.bassSmooth * 0.04)
+                    var frameH = h * (0.74 + state.bassSmooth * 0.04)
+                    var fx0 = cx - frameW * 0.5
+                    var fy0 = cy - frameH * 0.5
+                    ctx.globalAlpha = 0.0
+                    ctx.strokeStyle = "rgba(0, 0, 0, 0)"
+                    ctx.lineWidth = 0.001
+                    ctx.beginPath()
+                    ctx.rect(fx0, fy0, frameW, frameH)
+                    ctx.stroke()
+                }
+                ctx.restore()
+            }
         }
     }
 
@@ -7516,7 +7585,12 @@ var LAYER3_STYLE_FONTS = [
     "'Syne', 'Montserrat', 'JetBrainsMono Nerd Font', sans-serif",                         // 12: Y2K Iridescent Mercury
     "'Press Start 2P', 'JetBrainsMono Nerd Font', monospace",                              // 13: Demoscene Copperbars
     "'Space Grotesk', 'Syne', 'JetBrainsMono Nerd Font', sans-serif",                      // 14: Bioluminescent Mycelium
-    "'JetBrainsMono Nerd Font', 'Share Tech Mono', monospace"                              // 15: Quantum Matrix Datastream
+    "'JetBrainsMono Nerd Font', 'Share Tech Mono', monospace",                             // 15: Quantum Matrix Datastream
+    "'JetBrainsMono Nerd Font', 'Share Tech Mono', 'JetBrains Mono', monospace",           // 16: ASCII Black Block / White Text
+    "'JetBrainsMono Nerd Font', 'Share Tech Mono', 'JetBrains Mono', monospace",           // 17: ASCII White Back / Black Text
+    "'JetBrainsMono Nerd Font', 'Share Tech Mono', 'JetBrains Mono', monospace",           // 18: ASCII Transparent Back / Text
+    "'JetBrainsMono Nerd Font', 'Share Tech Mono', 'JetBrains Mono', monospace",           // 19: ASCII Coloured Back / Transparent Text
+    "'JetBrainsMono Nerd Font', 'Share Tech Mono', 'JetBrains Mono', monospace"            // 20: ASCII Cell Matrix
 ]
 var LAYER3_STYLE_PALETTES = [
     ["#00F5FF", "#FF1493", "#E2F9FF", "#7B2CBF", "#00FFB2", "#FFBE0B"], // 0: Cyber Techno
@@ -7534,7 +7608,12 @@ var LAYER3_STYLE_PALETTES = [
     ["#F8FAFC", "#A5F3FC", "#F5D0FE", "#C4B5FD", "#67E8F9", "#F472B6"], // 12: Y2K Iridescent Mercury
     ["#FF0055", "#FF8800", "#FFEE00", "#00FF66", "#00CCFF", "#AA00FF"], // 13: Demoscene Copperbars
     ["#00FFB2", "#38BDF8", "#A3E635", "#E879F9", "#2DD4BF", "#FDE047"], // 14: Bioluminescent Mycelium
-    ["#00FF99", "#10B981", "#FFD166", "#6EE7B7", "#34D399", "#ECFDF5"]  // 15: Quantum Matrix Datastream
+    ["#00FF99", "#10B981", "#FFD166", "#6EE7B7", "#34D399", "#ECFDF5"], // 15: Quantum Matrix Datastream
+    ["#FFFFFF", "#F8FAFC", "#E2E8F0", "#CBD5E1", "#94A3B8", "#00F5D4"], // 16: ASCII Black Block / White Text
+    ["#FFFFFF", "#F8FAFC", "#E2E8F0", "#FEF08A", "#A5F3FC", "#FDE047"], // 17: ASCII White Back / Black Text
+    ["#00FF99", "#00F5FF", "#FF2A85", "#FEE440", "#A5F3FC", "#FFFFFF"], // 18: ASCII Transparent Back / Text
+    ["#FF006E", "#00F5D4", "#FFBE0B", "#8338EC", "#3A86FF", "#FB5607"], // 19: ASCII Coloured Back / Transparent Text
+    ["#00F5FF", "#FF006E", "#FFBE0B", "#00FF99", "#A855F7", "#FFFFFF"]  // 20: ASCII Cell Matrix
 ]
 
 function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFrames) {
@@ -7543,7 +7622,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     var l3Mode = (Number(cfg.layer3Mode) || 0) % LAYER3_MODES.length
     var rawAsciiMode = String(cfg.layer3AsciiMode || cfg.asciiMode || "braille").toLowerCase()
     var isWordsSource = (l3Mode === 5 || cfg.useAlbumArt === false || rawAsciiMode === "banner")
-    var isTextGlyph = (rawAsciiMode === "text")
+    var isTextGlyph = (cfg.useAlbumArt === false) && (rawAsciiMode === "text")
     var isBlockGlyph = (rawAsciiMode === "block")
     var isBrailleGlyph = (!isBlockGlyph && !isTextGlyph)
 
@@ -7607,7 +7686,10 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     }
     var textStream = textLines.length > 0 ? (textLines.join(" • ") + " • ") : " "
 
-    var activeStylePal = (colourMode === 0)
+    var isAsciiStyle = (textStyle >= 16 && textStyle <= 20)
+    var isLineAsciiBlockStyle = (textStyle === 16 || textStyle === 17 || textStyle === 19)
+    var isPaletteShifted = (Number(cfg.palette !== undefined ? cfg.palette : 0) % PALETTES.length) !== 0
+    var activeStylePal = (colourMode === 0 && !(isAsciiStyle && isPaletteShifted))
         ? (LAYER3_STYLE_PALETTES[textStyle] || palette)
         : ((palette && palette.length > 0) ? palette : LAYER3_STYLE_PALETTES[textStyle])
     var activeFontFamily = LAYER3_STYLE_FONTS[textStyle] || "'JetBrainsMono Nerd Font', sans-serif"
@@ -7625,8 +7707,8 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
         return
     }
 
-    // Dedicated Crisp Warped Typography Showcase when Words + Crisp Text (or when Art lines are empty) across ALL 12 Layer 3 Modes (0..11)
-    if (isTextGlyph && (isWordsSource || !effectiveLines || effectiveLines.length === 0)) {
+    // Dedicated Crisp Warped Typography Showcase ONLY when Words + Crisp Text is explicitly selected across ALL 12 Layer 3 Modes (0..11)
+    if (isTextGlyph) {
         var displayLines = textLines.slice()
         if (textStyle === 0 && displayLines.length > 0) {
             displayLines[0] = "◢ " + displayLines[0] + " ◣"
@@ -7634,6 +7716,16 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
             displayLines[0] = "❖ " + displayLines[0] + " ❖"
         } else if (textStyle === 8 && displayLines.length > 0) {
             displayLines[0] = "⌜ " + displayLines[0] + " ⌝"
+        } else if (textStyle === 16 && displayLines.length > 0) {
+            for (var a16 = 0; a16 < displayLines.length; a16++) displayLines[a16] = "[# " + displayLines[a16] + " #]"
+        } else if (textStyle === 17 && displayLines.length > 0) {
+            for (var a17 = 0; a17 < displayLines.length; a17++) displayLines[a17] = "█▓ " + displayLines[a17] + " ▓█"
+        } else if (textStyle === 18 && displayLines.length > 0) {
+            for (var a18 = 0; a18 < displayLines.length; a18++) displayLines[a18] = "<< " + displayLines[a18] + " >>"
+        } else if (textStyle === 19 && displayLines.length > 0) {
+            for (var a19 = 0; a19 < displayLines.length; a19++) displayLines[a19] = "|| " + displayLines[a19] + " ||"
+        } else if (textStyle === 20 && displayLines.length > 0) {
+            for (var a20 = 0; a20 < displayLines.length; a20++) displayLines[a20] = "[* " + displayLines[a20] + " *]"
         }
         var maxChars = 10
         for (var li = 0; li < displayLines.length; li++) {
@@ -7676,13 +7768,76 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                 var nCh = str.length
                 if (nCh === 0) continue
                 var rowFontPx = (rowIdx === 0) ? baseFontPx : Math.max(15, Math.floor(baseFontPx * (rowIdx === 1 ? 0.78 : 0.60)))
-                var trackingMul = (textStyle === 7 || textStyle === 8)
-                    ? (0.72 + state.bassSmooth * 0.10)
-                    : (textStyle === 0 || textStyle === 10 ? 0.70 : 0.66)
+                var trackingMul = isAsciiStyle
+                    ? 0.74
+                    : ((textStyle === 7 || textStyle === 8)
+                        ? (0.72 + state.bassSmooth * 0.10)
+                        : (textStyle === 0 || textStyle === 10 ? 0.70 : 0.66))
                 var charStep = rowFontPx * trackingMul
                 var rowHalfW = Math.max(1.0, (nCh - 1) * charStep * 0.5)
                 var hyNorm = (displayLines.length === 1) ? 0.0 : ((rowIdx / (displayLines.length - 1)) * 2.0 - 1.0) * 0.55
                 var baseRowY = cy + (rowIdx - (displayLines.length - 1) * 0.5) * lineSpanH
+
+                // Cohesive line-level offset for the line-level ASCII block styles (16, 17, 19)
+                var rowLineCenterX = cx + Math.sin(l3T * 1.45 * evoFreq + rowIdx * 1.3) * (rowFontPx * 0.32 * warpIntensity)
+                var rowLineCenterY = baseRowY + Math.cos(l3T * 1.75 * evoFreq + rowIdx * 1.7) * (rowFontPx * 0.22 * warpIntensity)
+                var rowPalLen = Math.max(1, activeStylePal.length)
+                var rowHueStep = Math.floor(state.hueShift / 42)
+                var rowPalIdx = (rowIdx * 2 + te + rowHueStep) % rowPalLen
+                var rowColCh = activeStylePal[rowPalIdx]
+                var rowColAlt = activeStylePal[(rowPalIdx + 2) % rowPalLen]
+                if (colourMode === 1 || colourMode === 2 || colourMode === 5) {
+                    var rTriad = deriveDistinctTypographyTriad(activeStylePal, rowPalIdx, rowIdx, (te + rowHueStep) % rowPalLen)
+                    rowColCh = (colourMode === 2 && rowIdx === 0 && !isEchoT) ? "#F8FAFC" : rTriad.colCh
+                    rowColAlt = rTriad.colAlt
+                } else if (colourMode === 3) {
+                    var rEqHue = (state.hueShift + rowIdx * 68 + state.bassSmooth * 120) % 360
+                    rowColCh = hslToHex(rEqHue, 0.96, 0.60)
+                    rowColAlt = hslToHex((rEqHue + 75) % 360, 0.92, 0.56)
+                } else if (colourMode === 4) {
+                    var rPrismHue = (state.hueShift + rowIdx * 55 + te * 32 + l3T * 36) % 360
+                    rowColCh = hslToHex(rPrismHue, 0.96, 0.60)
+                    rowColAlt = hslToHex((rPrismHue + 90) % 360, 0.92, 0.55)
+                }
+
+                // Line-level ASCII block strips for Styles 16, 17, 19 (drawn across the whole line rather than per-character)
+                var linePlateW = rowHalfW * 2.0 + rowFontPx * 1.36
+                var linePlateH = rowFontPx * 1.20
+                if (textStyle === 16) {
+                    // Style 16: ASCII Black Block / White Text — full line-level solid black/dark block strip
+                    ctx.save()
+                    ctx.fillStyle = isEchoT ? "rgba(4, 4, 8, 0.78)" : "rgba(4, 4, 8, 0.95)"
+                    ctx.fillRect(rowLineCenterX - linePlateW * 0.5, rowLineCenterY - linePlateH * 0.5, linePlateW, linePlateH)
+                    if (!isEchoT && typeof ctx.strokeRect === "function") {
+                        ctx.lineWidth = 1.6
+                        ctx.strokeStyle = (colourMode === 0 && !isPaletteShifted) ? "rgba(255, 255, 255, 0.62)" : colourWithAlpha(rowColCh, 0.78)
+                        ctx.strokeRect(rowLineCenterX - linePlateW * 0.5, rowLineCenterY - linePlateH * 0.5, linePlateW, linePlateH)
+                    }
+                    ctx.restore()
+                } else if (textStyle === 17) {
+                    // Style 17: ASCII White Back / Black Text — full line-level solid white/bright-palette block strip
+                    ctx.save()
+                    var whtStripCol = (colourMode === 0 && !isPaletteShifted) ? "#FFFFFF" : rowColCh
+                    ctx.fillStyle = colourWithAlpha(whtStripCol, isEchoT ? 0.78 : 0.95)
+                    ctx.fillRect(rowLineCenterX - linePlateW * 0.5, rowLineCenterY - linePlateH * 0.5, linePlateW, linePlateH)
+                    if (!isEchoT && typeof ctx.strokeRect === "function") {
+                        ctx.lineWidth = 1.6
+                        ctx.strokeStyle = (colourMode === 0 && !isPaletteShifted) ? "rgba(8, 10, 14, 0.65)" : colourWithAlpha(rowColAlt, 0.78)
+                        ctx.strokeRect(rowLineCenterX - linePlateW * 0.5, rowLineCenterY - linePlateH * 0.5, linePlateW, linePlateH)
+                    }
+                    ctx.restore()
+                } else if (textStyle === 19) {
+                    // Style 19: ASCII Coloured Back / Transparent Text — full line-level solid palette-coloured block strip (letters knocked out below)
+                    ctx.save()
+                    ctx.fillStyle = colourWithAlpha(rowColCh, isEchoT ? 0.74 : 0.94)
+                    ctx.fillRect(rowLineCenterX - linePlateW * 0.5, rowLineCenterY - linePlateH * 0.5, linePlateW, linePlateH)
+                    if (!isEchoT && typeof ctx.strokeRect === "function") {
+                        ctx.lineWidth = 1.6
+                        ctx.strokeStyle = colourWithAlpha(rowColAlt, 0.84)
+                        ctx.strokeRect(rowLineCenterX - linePlateW * 0.5, rowLineCenterY - linePlateH * 0.5, linePlateW, linePlateH)
+                    }
+                    ctx.restore()
+                }
 
                 // Row-level stage plates / brutalist bars / laser scanlines / futuristic HUD & Copperbars on front pass
                 if (!isEchoT) {
@@ -8059,7 +8214,18 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                     }
 
                     // Style-specific per-character kinetic modulation
-                    if (textStyle === 1) {
+                    if (isLineAsciiBlockStyle) {
+                        // Line-level ASCII Block Styles (16, 17, 19): keep characters aligned within the cohesive line-level block strip
+                        cpx = rowLineCenterX + (ci - (nCh - 1) * 0.5) * charStep
+                        cpy = rowLineCenterY + Math.round(Math.sin(ci * 0.5 + Math.floor(l3T * 8.0) * 0.7 + rowIdx) * 1.5)
+                        rot = 0.0
+                        sx = 1.0
+                        sy = 1.0
+                    } else if (textStyle === 18 || textStyle === 20) {
+                        // ASCII Transparent (18) & ASCII Cell Matrix (20): crisp stepped terminal raster quantization
+                        cpy += Math.round(Math.sin(ci * 0.5 + Math.floor(l3T * 8.0) * 0.7 + rowIdx) * (1.5 + state.beatPulse * 2.5))
+                        rot = 0.0
+                    } else if (textStyle === 1) {
                         // Style 1: Psychedelic Liquid harmonic wave undulation & breathing scale
                         cpy += Math.sin(ci * 0.65 - l3T * 3.1 + rowIdx) * rowFontPx * 0.14
                         rot += Math.cos(ci * 0.55 - l3T * 2.4) * 0.09
@@ -8228,7 +8394,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                             ctx.fillText(ch, 0, 0)
                         }
                     } else if (textStyle === 5) {
-                        // 5: Acid Glitch IDM — inverted strobe block accents + sharp glitch typography
+                        // 5 (#6 in UI): Acid Glitch IDM — character-level inverted strobe block accents + sharp glitch typography
                         var isStrobeCell = (!isEchoT && Math.sin(ci * 2.9 + Math.floor(l3T * 12.0)) > 0.62)
                         if (isStrobeCell) {
                             var stW = charStep * 0.94
@@ -8389,7 +8555,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                             ctx.fillStyle = useSigCols ? "#FDE047" : colAcc
                             ctx.fillRect(spX - 2.2, spY - 2.2, 4.4, 4.4)
                         }
-                    } else {
+                    } else if (textStyle === 15) {
                         // 15: Quantum Matrix Datastream — vertical cascading telemetry ticks + beat-triggered decrypt glyph + phosphor core
                         if (!isEchoT) {
                             ctx.fillStyle = useSigCols ? "rgba(16, 185, 129, 0.34)" : colourWithAlpha(colAlt, 0.36)
@@ -8408,6 +8574,105 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                             : ch
                         ctx.fillStyle = (qGlyph !== ch) ? (useSigCols ? "#FFD166" : colAcc) : colCh
                         ctx.fillText(qGlyph, 0, 0)
+                    } else if (textStyle === 16) {
+                        // 16: ASCII Black Block / White Text — line-level black block strip drawn per-row; crisp white/palette glyph here
+                        ctx.fillStyle = (useSigCols && !isPaletteShifted) ? "#FFFFFF" : colCh
+                        ctx.fillText(ch, 0, 0)
+                    } else if (textStyle === 17) {
+                        // 17: ASCII White Back / Black Text — line-level white/palette block strip drawn per-row; crisp black glyph here
+                        ctx.fillStyle = "#050608"
+                        ctx.fillText(ch, 0, 0)
+                    } else if (textStyle === 18) {
+                        // 18: ASCII Transparent Back / Text — strictly transparent background (zero fillRect calls) + stroked corner ticks & palette glyph
+                        var asciiTrW = charStep * 0.92
+                        var asciiTrH = rowFontPx * 1.06
+                        if (!isEchoT) {
+                            var tickLen = Math.max(2.0, rowFontPx * 0.12)
+                            ctx.strokeStyle = colourWithAlpha(colAlt, 0.72)
+                            ctx.lineWidth = 1.3
+                            ctx.beginPath()
+                            ctx.moveTo(-asciiTrW * 0.5, -asciiTrH * 0.5 + tickLen)
+                            ctx.lineTo(-asciiTrW * 0.5, -asciiTrH * 0.5)
+                            ctx.lineTo(-asciiTrW * 0.5 + tickLen, -asciiTrH * 0.5)
+                            ctx.moveTo(asciiTrW * 0.5 - tickLen, asciiTrH * 0.5)
+                            ctx.lineTo(asciiTrW * 0.5, asciiTrH * 0.5)
+                            ctx.lineTo(asciiTrW * 0.5, asciiTrH * 0.5 - tickLen)
+                            ctx.stroke()
+                        }
+                        if (!isEchoT && hasStrokeText) {
+                            ctx.lineWidth = Math.max(1.8, rowFontPx * 0.09)
+                            ctx.strokeStyle = colourWithAlpha(colAlt, 0.85)
+                            ctx.strokeText(ch, 0, 0)
+                        }
+                        ctx.fillStyle = colCh
+                        ctx.fillText(ch, 0, 0)
+                    } else if (textStyle === 19) {
+                        // 19: ASCII Coloured Back / Transparent Text — line-level coloured block strip drawn per-row; knockout transparent glyph here
+                        var prevComp19 = ctx.globalCompositeOperation || "source-over"
+                        ctx.globalCompositeOperation = "destination-out"
+                        ctx.fillStyle = "rgba(0, 0, 0, 1.0)"
+                        ctx.fillText(ch, 0, 0)
+                        ctx.globalCompositeOperation = prevComp19
+                        if (hasStrokeText) {
+                            ctx.lineWidth = Math.max(1.2, rowFontPx * 0.06)
+                            ctx.strokeStyle = "rgba(5, 7, 12, 0.85)"
+                            ctx.strokeText(ch, 0, 0)
+                        }
+                    } else {
+                        // 20: ASCII Cell Matrix — character-level mixture of the 4 ASCII treatments across individual character cells
+                        var cellMixW = charStep * 0.94
+                        var cellMixH = rowFontPx * 1.10
+                        var cellKind = (ci + rowIdx * 2 + Math.floor(l3T * 4.0)) & 3
+                        if (cellKind === 0) {
+                            // Cell 0: Black Block / White or Palette Text
+                            ctx.fillStyle = isEchoT ? "rgba(4, 4, 8, 0.78)" : "rgba(4, 4, 8, 0.96)"
+                            ctx.fillRect(-cellMixW * 0.5, -cellMixH * 0.5, cellMixW, cellMixH)
+                            if (!isEchoT && typeof ctx.strokeRect === "function") {
+                                ctx.lineWidth = 1.0
+                                ctx.strokeStyle = (useSigCols && !isPaletteShifted) ? "rgba(255, 255, 255, 0.45)" : colourWithAlpha(colCh, 0.60)
+                                ctx.strokeRect(-cellMixW * 0.5, -cellMixH * 0.5, cellMixW, cellMixH)
+                            }
+                            ctx.fillStyle = (useSigCols && !isPaletteShifted) ? "#FFFFFF" : colCh
+                            ctx.fillText(ch, 0, 0)
+                        } else if (cellKind === 1) {
+                            // Cell 1: White or Bright-Palette Block / Black Text
+                            var cellWhtCol = (useSigCols && !isPaletteShifted) ? "#FFFFFF" : colAlt
+                            ctx.fillStyle = colourWithAlpha(cellWhtCol, isEchoT ? 0.78 : 0.96)
+                            ctx.fillRect(-cellMixW * 0.5, -cellMixH * 0.5, cellMixW, cellMixH)
+                            ctx.fillStyle = "#050608"
+                            ctx.fillText(ch, 0, 0)
+                        } else if (cellKind === 2) {
+                            // Cell 2: Strictly Transparent Back / Coloured Text (no fillRect on this cell)
+                            if (!isEchoT) {
+                                var cTick = Math.max(2.0, rowFontPx * 0.12)
+                                ctx.strokeStyle = colourWithAlpha(colAcc, 0.75)
+                                ctx.lineWidth = 1.2
+                                ctx.beginPath()
+                                ctx.moveTo(-cellMixW * 0.5, -cellMixH * 0.5 + cTick)
+                                ctx.lineTo(-cellMixW * 0.5, -cellMixH * 0.5)
+                                ctx.lineTo(-cellMixW * 0.5 + cTick, -cellMixH * 0.5)
+                                ctx.moveTo(cellMixW * 0.5 - cTick, cellMixH * 0.5)
+                                ctx.lineTo(cellMixW * 0.5, cellMixH * 0.5)
+                                ctx.lineTo(cellMixW * 0.5, cellMixH * 0.5 - cTick)
+                                ctx.stroke()
+                            }
+                            ctx.fillStyle = colCh
+                            ctx.fillText(ch, 0, 0)
+                        } else {
+                            // Cell 3: Coloured Block / Transparent Knockout Text
+                            ctx.fillStyle = colourWithAlpha(colCh, isEchoT ? 0.76 : 0.94)
+                            ctx.fillRect(-cellMixW * 0.5, -cellMixH * 0.5, cellMixW, cellMixH)
+                            var prevComp20 = ctx.globalCompositeOperation || "source-over"
+                            ctx.globalCompositeOperation = "destination-out"
+                            ctx.fillStyle = "rgba(0, 0, 0, 1.0)"
+                            ctx.fillText(ch, 0, 0)
+                            ctx.globalCompositeOperation = prevComp20
+                            if (hasStrokeText) {
+                                ctx.lineWidth = Math.max(1.2, rowFontPx * 0.06)
+                                ctx.strokeStyle = "rgba(5, 7, 12, 0.85)"
+                                ctx.strokeText(ch, 0, 0)
+                            }
+                        }
                     }
                     ctx.restore()
 
@@ -8429,9 +8694,24 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
         return
     }
 
+    if ((!effectiveLines || effectiveLines.length === 0) && isWordsSource && textLines.length > 0) {
+        var synthFill = isBlockGlyph ? "█▓▒░" : "⣿⣷⣯⣟"
+        var synthRows = []
+        for (var sri = 0; sri < textLines.length; sri++) {
+            var sRow = textLines[sri] || ""
+            var outRow = ""
+            for (var sci = 0; sci < sRow.length; sci++) {
+                outRow += (sRow.charAt(sci) === " ") ? "  " : (synthFill.charAt((sci + sri) % synthFill.length) + synthFill.charAt((sci + sri + 1) % synthFill.length))
+            }
+            synthRows.push(outRow)
+            synthRows.push(outRow)
+        }
+        effectiveLines = synthRows
+    }
+
     if (!effectiveLines || effectiveLines.length === 0) return
 
-    var glyphStyleKey = (isWordsSource ? "words:" : "art:") + (isTextGlyph ? "text" : (isBlockGlyph ? "block" : "braille"))
+    var glyphStyleKey = (isWordsSource ? "words:" : "art:") + (isBlockGlyph ? "block" : "braille")
     rebuildArtCells(state, effectiveLines, glyphStyleKey)
     var cells = state.artCells
     if (!cells || cells.length === 0) return
@@ -8461,7 +8741,6 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     }
 
     var numBuckets = 6
-    var cellFontPx = Math.max(8, Math.round(Math.min(tileW, tileH) * 1.35))
 
     for (var e = l3Tracers - 1; e >= 0; e--) {
         var isEcho = (e > 0)
@@ -8473,7 +8752,6 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
         var ty = endPt.dy * u * 0.42 * (tracerDir >= 0 ? -1.0 : 1.0)
         var passAlpha = isEcho ? (Math.pow(1.0 - u * 0.82, 1.4) * 0.34) : (0.84 + state.bassSmooth * 0.16)
         var cellStride = isEcho ? (e >= 2 ? numBuckets * 3 : numBuckets * 2) : numBuckets
-        if (isTextGlyph && isEcho) cellStride *= 2
 
         ctx.save()
         ctx.globalCompositeOperation = "source-over"
@@ -8482,11 +8760,6 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
             ctx.translate(cx + tx, cy + ty)
             ctx.scale(zScale, zScale)
             ctx.translate(-cx, -cy)
-        }
-        if (isTextGlyph) {
-            ctx.font = "900 " + cellFontPx + "px " + activeFontFamily
-            ctx.textAlign = "center"
-            ctx.textBaseline = "middle"
         }
 
         var lens1X = Math.sin(l3T * 0.88) * 0.66
@@ -8514,7 +8787,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                 col = hslToHex(bPrismHue, 0.96, 0.60)
             }
             ctx.fillStyle = col
-            if (!isTextGlyph) ctx.beginPath()
+            ctx.beginPath()
 
             for (var i = b; i < cells.length; i += cellStride) {
                 var p = cells[i]
@@ -8665,12 +8938,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                 var szW = tileW * pulseBoost * scaleW
                 var szH = tileH * pulseBoost * scaleH
 
-                if (isTextGlyph) {
-                    // Crisp readable character rendering for Art · Crisp Text (typographic mosaic)
-                    var chCell = textStream.charAt((p.gx + p.gy * 11) % textStream.length)
-                    if (chCell === " ") chCell = "★"
-                    ctx.fillText(chCell, px, py)
-                } else if (isBrailleGlyph) {
+                if (isBrailleGlyph) {
                     // Crisp, ultra-fast 2-dot Braille pinpoint rendering for Art · Braille and Words · Braille
                     var mask = p.brailleMask || (((i * 37 + 13) & 0xFF) | 0x09)
                     var dotW = Math.max(1.6, szW * 0.30)
@@ -8708,54 +8976,14 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                 }
 
                 // Mode 10 (Chromatic Mirror): Shimmering water-rippled inverted reflection beneath the baseline
-                if (l3Mode === 10 && !isEcho && (i & 1) === 0 && !isTextGlyph) {
+                if (l3Mode === 10 && !isEcho && (i & 1) === 0) {
                     var reflRippleX = Math.sin(hy * 14.0 + l3T * 5.2) * (5.0 + state.bassSmooth * 12.0) * warpIntensity
                     var reflX = px + reflRippleX
                     var reflY = (cy + halfH * 0.66) + (1.0 - hy) * halfH * 0.36
                     ctx.rect(reflX - szW * 0.38, reflY - szH * 0.24, szW * 0.76, szH * 0.48)
                 }
             }
-            if (!isTextGlyph) ctx.fill()
-        }
-
-        // When Art source + Crisp Text (or when Statements is enabled), also render the styled Artist / Track / Album / Statements banners
-        if ((isTextGlyph || showStatements) && !isEcho) {
-            ctx.textAlign = "center"
-            ctx.textBaseline = "middle"
-            var artMaxCh = 10
-            for (var ali = 0; ali < textLines.length; ali++) {
-                if (textLines[ali].length > artMaxCh) artMaxCh = textLines[ali].length
-            }
-            var artHeaderPx = Math.floor(clamp((w * 0.72 * scale) / Math.max(10, artMaxCh * 0.64), 18, h * 0.085 * scale))
-            var artFontSlope = (textStyle === 1 || textStyle === 3) ? "900 italic " : "900 "
-            ctx.font = artFontSlope + artHeaderPx + "px " + activeFontFamily
-            var topLineText = (textStyle === 0) ? ("◢ " + textLines[0] + " ◣") : ((textStyle === 6) ? ("❖ " + textLines[0] + " ❖") : textLines[0])
-            var topBannerY = Math.max(artHeaderPx * 1.25, cy - halfH - artHeaderPx * 0.65 + Math.sin(l3T * 2.0) * 5.0)
-            var topBanPalLen = Math.max(1, activeStylePal.length)
-            var topBanHueStep = Math.floor(state.hueShift / 45)
-            var topBanTriad = (colourMode === 0)
-                ? { colCh: activeStylePal[topBanHueStep % topBanPalLen], colAlt: (textStyle === 6 ? "#7209B7" : "rgba(5, 6, 14, 0.92)") }
-                : deriveDistinctTypographyTriad(activeStylePal, topBanHueStep % topBanPalLen, 0, topBanHueStep % topBanPalLen)
-            ctx.lineWidth = Math.max(3.5, artHeaderPx * 0.20)
-            ctx.strokeStyle = (colourMode === 0) ? topBanTriad.colAlt : "rgba(5, 6, 14, 0.92)"
-            if (typeof ctx.strokeText === "function") ctx.strokeText(topLineText, cx, topBannerY)
-            ctx.fillStyle = (colourMode === 2) ? "#F8FAFC" : topBanTriad.colCh
-            ctx.fillText(topLineText, cx, topBannerY)
-
-            if (textLines.length > 1) {
-                var subHeaderPx = Math.max(14, Math.floor(artHeaderPx * 0.78))
-                ctx.font = artFontSlope + subHeaderPx + "px " + activeFontFamily
-                var botBannerY = Math.min(h - subHeaderPx * 1.2, cy + halfH + subHeaderPx * 0.78 + Math.cos(l3T * 2.0) * 4.0)
-                var botLineText = textLines.slice(1).join("  •  ")
-                var botBanTriad = (colourMode === 0)
-                    ? { colCh: activeStylePal[(2 + topBanHueStep) % topBanPalLen] }
-                    : deriveDistinctTypographyTriad(activeStylePal, (2 + topBanHueStep) % topBanPalLen, 1, topBanHueStep % topBanPalLen)
-                ctx.lineWidth = Math.max(3.0, subHeaderPx * 0.18)
-                ctx.strokeStyle = "rgba(5, 6, 14, 0.92)"
-                if (typeof ctx.strokeText === "function") ctx.strokeText(botLineText, cx, botBannerY)
-                ctx.fillStyle = botBanTriad.colCh
-                ctx.fillText(botLineText, cx, botBannerY)
-            }
+            ctx.fill()
         }
         ctx.restore()
     }
@@ -8766,6 +8994,9 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
 // ---------------------------------------------------------------------------
 
 function normaliseConfig(cfg, mode, asciiLines) {
+    if (cfg && cfg._isNormalised && (mode === undefined || cfg._normMode === mode)) {
+        return cfg
+    }
     var c = cfg || {}
     var pos = Number(c.position) || 0.0
     var dur = Number(c.duration) || 0.0
@@ -8865,7 +9096,10 @@ function normaliseConfig(cfg, mode, asciiLines) {
         trackTitle: String(c.trackTitle || ""),
         trackArtist: String(c.trackArtist || ""),
         trackAlbum: String(c.trackAlbum || ""),
-        trackProgress: prog
+        trackProgress: prog,
+        photoMotionRenderCallback: typeof c.photoMotionRenderCallback === "function" ? c.photoMotionRenderCallback : null,
+        _isNormalised: true,
+        _normMode: mode
     }
 }
 
