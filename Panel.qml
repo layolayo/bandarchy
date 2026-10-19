@@ -368,6 +368,11 @@ Item {
                 if (root.service) root.service.fullscreenVisualiserOpen = !root.service.fullscreenVisualiserOpen
                 event.accepted = true
             }
+            else if (event.key === Qt.Key_Question || event.key === Qt.Key_Slash || event.text === "?" || event.text === "/") {
+                panelVisualiser.showKeybindingsSheet = !panelVisualiser.showKeybindingsSheet
+                if (panelVisualiser.showKeybindingsSheet) panelVisualiser.showHud = true
+                event.accepted = true
+            }
             return
         }
 

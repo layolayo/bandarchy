@@ -4144,7 +4144,7 @@ def mpv_running() -> bool:
     return mpv_get("idle-active") is not None or mpv_get("pid") is not None
 
 
-def save_playback_resume_state(position_override: float | None = None) -> None:
+def save_playback_resume_state(position_override: float | None = None, mark_stopped: bool | None = None) -> None:
     """Persist current mpv time-pos, playlist-pos, duration, and active track to QUEUE_FILE and HISTORY_FILE."""
     if not mpv_running():
         return
@@ -4184,6 +4184,7 @@ def save_playback_resume_state(position_override: float | None = None) -> None:
         if isinstance(queue, dict) and tracks:
             queue["playlistPos"] = matched_idx
             queue["position"] = round(time_pos, 2)
+            queue["stoppedMidTrack"] = bool(mpv_get("pause")) if mark_stopped is None else bool(mark_stopped)
             if dur > 0:
                 queue["duration"] = dur
                 if 0 <= matched_idx < len(tracks) and isinstance(tracks[matched_idx], dict):
@@ -4209,7 +4210,7 @@ def save_playback_resume_state(position_override: float | None = None) -> None:
 
 def mpv_stop(save_state: bool = True) -> None:
     if save_state:
-        save_playback_resume_state()
+        save_playback_resume_state(mark_stopped=True)
     sock_path = _active_ipc_socket()
     pid = mpv_get("pid")
     mpv_request(["quit"])
@@ -4476,6 +4477,7 @@ def start_queue(
             "playlistPos": actual_idx,
             "position": round(eff_start_pos, 2),
             "duration": dur_first,
+            "stoppedMidTrack": False,
             "tracks": valid_tracks,
         },
     )
@@ -4500,7 +4502,8 @@ def resume_last_playback(
     start_index_override: int | None = None,
     start_pos_override: float | None = None,
 ) -> dict | None:
-    """Resume the last played queue/track from the saved position when mpv is not running."""
+    """Resume the last played queue/track from the saved position when mpv is not running.
+    If the album/queue finished playing naturally (EOF), restart from Track 1 (index 0, 0.0s)."""
     global concurrent, ipaddress, ssl, urllib
     import concurrent.futures as _cf  # noqa: F401
     import concurrent
@@ -4538,6 +4541,23 @@ def resume_last_playback(
             q_pos_val = bounded_float(queue.get("position", 0.0), 0.0)
             l_pos_val = bounded_float(last.get("position", 0.0), 0.0)
             target_pos = l_pos_val if l_pos_val > 0 else q_pos_val
+            # If the album/queue finished playing naturally (mpv exited at EOF without an explicit mid-track stop),
+            # or if saved state is at the end of the last track, restart the album/queue from Track 1 (index 0, 0.0s).
+            has_stopped_flag = isinstance(queue, dict) and ("stoppedMidTrack" in queue)
+            explicit_mid_stop = bool(queue.get("stoppedMidTrack")) if has_stopped_flag else (target_pos > 0.05)
+            last_dur = max(
+                bounded_float(queue.get("duration", 0.0) if isinstance(queue, dict) else 0.0, 0.0),
+                bounded_float(last.get("duration", 0.0), 0.0),
+                bounded_float((q_tracks[saved_idx].get("duration") if (q_tracks and 0 <= saved_idx < len(q_tracks)) else 0.0), 0.0),
+            )
+            at_last_track_eof = (
+                (not q_tracks or saved_idx >= len(q_tracks) - 1)
+                and last_dur > 0.5
+                and target_pos >= last_dur - 0.15
+            )
+            if (not explicit_mid_stop) or at_last_track_eof:
+                target_idx = 0
+                target_pos = 0.0
 
     if q_tracks:
         usable_q_tracks: list[dict] = []
@@ -5153,6 +5173,7 @@ def get_playback_state() -> dict:
             queue["playlistPos"] = matched_idx
             queue["currentIndex"] = matched_idx
             queue["position"] = round(time_pos, 2)
+            queue["stoppedMidTrack"] = bool(mpv_get("pause"))
             if dur_val > 0:
                 queue["duration"] = dur_val
                 if 0 <= matched_idx < len(tracks) and isinstance(tracks[matched_idx], dict):
@@ -6287,16 +6308,24 @@ def cmd_cmd(args) -> None:
     is_running = mpv_running()
     if action == "play-pause":
         if is_running:
+            if mpv_get("idle-active") or mpv_get("eof-reached") or mpv_get("playlist-pos") in (None, -1):
+                resumed = resume_last_playback(start_index_override=0, start_pos_override=0.0)
+                emit({"action": action, "resumed": bool(resumed), **(resumed or {})})
+                return
             mpv_request(["cycle", "pause"])
-            save_playback_resume_state()
+            save_playback_resume_state(mark_stopped=bool(mpv_get("pause")))
         else:
             resumed = resume_last_playback()
             emit({"action": action, "resumed": bool(resumed), **(resumed or {})})
             return
     elif action == "play":
         if is_running:
+            if mpv_get("idle-active") or mpv_get("eof-reached") or mpv_get("playlist-pos") in (None, -1):
+                resumed = resume_last_playback(start_index_override=0, start_pos_override=0.0)
+                emit({"action": action, "resumed": bool(resumed), **(resumed or {})})
+                return
             mpv_request(["set_property", "pause", False])
-            save_playback_resume_state()
+            save_playback_resume_state(mark_stopped=False)
         else:
             resumed = resume_last_playback()
             emit({"action": action, "resumed": bool(resumed), **(resumed or {})})
@@ -6304,7 +6333,7 @@ def cmd_cmd(args) -> None:
     elif action == "pause":
         if is_running:
             mpv_request(["set_property", "pause", True])
-            save_playback_resume_state()
+            save_playback_resume_state(mark_stopped=True)
     elif action == "next":
         if is_running:
             mpv_request(["playlist-next", "force"])
@@ -6359,6 +6388,7 @@ def cmd_cmd(args) -> None:
             queue = read_json(QUEUE_FILE, {}) or {}
             if isinstance(queue, dict) and queue.get("tracks"):
                 queue["position"] = round(sec_val, 2)
+                queue["stoppedMidTrack"] = True
                 write_json(QUEUE_FILE, queue)
             hist = read_json(HISTORY_FILE, {}) or {}
             last = hist.get("lastPlayedTrack") if isinstance(hist, dict) else None

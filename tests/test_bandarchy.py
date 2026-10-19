@@ -1701,6 +1701,16 @@ console.log('OK');
         self.assertEqual(live_now["trackId"], expected_track_id)
         self.assertGreaterEqual(live_now["position"], 0.45)
 
+        # Let the last track of the album play through to natural completion (EOF),
+        # then verify that `cmd play-pause` restarts the album from Track 1 (index 0, 0.0s)
+        self.run_cli("cmd", "seek", "--value", "1.35")
+        time.sleep(0.45)
+        replay_res = self.run_cli("cmd", "play-pause")
+        self.assertTrue(replay_res.get("resumed"))
+        self.assertTrue(replay_res.get("playing"))
+        self.assertEqual(replay_res.get("trackIndex"), 0)
+        self.assertLessEqual(replay_res.get("position", 0.0), 0.35)
+
         self.run_cli("cmd", "stop")
 
     def test_16_layer6_braille_block_no_text_and_l1_photo_tools_studio(self):
@@ -2800,8 +2810,11 @@ for (let sh = 0; sh < 14; sh++) {
     }
 }
 
-// 5. Verify Layer 4 Geometry (0..12) applies 3D tubular shading with round caps/joins
-for (let vmIdx = 0; vmIdx < 13; vmIdx++) {
+// 5. Verify all 20 Layer 4 Geometry modes (0..19) apply 3D tubular shading with round caps/joins
+if (ALL_MODE_NAMES.length !== 20) {
+    throw new Error('Expected 20 Layer 4 Geometry modes in ALL_MODE_NAMES, got ' + ALL_MODE_NAMES.length);
+}
+for (let vmIdx = 0; vmIdx < 20; vmIdx++) {
     const st = createState();
     const cfg = normaliseConfig({
         layer1Enabled: false,
@@ -2814,11 +2827,47 @@ for (let vmIdx = 0; vmIdx < 13; vmIdx++) {
     const ctx = makeTrackCtx();
     renderFrame(ctx, 640, 360, st, vmIdx, theme, [], [], [], cfg, null);
     if (!ctx.lineCaps.includes('round') || !ctx.lineJoins.includes('round')) {
-        throw new Error(`Expected Layer 4 Geometry mode ${vmIdx} to set round lineCap/lineJoin for 3D tubes`);
+        throw new Error(`Expected Layer 4 Geometry mode ${vmIdx} (${ALL_MODE_NAMES[vmIdx]}) to set round lineCap/lineJoin for 3D tubes`);
+    }
+}
+
+// 5b. Verify all 24 Equaliser styles are numbered 1..24 and support all 3 EQ Band Orders (Low->High, Centre-Out, Stereo Mirror)
+if (LAYER1_EQ_BAND_ORDERS.length !== 3) {
+    throw new Error('Expected 3 LAYER1_EQ_BAND_ORDERS, got ' + LAYER1_EQ_BAND_ORDERS.length);
+}
+for (let eq = 0; eq < 24; eq++) {
+    if (!SHORT_LAYER1_EQ_STYLES[eq].startsWith((eq + 1) + ':')) {
+        throw new Error('Expected SHORT_LAYER1_EQ_STYLES[' + eq + '] to start with "' + (eq + 1) + ':", got: ' + SHORT_LAYER1_EQ_STYLES[eq]);
+    }
+    for (let bo = 0; bo < 3; bo++) {
+        const stBo = createState();
+        const cfgBo = normaliseConfig({
+            layer1Enabled: true,
+            layer1FieldEnabled: false,
+            layer1EqEnabled: true,
+            layer1EqStyle: eq,
+            layer1EqBandOrder: bo,
+            layer1ShapesEnabled: false,
+            layer2Enabled: false,
+            layer3Enabled: false
+        }, 0, []);
+        if (cfgBo.layer1EqBandOrder !== bo) {
+            throw new Error(`Expected layer1EqBandOrder=${bo}, got ${cfgBo.layer1EqBandOrder}`);
+        }
+        stepState(stBo, bands, true, cfgBo, 0.03);
+        const ctxBo = makeTrackCtx();
+        renderFrame(ctxBo, 640, 360, stBo, 0, theme, [], [], [], cfgBo, null);
+        if (ctxBo.fillCount + ctxBo.strokeCount < 4) {
+            throw new Error(`EQ style ${eq} with bandOrder ${bo} failed to draw`);
+        }
     }
 }
 
 // 6. Verify Layer 6 Typography clamps font size to <= 44px even at extreme scale (layer3Scale=2.5, beatPulse=1.0, bass=1.0)
+//    and Cool Retro Term CRT Cell Matrix (textStyle=20) renders fixed-cell CRT phosphor blocks across all 6 phosphor profiles
+if (COOL_RETRO_TERM_PHOSPHORS.length !== 6) {
+    throw new Error('Expected 6 COOL_RETRO_TERM_PHOSPHORS profiles');
+}
 const stTypo = createState();
 const cfgTypo = normaliseConfig({
     layer1Enabled: false,
@@ -2841,6 +2890,24 @@ for (const fStr of ctxTypo.fonts) {
     const m = fStr.match(/(\d+)px/);
     if (m && Number(m[1]) > 46) {
         throw new Error(`Typography font size exceeded clamp: ${fStr}`);
+    }
+}
+for (let cm = 0; cm < 4; cm++) {
+    const cfgCrt = normaliseConfig({
+        layer1Enabled: false,
+        layer2Enabled: false,
+        layer3Enabled: true,
+        useAlbumArt: false,
+        asciiMode: 'text',
+        layer3TextStyle: 20,
+        layer3ColourMode: cm,
+        layer3Tracers: 1,
+        trackTitle: 'COOL RETRO CRT'
+    }, 0, []);
+    const ctxCrt = makeTrackCtx();
+    renderFrame(ctxCrt, 1280, 720, stTypo, 0, theme, [], [], [], cfgCrt, null);
+    if (ctxCrt.fillCount < 10 || ctxCrt.strokeCount < 5) {
+        throw new Error(`Expected ASCII Cell Matrix (textStyle=20, colourMode=${cm}) to render CRT cells and text`);
     }
 }
 
@@ -2879,6 +2946,12 @@ console.log('OK');
 """
         res = subprocess.run(["node", "-e", node_script], cwd=REPO_ROOT, capture_output=True, text=True, timeout=20)
         self.assertEqual(res.returncode, 0, f"Node test_20 failed: {res.stderr}")
+        with open(os.path.join(REPO_ROOT, "Visualiser.qml"), "r", encoding="utf-8") as f:
+            viz_src = f.read()
+        self.assertIn("property bool showKeybindingsSheet: false", viz_src)
+        self.assertIn("id: keybindingsSheetModal", viz_src)
+        self.assertIn("󰌌 Keys (?)", viz_src)
+        self.assertIn("layer1EqBandOrder:", viz_src)
 
 
 if __name__ == "__main__":

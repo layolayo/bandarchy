@@ -628,6 +628,11 @@ ShellRoot {
                     }
                     event.accepted = true
                 }
+                else if (event.key === Qt.Key_Question || event.key === Qt.Key_Slash || event.text === "?" || event.text === "/") {
+                    appVisualiser.showKeybindingsSheet = !appVisualiser.showKeybindingsSheet
+                    if (appVisualiser.showKeybindingsSheet) appVisualiser.showHud = true
+                    event.accepted = true
+                }
                 else if (event.key === Qt.Key_Space) { service.togglePlayPause(); event.accepted = true }
                 else if (event.key === Qt.Key_N) { service.nextTrack(); event.accepted = true }
             }

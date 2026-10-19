@@ -49,10 +49,12 @@ FocusScope {
     property string ttfxEffectName: "random"
 
     // Exposed engine metadata for callers and tests
-    readonly property var modeNames: Engine.MODE_NAMES
+    readonly property var modeNames: Engine.ALL_MODE_NAMES
     readonly property var layer1Modes: Engine.ALL_LAYER1_MODES
     readonly property var layer1EqStyles: Engine.ALL_LAYER1_EQ_STYLES
     readonly property var layer1EqLayouts: Engine.LAYER1_EQ_LAYOUTS
+    readonly property var layer1EqBandOrders: Engine.LAYER1_EQ_BAND_ORDERS
+    readonly property var shortEqBandOrderLabels: Engine.SHORT_LAYER1_EQ_BAND_ORDERS
     readonly property var layer1EqDampingNames: Engine.LAYER1_EQ_DAMPING
     readonly property var layer1ShapeStyles: Engine.LAYER1_SHAPE_STYLES
     readonly property var layer3Modes: Engine.LAYER3_MODES
@@ -101,9 +103,9 @@ FocusScope {
     property int telemetryTick: 0
 
     // Layer #1 — 3 Independent Sub-Layers:
-    //   (1) L1 Field (`layer1FieldEnabled` + `layer1Mode` 0..10 + `layer1Direction` Towards/Away/Breathe + `layer1Speed` + `layer1Density`)
-    //   (2) L1 Equaliser (`layer1EqEnabled` + `layer1EqStyle` 0..15 + `layer1EqLayout` 0..3 + `layer1EqScale` 0.35..2.25 + `layer1EqDamping` 0..2 + `layer1EqGain`)
-    //   (3) L1 Beat Shapes (`layer1ShapesEnabled` + `layer1ShapeStyle` 0..5 + spin/speed/scale)
+    //   (1) L1 Field (`layer1FieldEnabled` + `layer1Mode` 0..23 + `layer1Direction` Towards/Away/Breathe + `layer1Speed` + `layer1Density`)
+    //   (2) L1 Equaliser (`layer1EqEnabled` + `layer1EqStyle` 0..23 + `layer1EqLayout` 0..3 + `layer1EqBandOrder` 0..2 + `layer1EqScale` 0.15..2.25 + `layer1EqDamping` 0..2 + `layer1EqGain`)
+    //   (3) L1 Beat Shapes (`layer1ShapesEnabled` + `layer1ShapeStyle` 0..13 + spin/speed/scale)
     property bool layer1Enabled: true
     property bool layer1AutoRandomise: false
     property bool layer1FieldEnabled: true
@@ -117,6 +119,7 @@ FocusScope {
     property bool layerEqAutoRandomise: false
     property int layer1EqStyle: 0
     property int layer1EqLayout: 0
+    property int layer1EqBandOrder: 0
     property real layer1EqScale: 1.0
     property real layer1EqSpin: 1.0
     property real layer1EqGain: 1.25
@@ -420,6 +423,7 @@ FocusScope {
     property bool showHud: true
     property bool showLayerDrawer: false
     property alias showConfigDrawer: root.showLayerDrawer
+    property bool showKeybindingsSheet: false
     property int activeConfigLayer: 1 // 0 = Presets (L1+L2+L3), 1 = Layer 1, 2 = Layer 2, 3 = Layer 3, 4 = General & Quality
     property bool isFullscreen: false
 
@@ -527,30 +531,30 @@ FocusScope {
     })
 
     readonly property var shortEqLabels: [
-        "Skyline",
-        "LED Bars",
-        "Mirror",
-        "3D Ridges",
-        "Sun",
-        "TwinWave",
-        "Spotlights",
-        "3D Orb",
-        "3D Torus",
-        "Cymatics",
-        "3D Helix",
-        "Tesla Arcs",
-        "Tralis City",
-        "Aurora",
-        "DNA Beam",
-        "Ferrofluid",
-        "3D Tubes",
-        "HyperRibbon",
-        "CyberSpine",
-        "HoloPrisms",
-        "WarpRings",
-        "MercuryWave",
-        "LaserHarp",
-        "SynthValley"
+        "1:Skyline",
+        "2:LED Bars",
+        "3:Mirror",
+        "4:3D Ridges",
+        "5:Sun",
+        "6:TwinWave",
+        "7:Spotlights",
+        "8:3D Orb",
+        "9:3D Torus",
+        "10:Cymatics",
+        "11:3D Helix",
+        "12:Tesla Arcs",
+        "13:Tralis City",
+        "14:Aurora",
+        "15:DNA Beam",
+        "16:Ferrofluid",
+        "17:3D Tubes",
+        "18:HyperRibbon",
+        "19:CyberSpine",
+        "20:HoloPrisms",
+        "21:WarpRings",
+        "22:MercuryWave",
+        "23:LaserHarp",
+        "24:SynthValley"
     ]
     readonly property var shortVectorLabels: Engine.SHORT_LAYER1_SHAPE_STYLES
 
@@ -592,19 +596,26 @@ FocusScope {
     ]
 
     readonly property var shortModeLabels: [
-        "MilkDrop",
-        "AVS",
-        "G-Force",
-        "Cthugha",
-        "Minter",
-        "Fractals",
-        "Lotus",
-        "Quasar",
-        "Mycelium",
-        "Matrix",
-        "Polytope",
-        "Attractor",
-        "Sierpinski"
+        "1:MilkDrop",
+        "2:AVS",
+        "3:G-Force",
+        "4:Cthugha",
+        "5:Minter",
+        "6:Fractals",
+        "7:Lotus",
+        "8:Quasar",
+        "9:Mycelium",
+        "10:Matrix",
+        "11:Polytope",
+        "12:Attractor",
+        "13:Sierpinski",
+        "14:HopfTorus",
+        "15:CalabiYau",
+        "16:Merkaba",
+        "17:Poincare",
+        "18:BlochSphere",
+        "19:KleinBottle",
+        "20:Quasicrystal"
     ]
 
     readonly property var shortL3ModeLabels: [
@@ -1739,9 +1750,7 @@ FocusScope {
             }
         } else if (m === "words") {
             root.useAlbumArt = false
-            if (root.asciiMode !== "braille" && root.asciiMode !== "block" && root.asciiMode !== "text") {
-                root.asciiMode = "braille"
-            }
+            root.asciiMode = "text"
         } else if (m === "braille") {
             root.asciiMode = "braille"
         } else if (m === "block") {
@@ -1876,6 +1885,7 @@ FocusScope {
             layer1EqEnabled: root.layer1EqEnabled,
             layer1EqStyle: root.layer1EqStyle,
             layer1EqLayout: root.layer1EqLayout,
+            layer1EqBandOrder: root.layer1EqBandOrder,
             layer1EqScale: root.layer1EqScale,
             layer1EqSpin: root.layer1EqSpin,
             layer1EqGain: root.layer1EqGain,
@@ -2028,6 +2038,7 @@ FocusScope {
         if (cfg.layer1EqEnabled !== undefined) root.layer1EqEnabled = Boolean(cfg.layer1EqEnabled)
         if (cfg.layer1EqStyle !== undefined) root.layer1EqStyle = Number(cfg.layer1EqStyle) % root.layer1EqStyles.length
         if (cfg.layer1EqLayout !== undefined) root.layer1EqLayout = Number(cfg.layer1EqLayout) % Engine.LAYER1_EQ_LAYOUTS.length
+        if (cfg.layer1EqBandOrder !== undefined) root.layer1EqBandOrder = Number(cfg.layer1EqBandOrder) % Engine.LAYER1_EQ_BAND_ORDERS.length
         if (cfg.layer1EqScale !== undefined) root.layer1EqScale = Math.max(0.15, Math.min(2.25, Number(cfg.layer1EqScale) || 1.0))
         if (cfg.layer1EqSpin !== undefined) root.layer1EqSpin = Math.max(-2.50, Math.min(2.50, Number(cfg.layer1EqSpin)))
         if (cfg.layer1EqGain !== undefined) root.layer1EqGain = Number(cfg.layer1EqGain)
@@ -2045,7 +2056,7 @@ FocusScope {
         if (cfg.layer2AutoRandomise !== undefined) root.layer2AutoRandomise = Boolean(cfg.layer2AutoRandomise)
         if (cfg.layer2VizEnabled !== undefined) root.layer2VizEnabled = Boolean(cfg.layer2VizEnabled)
         if (cfg.layer2TracersEnabled !== undefined) root.layer2TracersEnabled = Boolean(cfg.layer2TracersEnabled)
-        if (cfg.visualMode !== undefined) root.visualMode = Number(cfg.visualMode) % Engine.MODE_NAMES.length
+        if (cfg.visualMode !== undefined) root.visualMode = Number(cfg.visualMode) % root.modeNames.length
         if (cfg.symmetryIndex !== undefined) root.symmetryIndex = Number(cfg.symmetryIndex) % Engine.SYMMETRY_OPTIONS.length
         if (cfg.sensitivity !== undefined) root.sensitivity = Number(cfg.sensitivity)
         if (cfg.layer2Complexity !== undefined) root.layer2Complexity = Number(cfg.layer2Complexity)
@@ -2179,6 +2190,7 @@ FocusScope {
         root.layer1EqEnabled = true
         root.layer1EqStyle = 0
         root.layer1EqLayout = 0
+        root.layer1EqBandOrder = 0
         root.layer1EqScale = 1.0
         root.layer1EqSpin = 1.0
         root.layer1ShapesEnabled = true
@@ -2252,6 +2264,7 @@ FocusScope {
             l1EqEnabled: root.layer1EqEnabled,
             l1EqStyle: root.layer1EqStyle,
             l1EqLayout: root.layer1EqLayout,
+            l1EqBandOrder: root.layer1EqBandOrder,
             l1EqScale: root.layer1EqScale,
             l1EqSpin: root.layer1EqSpin,
             l1EqGain: root.layer1EqGain,
@@ -2308,6 +2321,7 @@ FocusScope {
         if (item.l1EqEnabled !== undefined) root.layer1EqEnabled = Boolean(item.l1EqEnabled)
         if (item.l1EqStyle !== undefined) root.layer1EqStyle = Number(item.l1EqStyle) % root.layer1EqStyles.length
         if (item.l1EqLayout !== undefined) root.layer1EqLayout = Number(item.l1EqLayout) % Engine.LAYER1_EQ_LAYOUTS.length
+        if (item.l1EqBandOrder !== undefined) root.layer1EqBandOrder = Number(item.l1EqBandOrder) % Engine.LAYER1_EQ_BAND_ORDERS.length
         if (item.l1EqScale !== undefined) root.layer1EqScale = Math.max(0.15, Math.min(2.25, Number(item.l1EqScale)))
         if (item.l1EqSpin !== undefined) root.layer1EqSpin = Math.max(-2.50, Math.min(2.50, Number(item.l1EqSpin)))
         if (item.l1EqGain !== undefined) root.layer1EqGain = Number(item.l1EqGain)
@@ -2346,7 +2360,7 @@ FocusScope {
 
     function saveCurrentL2Config() {
         var copy = (root.savedL2Configs || []).slice()
-        var mName = root.layer2VizEnabled ? (Engine.MODE_NAMES[root.visualMode] || "Mode").split(" ")[0] : "NoViz"
+        var mName = root.layer2VizEnabled ? (root.modeNames[root.visualMode] || "Mode").split(" ")[0] : "NoViz"
         var trName = root.layer2TracersEnabled ? (root.tracerCount + "x") : "NoTr"
         var item = {
             name: mName + " · " + trName,
@@ -2381,7 +2395,7 @@ FocusScope {
         // Strictly update ONLY Layer #2 properties — NEVER touch Layer #1, Layer #3, or Layer #4!
         root.layer2Enabled = true
         if (item.l2VizEnabled !== undefined) root.layer2VizEnabled = Boolean(item.l2VizEnabled)
-        if (item.l2Mode !== undefined) root.visualMode = Number(item.l2Mode) % Engine.MODE_NAMES.length
+        if (item.l2Mode !== undefined) root.visualMode = Number(item.l2Mode) % root.modeNames.length
         if (item.symmetryIndex !== undefined) root.symmetryIndex = Number(item.symmetryIndex) % Engine.SYMMETRY_OPTIONS.length
         if (item.paletteIndex !== undefined) root.paletteIndex = Number(item.paletteIndex) % Engine.PALETTE_NAMES.length
         if (item.sensitivity !== undefined) root.sensitivity = Number(item.sensitivity)
@@ -2637,6 +2651,7 @@ FocusScope {
     }
     onLayer1EqStyleChanged: { clearCanvasImmediate(); scheduleSaveVisualiserConfig() }
     onLayer1EqLayoutChanged: { clearCanvasImmediate(); scheduleSaveVisualiserConfig() }
+    onLayer1EqBandOrderChanged: { clearCanvasImmediate(); scheduleSaveVisualiserConfig() }
     onLayer1ShapeStyleChanged: { clearCanvasImmediate(); scheduleSaveVisualiserConfig() }
     onLayer2EnabledChanged: {
         if (!root._internalLayerChange && !root._applyingPersistedConfig) {
@@ -2798,6 +2813,7 @@ FocusScope {
             layer1EqEnabled: root.layer1EqEnabled,
             layer1EqStyle: root.layer1EqStyle,
             layer1EqLayout: root.layer1EqLayout,
+            layer1EqBandOrder: root.layer1EqBandOrder,
             layer1EqScale: root.layer1EqScale,
             layer1EqSpin: root.layer1EqSpin,
             layer1EqGain: root.layer1EqGain,
@@ -3004,6 +3020,7 @@ FocusScope {
         root.layer1EqEnabled = p.l1EqEnabled !== undefined ? Boolean(p.l1EqEnabled) : true
         root.layer1EqStyle = Number(p.l1EqStyle || 0) % root.layer1EqStyles.length
         root.layer1EqLayout = Number(p.l1EqLayout || 0) % Engine.LAYER1_EQ_LAYOUTS.length
+        if (p.l1EqBandOrder !== undefined) root.layer1EqBandOrder = Number(p.l1EqBandOrder) % Engine.LAYER1_EQ_BAND_ORDERS.length
         root.layer1EqScale = p.l1EqScale !== undefined ? Math.max(0.15, Math.min(2.25, Number(p.l1EqScale))) : 1.0
         if (p.l1EqSpin !== undefined) root.layer1EqSpin = Math.max(-2.50, Math.min(2.50, Number(p.l1EqSpin)))
         root.layer1EqDamping = Number(p.l1EqDamping || 0) % Engine.LAYER1_EQ_DAMPING.length
@@ -3012,7 +3029,7 @@ FocusScope {
 
         root.layer2Enabled = Boolean(p.l2Enabled)
         root.layer2VizEnabled = p.l2VizEnabled !== undefined ? Boolean(p.l2VizEnabled) : true
-        root.visualMode = Number(p.l2Mode || 0) % Engine.MODE_NAMES.length
+        root.visualMode = Number(p.l2Mode || 0) % root.modeNames.length
 
         root.layer3Enabled = Boolean(p.l3Enabled)
         root.layer3Mode = Number(p.l3Mode || 0) % Engine.LAYER3_MODES.length
@@ -3096,7 +3113,7 @@ FocusScope {
         var copy = root.collectivePresets.slice()
         var customNum = copy.length + 1
         var l1Tag = root.layer1Enabled ? ("L1:" + (root.layer1Modes[root.layer1Mode] || "").split(" ")[0]) : "L1:Off"
-        var l2Tag = root.layer2Enabled ? ("L2:" + (Engine.MODE_NAMES[root.visualMode] || "").split(" ")[0]) : "L2:Off"
+        var l2Tag = root.layer2Enabled ? ("L2:" + (root.modeNames[root.visualMode] || "").split(" ")[0]) : "L2:Off"
         var l3Tag = root.layer3Enabled ? ("L3:" + (root.useAlbumArt ? "Art" : "Words")) : "L3:Off"
         var newPreset = {
             name: "Custom #" + customNum + " (" + l1Tag + " + " + l2Tag + " + " + l3Tag + ")",
@@ -3125,6 +3142,7 @@ FocusScope {
             l1EqEnabled: root.layer1EqEnabled,
             l1EqStyle: root.layer1EqStyle,
             l1EqLayout: root.layer1EqLayout,
+            l1EqBandOrder: root.layer1EqBandOrder,
             l1EqScale: root.layer1EqScale,
             l1EqSpin: root.layer1EqSpin,
             l1EqGain: root.layer1EqGain,
@@ -3166,10 +3184,10 @@ FocusScope {
 
     // Strict Layer Isolation in cycle functions: NEVER force-enable another or disabled layer unless explicitly toggled
     function cycleMode(delta) {
-        var count = Engine.MODE_NAMES.length
+        var count = root.modeNames.length
         visualMode = (visualMode + delta + count) % count
         vizCanvas.requestPaint()
-        root.suppressActionFeedback("4: Geometry: " + Engine.MODE_NAMES[visualMode])
+        root.suppressActionFeedback("4: Geometry: " + (visualMode + 1) + ". " + root.modeNames[visualMode])
     }
 
     function cycleLayer1Mode(delta) {
@@ -3188,7 +3206,17 @@ FocusScope {
         root.syncLayer1MasterFromSubs()
         root.layer1EqStyle = (root.layer1EqStyle + step + count) % count
         vizCanvas.requestPaint()
-        root.suppressActionFeedback("2: Equaliser: " + root.layer1EqStyles[root.layer1EqStyle])
+        root.suppressActionFeedback("2: Equaliser: " + (root.layer1EqStyle + 1) + ". " + root.layer1EqStyles[root.layer1EqStyle])
+    }
+
+    function cycleLayer1EqBandOrder(delta) {
+        var count = Engine.LAYER1_EQ_BAND_ORDERS.length
+        var step = (delta !== undefined && delta < 0) ? -1 : 1
+        root.layer1EqEnabled = true
+        root.syncLayer1MasterFromSubs()
+        root.layer1EqBandOrder = (root.layer1EqBandOrder + step + count) % count
+        vizCanvas.requestPaint()
+        root.suppressActionFeedback("EQ Band Order: " + Engine.LAYER1_EQ_BAND_ORDERS[root.layer1EqBandOrder])
     }
 
     function cycleLayer1ShapeStyle(delta) {
@@ -3709,6 +3737,7 @@ FocusScope {
             root.layer1EqEnabled = true
             root.layer1EqStyle = Math.floor(Math.random() * root.layer1EqStyles.length)
             root.layer1EqLayout = Math.floor(Math.random() * Engine.LAYER1_EQ_LAYOUTS.length)
+            root.layer1EqBandOrder = Math.floor(Math.random() * Engine.LAYER1_EQ_BAND_ORDERS.length)
             root.layer1EqScale = Math.round((0.25 + Math.random() * 1.15) * 100) / 100
             root.layer1EqSpin = Math.round(((Math.random() < 0.35 ? -1.0 : 1.0) * (0.45 + Math.random() * 1.40)) * 100) / 100
             root.layer1EqDamping = Math.floor(Math.random() * Engine.LAYER1_EQ_DAMPING.length)
@@ -3719,6 +3748,7 @@ FocusScope {
             if (root.layer1EqEnabled) {
                 root.layer1EqStyle = eqRoll
                 root.layer1EqLayout = Math.floor(Math.random() * Engine.LAYER1_EQ_LAYOUTS.length)
+                root.layer1EqBandOrder = Math.floor(Math.random() * Engine.LAYER1_EQ_BAND_ORDERS.length)
                 root.layer1EqScale = Math.round((0.25 + Math.random() * 1.15) * 100) / 100
                 root.layer1EqSpin = Math.round(((Math.random() < 0.35 ? -1.0 : 1.0) * (0.45 + Math.random() * 1.40)) * 100) / 100
                 root.layer1EqDamping = Math.floor(Math.random() * Engine.LAYER1_EQ_DAMPING.length)
@@ -3779,7 +3809,7 @@ FocusScope {
         if (root.layer4PinnedByUser && (!root.layer2Enabled || !root.layer2VizEnabled)) {
             return
         }
-        var total = Engine.MODE_NAMES.length
+        var total = root.modeNames.length
         var roll2 = Math.floor(Math.random() * (root.layer4PinnedByUser ? total : (total + 1)))
         root._internalLayerChange = true
         if (!root.layer4PinnedByUser && roll2 === total && root.hasOtherActiveLayer(2)) {
@@ -4344,8 +4374,15 @@ FocusScope {
                 }
                 event.accepted = true
             }
+            else if (event.key === Qt.Key_Question || event.key === Qt.Key_Slash || event.text === "?" || event.text === "/") {
+                root.showKeybindingsSheet = !root.showKeybindingsSheet
+                if (root.showKeybindingsSheet) root.showHud = true
+                root.suppressActionFeedback("Keybinding Reference Sheet [?]: " + (root.showKeybindingsSheet ? "OPEN" : "CLOSED"))
+                event.accepted = true
+            }
             else if (event.key === Qt.Key_Escape) {
-                if (root.showTracerPopover) root.showTracerPopover = false
+                if (root.showKeybindingsSheet) root.showKeybindingsSheet = false
+                else if (root.showTracerPopover) root.showTracerPopover = false
                 else if (root.showStatementsEditor) root.showStatementsEditor = false
                 else if (root.showLayerDrawer) root.showLayerDrawer = false
                 else if (root.isFullscreen) {
@@ -4375,10 +4412,10 @@ FocusScope {
     Timer {
         id: hudAutoHideTimer
         interval: 4000
-        running: root.visible && root.isFullscreen && root.showHud && !root.showLayerDrawer && !root.showTracerPopover && !root.showStatementsEditor && !root.textInputFocused
+        running: root.visible && root.isFullscreen && root.showHud && !root.showLayerDrawer && !root.showKeybindingsSheet && !root.showTracerPopover && !root.showStatementsEditor && !root.textInputFocused
         repeat: false
         onTriggered: {
-            if (root.isFullscreen && !root.showLayerDrawer && !root.showTracerPopover && !root.showStatementsEditor && !root.textInputFocused) {
+            if (root.isFullscreen && !root.showLayerDrawer && !root.showKeybindingsSheet && !root.showTracerPopover && !root.showStatementsEditor && !root.textInputFocused) {
                 root.showHud = false
             }
         }
@@ -5546,6 +5583,18 @@ FocusScope {
                     onClicked: root.launchExternalTteTerminal()
                 }
 
+                // Keybinding Reference Sheet toggle (?)
+                VizPillButton {
+                    text: "󰌌 Keys (?)"
+                    fontSize: 9
+                    active: root.showKeybindingsSheet
+                    horizontalPad: 5
+                    onClicked: {
+                        root.showKeybindingsSheet = !root.showKeybindingsSheet
+                        if (root.showKeybindingsSheet) root.showHud = true
+                    }
+                }
+
                 // Hide HUD toggle (H)
                 VizPillButton {
                     text: "󰈈 HUD (H)"
@@ -5871,6 +5920,29 @@ FocusScope {
                         var nLay = Engine.LAYER1_EQ_LAYOUTS.length
                         root.layer1EqLayout = (root.layer1EqLayout + (delta > 0 ? 1 : -1) + nLay) % nLay
                         vizCanvas.requestPaint()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: "Bands:" + (["Low→Hi", "Ctr-Out", "Mirror"][root.layer1EqBandOrder % 3] || "Low→Hi")
+                    active: root.layer1Enabled && root.layer1EqEnabled && root.layer1EqBandOrder !== 0
+                    onClicked: {
+                        root.layer1EqEnabled = true
+                        root.syncLayer1MasterFromSubs()
+                        root.cycleLayer1EqBandOrder(1)
+                    }
+                    onRightClicked: {
+                        root.layer1EqBandOrder = 0
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => {
+                        root.layer1EqEnabled = true
+                        root.syncLayer1MasterFromSubs()
+                        root.cycleLayer1EqBandOrder(delta > 0 ? 1 : -1)
                     }
                 }
 
@@ -6441,24 +6513,6 @@ FocusScope {
                     text: "󰬴 Words"
                     active: !root.useAlbumArt || root.asciiMode === "banner"
                     onClicked: root.selectL3SourceOrGlyph("words")
-                }
-
-                VizPillButton {
-                    pillHeight: 22
-                    fontSize: 9
-                    horizontalPad: 4
-                    text: "⣿ Braille"
-                    active: root.asciiMode === "braille" || (root.useAlbumArt && root.asciiMode !== "block")
-                    onClicked: root.selectL3SourceOrGlyph("braille")
-                }
-
-                VizPillButton {
-                    pillHeight: 22
-                    fontSize: 9
-                    horizontalPad: 4
-                    text: "█ Block"
-                    active: root.asciiMode === "block"
-                    onClicked: root.selectL3SourceOrGlyph("block")
                 }
 
                 VizPillButton {
@@ -7933,6 +7987,31 @@ FocusScope {
                                             }
                                         }
                                     }
+
+                                    Text {
+                                        text: "  Bands:"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 10
+                                        color: root.foregroundColour
+                                    }
+
+                                    Repeater {
+                                        model: root.layer1EqBandOrders.length
+                                        delegate: VizPillButton {
+                                            required property int index
+                                            text: root.layer1EqBandOrders[index]
+                                            active: root.layer1EqBandOrder === index
+                                            horizontalPad: 7
+                                            onClicked: {
+                                                root.layer1EqEnabled = true
+                                                root.syncLayer1MasterFromSubs()
+                                                root.layer1EqBandOrder = index
+                                                vizCanvas.requestPaint()
+                                                scheduleSaveVisualiserConfig()
+                                            }
+                                        }
+                                    }
                                 }
 
                                 GridLayout {
@@ -8323,7 +8402,7 @@ FocusScope {
                             }
                         }
 
-                        // Complete 13-Mode Selector Grid for 4: Geometry
+                        // Complete 20-Mode Selector Grid for 4: Geometry
                         GridLayout {
                             Layout.fillWidth: true
                             columns: 4
@@ -8331,11 +8410,11 @@ FocusScope {
                             rowSpacing: 5
 
                             Repeater {
-                                model: Engine.MODE_NAMES.length
+                                model: root.modeNames.length
                                 delegate: VizPillButton {
                                     required property int index
                                     Layout.fillWidth: true
-                                    text: (index + 1) + ". " + Engine.MODE_NAMES[index]
+                                    text: (index + 1) + ". " + root.modeNames[index]
                                     active: root.layer2Enabled && root.layer2VizEnabled && root.visualMode === index
                                     horizontalPad: 6
                                     onClicked: {
@@ -8861,18 +8940,6 @@ FocusScope {
                                 text: "󰬴 Artist & Song Words"
                                 active: !root.useAlbumArt || root.asciiMode === "banner"
                                 onClicked: root.selectL3SourceOrGlyph("words")
-                            }
-
-                            VizPillButton {
-                                text: "⣿ Braille"
-                                active: root.asciiMode !== "block" && (root.useAlbumArt || root.asciiMode !== "text")
-                                onClicked: root.selectL3SourceOrGlyph("braille")
-                            }
-
-                            VizPillButton {
-                                text: "█ Block"
-                                active: root.asciiMode === "block"
-                                onClicked: root.selectL3SourceOrGlyph("block")
                             }
 
                             VizPillButton {
@@ -10079,16 +10146,33 @@ FocusScope {
                         elide: Text.ElideRight
                     }
 
-                    Text {
+                    RowLayout {
                         Layout.fillWidth: true
-                        text: (root.trackArtist ? root.trackArtist : "Bandarchy") +
-                              (root.trackAlbum ? (" · " + root.trackAlbum) : "") +
-                              "  [L: Layers & Presets · G: L1 Field · M: L2 Viz · E: L3 Art · K: L2 Tracers · T: TTE · F: Full]"
-                        textFormat: Text.PlainText
-                        font.family: "JetBrainsMono Nerd Font"
-                        font.pixelSize: 9
-                        color: Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.72)
-                        elide: Text.ElideRight
+                        spacing: 6
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: (root.trackArtist ? root.trackArtist : "Bandarchy") +
+                                  (root.trackAlbum ? (" · " + root.trackAlbum) : "") +
+                                  "  [1–6: Layers · Shift+1–6: Rand · L: Studio · G: Worlds · M: Geom · A/T: Type · ?: Keys]"
+                            textFormat: Text.PlainText
+                            font.family: "JetBrainsMono Nerd Font"
+                            font.pixelSize: 9
+                            color: Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.72)
+                            elide: Text.ElideRight
+                        }
+
+                        VizPillButton {
+                            text: "󰌌 Keys (?)"
+                            pillHeight: 18
+                            fontSize: 8
+                            horizontalPad: 5
+                            active: root.showKeybindingsSheet
+                            onClicked: {
+                                root.showKeybindingsSheet = !root.showKeybindingsSheet
+                                if (root.showKeybindingsSheet) root.showHud = true
+                            }
+                        }
                     }
                 }
 
@@ -10195,6 +10279,179 @@ FocusScope {
                         horizontalPad: 8
                         pillHeight: 26
                         onClicked: root.requestNext()
+                    }
+                }
+            }
+        }
+
+        // Categorised Keybinding Reference Sheet Modal Overlay (toggled via `?` / `/` or `󰌌 Keys (?)` button)
+        Rectangle {
+            id: keybindingsSheetModal
+            anchors.centerIn: parent
+            width: Math.min(parent.width - 36, 780)
+            height: Math.min(parent.height - 64, 520)
+            visible: root.showKeybindingsSheet
+            z: 95
+            radius: 10
+            color: Qt.rgba(0.03, 0.04, 0.08, 0.95)
+            border.width: 1
+            border.color: root.accentColour
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {}
+            }
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 14
+                spacing: 10
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Text {
+                        text: "󰌌 BANDARCHY VISUALISER KEYBINDING REFERENCE SHEET"
+                        textFormat: Text.PlainText
+                        font.family: "JetBrainsMono Nerd Font"
+                        font.pixelSize: 12
+                        font.bold: true
+                        color: root.accentColour
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    VizPillButton {
+                        text: "✕ Close (Esc / ?)"
+                        pillHeight: 22
+                        fontSize: 9
+                        horizontalPad: 8
+                        onClicked: root.showKeybindingsSheet = false
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: Qt.rgba(1, 1, 1, 0.14)
+                }
+
+                Flickable {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    contentWidth: width
+                    contentHeight: keySheetGrid.implicitHeight + 12
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    GridLayout {
+                        id: keySheetGrid
+                        width: parent.width
+                        columns: 2
+                        columnSpacing: 16
+                        rowSpacing: 12
+
+                        Repeater {
+                            model: [
+                                {
+                                    title: "1. Layers, Randomisation & Palettes",
+                                    items: [
+                                        "1 .. 6          : Toggle Layers 1–6 ON / OFF",
+                                        "Shift + 1 .. 6  : Toggle Per-Layer Rand:AUTO (Layers 1–6)",
+                                        "X               : Toggle RANDOM:ALL Auto-Morph",
+                                        "Y               : One-Shot Randomise Active Layers",
+                                        "L               : Open / Close Studio Control Panel",
+                                        "C / Shift + C   : Next / Previous Colour Palette (30)"
+                                    ]
+                                },
+                                {
+                                    title: "2. Visualiser Effect Cyclers",
+                                    items: [
+                                        "G / Shift + G   : Next / Previous 1: Worlds (20 Worlds)",
+                                        "M / Shift + M   : Next / Previous 4: Geometry (20 Modes)",
+                                        "K / Shift + K   : Cycle 3D History Tracers (OFF..16x)",
+                                        "A / Shift + A   : Next / Previous 6: Type Motion Mode",
+                                        "S               : Trigger Beat Shatter Impulse",
+                                        "+ / -           : Increase / Decrease Audio Reactivity"
+                                    ]
+                                },
+                                {
+                                    title: "3. Layer 6: Typography Controls",
+                                    items: [
+                                        "Q               : Toggle Artist Name in Typography",
+                                        "W               : Toggle Track Title in Typography",
+                                        "E               : Toggle Album Title in Typography",
+                                        "R               : Toggle Custom Statements in Typography",
+                                        "T / Shift + T   : Next / Previous Text Colour Mode",
+                                        "D / Shift + D   : Cycle TTE Canvas / Launch TTE Terminal"
+                                    ]
+                                },
+                                {
+                                    title: "4. World 12: Stark Photo Realm Controls",
+                                    items: [
+                                        "' / #           : Previous / Next Photo-Motion FX (M01..M25)",
+                                        "Shift+' / Shift+#: Previous / Next Darkroom Variant (V00..V15)",
+                                        "[ / ]           : Previous / Next Photo in History",
+                                        "{ / }           : Previous / Next Photo Category Folder",
+                                        "; / :           : Cycle Photo Pool Mode / Toggle 3D Shear",
+                                        "~ / Shift + H   : Toggle Auto ~FXRand / Hold Photo (30s)"
+                                    ]
+                                },
+                                {
+                                    title: "5. Stage, Display & Transport",
+                                    items: [
+                                        "Space           : Play / Pause (or Replay Finished Album)",
+                                        "N / → · P / ←   : Next Track / Previous Track",
+                                        "F / V           : Toggle Fullscreen Stage",
+                                        "Z / Shift + F   : Toggle Zen Fullscreen (HUD Hidden)",
+                                        "H               : Toggle Top & Bottom HUD Bars",
+                                        "? / Esc         : Toggle Keybindings Sheet / Close Modal"
+                                    ]
+                                }
+                            ]
+
+                            delegate: Rectangle {
+                                required property var modelData
+                                Layout.fillWidth: true
+                                Layout.alignment: Qt.AlignTop
+                                implicitHeight: catCol.implicitHeight + 16
+                                radius: 7
+                                color: Qt.rgba(1, 1, 1, 0.04)
+                                border.width: 1
+                                border.color: Qt.rgba(1, 1, 1, 0.10)
+
+                                ColumnLayout {
+                                    id: catCol
+                                    anchors.fill: parent
+                                    anchors.margins: 8
+                                    spacing: 4
+
+                                    Text {
+                                        text: modelData.title
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 10
+                                        font.bold: true
+                                        color: root.accentColour
+                                    }
+
+                                    Repeater {
+                                        model: modelData.items
+                                        delegate: Text {
+                                            required property string modelData
+                                            Layout.fillWidth: true
+                                            text: modelData
+                                            textFormat: Text.PlainText
+                                            font.family: "JetBrainsMono Nerd Font"
+                                            font.pixelSize: 9
+                                            color: root.foregroundColour
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
