@@ -2102,7 +2102,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
     var l1Mode = cfg ? ((Number(cfg.layer1Mode) || 0) % LAYER1_MODES.length) : 0
     var isStarWarsMode = Boolean(enabled && fieldOn && l1Mode === 5)
     var gpuHw = cfg && cfg.gpuShaderEnabled !== undefined ? Boolean(cfg.gpuShaderEnabled) : true
-    var gpuOn = Boolean(gpuHw && l2BackdropOn)
+    var gpuL1Active = Boolean(gpuHw && cfg && cfg.gpuL1Active === true && enabled && fieldOn)
+    var gpuOn = Boolean(gpuHw && (l2BackdropOn || gpuL1Active))
     var bgHex = (isStarWarsMode && !gpuOn) ? "#000000" : rawBgHex
 
     // Detect any layer or L1 sub-system ON/OFF toggle so disabled layers clear from the persistent buffer immediately
@@ -2176,9 +2177,10 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
     var denCurve = Math.pow(density, 1.55)
 
     // =========================================================================
-    // SUB-SYSTEM 1: L1 FIELD (11 Volumetric Background Fields 0..10)
+    // SUB-SYSTEM 1: L1 FIELD (11 Volumetric Background Fields 0..10 + Photo-Motion 11)
+    // Skipped on CPU when native GPU ShaderEffect (gpuL1Active) is rendering L1!
     // =========================================================================
-    if (fieldOn) {
+    if (fieldOn && !gpuL1Active) {
         if (l1Mode === 0) {
             // Mode 0: MilkDrop / Geiss 3D Expanding Logarithmic Warp Tunnel Web & Volumetric Curtains
             // Rings expand all the way past diagR so every ring moves towards the user and passes OFF the screen!
@@ -9018,6 +9020,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         colourCycleSpeed: c.colourCycleSpeed !== undefined ? clamp(Number(c.colourCycleSpeed), 0.0, 2.50) : 1.0,
         masterBrightness: c.masterBrightness !== undefined ? clamp(Number(c.masterBrightness), 0.50, 1.50) : 1.0,
         gpuShaderEnabled: c.gpuShaderEnabled !== undefined ? Boolean(c.gpuShaderEnabled) : true,
+        gpuL1Active: c.gpuL1Active !== undefined ? Boolean(c.gpuL1Active) : false,
         backdropEnabled: l4On,
         backdropMode: c.backdropMode !== undefined ? clamp(Math.round(Number(c.backdropMode)), 0, BACKDROP_MODES.length - 1) : 0,
         backdropSpeed: c.backdropSpeed !== undefined ? clamp(Number(c.backdropSpeed), 0.1, 3.0) : 1.0,

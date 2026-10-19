@@ -953,12 +953,16 @@ Item {
             try {
                 var d = JSON.parse(raw)
                 if (d && d.ok) {
-                    if (d.standard_categories && d.standard_categories.length > 0) {
-                        root.photoCategories = ["all"].concat(d.standard_categories)
+                    if (d.discoveredCategories && Array.isArray(d.discoveredCategories) && d.discoveredCategories.length > 0) {
+                        root.photoCategories = ["all"].concat(d.discoveredCategories)
+                    } else if (d.discovered_categories && Array.isArray(d.discovered_categories) && d.discovered_categories.length > 0) {
+                        root.photoCategories = ["all"].concat(d.discovered_categories)
+                    } else if (d.categories && typeof d.categories === "object" && !Array.isArray(d.categories)) {
+                        root.photoCategories = ["all"].concat(Object.keys(d.categories).sort())
                     } else if (d.categories && Array.isArray(d.categories) && d.categories.length > 0) {
                         root.photoCategories = d.categories
-                    } else if (d.categories && typeof d.categories === "object") {
-                        root.photoCategories = ["all"].concat(Object.keys(d.categories))
+                    } else if (d.standard_categories && d.standard_categories.length > 0) {
+                        root.photoCategories = ["all"].concat(d.standard_categories)
                     }
                     if (d.categoryCounts) root.photoCategoryCounts = d.categoryCounts
                     root.photoTotalProcessed = Number(d.totalProcessed || 0)
@@ -986,6 +990,13 @@ Item {
             try {
                 var d = JSON.parse(raw)
                 if (d && d.ok) {
+                    if (d.discoveredCategories && Array.isArray(d.discoveredCategories) && d.discoveredCategories.length > 0) {
+                        root.photoCategories = ["all"].concat(d.discoveredCategories)
+                    } else if (d.discovered_categories && Array.isArray(d.discovered_categories) && d.discovered_categories.length > 0) {
+                        root.photoCategories = ["all"].concat(d.discovered_categories)
+                    } else if (d.categories_summary && typeof d.categories_summary === "object") {
+                        root.photoCategories = ["all"].concat(Object.keys(d.categories_summary).sort())
+                    }
                     if (d.categoryCounts) root.photoCategoryCounts = d.categoryCounts
                     root.photoTotalProcessed = Number(d.totalProcessed || root.photoTotalProcessed || 0)
                     root.photoTotalOriginals = Number(d.totalOriginals || root.photoTotalOriginals || 0)
@@ -1040,12 +1051,13 @@ Item {
     function importPhotos(sourceDir) {
         if (photoImportProc.running) return
         root.photoBusy = true
-        root.photoStatusMessage = "Importing & generating 16 monochrome variants…"
+        root.photoStatusMessage = "Scanning all folders & generating 16 Stark variants…"
         root.notifyAction(root.photoStatusMessage)
         photoImportProc.outBuf = ""
         var cmd = [root.binPath, "photo-import", "--ensure-demo"]
-        if (sourceDir && String(sourceDir).trim().length > 0) {
-            cmd.push("--source-dir", String(sourceDir).trim())
+        var cleanSrc = (sourceDir !== undefined && sourceDir !== null) ? String(sourceDir).trim() : ""
+        if (cleanSrc.length > 0 && cleanSrc.toLowerCase() !== "all") {
+            cmd.push("--source-dir", cleanSrc)
         }
         photoImportProc.command = cmd
         photoImportProc.running = true

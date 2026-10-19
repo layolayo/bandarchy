@@ -67,6 +67,7 @@ import re
 import shutil
 import stat
 import struct
+import subprocess
 import sys
 import tempfile
 import time
@@ -108,7 +109,7 @@ def _ensure_effect_modules() -> None:
 os.umask(0o077)
 
 MAX_ART_BYTES = 15 * 1024 * 1024  # 15 MiB ceiling matching bin/bandarchy
-IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".jxl", ".avif", ".bmp", ".tiff", ".tif")
 CATEGORY_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,48}$")
 
 STANDARD_CATEGORIES: tuple[str, ...] = (
@@ -166,8 +167,27 @@ class PhotoImportError(ValueError):
     """Operational error raised when validating or importing Bandarchy photographs."""
 
 
+def _pick_existing_or_default_bandarchy_subdir(pics_dir: str) -> str:
+    """Return existing `bandarchy` or `Bandarchy` subdirectory inside `pics_dir`, defaulting to `bandarchy`."""
+    lower_cand = os.path.join(pics_dir, "bandarchy")
+    if os.path.exists(lower_cand):
+        return lower_cand
+    upper_cand = os.path.join(pics_dir, "Bandarchy")
+    if os.path.exists(upper_cand):
+        return upper_cand
+    try:
+        for entry in os.listdir(pics_dir):
+            if entry.lower() == "bandarchy":
+                full = os.path.join(pics_dir, entry)
+                if os.path.isdir(full):
+                    return full
+    except OSError:
+        pass
+    return lower_cand
+
+
 def resolve_pictures_bandarchy_dir(base_dir: str | None = None) -> str:
-    """Resolve `$XDG_PICTURES_DIR/bandarchy` or fallback to `~/Pictures/bandarchy`."""
+    """Resolve `$XDG_PICTURES_DIR/bandarchy` or fallback to `~/Pictures/bandarchy` (with case-insensitive `Bandarchy` fallback)."""
     if base_dir:
         return os.path.abspath(os.path.expanduser(base_dir))
     env_override = (os.environ.get("BANDARCHY_PICTURES_DIR") or "").strip()
@@ -175,7 +195,7 @@ def resolve_pictures_bandarchy_dir(base_dir: str | None = None) -> str:
         return os.path.abspath(os.path.expanduser(env_override))
     xdg_pics = (os.environ.get("XDG_PICTURES_DIR") or "").strip()
     if xdg_pics:
-        return os.path.join(os.path.abspath(os.path.expanduser(xdg_pics)), "bandarchy")
+        return _pick_existing_or_default_bandarchy_subdir(os.path.abspath(os.path.expanduser(xdg_pics)))
     home = os.path.expanduser("~")
     user_dirs = os.path.join(
         os.environ.get("XDG_CONFIG_HOME") or os.path.join(home, ".config"),
@@ -190,10 +210,111 @@ def resolve_pictures_bandarchy_dir(base_dir: str | None = None) -> str:
                         raw = line.split("=", 1)[1].strip().strip('"').strip("'")
                         raw = raw.replace("$HOME", home).replace("${HOME}", home)
                         if raw:
-                            return os.path.join(os.path.abspath(raw), "bandarchy")
+                            return _pick_existing_or_default_bandarchy_subdir(os.path.abspath(raw))
         except OSError:
             pass
-    return os.path.join(home, "Pictures", "bandarchy")
+    return _pick_existing_or_default_bandarchy_subdir(os.path.join(home, "Pictures"))
+
+
+def format_category_label(category: str) -> str:
+    """Format a category folder name into a human-friendly title-cased label."""
+    slug = (category or "").strip()
+    if not slug or slug.lower() == "all":
+        return "All Categories"
+    words = [w for w in re.split(r"[_\s-]+", slug) if w]
+    if not words:
+        return slug.title()
+    return " ".join(w.capitalize() for w in words)
+
+
+RESERVED_ROOT_SUBDIRS: frozenset[str] = frozenset({
+    "processed",
+    "imported",
+    "categories",
+    "raw",
+    "manifests",
+    "sources",
+    "effects",
+    "__pycache__",
+})
+
+
+def discover_processed_categories(base_dir: str | None = None) -> list[str]:
+    """Return sorted non-hidden single-level subdirectory names directly inside `processed/`."""
+    root = resolve_pictures_bandarchy_dir(base_dir)
+    processed_root = os.path.join(root, "processed")
+    if not os.path.isdir(processed_root) or os.path.islink(processed_root):
+        return []
+    discovered: list[str] = []
+    try:
+        with os.scandir(processed_root) as it:
+            for de in it:
+                if de.name.startswith("."):
+                    continue
+                if de.is_dir(follow_symlinks=False) and CATEGORY_NAME_RE.match(de.name.lower()):
+                    discovered.append(de.name.lower())
+    except OSError:
+        return []
+    return sorted(set(discovered))
+
+
+def _has_raw_images(folder_path: str) -> bool:
+    """Return True if `folder_path` contains at least one non-hidden raw image file."""
+    if not os.path.isdir(folder_path) or os.path.islink(folder_path):
+        return False
+    try:
+        with os.scandir(folder_path) as it:
+            for de in it:
+                if de.name.startswith(".") or is_generated_artifact_filename(de.name):
+                    continue
+                if os.path.splitext(de.name)[1].lower() in IMAGE_EXTENSIONS and de.is_file(follow_symlinks=False):
+                    return True
+    except OSError:
+        pass
+    return False
+
+
+def discover_source_category_dirs(base_dir: str | None = None) -> dict[str, list[str]]:
+    """Discover all source folders across `categories/<cat>`, `raw/<cat>`, and top-level `<root>/<cat>`."""
+    root = resolve_pictures_bandarchy_dir(base_dir)
+    source_map: dict[str, list[str]] = {}
+    if not os.path.isdir(root) or os.path.islink(root):
+        return source_map
+
+    # 1. Scan `categories/<folder>` and `raw/<folder>`
+    for container_name in ("categories", "raw"):
+        container_path = os.path.join(root, container_name)
+        if os.path.isdir(container_path) and not os.path.islink(container_path):
+            try:
+                with os.scandir(container_path) as it:
+                    for de in sorted(it, key=lambda d: d.name.lower()):
+                        if de.name.startswith(".") or not de.is_dir(follow_symlinks=False):
+                            continue
+                        slug = de.name.lower()
+                        if not CATEGORY_NAME_RE.match(slug):
+                            continue
+                        source_map.setdefault(slug, [])
+                        if de.path not in source_map[slug]:
+                            source_map[slug].append(de.path)
+            except OSError:
+                pass
+
+    # 2. Scan top-level `<root>/<folder>` (excluding internal/output folders like processed, imported, manifests, etc.)
+    try:
+        with os.scandir(root) as it_root:
+            for de in sorted(it_root, key=lambda d: d.name.lower()):
+                if de.name.startswith(".") or not de.is_dir(follow_symlinks=False):
+                    continue
+                slug = de.name.lower()
+                if slug in RESERVED_ROOT_SUBDIRS or not CATEGORY_NAME_RE.match(slug):
+                    continue
+                source_map.setdefault(slug, [])
+                if de.path not in source_map[slug]:
+                    source_map[slug].append(de.path)
+    except OSError:
+        pass
+
+    return source_map
 
 
 def _probe_image_dimensions(path: str) -> tuple[int, int]:
@@ -319,8 +440,11 @@ def validate_raw_source_file(path: str) -> str:
 def ensure_directory_structure(
     base_dir: str | None = None,
     extra_categories: list[str] | None = None,
+    *,
+    include_defaults: bool = False,
+    include_source_folders: bool = False,
 ) -> dict[str, Any]:
-    """Ensure `categories/<cat>`, `processed/<cat>`, and `imported/<cat>` exist safely."""
+    """Ensure `categories/`, `processed/`, and `imported/` exist safely and discover categories from `processed/`."""
     root = resolve_pictures_bandarchy_dir(base_dir)
     if os.path.lexists(root) and os.path.islink(root):
         raise PhotoImportError(f"Refusing symlinked Bandarchy root directory: {root}")
@@ -335,24 +459,31 @@ def ensure_directory_structure(
             raise PhotoImportError(f"Refusing symlinked subdirectory: {sub}")
         os.makedirs(sub, mode=0o755, exist_ok=True)
 
-    cat_set = list(STANDARD_CATEGORIES)
+    # Primary source of truth: immediate subdirectories inside `processed/`
+    discovered_proc = discover_processed_categories(root)
+    cat_set: list[str] = list(discovered_proc)
+
+    if include_defaults or not cat_set:
+        for std_cat in STANDARD_CATEGORIES:
+            if std_cat not in cat_set:
+                cat_set.append(std_cat)
+
+    if include_source_folders:
+        src_map = discover_source_category_dirs(root)
+        for src_slug in sorted(src_map.keys()):
+            if src_slug not in cat_set:
+                cat_set.append(src_slug)
+
     if extra_categories:
         for c in extra_categories:
             slug = validate_category_name(c)
             if slug not in cat_set:
                 cat_set.append(slug)
 
-    # Also discover any existing user-created category folders under categories/
-    for entry in sorted(os.listdir(categories_root)):
-        if entry.startswith("."):
-            continue
-        full = os.path.join(categories_root, entry)
-        if os.path.isdir(full) and not os.path.islink(full) and CATEGORY_NAME_RE.match(entry.lower()):
-            slug = entry.lower()
-            if slug not in cat_set:
-                cat_set.append(slug)
+    cat_set = sorted(set(cat_set))
+    src_map_all = discover_source_category_dirs(root)
 
-    category_paths: dict[str, dict[str, str]] = {}
+    category_paths: dict[str, dict[str, Any]] = {}
     for slug in cat_set:
         c_drop = os.path.join(categories_root, slug)
         c_proc = os.path.join(processed_root, slug)
@@ -361,8 +492,12 @@ def ensure_directory_structure(
             if os.path.lexists(p) and os.path.islink(p):
                 raise PhotoImportError(f"Refusing symlinked category directory: {p}")
             os.makedirs(p, mode=0o755, exist_ok=True)
+        src_dirs = list(src_map_all.get(slug, []))
+        if c_drop not in src_dirs:
+            src_dirs.insert(0, c_drop)
         category_paths[slug] = {
             "drop_in": c_drop,
+            "source_dirs": src_dirs,
             "processed": c_proc,
             "imported": c_imp,
         }
@@ -408,7 +543,7 @@ def seed_categories_from_sources(
     Leaves `~/Pictures/bandarchy/sources/` untouched so existing Family 1–4 scripts and
     unit tests continue to work without modification.
     """
-    layout = ensure_directory_structure(base_dir)
+    layout = ensure_directory_structure(base_dir, include_defaults=True, include_source_folders=True)
     root = layout["root"]
     src_dir = os.path.abspath(sources_dir or os.path.join(root, "sources"))
     if not os.path.isdir(src_dir) or os.path.islink(src_dir):
@@ -492,9 +627,31 @@ def translate_single_image_all_effects(
     stem = os.path.splitext(os.path.basename(abs_src))[0]
     sha256_hex = compute_sha256(abs_src)
 
-    # Decode and normalise via PIL (applying EXIF orientation and bounding dimensions)
+    # Decode and normalise via PIL (applying EXIF orientation and bounding dimensions),
+    # with djxl/magick fallback for formats like .jxl when Pillow lacks a native plugin
     try:
-        im_base = f1.load_image_non_destructive(abs_src, max_dim=max_dim)
+        try:
+            im_base = f1.load_image_non_destructive(abs_src, max_dim=max_dim)
+        except Exception:
+            tmp_fd, tmp_png = tempfile.mkstemp(prefix=".bandarchy_decode_", suffix=".png")
+            os.close(tmp_fd)
+            try:
+                decoded_ok = False
+                if abs_src.lower().endswith(".jxl") and shutil.which("djxl"):
+                    r_dec = subprocess.run(["djxl", abs_src, tmp_png], capture_output=True, timeout=30)
+                    decoded_ok = r_dec.returncode == 0 and os.path.isfile(tmp_png) and os.path.getsize(tmp_png) > 64
+                if not decoded_ok and shutil.which("magick"):
+                    r_dec = subprocess.run(["magick", abs_src, tmp_png], capture_output=True, timeout=30)
+                    decoded_ok = r_dec.returncode == 0 and os.path.isfile(tmp_png) and os.path.getsize(tmp_png) > 64
+                if not decoded_ok:
+                    raise
+                im_base = f1.load_image_non_destructive(tmp_png, max_dim=max_dim)
+            finally:
+                if os.path.exists(tmp_png):
+                    try:
+                        os.unlink(tmp_png)
+                    except OSError:
+                        pass
         if max_dim <= 480 and im_base.size != (480, 360):
             from PIL import ImageOps as _ImageOps
             im_base = _ImageOps.fit(im_base, (480, 360), method=Image.Resampling.BILINEAR)
@@ -588,6 +745,8 @@ def _import_worker(task: dict[str, Any]) -> dict[str, Any]:
     effects = task["effects"]
     max_dim = task["max_dim"]
     palette_index = task["palette_index"]
+    force = bool(task.get("force", False))
+    keep_source = bool(task.get("keep_source", False))
 
     # Validate before processing
     abs_src = validate_raw_source_file(src_path)
@@ -605,37 +764,43 @@ def _import_worker(task: dict[str, Any]) -> dict[str, Any]:
         ext_tag = ext_lower.lstrip(".")
         filename = f"{raw_stem}_{ext_tag}{ext_lower}"
         stem = f"{raw_stem}_{ext_tag}"
-        disambiguated_src = os.path.join(os.path.dirname(abs_src), filename)
-        if disambiguated_src != abs_src:
-            os.replace(abs_src, disambiguated_src)
-            abs_src = disambiguated_src
+        if not keep_source:
+            disambiguated_src = os.path.join(os.path.dirname(abs_src), filename)
+            if disambiguated_src != abs_src:
+                os.replace(abs_src, disambiguated_src)
+                abs_src = disambiguated_src
     else:
         stem = raw_stem
 
     dest_imported_path = os.path.join(imported_dir, filename)
     src_sha256 = compute_sha256(abs_src)
 
-    # Check if an identical file was already imported and all requested effect PNGs already exist
+    # Check if all requested effect PNGs already exist (either previously imported or already processed in processed/<cat>/)
+    all_outputs_exist = all(
+        os.path.isfile(os.path.join(processed_dir, f"{eff}__{stem}.png"))
+        for eff in effects
+    )
     already_identical = False
-    if os.path.isfile(dest_imported_path) and not os.path.islink(dest_imported_path):
-        try:
-            imp_sha256 = compute_sha256(dest_imported_path)
-            if imp_sha256 == src_sha256:
-                all_outputs_exist = all(
-                    os.path.isfile(os.path.join(processed_dir, f"{eff}__{stem}.png"))
-                    for eff in effects
-                )
-                if all_outputs_exist:
+    if not force and all_outputs_exist:
+        if os.path.isfile(dest_imported_path) and not os.path.islink(dest_imported_path):
+            try:
+                imp_sha256 = compute_sha256(dest_imported_path)
+                if imp_sha256 == src_sha256:
                     already_identical = True
-        except OSError:
-            already_identical = False
+            except OSError:
+                already_identical = False
+        else:
+            # All 16 processed variants already exist in processed/<cat>/
+            already_identical = True
 
     if already_identical:
-        # Move the duplicate drop-in file into imported/<category>/ without re-running all 16 effects
-        os.replace(abs_src, dest_imported_path)
-        im_check = f1.load_image_non_destructive(dest_imported_path, max_dim=max_dim)
-        w, h = im_check.size
-        is_bw_dedup = bool(f1.compute_luminance_and_sectors(im_check)["is_bw"])
+        os.makedirs(imported_dir, mode=0o755, exist_ok=True)
+        if not keep_source and os.path.abspath(abs_src) != os.path.abspath(dest_imported_path):
+            os.replace(abs_src, dest_imported_path)
+        elif keep_source and not os.path.isfile(dest_imported_path):
+            shutil.copy2(abs_src, dest_imported_path)
+        first_png = os.path.join(processed_dir, f"{effects[0]}__{stem}.png")
+        w, h = _probe_image_dimensions(first_png)
         outputs = [
             {
                 "effect": eff,
@@ -653,11 +818,11 @@ def _import_worker(task: dict[str, Any]) -> dict[str, Any]:
             "source_filename": filename,
             "source_stem": stem,
             "sha256": src_sha256,
-            "imported_path": dest_imported_path,
+            "imported_path": dest_imported_path if os.path.isfile(dest_imported_path) else abs_src,
             "processed_dir": processed_dir,
             "width": w,
             "height": h,
-            "is_bw_source": is_bw_dedup,
+            "is_bw_source": False,
             "effects_count": len(outputs),
             "outputs": outputs,
             "elapsed_ms": 0.0,
@@ -672,9 +837,12 @@ def _import_worker(task: dict[str, Any]) -> dict[str, Any]:
         palette_index=palette_index,
     )
 
-    # Move the raw source file atomically into imported/<category>/<filename>
+    # Archive or move the raw source file into imported/<category>/<filename>
     os.makedirs(imported_dir, mode=0o755, exist_ok=True)
-    os.replace(abs_src, dest_imported_path)
+    if not keep_source and os.path.abspath(abs_src) != os.path.abspath(dest_imported_path):
+        os.replace(abs_src, dest_imported_path)
+    elif keep_source and os.path.abspath(abs_src) != os.path.abspath(dest_imported_path):
+        shutil.copy2(abs_src, dest_imported_path)
 
     return {
         "status": "imported",
@@ -694,47 +862,72 @@ def _import_worker(task: dict[str, Any]) -> dict[str, Any]:
 
 
 def rebuild_manifests(base_dir: str | None = None) -> dict[str, Any]:
-    """Scan `categories/`, `processed/`, and `imported/` and write per-category and master manifests."""
-    layout = ensure_directory_structure(base_dir)
-    root = layout["root"]
+    """Scan `processed/` single-level subdirectories (and their source/imported counterparts) and write manifests."""
+    root = resolve_pictures_bandarchy_dir(base_dir)
+    processed_cats = discover_processed_categories(root)
+    if not processed_cats:
+        layout = ensure_directory_structure(root, include_defaults=True)
+        processed_cats = sorted(layout["categories"].keys())
+    else:
+        layout = ensure_directory_structure(root, extra_categories=processed_cats, include_defaults=False)
+
     categories_summary: dict[str, Any] = {}
+    category_labels: dict[str, str] = {"all": "All Categories"}
     total_pending = 0
     total_imported = 0
     total_processed = 0
+    total_unique_stems = 0
 
-    for category, dirs in layout["categories"].items():
+    for category in sorted(processed_cats):
+        dirs = layout["categories"][category]
         drop_dir = dirs["drop_in"]
+        src_dirs = dirs.get("source_dirs") or [drop_dir]
         proc_dir = dirs["processed"]
         imp_dir = dirs["imported"]
+        category_labels[category] = format_category_label(category)
 
-        with os.scandir(drop_dir) as it_drop:
-            pending_files = sorted(
-                de.name
-                for de in it_drop
-                if not de.name.startswith(".")
-                and os.path.splitext(de.name)[1].lower() in IMAGE_EXTENSIONS
-                and not is_generated_artifact_filename(de.name)
-                and de.is_file(follow_symlinks=False)
-            )
+        pending_paths: list[str] = []
+        seen_pending_names: set[str] = set()
+        for s_dir in src_dirs:
+            if not os.path.isdir(s_dir) or os.path.islink(s_dir):
+                continue
+            try:
+                with os.scandir(s_dir) as it_drop:
+                    for de in sorted(it_drop, key=lambda d: d.name):
+                        if (
+                            not de.name.startswith(".")
+                            and os.path.splitext(de.name)[1].lower() in IMAGE_EXTENSIONS
+                            and not is_generated_artifact_filename(de.name)
+                            and de.is_file(follow_symlinks=False)
+                        ):
+                            if de.name not in seen_pending_names:
+                                seen_pending_names.add(de.name)
+                                pending_paths.append(de.path)
+            except OSError:
+                pass
 
-        with os.scandir(imp_dir) as it_imp:
-            imported_files = sorted(
-                de.name
-                for de in it_imp
-                if not de.name.startswith(".")
-                and os.path.splitext(de.name)[1].lower() in IMAGE_EXTENSIONS
-                and de.is_file(follow_symlinks=False)
-            )
+        imported_files: list[str] = []
+        if os.path.isdir(imp_dir) and not os.path.islink(imp_dir):
+            with os.scandir(imp_dir) as it_imp:
+                imported_files = sorted(
+                    de.name
+                    for de in it_imp
+                    if not de.name.startswith(".")
+                    and os.path.splitext(de.name)[1].lower() in IMAGE_EXTENSIONS
+                    and de.is_file(follow_symlinks=False)
+                )
 
-        with os.scandir(proc_dir) as it_proc:
-            processed_files = sorted(
-                de.name
-                for de in it_proc
-                if not de.name.startswith(".")
-                and de.name.lower().endswith(".png")
-                and "__" in de.name
-                and de.is_file(follow_symlinks=False)
-            )
+        processed_files: list[str] = []
+        if os.path.isdir(proc_dir) and not os.path.islink(proc_dir):
+            with os.scandir(proc_dir) as it_proc:
+                processed_files = sorted(
+                    de.name
+                    for de in it_proc
+                    if not de.name.startswith(".")
+                    and de.name.lower().endswith(".png")
+                    and "__" in de.name
+                    and de.is_file(follow_symlinks=False)
+                )
 
         by_effect: dict[str, list[str]] = {eff: [] for eff in ALL_16_EFFECTS}
         by_source_stem: dict[str, list[str]] = {}
@@ -746,16 +939,22 @@ def rebuild_manifests(base_dir: str | None = None) -> dict[str, Any]:
                 by_effect[eff_part].append(full_pf)
             by_source_stem.setdefault(stem, []).append(full_pf)
 
+        stems_list = sorted(by_source_stem.keys())
+        effective_photo_count = len(stems_list)
+
         cat_manifest = {
             "category": category,
+            "label": category_labels[category],
             "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "drop_in_dir": drop_dir,
+            "source_dirs": src_dirs,
             "processed_dir": proc_dir,
             "imported_dir": imp_dir,
-            "pending_count": len(pending_files),
-            "imported_count": len(imported_files),
+            "pending_count": len(pending_paths),
+            "imported_count": effective_photo_count,
             "processed_count": len(processed_files),
-            "pending_files": [os.path.join(drop_dir, f) for f in pending_files],
+            "stem_count": len(stems_list),
+            "pending_files": pending_paths,
             "imported_files": [os.path.join(imp_dir, f) for f in imported_files],
             "processed_files": [os.path.join(proc_dir, f) for f in processed_files],
             "by_effect": {k: v for k, v in by_effect.items() if v},
@@ -764,28 +963,35 @@ def rebuild_manifests(base_dir: str | None = None) -> dict[str, Any]:
         atomic_write_json(cat_manifest, os.path.join(proc_dir, "category_manifest.json"))
 
         categories_summary[category] = {
+            "label": category_labels[category],
             "drop_in_dir": drop_dir,
+            "source_dirs": src_dirs,
             "processed_dir": proc_dir,
             "imported_dir": imp_dir,
-            "pending_count": len(pending_files),
-            "imported_count": len(imported_files),
+            "pending_count": len(pending_paths),
+            "imported_count": effective_photo_count,
             "processed_count": len(processed_files),
-            "stems": sorted(by_source_stem.keys()),
+            "stem_count": len(stems_list),
+            "stems": stems_list,
         }
-        total_pending += len(pending_files)
-        total_imported += len(imported_files)
+        total_pending += len(pending_paths)
+        total_imported += effective_photo_count
         total_processed += len(processed_files)
+        total_unique_stems += len(stems_list)
 
     master_manifest = {
         "ok": True,
         "schema_version": 1,
         "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "root_dir": root,
-        "standard_categories": list(STANDARD_CATEGORIES),
+        "standard_categories": list(processed_cats),
+        "discovered_categories": list(processed_cats),
+        "category_labels": category_labels,
         "all_effects": list(ALL_16_EFFECTS),
         "total_pending_raw": total_pending,
         "total_imported_sources": total_imported,
         "total_processed_outputs": total_processed,
+        "total_unique_stems": total_unique_stems,
         "categories": categories_summary,
     }
     manifest_path = atomic_write_json(master_manifest, os.path.join(root, "manifest.json"))
@@ -800,9 +1006,11 @@ def import_new_photos(
     effects: list[str] | tuple[str, ...] | None = None,
     max_dim: int = 480,
     max_workers: int | None = None,
+    force: bool = False,
 ) -> dict[str, Any]:
-    """Scan `categories/<category>/` for new raw images, translate them into `processed/<category>/`,
-    and atomically move the raw sources into `imported/<category>/`.
+    """Scan all source folders (`categories/<folder>`, `raw/<folder>`, and `<root>/<folder>`) for new or
+    unprocessed images, create any newly discovered `processed/<folder>/` directories, translate images
+    into 16 Stark variants (`480x360`), and update `manifest.json`.
 
     Uses a non-blocking exclusive `fcntl.flock` lockfile (`.photo_import.lock`) inside the
     Bandarchy root directory so rapid double-clicks of the "Import Photos" button in the UI
@@ -810,7 +1018,12 @@ def import_new_photos(
     """
     t0 = time.monotonic()
     extra_cats = [category] if category and category.lower() != "all" else None
-    layout = ensure_directory_structure(base_dir, extra_categories=extra_cats)
+    layout = ensure_directory_structure(
+        base_dir,
+        extra_categories=extra_cats,
+        include_defaults=False,
+        include_source_folders=True,
+    )
 
     lock_path = os.path.join(layout["root"], ".photo_import.lock")
     if os.path.lexists(lock_path) and os.path.islink(lock_path):
@@ -834,7 +1047,23 @@ def import_new_photos(
             slug = validate_category_name(category)
             target_categories = [slug]
         else:
-            target_categories = list(layout["categories"].keys())
+            target_categories = sorted(layout["categories"].keys())
+
+        # Collect all stems already present anywhere in `processed/<any_cat>/` so that
+        # if a user moved processed variants from e.g. `processed/custom/` into `processed/hitler/`,
+        # scanning `imported/custom/` will not re-create them in `processed/custom/`.
+        all_processed_stems: set[str] = set()
+        for any_dirs in layout["categories"].values():
+            any_proc = any_dirs["processed"]
+            if os.path.isdir(any_proc) and not os.path.islink(any_proc):
+                try:
+                    with os.scandir(any_proc) as it_p:
+                        for de in it_p:
+                            if not de.name.startswith(".") and de.name.lower().endswith(".png") and "__" in de.name:
+                                _, st_ext = de.name.split("__", 1)
+                                all_processed_stems.add(os.path.splitext(st_ext)[0])
+                except OSError:
+                    pass
 
         tasks: list[dict[str, Any]] = []
         errors: list[dict[str, str]] = []
@@ -842,25 +1071,62 @@ def import_new_photos(
         for cat_idx, slug in enumerate(target_categories):
             dirs = layout["categories"][slug]
             drop_dir = dirs["drop_in"]
+            src_dirs = list(dirs.get("source_dirs") or [drop_dir])
             proc_dir = dirs["processed"]
             imp_dir = dirs["imported"]
 
-            raw_entries = [
-                e
-                for e in sorted(os.listdir(drop_dir))
-                if not e.startswith(".")
-                and not is_generated_artifact_filename(e)
-                and os.path.splitext(e)[1].lower() in IMAGE_EXTENSIONS
-            ]
-            # Count stems within this category's drop-in batch so same-stem different-extension files
+            # Collect candidate source files from all source folders for this category (`categories/<slug>`, `raw/<slug>`, `<root>/<slug>`),
+            # AND also check `imported/<slug>` for any source image whose 16 processed variants do not exist in ANY processed folder (or when `force=True`).
+            candidate_sources: list[tuple[str, bool]] = []
+            seen_Source_paths: set[str] = set()
+
+            for s_dir in src_dirs:
+                if not os.path.isdir(s_dir) or os.path.islink(s_dir):
+                    continue
+                is_top_or_raw = os.path.abspath(s_dir) != os.path.abspath(drop_dir)
+                for e in sorted(os.listdir(s_dir)):
+                    if e.startswith(".") or is_generated_artifact_filename(e):
+                        continue
+                    if os.path.splitext(e)[1].lower() not in IMAGE_EXTENSIONS:
+                        continue
+                    full_p = os.path.abspath(os.path.join(s_dir, e))
+                    if full_p not in seen_Source_paths:
+                        seen_Source_paths.add(full_p)
+                        # If a user placed a folder directly under `<root>/<slug>` or `raw/<slug>`, keep their source files intact in that folder
+                        candidate_sources.append((full_p, is_top_or_raw))
+
+            if os.path.isdir(imp_dir) and not os.path.islink(imp_dir):
+                for e in sorted(os.listdir(imp_dir)):
+                    if e.startswith(".") or is_generated_artifact_filename(e):
+                        continue
+                    if os.path.splitext(e)[1].lower() not in IMAGE_EXTENSIONS:
+                        continue
+                    full_imp = os.path.abspath(os.path.join(imp_dir, e))
+                    stem_imp = os.path.splitext(e)[0]
+                    in_this_proc = any(
+                        os.path.isfile(os.path.join(proc_dir, f"{eff}__{stem_imp}.png"))
+                        for eff in selected_effects
+                    )
+                    missing_any_variant = any(
+                        not os.path.isfile(os.path.join(proc_dir, f"{eff}__{stem_imp}.png"))
+                        for eff in selected_effects
+                    )
+                    should_reprocess_imp = (
+                        (force and (in_this_proc or stem_imp not in all_processed_stems))
+                        or (not force and missing_any_variant and (in_this_proc or stem_imp not in all_processed_stems))
+                    )
+                    if should_reprocess_imp and full_imp not in seen_Source_paths:
+                        seen_Source_paths.add(full_imp)
+                        candidate_sources.append((full_imp, True))
+
+            # Count stems within this category's batch so same-stem different-extension files
             # (e.g. brutalist_01.jpg and brutalist_01.png) are disambiguated rather than colliding
             stem_counts: dict[str, int] = {}
-            for e in raw_entries:
-                s = os.path.splitext(e)[0]
+            for full_src, _ in candidate_sources:
+                s = os.path.splitext(os.path.basename(full_src))[0]
                 stem_counts[s] = stem_counts.get(s, 0) + 1
 
-            for entry in raw_entries:
-                full_src = os.path.join(drop_dir, entry)
+            for full_src, keep_src in candidate_sources:
                 try:
                     validate_raw_source_file(full_src)
                 except PhotoImportError as exc:
@@ -873,7 +1139,7 @@ def import_new_photos(
                     )
                     continue
 
-                entry_stem = os.path.splitext(entry)[0]
+                entry_stem = os.path.splitext(os.path.basename(full_src))[0]
                 tasks.append(
                     {
                         "category": slug,
@@ -884,6 +1150,8 @@ def import_new_photos(
                         "max_dim": max_dim,
                         "palette_index": (cat_idx + len(tasks)) % 5,
                         "disambiguate_ext": stem_counts.get(entry_stem, 0) > 1,
+                        "force": force,
+                        "keep_source": keep_src,
                     }
                 )
 
@@ -940,6 +1208,8 @@ def import_new_photos(
             "action": "import",
             "root_dir": layout["root"],
             "scanned_categories": target_categories,
+            "discovered_categories": manifest_state["discovered_categories"],
+            "category_labels": manifest_state["category_labels"],
             "imported_sources_count": len(imported_records),
             "deduplicated_sources_count": len(deduplicated_records),
             "generated_outputs_count": generated_png_count,
@@ -969,17 +1239,24 @@ def pick_category_photo(
     seed: int | None = None,
 ) -> dict[str, Any]:
     """Select a translated stark image from `processed/<category>/` for the Bandarchy Photo Layer."""
-    layout = ensure_directory_structure(base_dir)
+    root = resolve_pictures_bandarchy_dir(base_dir)
+    discovered_cats = discover_processed_categories(root)
+    layout = ensure_directory_structure(root, extra_categories=discovered_cats, include_defaults=not bool(discovered_cats))
     cat_slug = (category or "all").strip().lower()
 
+    available_cats = sorted(discovered_cats) if discovered_cats else sorted(layout["categories"].keys())
     if cat_slug == "all":
-        candidate_categories = list(layout["categories"].keys())
+        candidate_categories = available_cats
     else:
         cat_slug = validate_category_name(cat_slug)
         if cat_slug not in layout["categories"]:
-            raise PhotoImportError(
-                f"Unknown category {cat_slug!r}. Available: {list(layout['categories'].keys())}"
-            )
+            proc_cand = os.path.join(root, "processed", cat_slug)
+            if os.path.isdir(proc_cand) and not os.path.islink(proc_cand):
+                layout = ensure_directory_structure(root, extra_categories=[cat_slug])
+            else:
+                raise PhotoImportError(
+                    f"Unknown category {cat_slug!r}. Available in processed/: {available_cats}"
+                )
         candidate_categories = [cat_slug]
 
     if effect and effect not in ALL_16_EFFECTS_SET:
@@ -1181,7 +1458,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--category",
         default=None,
-        help="Filter by category name (brutalist, architecture, nature, objects, cyberpunk, characters, custom, or all).",
+        help="Filter by category folder name inside processed/ (or 'all').",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-translate all source images even if their 16 processed variants already exist.",
     )
     parser.add_argument(
         "--effect",
@@ -1240,6 +1522,7 @@ def main(argv: list[str] | None = None) -> int:
                     category=args.category,
                     effects=effects_list,
                     max_dim=args.max_dim,
+                    force=args.force,
                 )
                 imp_res["seed_summary"] = seed_res
                 payload = imp_res
@@ -1257,7 +1540,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.status:
             payload = rebuild_manifests(args.base_dir)
         elif args.init_dirs and not args.do_import:
-            ensure_directory_structure(args.base_dir)
+            ensure_directory_structure(args.base_dir, include_defaults=True)
             payload = rebuild_manifests(args.base_dir)
         else:
             # Default action is --import
@@ -1266,6 +1549,7 @@ def main(argv: list[str] | None = None) -> int:
                 category=args.category,
                 effects=effects_list,
                 max_dim=args.max_dim,
+                force=args.force,
             )
     except PhotoImportError as exc:
         err_payload = {"ok": False, "error": str(exc)}

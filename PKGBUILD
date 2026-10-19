@@ -34,9 +34,11 @@ package() {
   install -m644 "${startdir}/PhotoMotionEngine.js" "${plugindir}/PhotoMotionEngine.js"
   install -m644 "${startdir}/icon.svg" "${plugindir}/icon.svg"
   install -m644 "${startdir}/share/cava.conf" "${plugindir}/share/cava.conf"
-  if [ -f "${startdir}/share/psychedelic.frag" ]; then
-    install -m644 "${startdir}/share/psychedelic.frag" "${plugindir}/share/psychedelic.frag"
-  fi
+  for _shader in psychedelic.frag psychedelic.frag.qsb photo_motion.frag photo_motion.frag.qsb; do
+    if [ -f "${startdir}/share/${_shader}" ]; then
+      install -m644 "${startdir}/share/${_shader}" "${plugindir}/share/${_shader}"
+    fi
+  done
   if [ -f "${startdir}/share/statements.txt" ]; then
     install -m644 "${startdir}/share/statements.txt" "${plugindir}/share/statements.txt"
   fi

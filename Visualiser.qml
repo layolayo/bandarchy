@@ -463,8 +463,9 @@ FocusScope {
     property int photoTotalOriginals: 0
     property string photoCustomDir: "~/Pictures/bandarchy/categories/custom"
     property bool photoBusy: false
-    property string photoStatusMessage: "Ready — drop photos into categories or import a custom folder"
+    property string photoStatusMessage: "Ready — click Import Photos to scan all folders & build 16 Stark variants"
     property bool showCustomPhotoImportBar: false
+    property bool showPhotoCategoryDropdown: false
     property int photoMotionMode: 0 // 0..24 (M01..M25)
     property int photoPoolMode: 0 // 0 = Effects of Same Image, 1 = Images of Same Effect, 2 = Randomisation of 1 & 2 (';' key)
     property bool photoPlaneShearEnabled: false // ':' key: Controlled 3D Plane Shearing ON/OFF (default OFF = clean un-sheared quads)
@@ -674,6 +675,12 @@ FocusScope {
     property bool layer6PinnedByUser: false
 
     onGpuShaderEnabledChanged: {
+        if (root.gpuShaderEnabled) {
+            root.unloadAllCanvasImages()
+            root.syncGpuPhotoTextures()
+        } else if (root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11) {
+            root.schedulePreloadPhotoVariants()
+        }
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
@@ -772,6 +779,10 @@ FocusScope {
     property var _loadedCanvasImageUrls: []
     property var _loadedCanvasImageSet: ({})
     readonly property int _maxCachedCanvasImages: 20
+    property string _gpuPhotoUrlPrimary: ""
+    property string _gpuPhotoUrlSecondary: ""
+    property string _gpuPhotoUrlPrev: ""
+    property string _gpuPhotoUrlPeer: ""
 
     Timer {
         id: photoPreloadDebounceTimer
@@ -799,6 +810,7 @@ FocusScope {
 
     onVisibleChanged: {
         if (root.visible && root.stageMode === "visualiser" && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11) {
+            root.syncGpuPhotoTextures()
             root.schedulePreloadPhotoVariants()
         } else if (!root.visible) {
             root.unloadAllCanvasImages()
@@ -806,15 +818,22 @@ FocusScope {
     }
 
     onPhotoActiveVariantsChanged: {
+        root.syncGpuPhotoTextures()
         root.schedulePreloadPhotoVariants()
     }
+    onPhotoPreviousVariantsChanged: {
+        root.syncGpuPhotoTextures()
+    }
     onPhotoSameEffectPeersChanged: {
+        root.syncGpuPhotoTextures()
         root.schedulePreloadPhotoVariants()
     }
     onPhotoSameEffectByVariantChanged: {
+        root.syncGpuPhotoTextures()
         root.schedulePreloadPhotoVariants()
     }
     onPhotoRandomPoolPeersChanged: {
+        root.syncGpuPhotoTextures()
         root.schedulePreloadPhotoVariants()
     }
     onPhotoMotionModeChanged: {
@@ -824,18 +843,26 @@ FocusScope {
     }
     onPhotoPoolModeChanged: {
         if (root.photoState) root.photoState.poolMode = root.photoPoolMode
+        root.syncGpuPhotoTextures()
         root.preloadPhotoVariantsIntoCanvas()
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
+    function requestCpuCanvasPaint() {
+        if (typeof vizCanvas !== "undefined" && vizCanvas && root.stageMode === "visualiser" && root.hasActiveCpuLayers && !vizCanvas._paintPending) {
+            vizCanvas._paintPending = true
+            vizCanvas.requestPaint()
+        }
+    }
+
     onPhotoPlaneShearEnabledChanged: {
         if (root.photoState) root.photoState.photoPlaneShearEnabled = root.photoPlaneShearEnabled
-        vizCanvas.requestPaint()
+        root.requestCpuCanvasPaint()
         scheduleSaveVisualiserConfig()
     }
     onPhotoPlaneShearChanged: {
         if (root.photoState) root.photoState.photoPlaneShear = root.photoPlaneShear
-        vizCanvas.requestPaint()
+        root.requestCpuCanvasPaint()
         scheduleSaveVisualiserConfig()
     }
     onPhotoEffectChangeIntervalSecChanged: {
@@ -934,78 +961,80 @@ FocusScope {
     onPhotoMotionActivityChanged: {
         if (root.photoState) root.photoState.photoMotionActivity = root.photoMotionActivity
         root.recordUserPhotoMotionSetting("photoMotionActivity", root.photoMotionActivity)
-        vizCanvas.requestPaint()
+        root.requestCpuCanvasPaint()
         scheduleSaveVisualiserConfig()
     }
     onPhotoPinnedVariantChanged: {
         if (root.photoState) root.photoState.pinnedStage1EffectIndex = root.photoPinnedVariant
+        root.syncGpuPhotoTextures()
         root.preloadPhotoVariantsIntoCanvas()
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
     onPhotoOpacityChanged: {
         if (root.photoState) root.photoState.photoOpacity = root.photoOpacity
-        vizCanvas.requestPaint()
+        root.requestCpuCanvasPaint()
         scheduleSaveVisualiserConfig()
     }
     onPhotoFadeDurationChanged: {
         if (root.photoState) root.photoState.photoFadeDuration = root.photoFadeDuration
         root.recordUserPhotoMotionSetting("photoFadeDuration", root.photoFadeDuration)
-        vizCanvas.requestPaint()
+        root.requestCpuCanvasPaint()
         scheduleSaveVisualiserConfig()
     }
     onPhotoStrobeSpeedChanged: {
         if (root.photoState) root.photoState.photoStrobeSpeed = root.photoStrobeSpeed
         root.recordUserPhotoMotionSetting("photoStrobeSpeed", root.photoStrobeSpeed)
-        vizCanvas.requestPaint()
+        root.requestCpuCanvasPaint()
         scheduleSaveVisualiserConfig()
     }
     onPhotoBlackOpacityChanged: {
         if (root.photoState) root.photoState.photoBlackOpacity = root.photoBlackOpacity
-        vizCanvas.requestPaint()
+        root.requestCpuCanvasPaint()
         scheduleSaveVisualiserConfig()
     }
     onPhotoMidOpacityChanged: {
         if (root.photoState) root.photoState.photoMidOpacity = root.photoMidOpacity
-        vizCanvas.requestPaint()
+        root.requestCpuCanvasPaint()
         scheduleSaveVisualiserConfig()
     }
     onPhotoWhiteOpacityChanged: {
         if (root.photoState) root.photoState.photoWhiteOpacity = root.photoWhiteOpacity
-        vizCanvas.requestPaint()
+        root.requestCpuCanvasPaint()
         scheduleSaveVisualiserConfig()
     }
     onPhotoColourSnatchOpacityChanged: {
         if (root.photoState) root.photoState.photoColourSnatchOpacity = root.photoColourSnatchOpacity
-        vizCanvas.requestPaint()
+        root.requestCpuCanvasPaint()
         scheduleSaveVisualiserConfig()
     }
     onPhotoXyzTiltChanged: {
         if (root.photoState) root.photoState.photoXyzTilt = root.photoXyzTilt
         root.recordUserPhotoMotionSetting("photoXyzTilt", root.photoXyzTilt)
-        vizCanvas.requestPaint()
+        root.requestCpuCanvasPaint()
         scheduleSaveVisualiserConfig()
     }
     onPhotoZoomPunchChanged: {
         if (root.photoState) root.photoState.photoZoomPunch = root.photoZoomPunch
         root.recordUserPhotoMotionSetting("photoZoomPunch", root.photoZoomPunch)
-        vizCanvas.requestPaint()
+        root.requestCpuCanvasPaint()
         scheduleSaveVisualiserConfig()
     }
     onPhotoPaletteBloomChanged: {
         if (root.photoState) root.photoState.photoPaletteBloom = root.photoPaletteBloom
         root.recordUserPhotoMotionSetting("photoPaletteBloom", root.photoPaletteBloom)
-        vizCanvas.requestPaint()
+        root.requestCpuCanvasPaint()
         scheduleSaveVisualiserConfig()
     }
     onPhotoWarpIntensityChanged: {
         if (root.photoState) root.photoState.photoWarpIntensity = root.photoWarpIntensity
         root.recordUserPhotoMotionSetting("photoWarpIntensity", root.photoWarpIntensity)
-        vizCanvas.requestPaint()
+        root.requestCpuCanvasPaint()
         scheduleSaveVisualiserConfig()
     }
 
     function _trackAndLoadCanvasImage(url) {
+        if (root.gpuShaderEnabled) return
         if (!url || typeof vizCanvas === "undefined" || !vizCanvas || typeof vizCanvas.loadImage !== "function") return
         if (!root.visible || root.stageMode !== "visualiser" || !root.layer1Enabled || !root.layer1FieldEnabled || root.layer1Mode !== 11) return
         var lru = root._loadedCanvasImageUrls
@@ -1066,6 +1095,7 @@ FocusScope {
     }
 
     function _preloadPathDictIntoCanvas(pathDict) {
+        if (root.gpuShaderEnabled) return
         if (!pathDict || typeof pathDict !== "object") return
         if (!root.visible || root.stageMode !== "visualiser" || !root.layer1Enabled || !root.layer1FieldEnabled || root.layer1Mode !== 11) return
         var keys = Object.keys(pathDict)
@@ -1075,6 +1105,69 @@ FocusScope {
                 root._trackAndLoadCanvasImage("file://" + p)
             }
         }
+    }
+
+    function _toPhotoFileUrl(rawPath) {
+        var s = String(rawPath || "")
+        if (!s) return ""
+        if (s.indexOf("file://") === 0) return s
+        if (s.indexOf("/") === 0) return "file://" + s
+        return ""
+    }
+
+    function _firstAvailableFileUrl(dictObj, excludeUrl) {
+        if (!dictObj || typeof dictObj !== "object") return ""
+        var ks = Object.keys(dictObj)
+        var fallback = ""
+        for (var i = 0; i < ks.length; i++) {
+            var u = root._toPhotoFileUrl(dictObj[ks[i]])
+            if (!u) continue
+            if (!excludeUrl || u !== excludeUrl) return u
+            if (!fallback) fallback = u
+        }
+        return fallback
+    }
+
+    function syncGpuPhotoTextures() {
+        var activeVars = root.photoActiveVariants || ({})
+        var prevVars = root.photoPreviousVariants || ({})
+        var effIds = PhotoMotion.STAGE1_EFFECT_IDS
+        var primIdx = (root.photoPinnedVariant >= 0 && root.photoPinnedVariant < effIds.length)
+            ? root.photoPinnedVariant
+            : 0
+        var secIdx = (root.photoPinnedVariant >= 0 ? root.photoPinnedVariant : 5) % effIds.length
+        var primId = effIds[primIdx] || effIds[0]
+        var secId = effIds[secIdx] || effIds[5] || effIds[1]
+
+        var pUrl = root._toPhotoFileUrl(activeVars[primId]) || root._firstAvailableFileUrl(activeVars)
+        var sUrl = root._toPhotoFileUrl(activeVars[secId]) || root._firstAvailableFileUrl(activeVars, pUrl) || pUrl
+
+        var peerUrl = sUrl
+        if (root.photoPoolMode === 1) {
+            var rawByVar = root.photoSameEffectByVariant || ({})
+            var sameDict = rawByVar[primId] || root.photoSameEffectPeers || activeVars
+            peerUrl = root._firstAvailableFileUrl(sameDict, pUrl) || sUrl
+        } else if (root.photoPoolMode === 2) {
+            var randDict = root.photoRandomPoolPeers || activeVars
+            peerUrl = root._firstAvailableFileUrl(randDict, pUrl) || sUrl
+        }
+
+        var candPrev = root._toPhotoFileUrl(prevVars[primId]) || root._firstAvailableFileUrl(prevVars, pUrl)
+        var prevUrl = (candPrev && candPrev !== pUrl)
+            ? candPrev
+            : ((root._gpuPhotoUrlPrimary && root._gpuPhotoUrlPrimary !== pUrl)
+                ? root._gpuPhotoUrlPrimary
+                : (candPrev || root._firstAvailableFileUrl(prevVars) || pUrl))
+
+        if (root._gpuPhotoUrlPrimary !== pUrl) {
+            if (root._gpuPhotoUrlPrimary && pUrl && root.photoState) {
+                root.photoState.snapshotCrossfadeProgress = 0.0
+            }
+            root._gpuPhotoUrlPrimary = pUrl
+        }
+        if (root._gpuPhotoUrlSecondary !== sUrl) root._gpuPhotoUrlSecondary = sUrl
+        if (root._gpuPhotoUrlPeer !== peerUrl) root._gpuPhotoUrlPeer = peerUrl
+        if (root._gpuPhotoUrlPrev !== prevUrl) root._gpuPhotoUrlPrev = prevUrl
     }
 
     function inferCategoryFromVariants(vars) {
@@ -1101,7 +1194,11 @@ FocusScope {
             var resolved = PhotoMotion.resolveCurrentCategoryForStep(st)
             if (resolved && resolved !== "all") return resolved
         }
-        return "brutalist"
+        var cats = (root.photoCategories && root.photoCategories.length > 0) ? root.photoCategories : PhotoMotion.DEFAULT_PHOTO_CATEGORIES
+        for (var i = 0; i < cats.length; i++) {
+            if (cats[i] && cats[i] !== "all") return String(cats[i])
+        }
+        return "all"
     }
 
     function preloadPhotoVariantsIntoCanvas() {
@@ -1110,26 +1207,28 @@ FocusScope {
         if (inferredCat && !root.photoActiveCategory) {
             root.photoActiveCategory = inferredCat
         }
-        var activePoolDict = vars
-        if (root.photoPoolMode === 1) {
-            var byVar = root.photoSameEffectByVariant || ({})
-            var pinnedIdx = (root.photoPinnedVariant >= 0 && root.photoPinnedVariant < PhotoMotion.STAGE1_EFFECT_IDS.length)
-                ? root.photoPinnedVariant
-                : 0
-            var effKey = PhotoMotion.STAGE1_EFFECT_IDS[pinnedIdx] || PhotoMotion.STAGE1_EFFECT_IDS[0]
-            activePoolDict = byVar[effKey] || root.photoSameEffectPeers || vars
-        } else if (root.photoPoolMode === 2) {
-            activePoolDict = root.photoRandomPoolPeers || vars
+        if (!root.gpuShaderEnabled) {
+            var activePoolDict = vars
+            if (root.photoPoolMode === 1) {
+                var byVar = root.photoSameEffectByVariant || ({})
+                var pinnedIdx = (root.photoPinnedVariant >= 0 && root.photoPinnedVariant < PhotoMotion.STAGE1_EFFECT_IDS.length)
+                    ? root.photoPinnedVariant
+                    : 0
+                var effKey = PhotoMotion.STAGE1_EFFECT_IDS[pinnedIdx] || PhotoMotion.STAGE1_EFFECT_IDS[0]
+                activePoolDict = byVar[effKey] || root.photoSameEffectPeers || vars
+            } else if (root.photoPoolMode === 2) {
+                activePoolDict = root.photoRandomPoolPeers || vars
+            }
+            var prevPrimaryOnly = {}
+            var prevVars = root.photoPreviousVariants || ({})
+            var stPre = root.photoState
+            var curEffId = PhotoMotion.STAGE1_EFFECT_IDS[stPre ? ((stPre.primaryVariantIndex || 0) % 16) : 0]
+            if (prevVars[curEffId]) {
+                prevPrimaryOnly[curEffId] = prevVars[curEffId]
+            }
+            root._evictUnreferencedCanvasImages([activePoolDict, prevPrimaryOnly])
+            root._preloadPathDictIntoCanvas(activePoolDict)
         }
-        var prevPrimaryOnly = {}
-        var prevVars = root.photoPreviousVariants || ({})
-        var stPre = root.photoState
-        var curEffId = PhotoMotion.STAGE1_EFFECT_IDS[stPre ? ((stPre.primaryVariantIndex || 0) % 16) : 0]
-        if (prevVars[curEffId]) {
-            prevPrimaryOnly[curEffId] = prevVars[curEffId]
-        }
-        root._evictUnreferencedCanvasImages([activePoolDict, prevPrimaryOnly])
-        root._preloadPathDictIntoCanvas(activePoolDict)
         var st = root.syncPhotoStateFromRoot()
         if (st && root.photoActiveStem) {
             var entryCat = inferredCat || root.resolveCurrentPhotoCategory()
@@ -1159,7 +1258,8 @@ FocusScope {
                 st.historyCursor = st.historyStack.length - 1
             }
         }
-        if (typeof vizCanvas !== "undefined" && vizCanvas) {
+        root.syncGpuPhotoTextures()
+        if (!root.gpuShaderEnabled && typeof vizCanvas !== "undefined" && vizCanvas) {
             vizCanvas.requestPaint()
         }
     }
@@ -1171,7 +1271,7 @@ FocusScope {
         var st = root.photoState
         st.categories = (root.photoCategories && root.photoCategories.length > 0) ? root.photoCategories : PhotoMotion.DEFAULT_PHOTO_CATEGORIES
         st.categoryCounts = root.photoCategoryCounts || ({})
-        st.activeCategory = root.photoActiveCategory || root.inferCategoryFromVariants(root.photoActiveVariants) || "brutalist"
+        st.activeCategory = root.photoActiveCategory || root.inferCategoryFromVariants(root.photoActiveVariants) || "all"
         st.motionMode = root.photoMotionMode
         st.poolMode = root.photoPoolMode
         st.photoPlaneShearEnabled = root.photoPlaneShearEnabled
@@ -1258,7 +1358,7 @@ FocusScope {
         var st = root.syncPhotoStateFromRoot()
         root.photoPreviousVariants = root.photoActiveVariants || ({})
         var res = PhotoMotion.stepPhotoCategory(st, direction, function(cat) {
-            root.photoActiveCategory = cat || "brutalist"
+            root.photoActiveCategory = cat || "all"
             root.requestPhotoPick(root.photoActiveCategory, "")
             return {
                 category: root.photoActiveCategory,
@@ -1287,12 +1387,13 @@ FocusScope {
 
     function selectPhotoCategory(catName) {
         root.ensurePhotoLayerActive()
-        var cat = String(catName || "brutalist").toLowerCase()
+        var cat = String(catName || "all").toLowerCase()
         var st = root.syncPhotoStateFromRoot()
         st.activeCategory = cat
         st.holdActive = false
         st.holdRemainingSec = 0.0
         root.photoActiveCategory = cat
+        root.showPhotoCategoryDropdown = false
         root.photoHoldActive = false
         root.photoHoldRemainingSec = 0.0
         root.photoPreviousVariants = root.photoActiveVariants || ({})
@@ -1401,6 +1502,11 @@ FocusScope {
         })
         if (!asyncDispatched) {
             root.requestPhotoPick(lockedCat, "")
+        }
+        st.autoMotionElapsedSec = 0.0
+        st.autoMotionAccumulatedPhase = 0.0
+        if (typeof photoAutoMotionTimer !== "undefined" && photoAutoMotionTimer.running) {
+            photoAutoMotionTimer.restart()
         }
         root.photoMotionMode = st.motionMode
         root.applyRandomisedStateMotionToRoot(st)
@@ -2411,8 +2517,17 @@ FocusScope {
         if (root.engineState) {
             root.engineState.clearFeedbackFrames = 3
         }
+        if (typeof gpuShaderStage !== "undefined" && gpuShaderStage) {
+            gpuShaderStage.uL1Enabled = (root.gpuShaderEnabled && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode < 11) ? 1.0 : 0.0
+        }
+        if (root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11) {
+            root.syncGpuPhotoTextures()
+        }
         if (vizCanvas) {
-            vizCanvas.requestPaint()
+            vizCanvas._paintPending = false
+            if (root.hasActiveCpuLayers) {
+                vizCanvas.requestPaint()
+            }
         }
     }
 
@@ -2450,6 +2565,7 @@ FocusScope {
     }
     onLayer1ModeChanged: {
         if (root.layer1Mode === 11) {
+            root.syncGpuPhotoTextures()
             root.schedulePreloadPhotoVariants()
         } else {
             root.unloadAllCanvasImages()
@@ -2570,6 +2686,7 @@ FocusScope {
             palette: root.paletteIndex,
             musicDrive: root.musicDrive,
             gpuShaderEnabled: root.gpuShaderEnabled,
+            gpuL1Active: Boolean(root.gpuShaderEnabled && root.layer1Enabled && root.layer1FieldEnabled),
             backdropEnabled: root.backdropEnabled,
             backdropMode: root.backdropMode,
             backdropSpeed: root.backdropSpeed,
@@ -2773,6 +2890,7 @@ FocusScope {
             var lockedBeatCat = root.resolveCurrentPhotoCategory()
             root.photoActiveCategory = lockedBeatCat
             st.activeCategory = lockedBeatCat
+            root.photoPreviousVariants = root.photoActiveVariants || ({})
             root.requestPhotoPick(lockedBeatCat, "")
         }
         root.photoHoldActive = Boolean(st.holdActive)
@@ -4259,22 +4377,13 @@ FocusScope {
             root._cachedFrameConfig = cfg
             Engine.stepState(root.engineState, root.bands, root.playing, cfg, dt)
 
-            // Explicitly push dynamic time, audio, and smoothly blended palette uniforms to gpuShaderStage every frame
-            // (since plain JS object mutations on root.engineState do not emit QML notify signals)
+            // Explicitly push dynamic time, audio, and smoothly blended palette uniforms to GPU shader stages every frame
+            // (since plain JS object mutations on root.engineState / root.photoState do not emit QML notify signals)
+            var l1WorldGpu = root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode < 11
+            var l1PhotoGpu = root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11
             var l2FractalGpu = root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5
-            if (root.stageMode === "visualiser" && root.gpuShaderEnabled && ((root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || root.layer4Enabled || l2FractalGpu)) {
+            if (root.stageMode === "visualiser" && root.gpuShaderEnabled) {
                 var st = root.engineState
-                var bT = st.backdropTime !== undefined ? st.backdropTime : (st.t || 0.0)
-                gpuShaderStage.uTime = l2FractalGpu ? (st.t || bT) : bT
-                gpuShaderStage.uL1Time = st.l1Time || 0.0
-                gpuShaderStage.uZoomTime = l2FractalGpu ? (st.zoomTime !== undefined ? st.zoomTime : (st.t || 0.0)) : (bT * 0.85)
-                gpuShaderStage.uBass = st.bassSmooth || 0.0
-                gpuShaderStage.uMid = st.midSmooth || 0.0
-                gpuShaderStage.uHigh = st.highSmooth || 0.0
-                gpuShaderStage.uBeat = st.beatPulse || 0.0
-                gpuShaderStage.uDriftX = Math.sin(bT * 0.27) * 0.16 * root.tracerDrift
-                gpuShaderStage.uDriftY = Math.cos(bT * 0.21) * 0.12 * root.tracerDrift
-
                 var pal = Engine.PALETTES[root.paletteIndex % Engine.PALETTES.length]
                 var targetCol0, targetCol1, targetCol2
                 if (pal && pal.length >= 3) {
@@ -4288,9 +4397,115 @@ FocusScope {
                     targetCol2 = Qt.vector4d(0.22, 0.74, 0.97, 1.0)
                 }
                 var colBlend = Math.min(1.0, dt * 4.5)
-                gpuShaderStage.uCol0 = root.lerpVec4(gpuShaderStage.uCol0, targetCol0, colBlend)
-                gpuShaderStage.uCol1 = root.lerpVec4(gpuShaderStage.uCol1, targetCol1, colBlend)
-                gpuShaderStage.uCol2 = root.lerpVec4(gpuShaderStage.uCol2, targetCol2, colBlend)
+
+                if (l1WorldGpu || (root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || root.layer4Enabled || l2FractalGpu) {
+                    var bT = st.backdropTime !== undefined ? st.backdropTime : (st.t || 0.0)
+                    gpuShaderStage.uL1Enabled = l1WorldGpu ? 1.0 : 0.0
+                    gpuShaderStage.uTime = l2FractalGpu ? (st.t || bT) : bT
+                    gpuShaderStage.uL1Time = st.l1Time || 0.0
+                    gpuShaderStage.uZoomTime = l2FractalGpu ? (st.zoomTime !== undefined ? st.zoomTime : (st.t || 0.0)) : (bT * 0.85)
+                    gpuShaderStage.uBass = st.bassSmooth || 0.0
+                    gpuShaderStage.uMid = st.midSmooth || 0.0
+                    gpuShaderStage.uHigh = st.highSmooth || 0.0
+                    gpuShaderStage.uBeat = st.beatPulse || 0.0
+                    gpuShaderStage.uDriftX = Math.sin(bT * 0.27) * 0.16 * root.tracerDrift
+                    gpuShaderStage.uDriftY = Math.cos(bT * 0.21) * 0.12 * root.tracerDrift
+                    gpuShaderStage.uCol0 = root.lerpVec4(gpuShaderStage.uCol0, targetCol0, colBlend)
+                    gpuShaderStage.uCol1 = root.lerpVec4(gpuShaderStage.uCol1, targetCol1, colBlend)
+                    gpuShaderStage.uCol2 = root.lerpVec4(gpuShaderStage.uCol2, targetCol2, colBlend)
+                } else if (gpuShaderStage.uL1Enabled !== 0.0) {
+                    gpuShaderStage.uL1Enabled = 0.0
+                }
+
+                if (l1PhotoGpu) {
+                    var pSt = root.syncPhotoStateFromRoot()
+                    var audioTel = {
+                        bass: st.bassSmooth || 0.0,
+                        mid: st.midSmooth || 0.0,
+                        high: st.highSmooth || 0.0,
+                        beat: st.beatPulse || 0.0,
+                        spectrum: root.bands || []
+                    }
+                    var stepInfo = PhotoMotion.stepPhotoMotionState(pSt, dt, audioTel)
+                    pSt._lastStepInfo = stepInfo
+                    if (stepInfo && stepInfo.autoMotionEventTriggered) {
+                        var lockedAutoCat = root.resolveCurrentPhotoCategory()
+                        root.photoActiveCategory = lockedAutoCat
+                        pSt.activeCategory = lockedAutoCat
+                        root.photoPreviousVariants = root.photoActiveVariants || ({})
+                        root.photoMotionMode = pSt.motionMode
+                        root.applyRandomisedStateMotionToRoot(pSt)
+                        root.requestPhotoPick(lockedAutoCat, "")
+                        if (photoAutoMotionTimer.running) photoAutoMotionTimer.restart()
+                        var autoModeObj = PhotoMotion.PHOTO_MOTION_MODES[root.photoMotionMode]
+                        if (autoModeObj) {
+                            root.suppressActionFeedback("🎲 Auto Photo-Motion [~]: " + autoModeObj.code + " · " + autoModeObj.name)
+                        }
+                    } else if (stepInfo && stepInfo.motionControlsRandomisedOnTimer) {
+                        root.applyRandomisedStateMotionToRoot(pSt)
+                        if (photoAutoMotionTimer.running) photoAutoMotionTimer.restart()
+                    } else if (stepInfo && stepInfo.stepTriggeredOnBeat) {
+                        var lockedBeatCat = root.resolveCurrentPhotoCategory()
+                        root.photoActiveCategory = lockedBeatCat
+                        pSt.activeCategory = lockedBeatCat
+                        root.photoPreviousVariants = root.photoActiveVariants || ({})
+                        root.requestPhotoPick(lockedBeatCat, "")
+                    }
+                    var nextHoldAct = Boolean(pSt.holdActive)
+                    if (root.photoHoldActive !== nextHoldAct) {
+                        root.photoHoldActive = nextHoldAct
+                    }
+                    var nextHoldRem = nextHoldAct ? (Number(pSt.holdRemainingSec) || 0.0) : 0.0
+                    if (Math.abs(root.photoHoldRemainingSec - nextHoldRem) > 0.25 || (!nextHoldAct && root.photoHoldRemainingSec !== 0.0)) {
+                        root.photoHoldRemainingSec = nextHoldRem
+                    }
+                    var bassVal = (stepInfo && stepInfo.bass !== undefined) ? stepInfo.bass : (st.bassSmooth || 0.0)
+                    var midVal = (stepInfo && stepInfo.mid !== undefined) ? stepInfo.mid : (st.midSmooth || 0.0)
+                    var highVal = (stepInfo && stepInfo.high !== undefined) ? stepInfo.high : (st.highSmooth || 0.0)
+                    var beatVal = (stepInfo && stepInfo.beat !== undefined) ? stepInfo.beat : (st.beatPulse || 0.0)
+                    var slideX = (pSt.macroSlideX !== undefined) ? pSt.macroSlideX : 0.0
+                    var slideY = (pSt.macroSlideY !== undefined) ? pSt.macroSlideY : 0.0
+                    gpuPhotoStage.uTime = (pSt.t !== undefined) ? pSt.t : (st.l1Time || 0.0)
+                    gpuPhotoStage.uRhythmPhase = (pSt.rhythmPhase !== undefined) ? pSt.rhythmPhase : 0.0
+                    gpuPhotoStage.uMotionMode = root.photoMotionMode
+                    gpuPhotoStage.uBass = bassVal
+                    gpuPhotoStage.uMid = midVal
+                    gpuPhotoStage.uTreble = highVal
+                    gpuPhotoStage.uFlux = Math.min(1.5, Math.abs(bassVal - midVal) + beatVal * 0.6)
+                    gpuPhotoStage.uBeatPulse = beatVal
+                    gpuPhotoStage.uMotionSpeed = (stepInfo && stepInfo.effectiveMotionActivity !== undefined) ? stepInfo.effectiveMotionActivity : root.photoMotionActivity
+                    gpuPhotoStage.uMotionDepth = (stepInfo && stepInfo.effectiveWarpIntensity !== undefined) ? stepInfo.effectiveWarpIntensity : root.photoWarpIntensity
+                    gpuPhotoStage.uMotionSpread = (stepInfo && stepInfo.effectiveZoomPunch !== undefined) ? stepInfo.effectiveZoomPunch : root.photoZoomPunch
+                    gpuPhotoStage.uPanX = (pSt.viewportPanX !== undefined) ? pSt.viewportPanX : 0.0
+                    gpuPhotoStage.uPanY = (pSt.viewportPanY !== undefined) ? pSt.viewportPanY : 0.0
+                    gpuPhotoStage.uZoom = (pSt.viewportZoom !== undefined) ? pSt.viewportZoom : 1.0
+                    gpuPhotoStage.uMacroSlide = Math.sqrt(slideX * slideX + slideY * slideY)
+                    gpuPhotoStage.uMacroSlideX = slideX
+                    gpuPhotoStage.uMacroSlideY = slideY
+                    gpuPhotoStage.uMacroScale = (pSt.macroScale !== undefined) ? pSt.macroScale : 1.0
+                    gpuPhotoStage.uMacroRoll = (pSt.macroRollRad !== undefined) ? pSt.macroRollRad : 0.0
+                    gpuPhotoStage.uPitch = (pSt.pitchRad !== undefined) ? pSt.pitchRad : 0.0
+                    gpuPhotoStage.uYaw = (pSt.yawRad !== undefined) ? pSt.yawRad : 0.0
+                    gpuPhotoStage.uRoll = (pSt.rollRad !== undefined) ? pSt.rollRad : 0.0
+                    gpuPhotoStage.uPlaneShear = (stepInfo && stepInfo.effectivePlaneShear !== undefined)
+                        ? stepInfo.effectivePlaneShear
+                        : (root.photoPlaneShearEnabled ? root.photoPlaneShear : 0.0)
+                    gpuPhotoStage.uPhotoOpacity = root.photoOpacity * (1.0 - Math.min(0.85, root.layer1Dim * 0.75))
+                    gpuPhotoStage.uBlackOpacity = root.photoBlackOpacity
+                    gpuPhotoStage.uMidOpacity = root.photoMidOpacity
+                    gpuPhotoStage.uWhiteOpacity = root.photoWhiteOpacity
+                    gpuPhotoStage.uColourSnatchOpacity = root.photoColourSnatchOpacity
+                    gpuPhotoStage.uPaletteBloom = (stepInfo && stepInfo.effectivePaletteBloom !== undefined) ? stepInfo.effectivePaletteBloom : root.photoPaletteBloom
+                    gpuPhotoStage.uVariantMix = (pSt.variantCrossfadeAlpha !== undefined) ? pSt.variantCrossfadeAlpha : 0.0
+                    gpuPhotoStage.uSnapshotMix = (stepInfo && stepInfo.snapshotCrossfadeAlpha !== undefined) ? stepInfo.snapshotCrossfadeAlpha : 1.0
+                    gpuPhotoStage.uPoolMode = root.photoPoolMode
+                    gpuPhotoStage.uVariantIndex = (root.photoPinnedVariant >= 0) ? root.photoPinnedVariant : (pSt.primaryVariantIndex || 0)
+                    gpuPhotoStage.uSecondaryVariantIndex = (pSt.secondaryVariantIndex !== undefined) ? pSt.secondaryVariantIndex : 5
+                    gpuPhotoStage.uPrevVariantIndex = (pSt.prevPrimaryVariantIndex !== undefined) ? pSt.prevPrimaryVariantIndex : 0
+                    gpuPhotoStage.uCol0 = root.lerpVec4(gpuPhotoStage.uCol0, targetCol0, colBlend)
+                    gpuPhotoStage.uCol1 = root.lerpVec4(gpuPhotoStage.uCol1, targetCol1, colBlend)
+                    gpuPhotoStage.uCol2 = root.lerpVec4(gpuPhotoStage.uCol2, targetCol2, colBlend)
+                }
             }
 
             // Throttle QML telemetry property updates to ~12 Hz (every 4th frame) to avoid QML binding storms
@@ -4302,16 +4517,39 @@ FocusScope {
                 root.liveBeat = root.engineState.beatPulse || 0.0
             }
 
-            if (root.stageMode === "visualiser" && root.hasActiveCpuLayers) {
+            if (root.stageMode === "visualiser" && root.hasActiveCpuLayers && !vizCanvas._paintPending) {
+                vizCanvas._paintPending = true
                 vizCanvas.requestPaint()
             }
         }
     }
 
-    readonly property bool hasActiveCpuLayers: (root.layer1Enabled && (root.layer1FieldEnabled || root.layer1EqEnabled || root.layer1ShapesEnabled))
-        || (root.layer2Enabled && root.layer2VizEnabled)
+    readonly property bool hasActiveCpuLayers: (root.layer1Enabled && ((!root.gpuShaderEnabled && root.layer1FieldEnabled) || root.layer1EqEnabled || root.layer1ShapesEnabled))
+        || (root.layer2Enabled && ((root.layer2VizEnabled && (!root.gpuShaderEnabled || root.visualMode !== 5)) || root.layer2TracersEnabled))
         || root.layer3Enabled
     property var _cachedFrameConfig: null
+
+    // Independent Photo-Motion Auto Event Timer (`~` key / photoAutoMotionEvents / photoRandomiseMotionControls) on the main GUI thread
+    Timer {
+        id: photoAutoMotionTimer
+        interval: Math.max(3000, Math.round((Number(root.photoEffectChangeIntervalSec) || 10.0) * 1000))
+        running: root.visible && root.stageMode === "visualiser" && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11 && (root.photoAutoMotionEvents || root.photoRandomiseMotionControls) && !root.photoHoldActive
+        repeat: true
+        onTriggered: {
+            var pSt = root.syncPhotoStateFromRoot()
+            if (root.photoAutoMotionEvents) {
+                if ((Number(pSt.autoMotionElapsedSec) || 0.0) >= 1.5 || !pSt._lastStepInfo) {
+                    root.triggerRandomPhotoMotionEvent()
+                }
+            } else if (root.photoRandomiseMotionControls) {
+                PhotoMotion.randomiseMotionControlsForEvent(pSt)
+                root.applyRandomisedStateMotionToRoot(pSt)
+                pSt.autoMotionElapsedSec = 0.0
+                pSt.autoMotionAccumulatedPhase = 0.0
+                root.scheduleSaveVisualiserConfig()
+            }
+        }
+    }
 
     // Auto-Cycle Evolution Timer: strictly respects each layer's individual Rand (AutoRandomise) state (default interval: 18000)
     Timer {
@@ -4561,12 +4799,12 @@ FocusScope {
 
         // =====================================================================
         // STAGE MODE 3: 6-LAYER PSYCHEDELIC & NIGHTCLUB VISUALISER ("visualiser")
-        // Native Qt6 GPU Fragment Shader Stage (5: Vortex) + Hardware-Scaled Vector & ASCII Canvas
+        // Native Qt6 GPU Fragment Shader Stages (1: Worlds, 12: Photo-Motion, 5: Vortex) + Hardware-Scaled Vector & ASCII Canvas
         // =====================================================================
         ShaderEffect {
             id: gpuShaderStage
             anchors.fill: parent
-            visible: root.stageMode === "visualiser" && root.gpuShaderEnabled && (root.layer4Enabled || (root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || (root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5))
+            visible: root.stageMode === "visualiser" && root.gpuShaderEnabled && ((root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode < 11) || root.layer4Enabled || (root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || (root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5))
             fragmentShader: Qt.resolvedUrl("share/psychedelic.frag.qsb")
 
             property real uTime: 0.0
@@ -4580,6 +4818,9 @@ FocusScope {
             property real uL1Enabled: 0.0
             property real uL1Mode: root.layer1Mode
             property real uL1Dim: root.layer1Dim
+            property real uL1Speed: root.layer1Speed
+            property real uL1Density: root.layer1Density
+            property real uL1Direction: root.layer1Direction
             property real uL2Enabled: (root.gpuShaderEnabled && root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) ? 1.0 : 0.0
             property real uL2Mode: root.backdropMode
             property real uL2VizMode: (root.layer2Enabled && root.layer2VizEnabled) ? root.visualMode : -1.0
@@ -4603,10 +4844,122 @@ FocusScope {
             property vector4d uCol2: Qt.vector4d(0.22, 0.74, 0.97, 1.0)
         }
 
+        // 4 Lightweight GPU Texture Samplers for L1 Photo-Motion (#12) — zero QQuickCanvasItem::loadImage overhead
+        Image {
+            id: photoTexPrimary
+            source: (root.visible && root.stageMode === "visualiser" && root.gpuShaderEnabled && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11) ? root._gpuPhotoUrlPrimary : ""
+            sourceSize: Qt.size(480, 360)
+            asynchronous: true
+            cache: true
+            visible: false
+        }
+        Image {
+            id: photoTexSecondary
+            source: (root.visible && root.stageMode === "visualiser" && root.gpuShaderEnabled && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11) ? root._gpuPhotoUrlSecondary : ""
+            sourceSize: Qt.size(480, 360)
+            asynchronous: true
+            cache: true
+            visible: false
+        }
+        Image {
+            id: photoTexPrev
+            source: (root.visible && root.stageMode === "visualiser" && root.gpuShaderEnabled && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11) ? root._gpuPhotoUrlPrev : ""
+            sourceSize: Qt.size(480, 360)
+            asynchronous: true
+            cache: true
+            visible: false
+        }
+        Image {
+            id: photoTexPeer
+            source: (root.visible && root.stageMode === "visualiser" && root.gpuShaderEnabled && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11) ? root._gpuPhotoUrlPeer : ""
+            sourceSize: Qt.size(480, 360)
+            asynchronous: true
+            cache: true
+            visible: false
+        }
+
+        ShaderEffect {
+            id: gpuPhotoStage
+            anchors.fill: parent
+            visible: root.stageMode === "visualiser" && root.gpuShaderEnabled && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11
+            opacity: (root.layer4Enabled || (root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || (root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5))
+                ? 0.84
+                : 1.0
+            fragmentShader: Qt.resolvedUrl("share/photo_motion.frag.qsb")
+
+            property size uResolution: Qt.size(Math.max(1, width), Math.max(1, height))
+            property real uTime: 0.0
+            property real uRhythmPhase: 0.0
+            property int uMotionMode: root.photoMotionMode
+
+            // Audio telemetry
+            property real uBass: 0.0
+            property real uMid: 0.0
+            property real uTreble: 0.0
+            property real uFlux: 0.0
+            property real uBeatPulse: 0.0
+
+            // Motion controls
+            property real uMotionSpeed: root.photoMotionActivity
+            property real uMotionDepth: root.photoWarpIntensity
+            property real uMotionSpread: root.photoZoomPunch
+
+            // Off-centre section magnification & pan
+            property real uPanX: 0.0
+            property real uPanY: 0.0
+            property real uZoom: 1.0
+
+            // Whole-stage macro 3D kinematics
+            property real uMacroSlide: 0.0
+            property real uMacroSlideX: 0.0
+            property real uMacroSlideY: 0.0
+            property real uMacroScale: 1.0
+            property real uMacroRoll: 0.0
+            property real uPitch: 0.0
+            property real uYaw: 0.0
+            property real uRoll: 0.0
+            property real uPlaneShear: root.photoPlaneShearEnabled ? root.photoPlaneShear : 0.0
+
+            // 4-sector tonal opacity & palette colour-snatch bloom
+            property real uPhotoOpacity: root.photoOpacity
+            property real uBlackOpacity: root.photoBlackOpacity
+            property real uMidOpacity: root.photoMidOpacity
+            property real uWhiteOpacity: root.photoWhiteOpacity
+            property real uColourSnatchOpacity: root.photoColourSnatchOpacity
+            property real uPaletteBloom: root.photoPaletteBloom
+
+            // Variant & snapshot crossfades and multi-photo pool mode
+            property real uVariantMix: 0.0
+            property real uSnapshotMix: 1.0
+            property int uPoolMode: root.photoPoolMode
+            property int uVariantIndex: root.photoPinnedVariant >= 0 ? root.photoPinnedVariant : 0
+            property int uSecondaryVariantIndex: 5
+            property int uPrevVariantIndex: 0
+
+            // Texture readiness flags
+            property int uHasPrimary: photoTexPrimary.status === Image.Ready ? 1 : 0
+            property int uHasSecondary: photoTexSecondary.status === Image.Ready ? 1 : 0
+            property int uHasPrev: photoTexPrev.status === Image.Ready ? 1 : 0
+            property int uHasPeer: photoTexPeer.status === Image.Ready ? 1 : 0
+
+            // Active palette & stage background colours
+            property vector4d uCol0: Qt.vector4d(root.accentColour.r, root.accentColour.g, root.accentColour.b, 1.0)
+            property vector4d uCol1: Qt.vector4d(root.urgentColour.r, root.urgentColour.g, root.urgentColour.b, 1.0)
+            property vector4d uCol2: Qt.vector4d(0.22, 0.74, 0.97, 1.0)
+            property vector4d uBgCol: Qt.vector4d(root.backgroundColour.r, root.backgroundColour.g, root.backgroundColour.b, 1.0)
+
+            // 4 GPU texture samplers
+            property variant texPrimary: photoTexPrimary
+            property variant texSecondary: photoTexSecondary
+            property variant texPrev: photoTexPrev
+            property variant texPeer: photoTexPeer
+        }
+
         Canvas {
             id: vizCanvas
+            property bool _paintPending: false
             readonly property int maxInternalW: 1280
-            readonly property int effectiveTargetW: Math.min((root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11) ? 860 : maxInternalW, Math.max(320, root.renderResW))
+            readonly property int effectiveTargetW: Math.min((!root.gpuShaderEnabled && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11) ? 860 : maxInternalW, Math.max(320, root.renderResW))
             readonly property real stageW: Math.max(64, stageViewport.width)
             readonly property real stageH: Math.max(48, stageViewport.height)
             readonly property real renderScale: stageW > effectiveTargetW ? (effectiveTargetW / Math.max(1, stageW)) : 1.0
@@ -4622,7 +4975,14 @@ FocusScope {
             visible: root.stageMode === "visualiser" && root.hasActiveCpuLayers
             renderTarget: Canvas.Image
             renderStrategy: Canvas.Threaded
-            onImageLoaded: requestPaint()
+            onImageLoaded: {
+                if (!root.gpuShaderEnabled && root.hasActiveCpuLayers) {
+                    requestPaint()
+                }
+            }
+            onPainted: {
+                vizCanvas._paintPending = false
+            }
 
             onPaint: {
                 var ctx = getContext("2d")
@@ -6461,7 +6821,7 @@ FocusScope {
 
                                     Text {
                                         text: (root.photoActiveStem ? ("Photo: " + root.photoActiveStem + " · ") : "")
-                                            + "Cat: " + (PhotoMotion.PHOTO_CATEGORY_LABELS[root.photoActiveCategory] || root.photoActiveCategory)
+                                            + "Cat: " + PhotoMotion.formatPhotoCategoryLabel(root.photoActiveCategory)
                                             + " · Processed: " + root.photoTotalProcessed + " (×16)"
                                         textFormat: Text.PlainText
                                         font.family: "JetBrainsMono Nerd Font"
@@ -6471,7 +6831,7 @@ FocusScope {
                                     }
                                 }
 
-                                // Row 2: Photo Stepping, 1-Minute Hold, Pool Mode (;), Plane Shear (:), FX Auto-Random (~) + Import Custom Folder
+                                // Row 2: Photo Stepping, 1-Minute Hold, Pool Mode (;), Plane Shear (:), FX Auto-Random (~) + Scan & Import All Folders
                                 Flow {
                                     Layout.fillWidth: true
                                     spacing: 5
@@ -6556,7 +6916,20 @@ FocusScope {
                                     }
 
                                     VizPillButton {
-                                        text: root.showCustomPhotoImportBar ? "󰋺 Custom Import ▲" : "󰋺 Import Custom Folder ▼"
+                                        text: root.photoBusy ? "󰑓 Scanning & Importing..." : "󰋺 Import Photos (Scan All Folders)"
+                                        active: !root.photoBusy
+                                        pillHeight: 22
+                                        horizontalPad: 8
+                                        onClicked: {
+                                            root.requestPhotoImport("")
+                                        }
+                                        onRightClicked: {
+                                            root.showCustomPhotoImportBar = !root.showCustomPhotoImportBar
+                                        }
+                                    }
+
+                                    VizPillButton {
+                                        text: root.showCustomPhotoImportBar ? "󰉋 External Folder ▲" : "󰉋 External Folder ▼"
                                         active: root.showCustomPhotoImportBar
                                         pillHeight: 22
                                         horizontalPad: 7
@@ -6607,7 +6980,7 @@ FocusScope {
                                     }
                                 }
 
-                                // Optional Custom Folder Import Bar (copies & processes into gitignored custom/ folder)
+                                // Optional External Folder Import Bar (scans all library folders plus optional external directory)
                                 Rectangle {
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: customImportRow.implicitHeight + 12
@@ -6646,7 +7019,7 @@ FocusScope {
                                                 anchors.leftMargin: 6
                                                 anchors.rightMargin: 6
                                                 verticalAlignment: TextInput.AlignVCenter
-                                                text: root.photoCustomDir || "~/Pictures"
+                                                text: root.photoCustomDir || "~/Pictures/bandarchy"
                                                 font.family: "JetBrainsMono Nerd Font"
                                                 font.pixelSize: 10
                                                 color: root.foregroundColour
@@ -6659,7 +7032,7 @@ FocusScope {
                                         }
 
                                         VizPillButton {
-                                            text: root.photoBusy ? "󰑓 Importing..." : "󰋺 Import & Build 16 Variants"
+                                            text: root.photoBusy ? "󰑓 Scanning..." : "󰋺 Scan & Import All Folders"
                                             active: !root.photoBusy
                                             pillHeight: 24
                                             horizontalPad: 8
@@ -6670,37 +7043,118 @@ FocusScope {
                                     }
                                 }
 
-                                // Row 3: Category Filter Pills (All · Brutalist · Architecture · Nature · Objects · Cyberpunk · Characters · Custom)
-                                Flow {
+                                // Row 3: On-Demand Category Dropdown Selector (dynamically discovered from processed/<category>/ folders)
+                                ColumnLayout {
+                                    id: photoCategoryDropdownSection
                                     Layout.fillWidth: true
-                                    spacing: 5
+                                    spacing: 4
 
-                                    Text {
-                                        text: "Categories ({ / }):"
-                                        textFormat: Text.PlainText
-                                        font.family: "JetBrainsMono Nerd Font"
-                                        font.pixelSize: 9
-                                        font.bold: true
-                                        color: root.foregroundColour
-                                        height: 22
-                                        verticalAlignment: Text.AlignVCenter
-                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
 
-                                    Repeater {
-                                        model: PhotoMotion.DEFAULT_PHOTO_CATEGORIES.length
-                                        delegate: VizPillButton {
-                                            required property int index
-                                            readonly property string catKey: PhotoMotion.DEFAULT_PHOTO_CATEGORIES[index]
-                                            readonly property string catLabel: PhotoMotion.PHOTO_CATEGORY_LABELS[catKey] || catKey
-                                            readonly property int catCount: (root.photoCategoryCounts && root.photoCategoryCounts[catKey] !== undefined)
-                                                ? Number(root.photoCategoryCounts[catKey])
-                                                : 0
-                                            text: catLabel + " (" + catCount + ")"
-                                            active: root.photoActiveCategory === catKey
+                                        Text {
+                                            text: "Category ({ / }):"
+                                            textFormat: Text.PlainText
+                                            font.family: "JetBrainsMono Nerd Font"
+                                            font.pixelSize: 9
+                                            font.bold: true
+                                            color: root.foregroundColour
+                                        }
+
+                                        VizPillButton {
+                                            text: "◀ {"
                                             pillHeight: 22
                                             fontSize: 9
                                             horizontalPad: 7
-                                            onClicked: root.selectPhotoCategory(catKey)
+                                            onClicked: root.stepPhotoCategoryByKey(-1)
+                                        }
+
+                                        VizPillButton {
+                                            id: photoCategoryDropdownButton
+                                            readonly property var availableCats: (root.photoCategories && root.photoCategories.length > 0)
+                                                ? root.photoCategories
+                                                : PhotoMotion.DEFAULT_PHOTO_CATEGORIES
+                                            readonly property string activeKey: root.photoActiveCategory || "all"
+                                            readonly property string activeLabel: PhotoMotion.formatPhotoCategoryLabel(activeKey)
+                                            readonly property int activeCount: (root.photoCategoryCounts && root.photoCategoryCounts[activeKey] !== undefined)
+                                                ? Number(root.photoCategoryCounts[activeKey])
+                                                : 0
+                                            text: "󰉋 " + activeLabel + " (" + activeCount + ")  " + (root.showPhotoCategoryDropdown ? "▲" : "▼")
+                                            active: root.showPhotoCategoryDropdown || activeKey !== "all"
+                                            pillHeight: 22
+                                            fontSize: 9
+                                            horizontalPad: 10
+                                            onClicked: {
+                                                if (!root.showPhotoCategoryDropdown) {
+                                                    root.requestPhotoRefreshStatus()
+                                                }
+                                                root.showPhotoCategoryDropdown = !root.showPhotoCategoryDropdown
+                                            }
+                                        }
+
+                                        VizPillButton {
+                                            text: "} ▶"
+                                            pillHeight: 22
+                                            fontSize: 9
+                                            horizontalPad: 7
+                                            onClicked: root.stepPhotoCategoryByKey(1)
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: {
+                                                var cats = (root.photoCategories && root.photoCategories.length > 0)
+                                                    ? root.photoCategories
+                                                    : PhotoMotion.DEFAULT_PHOTO_CATEGORIES
+                                                var folderCount = Math.max(0, cats.length - (cats.indexOf("all") >= 0 ? 1 : 0))
+                                                return folderCount + " processed folders discovered"
+                                            }
+                                            textFormat: Text.PlainText
+                                            font.family: "JetBrainsMono Nerd Font"
+                                            font.pixelSize: 9
+                                            color: Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.72)
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+
+                                    // On-demand dropdown menu panel listing all dynamically discovered folders in processed/
+                                    Rectangle {
+                                        id: photoCategoryDropdownMenu
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: photoCategoryDropdownFlow.implicitHeight + 12
+                                        visible: root.showPhotoCategoryDropdown
+                                        radius: 5
+                                        color: Qt.rgba(0, 0, 0, 0.48)
+                                        border.width: 1
+                                        border.color: Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.45)
+
+                                        Flow {
+                                            id: photoCategoryDropdownFlow
+                                            anchors.fill: parent
+                                            anchors.margins: 6
+                                            spacing: 5
+
+                                            Repeater {
+                                                model: (root.photoCategories && root.photoCategories.length > 0)
+                                                    ? root.photoCategories
+                                                    : PhotoMotion.DEFAULT_PHOTO_CATEGORIES
+                                                delegate: VizPillButton {
+                                                    required property int index
+                                                    required property var modelData
+                                                    readonly property string catKey: String(modelData || "all")
+                                                    readonly property string catLabel: PhotoMotion.formatPhotoCategoryLabel(catKey)
+                                                    readonly property int catCount: (root.photoCategoryCounts && root.photoCategoryCounts[catKey] !== undefined)
+                                                        ? Number(root.photoCategoryCounts[catKey])
+                                                        : 0
+                                                    text: catLabel + " (" + catCount + ")"
+                                                    active: root.photoActiveCategory === catKey
+                                                    pillHeight: 22
+                                                    fontSize: 9
+                                                    horizontalPad: 8
+                                                    onClicked: root.selectPhotoCategory(catKey)
+                                                }
+                                            }
                                         }
                                     }
                                 }

@@ -1774,10 +1774,15 @@ console.log('OK');
         self.assertIn("function ensurePhotoLayerActive()", viz_src)
         self.assertIn("property bool photoAutoMotionEvents:", viz_src)
         self.assertIn("function triggerRandomPhotoMotionEvent()", viz_src)
+        self.assertIn("id: photoCategoryDropdownButton", viz_src)
+        self.assertIn("id: photoCategoryDropdownMenu", viz_src)
+        self.assertIn("property bool showPhotoCategoryDropdown:", viz_src)
+        self.assertIn("PhotoMotion.formatPhotoCategoryLabel(", viz_src)
+        self.assertIn("Import Photos (Scan All Folders)", viz_src)
         self.assertIn('"characters"', viz_src)
         self.assertIn('"characters"', svc_src)
 
-        # 3. Verify CLI photo-status, photo-import (into custom/ category), and photo-pick subcommands
+        # 3. Verify CLI photo-status, photo-import (into custom/ and arbitrary new folders), and photo-pick subcommands
         st_res = self.run_cli("photo-status", "--init-dirs")
         self.assertTrue(st_res["ok"])
         self.assertIn("custom", st_res["categories"])
@@ -1794,10 +1799,25 @@ console.log('OK');
                 img.putpixel((x, y), (240, 45, 160) if (x + y) % 3 == 0 else (235, 240, 250))
         img.save(test_img_path)
 
+        # Also create a brand-new non-standard source folder directly inside the library root (`my_new_set/`)
+        # to verify that a full library import (`photo-import`) discovers it, creates `processed/my_new_set/`,
+        # processes its image into 16 variants, and exposes `my_new_set` ("My New Set") in `discoveredCategories`.
+        pics_bandarchy_root = st_res["root_dir"]
+        new_folder_dir = os.path.join(pics_bandarchy_root, "my_new_set")
+        os.makedirs(new_folder_dir, exist_ok=True)
+        new_folder_img = os.path.join(new_folder_dir, "dynamic_set_sample.png")
+        img2 = Image.new("RGB", (96, 64), (12, 30, 42))
+        for y in range(10, 54):
+            for x in range(18, 78):
+                img2.putpixel((x, y), (56, 189, 248) if (x + y) % 2 == 0 else (250, 204, 21))
+        img2.save(new_folder_img)
+
         imp_res = self.run_cli("photo-import", custom_src_dir, "--max-size", "96")
         self.assertTrue(imp_res["ok"])
-        self.assertGreaterEqual(imp_res["totalProcessed"], 1)
+        self.assertGreaterEqual(imp_res["totalProcessed"], 32)
         self.assertEqual(len(imp_res["activeVariants"]), 16)
+        self.assertIn("my_new_set", imp_res["discoveredCategories"])
+        self.assertEqual(imp_res["categoryLabels"].get("my_new_set"), "My New Set")
 
         pick_res = self.run_cli("photo-pick", "--category", "custom")
         self.assertTrue(pick_res["ok"])
@@ -1806,6 +1826,28 @@ console.log('OK');
         self.assertIn("sameEffectPeers", pick_res)
         self.assertIn("sameEffectByVariant", pick_res)
         self.assertIn("randomPoolPeers", pick_res)
+
+        pick_dyn = self.run_cli("photo-pick", "--category", "my_new_set")
+        self.assertTrue(pick_dyn["ok"])
+        self.assertEqual(pick_dyn["category"], "my_new_set")
+        self.assertEqual(pick_dyn["sourceStem"], "dynamic_set_sample")
+        self.assertEqual(len(pick_dyn["variants"]), 16)
+
+        # Verify moving processed PNG variants from processed/custom/ into a newly created processed/hitler/
+        # subfolder discovers 'hitler' ("Hitler") and does NOT re-create them in processed/custom/ on re-import
+        proc_custom_dir = os.path.join(pics_bandarchy_root, "processed", "custom")
+        proc_hitler_dir = os.path.join(pics_bandarchy_root, "processed", "hitler")
+        os.makedirs(proc_hitler_dir, exist_ok=True)
+        for fn in list(os.listdir(proc_custom_dir)):
+            if fn.endswith(".png"):
+                shutil.move(os.path.join(proc_custom_dir, fn), os.path.join(proc_hitler_dir, fn))
+        reimp_res = self.run_cli("photo-import", "--max-size", "96")
+        self.assertTrue(reimp_res["ok"])
+        self.assertIn("hitler", reimp_res["discoveredCategories"])
+        self.assertEqual(reimp_res["categoryLabels"].get("hitler"), "Hitler")
+        self.assertEqual(reimp_res["categoryCounts"].get("hitler"), 1)
+        self.assertEqual(reimp_res["categoryCounts"].get("custom"), 0)
+        self.assertEqual([f for f in os.listdir(proc_custom_dir) if f.endswith(".png")], [])
 
         # 4. Verify in Node.js:
         #    (a) Layer 6 (`drawLayer3AlbumArt`) NEVER calls fillText or strokeText when using Art, Braille, or Block
@@ -1884,9 +1926,9 @@ for (const combo of pureCellCombos) {
     }
 }
 
-// Now verify PhotoMotionEngine.js (25 modes, 16 variants, [, ], H, {, }, characters, Auto Photo-Motion)
+// Now verify PhotoMotionEngine.js (25 modes, 16 variants, [, ], H, {, }, characters, dynamic formatPhotoCategoryLabel, Auto Photo-Motion)
 let photoCode = fs.readFileSync('PhotoMotionEngine.js', 'utf8').replace(/^\.pragma library\s*/m, '');
-const PhotoMotion = (new Function(photoCode + '; return { DEFAULT_PHOTO_CATEGORIES, PHOTO_CATEGORY_LABELS, PHOTO_MOTION_MODES, STAGE1_EFFECT_IDS, PHOTO_POOL_MODES, createPhotoMotionState, stepPhotoMotionState, renderPhotoMotionLayer, triggerPhotoHoldOneMinute, stepPhotoImageHistory, stepPhotoCategory, triggerRandomPhotoMotionEvent, drawTextured3DQuad, render3DPhotoCube, setActiveQuadShear, togglePhotoPlaneShear, cyclePhotoPoolMode, togglePhotoAutoMotionEvents, togglePhotoEffectAutoRandomise, togglePhotoRandomiseMotionControls, captureUserPhotoMotionSettings, restoreUserPhotoMotionSettings, randomiseMotionControlsForEvent, stepPhotoMotionMode, cyclePhotoMotionMode, selectPhotoMotionMode, resolvePoolVariantImagesMap, resolveMultiPhotoPool, rollSnapshotFocalSection, getVariantSectionOffset };'))();
+const PhotoMotion = (new Function(photoCode + '; return { DEFAULT_PHOTO_CATEGORIES, PHOTO_CATEGORY_LABELS, formatPhotoCategoryLabel, PHOTO_MOTION_MODES, STAGE1_EFFECT_IDS, PHOTO_POOL_MODES, createPhotoMotionState, stepPhotoMotionState, renderPhotoMotionLayer, triggerPhotoHoldOneMinute, stepPhotoImageHistory, stepPhotoCategory, triggerRandomPhotoMotionEvent, drawTextured3DQuad, render3DPhotoCube, setActiveQuadShear, togglePhotoPlaneShear, cyclePhotoPoolMode, togglePhotoAutoMotionEvents, togglePhotoEffectAutoRandomise, togglePhotoRandomiseMotionControls, captureUserPhotoMotionSettings, restoreUserPhotoMotionSettings, randomiseMotionControlsForEvent, stepPhotoMotionMode, cyclePhotoMotionMode, selectPhotoMotionMode, resolvePoolVariantImagesMap, resolveMultiPhotoPool, rollSnapshotFocalSection, getVariantSectionOffset };'))();
 
 if (PhotoMotion.PHOTO_MOTION_MODES.length !== 25) {
     throw new Error('Expected 25 PHOTO_MOTION_MODES, got ' + PhotoMotion.PHOTO_MOTION_MODES.length);
@@ -1896,6 +1938,9 @@ if (PhotoMotion.STAGE1_EFFECT_IDS.length !== 16) {
 }
 if (!PhotoMotion.DEFAULT_PHOTO_CATEGORIES.includes('characters') || PhotoMotion.PHOTO_CATEGORY_LABELS.characters !== 'Characters') {
     throw new Error('Expected characters category in DEFAULT_PHOTO_CATEGORIES and PHOTO_CATEGORY_LABELS');
+}
+if (PhotoMotion.formatPhotoCategoryLabel('my_new_set') !== 'My New Set' || PhotoMotion.formatPhotoCategoryLabel('hitler') !== 'Hitler') {
+    throw new Error('Expected formatPhotoCategoryLabel to title-case arbitrary dynamic folder names');
 }
 
 const pState = PhotoMotion.createPhotoMotionState();
@@ -2185,8 +2230,298 @@ console.log('OK');
             res = subprocess.run(["node", "-e", node_script], cwd=REPO_ROOT, capture_output=True, text=True, timeout=20)
             self.assertEqual(res.returncode, 0, f"Node test_16 failed: {res.stderr}")
 
+    def test_19_phase1_gpu_hardware_migration_l1_worlds_and_photo_motion(self):
+        """Verify Phase 1 GPU hardware graphics migration for L1 Worlds (0..10) & L1 Photo-Motion (11)."""
+        import pathlib
+        repo = pathlib.Path(REPO_ROOT)
+        photo_frag = repo / "share" / "photo_motion.frag"
+        photo_qsb = repo / "share" / "photo_motion.frag.qsb"
+        psych_frag = repo / "share" / "psychedelic.frag"
+        psych_qsb = repo / "share" / "psychedelic.frag.qsb"
+
+        self.assertTrue(photo_frag.is_file(), "Missing share/photo_motion.frag")
+        self.assertTrue(photo_qsb.is_file(), "Missing compiled share/photo_motion.frag.qsb")
+        self.assertGreater(photo_qsb.stat().st_size, 10240, "share/photo_motion.frag.qsb is unexpectedly small")
+        self.assertTrue(psych_frag.is_file(), "Missing share/psychedelic.frag")
+        self.assertTrue(psych_qsb.is_file(), "Missing compiled share/psychedelic.frag.qsb")
+        self.assertGreater(psych_qsb.stat().st_size, 10240, "share/psychedelic.frag.qsb is unexpectedly small")
+
+        photo_frag_src = photo_frag.read_text(encoding="utf-8")
+        for sampler in ("texPrimary", "texSecondary", "texPrev", "texPeer"):
+            self.assertIn(f"uniform sampler2D {sampler};", photo_frag_src)
+        required_photo_uniforms = (
+            "uMotionMode",
+            "uPanX", "uPanY", "uZoom",
+            "uMacroSlide", "uMacroScale", "uMacroRoll", "uPitch", "uYaw", "uRoll", "uPlaneShear",
+            "uPhotoOpacity", "uBlackOpacity", "uMidOpacity", "uWhiteOpacity", "uColourSnatchOpacity", "uPaletteBloom",
+            "uVariantMix", "uSnapshotMix", "uPoolMode",
+            "uCol0", "uCol1", "uCol2", "uBgCol",
+        )
+        for u_name in required_photo_uniforms:
+            self.assertIn(u_name, photo_frag_src, f"Missing uniform {u_name} in share/photo_motion.frag")
+        for m_idx in range(24):
+            self.assertIn(f"mode == {m_idx}", photo_frag_src)
+        for m_code in (f"M{i:02d}:" for i in range(1, 26)):
+            self.assertIn(m_code, photo_frag_src, f"Missing authentic mode {m_code} in share/photo_motion.frag")
+
+        psych_frag_src = psych_frag.read_text(encoding="utf-8")
+        for u_name in ("uL1Speed", "uL1Density", "uL1Direction"):
+            self.assertIn(f"float {u_name};", psych_frag_src)
+        for w_idx in range(10):
+            self.assertIn(f"l1m == {w_idx}", psych_frag_src)
+        for world_marker in (
+            "MilkDrop Liquid Feedback Warp",
+            "G-Force Polar FlowField",
+            "Cthugha Rave Flame",
+            "Relativistic Starfield",
+            "Battlezone 1980",
+            "Death Star Trench",
+            "BlackHole",
+            "TRON 1982 Grid",
+            "Outrun Canyon",
+            "Demoscene Polygon Tunnel",
+            "Tempest & Asteroids",
+        ):
+            self.assertIn(world_marker, psych_frag_src, f"Missing L1 World {world_marker} in share/psychedelic.frag")
+        self.assertNotIn("uL1Time * l1Dir * max(0.05, l1Spd)", psych_frag_src)
+
+        viz_src = (repo / "Visualiser.qml").read_text(encoding="utf-8")
+        self.assertIn("id: gpuPhotoStage", viz_src)
+        self.assertIn('fragmentShader: Qt.resolvedUrl("share/photo_motion.frag.qsb")', viz_src)
+        for tex_id in ("photoTexPrimary", "photoTexSecondary", "photoTexPrev", "photoTexPeer"):
+            self.assertIn(f"id: {tex_id}", viz_src)
+        for u_name in required_photo_uniforms:
+            self.assertIn(f"property ", viz_src)
+            self.assertIn(u_name, viz_src, f"Missing uniform binding {u_name} in Visualiser.qml")
+        for bogus_prop in (
+            "pSt.macroPanX",
+            "pSt.macroTiltX",
+            "pSt.morphCrossfade",
+            "pSt.sectorOpacityMultipliers",
+            "stepInfo.effectiveActivity",
+            "stepInfo.effectiveWarp ",
+            "stepInfo.effectiveWarp!",
+        ):
+            self.assertNotIn(bogus_prop, viz_src, f"Bogus non-existent property {bogus_prop} found in Visualiser.qml")
+        self.assertIn("stepInfo.effectiveMotionActivity", viz_src)
+        self.assertIn("stepInfo.effectiveWarpIntensity", viz_src)
+        self.assertIn("onPhotoPreviousVariantsChanged:", viz_src)
+        self.assertIn("if (uPoolMode == 0 || uHasSecondary == 0)", photo_frag_src)
+        self.assertIn("bool isPinned = (uVariantIndex == uSecondaryVariantIndex);", photo_frag_src)
+        self.assertIn("sin(clamp(uVariantMix, 0.0, 1.0) * PI)", photo_frag_src)
+        self.assertIn("id: photoAutoMotionTimer", viz_src)
+        self.assertIn("Math.max(3000, Math.round((Number(root.photoEffectChangeIntervalSec) || 10.0) * 1000))", viz_src)
+        self.assertIn("(root.photoAutoMotionEvents || root.photoRandomiseMotionControls)", viz_src)
+        self.assertIn("property bool _paintPending: false", viz_src)
+        self.assertIn("(!root.gpuShaderEnabled && root.layer1FieldEnabled)", viz_src)
+
+        node_script = r"""
+const fs = require('fs');
+const vm = require('vm');
+let code = fs.readFileSync('PsychedelicEngine.js', 'utf8').replace(/^\.pragma\s+library\s*$/m, '');
+vm.runInThisContext(code);
+
+function makeCtx() {
+    return {
+        fillCount: 0,
+        strokeCount: 0,
+        clearCount: 0,
+        fillStyle: '',
+        strokeStyle: '',
+        lineWidth: 1,
+        globalAlpha: 1,
+        globalCompositeOperation: 'source-over',
+        font: '',
+        lineCap: 'butt',
+        lineJoin: 'miter',
+        save() {},
+        restore() {},
+        beginPath() {},
+        closePath() {},
+        moveTo() {},
+        lineTo() {},
+        bezierCurveTo() {},
+        quadraticCurveTo() {},
+        arc() {},
+        rect() {},
+        clip() {},
+        fill() { this.fillCount++; },
+        stroke() { this.strokeCount++; },
+        fillRect() { this.fillCount++; },
+        strokeRect() { this.strokeCount++; },
+        clearRect() { this.clearCount++; },
+        fillText() { this.fillCount++; },
+        strokeText() { this.strokeCount++; },
+        translate() {},
+        rotate() {},
+        scale() {},
+        transform() {},
+        setTransform() {},
+        createLinearGradient() { return { addColorStop() {} }; },
+        createRadialGradient() { return { addColorStop() {} }; },
+        drawImage() {}
+    };
+}
+
+const bands = new Array(64).fill(0.45);
+const theme = { background: '#07090e', foreground: '#e2e8f0', accent: '#6ee7b7', urgent: '#f472b6' };
+
+for (let m = 0; m < 12; m++) {
+    // 1. When gpuShaderEnabled & gpuL1Active are true and only L1 Field is active, CPU canvas draws 0 fills/strokes
+    const stGpu = createState();
+    const cfgGpu = normaliseConfig({
+        gpuShaderEnabled: true,
+        gpuL1Active: true,
+        layer1Enabled: true,
+        layer1FieldEnabled: true,
+        layer1Mode: m,
+        layer1EqEnabled: false,
+        layer1ShapesEnabled: false,
+        layer2Enabled: false,
+        layer2VizEnabled: false,
+        layer2TracersEnabled: false,
+        layer3Enabled: false
+    }, 0, []);
+    stepState(stGpu, bands, true, cfgGpu, 0.016);
+    const ctxGpu = makeCtx();
+    renderFrame(ctxGpu, 640, 360, stGpu, 0, theme, [], [], [], cfgGpu, null);
+    if (ctxGpu.fillCount !== 0 || ctxGpu.strokeCount !== 0 || ctxGpu.clearCount === 0) {
+        throw new Error(`Expected 0 CPU fills/strokes when gpuL1Active=true for mode ${m}, got fill=${ctxGpu.fillCount} stroke=${ctxGpu.strokeCount} clear=${ctxGpu.clearCount}`);
+    }
+
+    // 2. When gpuShaderEnabled is false, CPU fallback still renders every L1 mode (0..11)
+    const stCpu = createState();
+    const cfgCpu = normaliseConfig({
+        gpuShaderEnabled: false,
+        gpuL1Active: false,
+        layer1Enabled: true,
+        layer1FieldEnabled: true,
+        layer1Mode: m,
+        layer1EqEnabled: false,
+        layer1ShapesEnabled: false,
+        layer2Enabled: false,
+        layer2VizEnabled: false,
+        layer2TracersEnabled: false,
+        layer3Enabled: false
+    }, 0, []);
+    stepState(stCpu, bands, true, cfgCpu, 0.016);
+    const ctxCpu = makeCtx();
+    renderFrame(ctxCpu, 640, 360, stCpu, 0, theme, [], [], [], cfgCpu, null);
+    if (ctxCpu.fillCount + ctxCpu.strokeCount <= 1) {
+        throw new Error(`Expected CPU fallback draws when gpuShaderEnabled=false for mode ${m}`);
+    }
+}
+
+// 3. Extract and execute _toPhotoFileUrl, _firstAvailableFileUrl, and syncGpuPhotoTextures from Visualiser.qml
+//    against PhotoMotionEngine.js to verify stable texture URLs across strobing frames and pool modes.
+const pmCode = fs.readFileSync('PhotoMotionEngine.js', 'utf8').replace(/^\.pragma\s+library\s*$/m, '');
+const PhotoMotion = {};
+vm.runInNewContext(pmCode, PhotoMotion);
+
+const vizSrc = fs.readFileSync('Visualiser.qml', 'utf8');
+const fnToUrl = vizSrc.match(/function _toPhotoFileUrl\([^)]*\)\s*\{[\s\S]*?\n    \}/)[0];
+const fnFirstUrl = vizSrc.match(/function _firstAvailableFileUrl\([^)]*\)\s*\{[\s\S]*?\n    \}/)[0];
+const fnSyncTex = vizSrc.match(/function syncGpuPhotoTextures\([^)]*\)\s*\{[\s\S]*?\n    \}/)[0];
+
+// Verify frameAnim does NOT call root.syncGpuPhotoTextures()
+const frameAnimBlock = vizSrc.slice(vizSrc.indexOf('FrameAnimation {'), vizSrc.indexOf('id: photoAutoMotionTimer'));
+if (frameAnimBlock.includes('syncGpuPhotoTextures()')) {
+    throw new Error('frameAnim must NOT call syncGpuPhotoTextures() on every frame');
+}
+
+const activeVars = {};
+const prevVars = {};
+PhotoMotion.STAGE1_EFFECT_IDS.forEach((id, idx) => {
+    activeVars[id] = `/tmp/photoA_${idx}.png`;
+    prevVars[id] = `/tmp/photoPrev_${idx}.png`;
+});
+const samePeers = {
+    [PhotoMotion.STAGE1_EFFECT_IDS[0]]: '/tmp/photoA_0.png',
+    [PhotoMotion.STAGE1_EFFECT_IDS[1]]: '/tmp/peerSame_1.png'
+};
+const randPeers = {
+    [PhotoMotion.STAGE1_EFFECT_IDS[0]]: '/tmp/peerRand_0.png'
+};
+
+const rootMock = {
+    photoPinnedVariant: -1,
+    photoPoolMode: 0,
+    photoActiveVariants: activeVars,
+    photoPreviousVariants: prevVars,
+    photoSameEffectByVariant: { [PhotoMotion.STAGE1_EFFECT_IDS[0]]: samePeers },
+    photoSameEffectPeers: samePeers,
+    photoRandomPoolPeers: randPeers,
+    photoState: { snapshotCrossfadeProgress: 1.0 },
+    _gpuPhotoUrlPrimary: '',
+    _gpuPhotoUrlSecondary: '',
+    _gpuPhotoUrlPeer: '',
+    _gpuPhotoUrlPrev: ''
+};
+const sandbox = { root: rootMock, PhotoMotion, String, Object };
+vm.runInNewContext(
+    `${fnToUrl}\n${fnFirstUrl}\n${fnSyncTex}\n` +
+    `root._toPhotoFileUrl = _toPhotoFileUrl; root._firstAvailableFileUrl = _firstAvailableFileUrl; root.syncGpuPhotoTextures = syncGpuPhotoTextures;`,
+    sandbox
+);
+
+rootMock.syncGpuPhotoTextures();
+if (rootMock._gpuPhotoUrlPrimary !== 'file:///tmp/photoA_0.png') {
+    throw new Error('Expected primary URL file:///tmp/photoA_0.png, got ' + rootMock._gpuPhotoUrlPrimary);
+}
+if (rootMock._gpuPhotoUrlSecondary !== 'file:///tmp/photoA_5.png') {
+    throw new Error('Expected secondary URL file:///tmp/photoA_5.png, got ' + rootMock._gpuPhotoUrlSecondary);
+}
+if (rootMock._gpuPhotoUrlPrev !== 'file:///tmp/photoPrev_0.png') {
+    throw new Error('Expected prev URL file:///tmp/photoPrev_0.png, got ' + rootMock._gpuPhotoUrlPrev);
+}
+
+// Pool Mode 1 must pick a peer differing from pUrl
+rootMock.photoPoolMode = 1;
+rootMock.syncGpuPhotoTextures();
+if (rootMock._gpuPhotoUrlPeer !== 'file:///tmp/peerSame_1.png') {
+    throw new Error('Pool mode 1 must pick peer differing from pUrl, got ' + rootMock._gpuPhotoUrlPeer);
+}
+
+// Pool Mode 2 must pick a random pool peer differing from pUrl
+rootMock.photoPoolMode = 2;
+rootMock.syncGpuPhotoTextures();
+if (rootMock._gpuPhotoUrlPeer !== 'file:///tmp/peerRand_0.png') {
+    throw new Error('Pool mode 2 must pick random pool peer differing from pUrl, got ' + rootMock._gpuPhotoUrlPeer);
+}
+
+// Rapid step / external photo change: when photoActiveVariants switches to photoB while photoPreviousVariants is empty,
+// _gpuPhotoUrlPrev must preserve the outgoing _gpuPhotoUrlPrimary ('file:///tmp/photoA_0.png') and reset snapshotCrossfadeProgress to 0.0
+const nextVars = {};
+PhotoMotion.STAGE1_EFFECT_IDS.forEach((id, idx) => {
+    nextVars[id] = `/tmp/photoB_${idx}.png`;
+});
+rootMock.photoPreviousVariants = {};
+rootMock.photoActiveVariants = nextVars;
+rootMock.photoState.snapshotCrossfadeProgress = 0.85;
+rootMock.syncGpuPhotoTextures();
+if (rootMock._gpuPhotoUrlPrimary !== 'file:///tmp/photoB_0.png') {
+    throw new Error('Expected primary URL file:///tmp/photoB_0.png, got ' + rootMock._gpuPhotoUrlPrimary);
+}
+if (rootMock._gpuPhotoUrlPrev !== 'file:///tmp/photoA_0.png') {
+    throw new Error('Expected rapid-step prev URL to preserve outgoing primary file:///tmp/photoA_0.png, got ' + rootMock._gpuPhotoUrlPrev);
+}
+if (rootMock.photoState.snapshotCrossfadeProgress !== 0.0) {
+    throw new Error('Expected snapshotCrossfadeProgress to reset to 0.0 on primary URL switch, got ' + rootMock.photoState.snapshotCrossfadeProgress);
+}
+
+// Verify stepPhotoMotionState returns effectiveMotionActivity and effectiveWarpIntensity
+const pSt = PhotoMotion.createPhotoMotionState();
+const sInfo = PhotoMotion.stepPhotoMotionState(pSt, 0.016, { bass: 0.6, mid: 0.5, high: 0.4, beat: 0.8, spectrum: bands });
+if (typeof sInfo.effectiveMotionActivity !== 'number' || typeof sInfo.effectiveWarpIntensity !== 'number') {
+    throw new Error('stepPhotoMotionState must return numeric effectiveMotionActivity and effectiveWarpIntensity');
+}
+
+console.log('OK');
+"""
+        res = subprocess.run(["node", "-e", node_script], cwd=REPO_ROOT, capture_output=True, text=True, timeout=20)
+        self.assertEqual(res.returncode, 0, f"Node test_19 failed: {res.stderr}")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
-
 

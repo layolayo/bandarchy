@@ -51,6 +51,22 @@ var PHOTO_CATEGORY_LABELS = {
     "custom": "Custom"
 }
 
+function formatPhotoCategoryLabel(catSlug) {
+    var s = String(catSlug || "").trim()
+    if (!s || s.toLowerCase() === "all") return "All Categories"
+    var lower = s.toLowerCase()
+    if (PHOTO_CATEGORY_LABELS[lower]) return PHOTO_CATEGORY_LABELS[lower]
+    var parts = s.split(/[_\-\s]+/)
+    var out = []
+    for (var i = 0; i < parts.length; i++) {
+        var w = parts[i]
+        if (w.length > 0) {
+            out.push(w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        }
+    }
+    return out.length > 0 ? out.join(" ") : (s.charAt(0).toUpperCase() + s.slice(1))
+}
+
 // All 16 Stage-1 Stark & Sector Colour-Snatch Effect Prefixes
 var STAGE1_EFFECT_IDS = [
     "01_SinCity_Chroma_Snatch",
@@ -1411,7 +1427,7 @@ function stepPhotoCategory(state, direction, pickNewEntryCallback) {
     state.holdActive = false
     state.holdRemainingSec = 0.0
 
-    var label = PHOTO_CATEGORY_LABELS[nextCat] || (nextCat.charAt(0).toUpperCase() + nextCat.slice(1))
+    var label = formatPhotoCategoryLabel(nextCat)
     var countInfo = (state.categoryCounts && state.categoryCounts[nextCat] !== undefined)
         ? " (" + state.categoryCounts[nextCat] + " photos)"
         : ""

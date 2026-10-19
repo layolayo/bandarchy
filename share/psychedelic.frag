@@ -17,6 +17,9 @@ layout(std140, binding = 0) uniform buf {
     float uL1Enabled;
     float uL1Mode;
     float uL1Dim;
+    float uL1Speed;
+    float uL1Density;
+    float uL1Direction;
     float uL2Enabled;
     float uL2Mode;
     float uL2VizMode;
@@ -446,65 +449,210 @@ void main() {
     if (dir == 0.0) dir = 1.0;
 
     // =========================================================================
-    // LAYER #1: Per-Pixel Smooth GPU Background Field
+    // LAYER #1: Per-Pixel Smooth GPU Background Worlds (Modes 0..10)
     // =========================================================================
     if (uL1Enabled > 0.5) {
-        int l1m = int(floor(uL1Mode + 0.5));
+        int l1m = clamp(int(floor(uL1Mode + 0.5)), 0, 10);
         float l1Bright = clamp(1.0 - uL1Dim, 0.12, 1.0);
+        float l1Spd = clamp(uL1Speed, 0.0, 2.5);
+        float l1Den = clamp(uL1Density, 0.2, 2.5);
+        float l1Dir = (abs(uL1Direction) < 0.05) ? sin(uTime * 0.6) : sign(uL1Direction);
+        // state.l1Time already integrates dt * l1Speed * l1Dir on the engine side;
+        // do not multiply uL1Time by l1Dir * l1Spd again or -1 ("Away") inverts to +1!
+        float l1T = (abs(uL1Time) > 0.0001) ? uL1Time : (uTime * max(0.05, l1Spd) * l1Dir);
         vec2 q = pDrift;
         float rq = length(q);
         float aq = atan(q.y, q.x);
 
         if (l1m == 0) {
-            vec2 tp0 = rot2D(uL1Time * 0.22) * q;
-            float dShape0 = shapeRadius(tp0, 6.0, sin(uL1Time * 0.4) * 0.14, 0.42);
-            float zDepth0 = 0.80 / max(0.04, dShape0);
-            float zPhase0 = zDepth0 - uL1Time * 2.4;
-            float birth0 = smoothstep(0.04, 0.22, dShape0);
-            float ring0 = smoothstep(0.65, 0.96, sin(zPhase0 * TAU * 0.5)) * birth0;
-            float w = sin(rq * 14.0 - uL1Time * 3.2 + sin(aq * 6.0 + uL1Time * 0.9) * (1.0 + uBass * 0.8)) * 0.5 + 0.5;
-            float w2 = sin(rq * 8.0 - uL1Time * 2.1 - cos(aq * 4.0 - uL1Time * 0.7)) * 0.5 + 0.5;
-            vec3 cMix = mix(uCol0.rgb, uCol1.rgb, w2);
-            col += (cMix * pow(w, 1.6) * (0.28 + 0.24 * uBass) + mix(uCol1.rgb, uCol2.rgb, 0.5 + 0.5 * sin(zPhase0 * 0.5)) * ring0 * (0.45 + 0.35 * uBass)) * l1Bright;
-        } else if (l1m == 1) {
-            float spiral = sin(log(max(0.03, rq)) * 7.5 - uL1Time * 2.4 + aq * 4.0 + sin(rq * 6.0 - uL1Time)) * 0.5 + 0.5;
-            float wake = cos(aq * 6.0 - rq * 9.0 + uL1Time * 1.6) * 0.5 + 0.5;
-            vec3 cFlow = mix(uCol1.rgb, uCol2.rgb, wake);
-            col += cFlow * pow(spiral, 1.8) * (0.30 + 0.26 * uMid) * l1Bright;
-        } else if (l1m == 2) {
-            float fy = 1.0 - qt_TexCoord0.y;
-            float wave1 = sin(p.x * 5.5 + uL1Time * 1.8 + sin(fy * 6.0 - uL1Time * 3.0)) * 0.5 + 0.5;
-            float wave2 = sin(p.x * 11.0 - uL1Time * 1.4 + cos(fy * 9.0 - uL1Time * 2.4)) * 0.5 + 0.5;
-            float flameEnv = smoothstep(1.15, 0.0, fy / (0.55 + uBass * 0.45 + wave1 * 0.28));
-            vec3 flameCol = mix(uCol2.rgb, mix(uCol0.rgb, vec3(1.0, 0.92, 0.65), flameEnv * 0.6), wave2);
-            col += flameCol * flameEnv * (0.38 + 0.28 * uBass) * l1Bright;
-        } else if (l1m == 3) {
-            float neb1 = sin(q.x * 3.2 + sin(q.y * 2.8 + uL1Time * 0.7)) * cos(q.y * 3.0 - uL1Time * 0.6) * 0.5 + 0.5;
-            float neb2 = sin(rq * 6.5 - uL1Time * 1.5 + aq * 3.0) * 0.5 + 0.5;
-            float ringGlow = exp(-abs(rq - (0.35 + 0.12 * sin(uL1Time * 0.5))) * 5.5);
-            col += (mix(uCol0.rgb, uCol2.rgb, neb1) * neb2 * 0.24 + uCol1.rgb * ringGlow * 0.32) * l1Bright;
-        } else if (l1m == 4) {
-            // Mode 4: Atari Battlezone Fixed-Horizon Vector Landscape Backing
-            float hy = qt_TexCoord0.y - 0.50;
-            float horizonGlow = exp(-abs(hy) * 28.0) * (0.42 + uBass * 0.28);
-            col += uCol0.rgb * horizonGlow * l1Bright;
-            if (hy > 0.0) {
-                float floorGrad = clamp(hy * 1.9, 0.0, 1.0);
-                col += mix(uCol0.rgb, uCol1.rgb, floorGrad) * (0.06 + 0.06 * uBass) * floorGrad * l1Bright;
+            // Mode 0: MilkDrop Liquid Feedback Warp (1:Warp)
+            vec2 w = q * (1.8 * sqrt(l1Den));
+            for (int i = 0; i < 3; i++) {
+                float fi = float(i) + 1.0;
+                w += vec2(
+                    sin(w.y * (2.6 * fi) + l1T * 1.1 + uBass * 1.4),
+                    cos(w.x * (2.6 * fi) - l1T * 0.9 + uMid * 1.4)
+                ) * (0.30 / fi);
             }
+            float f1 = 0.5 + 0.5 * sin(w.x * 2.5 + w.y * 2.0 + l1T);
+            float f2 = 0.5 + 0.5 * cos(length(w) * (3.5 * l1Den) - l1T * 1.4);
+            float ridge = smoothstep(0.70, 0.98, sin(length(w) * (6.0 * l1Den) - l1T * 2.2));
+            vec3 wCol = mix(uCol0.rgb, uCol1.rgb, f1);
+            wCol = mix(wCol, uCol2.rgb, f2 * 0.72);
+            col += (wCol * (0.30 + 0.32 * uBass) + uCol2.rgb * ridge * (0.28 + 0.30 * uBeat)) * l1Bright;
+        } else if (l1m == 1) {
+            // Mode 1: G-Force Polar FlowField (2:Spiral)
+            float spiralA = aq * floor(4.0 + 2.0 * l1Den) + log(max(0.04, rq)) * (6.5 * l1Den) - l1T * 2.4;
+            float spiralB = aq * floor(3.0 + 2.0 * l1Den) - rq * (9.0 * l1Den) + l1T * 1.8;
+            float s1 = smoothstep(0.35, 0.96, 0.5 + 0.5 * sin(spiralA + sin(rq * 6.0 - l1T) * (1.2 + uBass)));
+            float s2 = smoothstep(0.45, 0.96, 0.5 + 0.5 * cos(spiralB));
+            float coreFade = smoothstep(0.02, 0.16, rq);
+            vec3 gCol = uCol0.rgb * s1 + uCol1.rgb * s2 + uCol2.rgb * (s1 * s2) * 1.25;
+            col += gCol * coreFade * (0.36 + 0.34 * uBass + 0.22 * uBeat) * l1Bright;
+        } else if (l1m == 2) {
+            // Mode 2: Cthugha Rave Flame (3:Flame)
+            vec2 fp = vec2(p.x * (2.2 * sqrt(l1Den)), uv.y * 1.6);
+            float n = sin(fp.x * 3.5 + l1T * 1.5) * 0.35
+                    + sin(fp.x * 7.2 - l1T * 2.6 + uBass * 2.0) * 0.20
+                    + cos((fp.x + fp.y) * (5.0 * l1Den) + l1T * 3.4) * 0.15;
+            float flameH = (0.55 - uv.y * 0.55) + n * (0.45 + 0.35 * uBass);
+            float flameCore = clamp(flameH, 0.0, 1.0);
+            float tongues = smoothstep(0.45, 0.92, sin(fp.x * (9.0 * l1Den) + sin(uv.y * 8.0 + l1T * 4.5) * 1.6));
+            vec3 fCol = mix(uCol0.rgb, uCol1.rgb, clamp(flameCore * 1.3, 0.0, 1.0));
+            fCol = mix(fCol, uCol2.rgb, pow(flameCore, 2.2) * (0.65 + 0.35 * tongues));
+            col += fCol * pow(flameCore, 1.35) * (0.44 + 0.38 * uBass + 0.22 * uBeat) * l1Bright;
+        } else if (l1m == 3) {
+            // Mode 3: Relativistic Starfield (4:Stars)
+            vec3 starAcc = vec3(0.0);
+            for (int layer = 0; layer < 3; layer++) {
+                float fl = float(layer);
+                float zFract = fract(fl * 0.333 + l1T * 0.28);
+                float scale = mix(18.0 * l1Den, 3.2 * l1Den, zFract);
+                vec2 sUV = rot2D(fl * 0.8 + l1T * 0.05) * q * scale;
+                vec2 cell = floor(sUV);
+                vec2 local = fract(sUV) - 0.5;
+                vec2 h = hash2(cell + fl * 37.0);
+                vec2 offset = (h - 0.5) * 0.55;
+                float d = length(local - offset);
+                float fade = smoothstep(0.0, 0.2, zFract) * smoothstep(1.0, 0.78, zFract);
+                float spark = exp(-d * (26.0 - 10.0 * uBeat)) * fade;
+                vec3 sCol = (layer == 0) ? uCol0.rgb : ((layer == 1) ? uCol1.rgb : uCol2.rgb);
+                starAcc += mix(sCol, vec3(1.0), 0.45) * spark;
+            }
+            col += starAcc * (0.75 + 0.45 * uBass) * l1Bright;
+        } else if (l1m == 4) {
+            // Mode 4: Battlezone 1980 — Classic Atari Green/Red Vector Horizon, Volcanoes & Radar Grid
+            vec3 bzGreen = vec3(0.08, 1.0, 0.28);
+            vec3 bzRed = vec3(1.0, 0.16, 0.16);
+            float hy = qt_TexCoord0.y - 0.50;
+            float mtnH = (0.06 + 0.05 * sin(p.x * 3.8 + l1T * 0.25) + 0.035 * abs(cos(p.x * 8.2 - l1T * 0.12)));
+            float mtnLine = exp(-abs(hy + mtnH) * 95.0);
+            float horLine = exp(-abs(hy) * 110.0);
+            float gridVal = 0.0;
+            if (hy > 0.002) {
+                float z = 0.20 / max(0.004, hy);
+                float gx = p.x * z * (2.6 * l1Den) + l1T * 0.5;
+                float gz = z * (2.2 * l1Den) - l1T * 2.5;
+                gridVal = max(smoothstep(0.91, 0.99, cos(gx * PI)), smoothstep(0.89, 0.99, cos(gz * PI))) * smoothstep(0.003, 0.06, hy);
+            }
+            // Vector wireframe tank / reticle silhouette in foreground
+            vec2 tp = p - vec2(sin(l1T * 0.6) * 0.18, 0.14);
+            float tankBox = exp(-abs(max(abs(tp.x) - 0.09, abs(tp.y) - 0.035)) * 140.0) * step(abs(tp.x), 0.11) * step(abs(tp.y), 0.05);
+            float reticle = exp(-abs(length(p) - 0.18) * 90.0) * step(0.02, abs(p.y));
+            col += (bzGreen * (mtnLine * 0.85 + horLine * 0.95 + gridVal * 0.72 + tankBox * 0.95) + bzRed * reticle * (0.65 + uBeat * 0.45)) * (0.78 + uBass * 0.28) * l1Bright;
         } else if (l1m == 5) {
-            float camAlt = sin(uL1Time * 0.82 + uTime * 0.35) * 0.24 + cos(uL1Time * 0.41 - uTime * 0.28) * 0.10;
-            vec2 tp = p - vec2(drift.x * 0.35, camAlt);
-            float trenchGlow = exp(-abs(tp.x) * 4.2) * (0.18 + 0.16 * uBass);
-            float targetGlow = exp(-length(tp) * 5.8) * (0.28 + 0.24 * uBeat);
-            col += (uCol0.rgb * trenchGlow + uCol1.rgb * targetGlow) * l1Bright;
+            // Mode 5: Death Star Trench — 3D Perspective Trench Corridor, Struts & Laser Streaks
+            vec2 tp = p - vec2(sin(l1T * 0.45) * 0.08, cos(l1T * 0.35) * 0.05);
+            float wallDist = max(abs(tp.x) * 0.82, max(0.0, tp.y) * 1.15);
+            float zTrench = 0.26 / max(0.025, wallDist);
+            float bayRibs = smoothstep(0.86, 0.98, cos((zTrench * 1.8 * l1Den - l1T * 3.6) * PI));
+            float longRails = smoothstep(0.90, 0.99, cos(tp.y / max(0.03, abs(tp.x)) * 6.0));
+            float fade = smoothstep(0.025, 0.12, wallDist);
+            // Targeting computer yellow box & green/red laser streaks
+            float targetBox = exp(-abs(max(abs(tp.x), abs(tp.y)) - fract(-l1T * 0.55) * 0.35) * 95.0);
+            float laserLine = exp(-abs(abs(tp.x) - abs(tp.y) * 0.85) * 120.0) * step(0.0, tp.y) * smoothstep(0.6, 0.98, sin(zTrench * 3.0 + l1T * 12.0));
+            vec3 trenchCol = uCol0.rgb * (bayRibs + longRails * 0.65) * fade * 0.72
+                           + vec3(1.0, 0.88, 0.2) * targetBox * 0.75
+                           + vec3(0.2, 1.0, 0.35) * laserLine * (0.85 + uBeat * 0.4);
+            col += trenchCol * (0.75 + uBass * 0.32) * l1Bright;
+        } else if (l1m == 6) {
+            // Mode 6: BlackHole — Relativistic Accretion Disc, Photon Ring & Event Horizon
+            float ehR = 0.19 + uBass * 0.035;
+            vec2 dp = rot2D(0.28) * q;
+            vec2 discCoord = vec2(dp.x, dp.y * 3.2);
+            float rDisc = length(discCoord);
+            float discBand = smoothstep(ehR * 0.9, ehR * 1.35, rDisc) * exp(-max(0.0, rDisc - ehR * 1.2) * 3.8);
+            float swirl = 0.5 + 0.5 * sin(atan(discCoord.y, discCoord.x) * 5.0 - log(max(0.03, rDisc)) * 9.0 - l1T * 2.4);
+            float doppler = 0.65 + 0.35 * clamp(dp.x / max(0.05, rDisc), -1.0, 1.0);
+            float photonRing = exp(-abs(rq - ehR) * 28.0) * (0.85 + uBeat * 0.45);
+            vec3 accCol = mix(uCol0.rgb, uCol1.rgb, swirl) * discBand * doppler * 1.15 + uCol2.rgb * photonRing;
+            col += accCol * (0.78 + uBass * 0.32) * l1Bright;
+            col *= smoothstep(ehR * 0.70, ehR * 0.96, rq);
+        } else if (l1m == 7) {
+            // Mode 7: TRON 1982 Grid — 3D QuadraScan Game Grid, Light Cycle Jetwalls & Recognizer Arch
+            vec3 tronCyan = vec3(0.12, 0.88, 1.0);
+            vec3 tronOrange = vec3(1.0, 0.62, 0.05);
+            vec3 tronRed = vec3(1.0, 0.12, 0.22);
+            float hy = qt_TexCoord0.y - 0.48;
+            float hGlow = exp(-abs(hy) * 32.0) * 0.65;
+            col += tronCyan * hGlow * l1Bright;
+            if (hy > 0.002) {
+                float z = 0.24 / max(0.004, hy);
+                float gx = p.x * z * (2.4 * l1Den) + sin(l1T * 0.4) * 1.5;
+                float gz = z * (2.0 * l1Den) - l1T * 3.2;
+                float gLine = max(smoothstep(0.90, 0.99, cos(gx * PI)), smoothstep(0.88, 0.99, cos(gz * PI)));
+                float fade = smoothstep(0.002, 0.07, hy);
+                // Dual Light Cycle Jetwall ribbons (Cyan & Orange)
+                float wallC = exp(-abs(gx - 0.8) * 6.5) * step(hy, 0.42) * fade;
+                float wallO = exp(-abs(gx + 0.9) * 6.5) * step(hy, 0.38) * fade;
+                col += (tronCyan * (gLine * 0.72 + wallC * 0.95) + tronOrange * wallO * 0.95) * fade * (0.78 + uBass * 0.32) * l1Bright;
+            } else {
+                // Towering Red Recognizer silhouette above horizon
+                vec2 rp = vec2(p.x - sin(l1T * 0.35) * 0.22, hy + 0.14);
+                float legL = step(abs(rp.x + 0.09), 0.018) * step(abs(rp.y), 0.11);
+                float legR = step(abs(rp.x - 0.09), 0.018) * step(abs(rp.y), 0.11);
+                float bridge = step(abs(rp.x), 0.115) * step(abs(rp.y + 0.075), 0.022);
+                float head = step(abs(rp.x), 0.065) * step(abs(rp.y + 0.125), 0.016);
+                float recMask = clamp(legL + legR + bridge + head, 0.0, 1.0);
+                col += tronRed * recMask * (0.75 + uBeat * 0.35) * l1Bright;
+            }
+        } else if (l1m == 8) {
+            // Mode 8: SynthGrid Outrun Canyon — Segmented Horizon Sun, 3D Wireframe Canyon Mountains & Valley Floor
+            float hy = qt_TexCoord0.y - 0.50;
+            // 1. Segmented Outrun Sun above horizon
+            vec2 sp = vec2(p.x, hy + 0.08);
+            float sunR = 0.22 + uBass * 0.03;
+            float sunDist = length(sp);
+            if (sunDist < sunR && hy < 0.02) {
+                float scanCut = step(0.28, fract((hy + 0.30) * 26.0));
+                vec3 sunCol = mix(uCol2.rgb, uCol0.rgb, clamp((-hy) / max(0.05, sunR), 0.0, 1.0));
+                col += sunCol * scanCut * (0.75 + uBass * 0.30) * l1Bright;
+            }
+            // 2. Canyon Mountain Walls & Neon Valley Grid below horizon
+            if (hy > 0.002) {
+                float z = 0.22 / max(0.004, hy);
+                float gx = p.x * z * (2.5 * l1Den);
+                float gz = z * (2.0 * l1Den) - l1T * 2.8;
+                float gLine = max(smoothstep(0.89, 0.99, cos(gx * PI)), smoothstep(0.88, 0.99, cos(gz * PI)));
+                float canyonElev = max(0.0, abs(p.x) - 0.22) * (1.8 + 0.6 * sin(gz * 0.8));
+                vec3 floorCol = mix(uCol0.rgb, uCol1.rgb, clamp(canyonElev * 1.5, 0.0, 1.0));
+                col += floorCol * gLine * smoothstep(0.002, 0.06, hy) * (0.74 + uBass * 0.36) * l1Bright;
+            }
+            float mtnRidge = (0.04 + pow(max(0.0, abs(p.x) - 0.14), 1.35) * 0.55) * (0.75 + 0.25 * sin(p.x * 10.0 + l1T));
+            float ridgeGlow = exp(-abs(hy + mtnRidge) * 65.0);
+            col += uCol1.rgb * ridgeGlow * (0.72 + uMid * 0.32) * l1Bright;
+        } else if (l1m == 9) {
+            // Mode 9: Demoscene Polygon Tunnel — Expanding Multi-Ring Geometric Polygon Tunnel & Struts
+            float sides = 5.0 + mod(floor(uTime * 0.12), 4.0);
+            vec2 tp = rot2D(l1T * 0.22) * q;
+            float dPoly = shapeRadius(tp, sides, 0.06, 0.12);
+            float zPoly = 0.55 / max(0.03, dPoly);
+            float ringPhase = zPoly * (1.8 * l1Den) - l1T * 2.2;
+            float polyRing = smoothstep(0.82, 0.98, cos(ringPhase * PI));
+            float polyStrut = smoothstep(0.92, 0.995, cos(atan(tp.y, tp.x) * sides));
+            float fade = smoothstep(0.03, 0.16, dPoly);
+            vec3 pCol = mix(uCol0.rgb, uCol1.rgb, 0.5 + 0.5 * sin(ringPhase * 0.7));
+            pCol = mix(pCol, uCol2.rgb, polyStrut * 0.65);
+            col += pCol * max(polyRing, polyStrut * 0.72) * fade * (0.76 + uBass * 0.38) * l1Bright;
         } else {
-            float ehR = 0.24 + uBass * 0.04;
-            float photonRing = exp(-abs(rq - ehR) * 18.0) * (0.65 + uBeat * 0.35);
-            float swirl = sin(aq * 5.0 - log(max(0.04, rq)) * 8.0 - uL1Time * 1.8) * 0.5 + 0.5;
-            float corona = smoothstep(ehR * 0.85, ehR * 1.05, rq) * exp(-max(0.0, rq - ehR) * 3.5);
-            col += (uCol0.rgb * photonRing + mix(uCol1.rgb, uCol2.rgb, swirl) * corona * 0.42) * l1Bright;
-            col *= smoothstep(ehR * 0.72, ehR * 0.98, rq);
+            // Mode 10: Tempest & Asteroids 3D — 16-Lane Electric Blue Tube Web, Yellow Claw/Zapper, Red Flippers & Cyan Vector Asteroids
+            vec3 tempBlue = vec3(0.13, 0.33, 1.0);
+            vec3 tempYellow = vec3(1.0, 1.0, 0.08);
+            vec3 tempRed = vec3(1.0, 0.08, 0.08);
+            vec3 tempCyan = vec3(0.0, 1.0, 1.0);
+            float dWeb = shapeRadius(q, 16.0, 0.08 * sin(l1T * 0.4), 0.25);
+            float zWeb = 0.48 / max(0.03, dWeb);
+            float webRings = smoothstep(0.86, 0.985, cos((zWeb * 1.6 * l1Den - l1T * 2.6) * PI));
+            float laneIdx = floor(mod((aq + PI) / TAU * 16.0, 16.0));
+            float webSpokes = smoothstep(0.90, 0.992, cos(aq * 16.0));
+            float clawLane = floor(mod(l1T * 3.1, 16.0));
+            float isClawLane = 1.0 - step(0.5, abs(laneIdx - clawLane));
+            float flipperHit = smoothstep(0.75, 0.98, sin(zWeb * 2.4 + l1T * 4.2 + laneIdx * 1.7)) * step(0.65, fract(laneIdx * 0.37));
+            float fade = smoothstep(0.03, 0.14, dWeb);
+            vec3 tCol = mix(tempBlue, tempYellow, isClawLane) * max(webRings, webSpokes)
+                      + tempRed * flipperHit * webSpokes * 1.25
+                      + tempCyan * exp(-abs(dWeb - (0.58 + 0.08 * sin(aq * 5.0 + l1T))) * 45.0) * 0.65;
+            col += tCol * fade * (0.82 + uBass * 0.36 + uBeat * 0.24) * l1Bright;
         }
     }
 

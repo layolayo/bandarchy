@@ -6744,14 +6744,27 @@ def _emit_photo_pipeline_payload(parsed: dict) -> None:
             )
         )
         cat_counts: dict[str, int] = {"all": tot_imp}
+        cat_labels: dict[str, str] = {"all": "All Categories"}
         for k, v in cats_dict.items():
             if isinstance(v, dict):
                 cat_counts[k] = int(v.get("imported_count", 0))
+                if v.get("label"):
+                    cat_labels[k] = str(v["label"])
+                else:
+                    cat_labels[k] = " ".join(w.capitalize() for w in re.split(r"[_\s-]+", str(k)) if w) or str(k).title()
         parsed["categoryCounts"] = cat_counts
+        if "category_labels" in parsed and isinstance(parsed["category_labels"], dict):
+            cat_labels.update({str(k): str(v) for k, v in parsed["category_labels"].items()})
+        parsed["categoryLabels"] = cat_labels
+        discovered = parsed.get("discovered_categories")
+        if not isinstance(discovered, list) or not discovered:
+            discovered = sorted(cats_dict.keys())
+        parsed["discoveredCategories"] = [str(c) for c in discovered]
+        parsed["standard_categories"] = [str(c) for c in discovered]
         parsed["totalOriginals"] = tot_imp
         parsed["totalProcessed"] = tot_proc
         custom_info = cats_dict.get("custom") if isinstance(cats_dict.get("custom"), dict) else {}
-        root_dir = str(parsed.get("root_dir") or os.path.join(HOME, "Pictures", "bandarchy"))
+        root_dir = str(parsed.get("root_dir") or _resolve_photo_base_dir())
         parsed["customDir"] = str(
             custom_info.get("drop_in_dir") or os.path.join(root_dir, "categories", "custom")
         )
@@ -6804,6 +6817,24 @@ def _run_photo_import_cli(extra_args: list[str], timeout_sec: int = 180) -> None
     emit({"status": "ok"})
 
 
+def _pick_existing_or_default_bandarchy_subdir(pics_dir: str) -> str:
+    lower_cand = os.path.join(pics_dir, "bandarchy")
+    if os.path.exists(lower_cand):
+        return lower_cand
+    upper_cand = os.path.join(pics_dir, "Bandarchy")
+    if os.path.exists(upper_cand):
+        return upper_cand
+    try:
+        for entry in os.listdir(pics_dir):
+            if entry.lower() == "bandarchy":
+                full = os.path.join(pics_dir, entry)
+                if os.path.isdir(full):
+                    return full
+    except OSError:
+        pass
+    return lower_cand
+
+
 def _resolve_photo_base_dir(explicit_base_dir: str | None = None) -> str:
     if explicit_base_dir:
         return os.path.abspath(os.path.expanduser(str(explicit_base_dir)))
@@ -6812,8 +6843,8 @@ def _resolve_photo_base_dir(explicit_base_dir: str | None = None) -> str:
         return os.path.abspath(os.path.expanduser(env_override))
     xdg_pics = (os.environ.get("XDG_PICTURES_DIR") or "").strip()
     if xdg_pics:
-        return os.path.join(os.path.abspath(os.path.expanduser(xdg_pics)), "bandarchy")
-    return os.path.join(HOME, "Pictures", "bandarchy")
+        return _pick_existing_or_default_bandarchy_subdir(os.path.abspath(os.path.expanduser(xdg_pics)))
+    return _pick_existing_or_default_bandarchy_subdir(os.path.join(HOME, "Pictures"))
 
 
 def cmd_photo_status(args) -> None:
@@ -6821,7 +6852,7 @@ def cmd_photo_status(args) -> None:
     bpi = _load_photo_import_module()
     try:
         if getattr(args, "init_dirs", False):
-            bpi.ensure_directory_structure(base_dir)
+            bpi.ensure_directory_structure(base_dir, include_defaults=True)
         parsed = bpi.rebuild_manifests(base_dir)
     except Exception as exc:
         die(str(exc))
@@ -6832,9 +6863,18 @@ def cmd_photo_status(args) -> None:
 def cmd_photo_import(args) -> None:
     base_dir = _resolve_photo_base_dir(getattr(args, "base_dir", None))
     src_dir = getattr(args, "source_dir", None) or getattr(args, "source_dir_opt", None)
-    if src_dir:
+    if src_dir and str(src_dir).strip().lower() not in ("", "all"):
         src_dir_abs = os.path.abspath(os.path.expanduser(str(src_dir).strip()))
-        if os.path.isdir(src_dir_abs) and not os.path.islink(src_dir_abs):
+        base_abs = os.path.abspath(base_dir)
+        cats_abs = os.path.abspath(os.path.join(base_dir, "categories"))
+        raw_abs = os.path.abspath(os.path.join(base_dir, "raw"))
+        # Only copy into categories/custom if src_dir_abs is an external folder outside the photo library root
+        if (
+            os.path.isdir(src_dir_abs)
+            and not os.path.islink(src_dir_abs)
+            and src_dir_abs not in (base_abs, cats_abs, raw_abs)
+            and not src_dir_abs.startswith(base_abs + os.sep)
+        ):
             custom_drop = os.path.join(base_dir, "categories", "custom")
             os.makedirs(custom_drop, mode=0o755, exist_ok=True)
             if os.path.abspath(custom_drop) != src_dir_abs:
@@ -6842,7 +6882,7 @@ def cmd_photo_import(args) -> None:
                     if entry.startswith("."):
                         continue
                     ext = os.path.splitext(entry)[1].lower()
-                    if ext not in (".jpg", ".jpeg", ".png", ".webp"):
+                    if ext not in (".jpg", ".jpeg", ".png", ".webp", ".jxl", ".avif", ".bmp", ".tiff", ".tif"):
                         continue
                     s_file = os.path.join(src_dir_abs, entry)
                     if os.path.isfile(s_file) and not os.path.islink(s_file):
@@ -6855,6 +6895,8 @@ def cmd_photo_import(args) -> None:
     max_dim = getattr(args, "max_size", None) or getattr(args, "max_dim", None)
     if max_dim is not None:
         extra.extend(["--max-dim", str(int(max_dim))])
+    if getattr(args, "force", False):
+        extra.append("--force")
     sources_dir = os.path.join(base_dir, "sources")
     if getattr(args, "seed_from_sources", False) or (getattr(args, "ensure_demo", False) and os.path.isdir(sources_dir)):
         extra.append("--seed-from-sources")
@@ -6895,26 +6937,27 @@ def main() -> None:
     sub.add_parser("kill", help="stop all Bandarchy UI, cava, and mpv processes").set_defaults(func=cmd_kill)
     sub.add_parser("restart", help="restart standalone Bandarchy player window").set_defaults(func=cmd_restart)
 
-    p = sub.add_parser("photo-status", help="rebuild photo category manifests and return pending/imported/processed counts")
+    p = sub.add_parser("photo-status", help="rebuild photo category manifests from processed/ folders and return counts")
     p.add_argument("--base-dir", help="override ~/Pictures/bandarchy root directory")
     p.add_argument("--init-dirs", action="store_true", help="ensure category directories exist")
     p.set_defaults(func=cmd_photo_status)
 
-    p = sub.add_parser("photo-import", help="translate new raw photos in ~/Pictures/bandarchy/categories/ across all 16 Stark effects")
-    p.add_argument("source_dir", nargs="?", default=None, help="optional custom folder of raw images to copy into categories/custom/")
-    p.add_argument("--source-dir", dest="source_dir_opt", default=None, help="optional custom folder of raw images to copy into categories/custom/")
+    p = sub.add_parser("photo-import", help="scan all source folders in ~/Pictures/bandarchy/ and translate new photos across all 16 Stark effects")
+    p.add_argument("source_dir", nargs="?", default=None, help="optional external folder of raw images to copy into categories/custom/")
+    p.add_argument("--source-dir", dest="source_dir_opt", default=None, help="optional external folder of raw images to copy into categories/custom/")
     p.add_argument("--ensure-demo", action="store_true", help="seed categories from sources/ if available")
-    p.add_argument("--category", default="all", help="category slug (brutalist, architecture, nature, objects, cyberpunk, characters, custom, or all)")
+    p.add_argument("--category", default="all", help="category folder name inside processed/ (or all)")
     p.add_argument("--effects", help="comma-separated list of effect IDs (defaults to all 16)")
-    p.add_argument("--max-dim", type=int, default=960, help="maximum dimension in pixels for translated PNGs")
+    p.add_argument("--max-dim", type=int, default=480, help="maximum dimension in pixels for translated PNGs (default: 480)")
     p.add_argument("--max-size", type=int, default=None, help="alias for --max-dim")
+    p.add_argument("--force", action="store_true", help="re-process source images even if all 16 processed variants exist")
     p.add_argument("--seed-from-sources", action="store_true", help="seed categories from sources/ before importing")
     p.add_argument("--force-seed", action="store_true", help="force re-seeding from sources/")
     p.add_argument("--base-dir", help="override ~/Pictures/bandarchy root directory")
     p.set_defaults(func=cmd_photo_import)
 
-    p = sub.add_parser("photo-pick", help="pick a translated Stark photograph and return its 16 variant paths")
-    p.add_argument("--category", default="all", help="category slug or all")
+    p = sub.add_parser("photo-pick", help="pick a translated Stark photograph from processed/<category>/ and return its 16 variant paths")
+    p.add_argument("--category", default="all", help="category folder name inside processed/ or all")
     p.add_argument("--effect", help="specific Stark effect ID (01..16)")
     p.add_argument("--stem", help="specific source_stem")
     p.add_argument("--exclude-stem", help="exclude a specific source_stem when picking randomly")
