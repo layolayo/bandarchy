@@ -2953,8 +2953,233 @@ console.log('OK');
         self.assertIn("󰌌 Keys (?)", viz_src)
         self.assertIn("layer1EqBandOrder:", viz_src)
 
+    def test_21_shader_worlds_layer_opacity_toast_and_volume_controls(self):
+        # 1. Verify ShdTrench (l1m == 5) and ShdTRON (l1m == 7) in share/psychedelic.frag
+        frag_path = os.path.join(REPO_ROOT, "share", "psychedelic.frag")
+        qsb_path = os.path.join(REPO_ROOT, "share", "psychedelic.frag.qsb")
+        with open(frag_path, "r", encoding="utf-8") as f:
+            frag_src = f.read()
+        self.assertIn("ShdTrench: True 3D Star Wars Death Star Trench Run", frag_src)
+        self.assertIn("Exhaust Port Torpedo Bay", frag_src)
+        self.assertIn("3-Stage Atari Star Wars Surface Towers Locked to Grid Intersections (Zero Red Ground Lines)", frag_src)
+        self.assertIn("stage1Yellow", frag_src)
+        self.assertIn("stage2Green", frag_src)
+        self.assertIn("stage3Red", frag_src)
+        self.assertIn("float l1Bright = clamp(1.0 - uL1Dim, 0.04, 1.0);", frag_src)
+        self.assertIn("float bIntensity = clamp(uComplexity, 0.04, 2.0);", frag_src)
+        self.assertGreaterEqual(os.path.getmtime(qsb_path), os.path.getmtime(frag_path) - 5.0)
+
+        # 2. Verify Node.js evaluation of:
+        #    - Distinct EQ geometries for eqStyle 0, 1, 5, 6, 7, 13, 16, 18, 22, 23
+        #    - Alien Mycelium (shapeStyle 9) bounded radius cap
+        #    - All 6 per-layer opacities (layer1Opacity, layer1EqOpacity, layer1ShapesOpacity, layer2Opacity, layer4Opacity, layer3Opacity)
+        if shutil.which("node"):
+            node_script = r"""
+const fs = require('fs');
+let code = fs.readFileSync('PsychedelicEngine.js', 'utf8').replace(/^\.pragma library\s*/m, '');
+eval(code);
+
+function makeAlphaCtx() {
+    return {
+        alphas: [], fillCount: 0, strokeCount: 0, maxArcR: 0,
+        fillStyle: '', strokeStyle: '', lineWidth: 1, lineCap: 'butt', lineJoin: 'miter',
+        globalAlpha: 1, globalCompositeOperation: 'source-over', font: '12px monospace',
+        save() {}, restore() {}, translate() {}, rotate() {}, scale() {},
+        beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, quadraticCurveTo() {}, bezierCurveTo() {},
+        rect() {},
+        arc(x, y, r) { if (r > this.maxArcR) this.maxArcR = r; },
+        fill() { this.fillCount++; this.alphas.push(this.globalAlpha); },
+        stroke() { this.strokeCount++; this.alphas.push(this.globalAlpha); },
+        fillRect(rx, ry, rw, rh) { this.fillCount++; if (rw < 600) this.alphas.push(this.globalAlpha); },
+        strokeRect() { this.strokeCount++; this.alphas.push(this.globalAlpha); },
+        clearRect() {},
+        fillText() { this.fillCount++; this.alphas.push(this.globalAlpha); },
+        strokeText() { this.strokeCount++; this.alphas.push(this.globalAlpha); },
+        drawImage() {},
+        createLinearGradient() { return { addColorStop() {} }; },
+        createRadialGradient() { return { addColorStop() {} }; }
+    };
+}
+
+const bands = Array.from({length: 64}, (_, i) => 450 + 350 * Math.sin(i * 0.25));
+const theme = { accent: '#6ee7b7', urgent: '#f472b6', foreground: '#e2e8f0', background: '#07090e' };
+
+// A. Verify all 6 per-layer opacities normalise and clamp [0.05, 1.0] and scale canvas globalAlpha
+const cfgOp = normaliseConfig({
+    layer1Opacity: 0.35,
+    layer1EqOpacity: 0.40,
+    layer1ShapesOpacity: 0.45,
+    layer2Opacity: 0.50,
+    layer4Opacity: 0.55,
+    layer3Opacity: 0.60
+}, 0, []);
+if (Math.abs(cfgOp.layer1Opacity - 0.35) > 0.001 ||
+    Math.abs(cfgOp.layer1EqOpacity - 0.40) > 0.001 ||
+    Math.abs(cfgOp.layer1ShapesOpacity - 0.45) > 0.001 ||
+    Math.abs(cfgOp.layer2Opacity - 0.50) > 0.001 ||
+    Math.abs(cfgOp.layer4Opacity - 0.55) > 0.001 ||
+    Math.abs(cfgOp.layer3Opacity - 0.60) > 0.001) {
+    throw new Error('normaliseConfig failed to preserve 6 per-layer opacities');
+}
+
+// Verify Layer 2 EQ opacity scales alpha down when layer1EqOpacity=0.20 vs 1.0 across all differentiated EQ styles
+for (const eqIdx of [0, 1, 5, 6, 7, 13, 16, 18, 22, 23]) {
+    const stFull = createState();
+    const cfgFull = normaliseConfig({
+        layer1Enabled: true, layer1FieldEnabled: false,
+        layer1EqEnabled: true, layer1EqStyle: eqIdx, layer1EqOpacity: 1.0,
+        layer1ShapesEnabled: false, layer2Enabled: false, layer3Enabled: false
+    }, 0, []);
+    stepState(stFull, bands, true, cfgFull, 0.03);
+    const ctxFull = makeAlphaCtx();
+    renderFrame(ctxFull, 640, 360, stFull, 0, theme, [], [], [], cfgFull, null);
+
+    const cfgDim = normaliseConfig(Object.assign({}, cfgFull, { layer1EqOpacity: 0.20 }), 0, []);
+    const ctxDim = makeAlphaCtx();
+    renderFrame(ctxDim, 640, 360, stFull, 0, theme, [], [], [], cfgDim, null);
+
+    const maxAlphaFull = Math.max(...ctxFull.alphas);
+    const maxAlphaDim = Math.max(...ctxDim.alphas);
+    if (!(maxAlphaDim < maxAlphaFull * 0.35)) {
+        throw new Error(`EQ style ${eqIdx} did not scale alpha with layer1EqOpacity=0.20 (${maxAlphaDim} vs ${maxAlphaFull})`);
+    }
+}
+
+// B. Verify Alien Mycelium (shapeStyle 9) caps node radius even at extreme scale (layer1ShapeScale=2.5, beatPulse=1.0)
+const stMyc = createState();
+const cfgMyc = normaliseConfig({
+    layer1Enabled: true, layer1FieldEnabled: false, layer1EqEnabled: false,
+    layer1ShapesEnabled: true, layer1ShapeStyle: 9, layer1ShapeScale: 2.5, layer1ShapeDensity: 2.0,
+    layer2Enabled: false, layer3Enabled: false
+}, 0, []);
+for (let f = 0; f < 6; f++) {
+    stMyc.beatPulse = 1.0;
+    stMyc.bass = 1.0;
+    stepState(stMyc, new Array(64).fill(990), true, cfgMyc, 0.04);
+}
+const ctxMyc = makeAlphaCtx();
+renderFrame(ctxMyc, 640, 360, stMyc, 0, theme, [], [], [], cfgMyc, null);
+if (ctxMyc.maxArcR > 640 * 0.14) {
+    throw new Error(`Alien Mycelium arc radius exceeded screen cap: ${ctxMyc.maxArcR}`);
+}
+console.log('OK');
+"""
+            res = subprocess.run(["node", "-e", node_script], cwd=REPO_ROOT, capture_output=True, text=True, timeout=15)
+            self.assertEqual(res.returncode, 0, f"Node test_21 failed: {res.stderr}")
+
+        # 3. Verify Visualiser.qml, Service.qml, App.qml, and Panel.qml wire up:
+        #    - keybindingToastEnabled toggle in Tab 7 (using keybindingToastTimer.stop(), no undefined keybindingToastHideTimer)
+        #    - 6 per-layer opacity sliders in Studio Tabs 1..6 and Quick Bar Row 2
+        #    - volume/muted properties + PgUp/PgDn shortcuts + mute/slider transport controls
+        with open(os.path.join(REPO_ROOT, "Visualiser.qml"), "r", encoding="utf-8") as f:
+            viz_src = f.read()
+        with open(os.path.join(REPO_ROOT, "Service.qml"), "r", encoding="utf-8") as f:
+            svc_src = f.read()
+        with open(os.path.join(REPO_ROOT, "App.qml"), "r", encoding="utf-8") as f:
+            app_src = f.read()
+        with open(os.path.join(REPO_ROOT, "Panel.qml"), "r", encoding="utf-8") as f:
+            panel_src = f.read()
+
+        self.assertNotIn("keybindingToastHideTimer", viz_src)
+        for prop in (
+            "property bool keybindingToastEnabled: true",
+            "keybindingToastTimer.stop()",
+            "property real layer1Opacity: 1.0",
+            "property real layer1EqOpacity: 1.0",
+            "property real layer1ShapesOpacity: 1.0",
+            "property real layer2Opacity: 1.0",
+            "property real layer4Opacity: 1.0",
+            "property real layer3Opacity: 1.0",
+            'label: "Layer 1 Opacity"',
+            'label: "Layer 2 Opacity"',
+            'label: "Layer 3 Opacity"',
+            'label: "Layer 4 Opacity"',
+            'label: "Layer 5 Opacity"',
+            'label: "Layer 6 Opacity"',
+            "⌨ Key Toast: ON",
+            "signal requestSetVolume(int vol)",
+            "signal requestAdjustVolume(int delta)",
+            "signal requestToggleMute()",
+        ):
+            self.assertIn(prop, viz_src, f"Visualiser.qml missing {prop}")
+
+        for fn in ("function setVolume(vol)", "function adjustVolume(delta)", "function toggleMute()"):
+            self.assertIn(fn, svc_src, f"Service.qml missing {fn}")
+
+        for qml_name, src in (("App.qml", app_src), ("Panel.qml", panel_src)):
+            self.assertIn("onRequestSetVolume:", src, f"{qml_name} missing onRequestSetVolume")
+            self.assertIn("onRequestAdjustVolume:", src, f"{qml_name} missing onRequestAdjustVolume")
+            self.assertIn("onRequestToggleMute:", src, f"{qml_name} missing onRequestToggleMute")
+            self.assertIn("Qt.Key_PageUp", src, f"{qml_name} missing PgUp volume keybinding")
+            self.assertIn("Qt.Key_PageDown", src, f"{qml_name} missing PgDn volume keybinding")
+
+        # 4. Verify CLI `bandarchy volume` and `bandarchy cmd volume/mute` + boundary clamping
+        vol_set = self.run_cli("volume", "65")
+        self.assertEqual(vol_set["volume"], 65)
+        self.assertFalse(vol_set["muted"])
+
+        vol_up = self.run_cli("volume", "+10")
+        self.assertEqual(vol_up["volume"], 75)
+
+        vol_clamp_hi = self.run_cli("volume", "+999")
+        self.assertEqual(vol_clamp_hi["volume"], 100)
+
+        vol_clamp_lo = self.run_cli("volume", "-999")
+        self.assertEqual(vol_clamp_lo["volume"], 0)
+
+        vol_cmd = self.run_cli("cmd", "volume", "80")
+        self.assertEqual(vol_cmd["volume"], 80)
+
+        vol_mute = self.run_cli("volume", "mute")
+        self.assertTrue(vol_mute["muted"])
+
+        vol_unmute = self.run_cli("volume", "unmute")
+        self.assertFalse(vol_unmute["muted"])
+
+        # Restore 100% volume
+        self.run_cli("volume", "100")
+
+        # 5. Verify End-of-Album Track 1 Replay vs Stopped-Mid-Track Resume
+        self.run_cli("cmd", "stop")
+        queue_file = os.path.join(self.data_dir, "queue.json")
+        t1 = os.path.join(self.music_dir, "Steven Wilson - Insurgentes", "01 Harmony Korine.wav")
+        t2 = os.path.join(self.music_dir, "Steven Wilson - Insurgentes", "02 Abandoner.wav")
+        # Case A: Natural end-of-album (mpv exited on last track, stoppedMidTrack=False) -> status resets to Track 1 (playlistPos 0, position 0.0)
+        with open(queue_file, "w", encoding="utf-8") as qf:
+            json.dump({
+                "tracks": [
+                    {"title": "Harmony Korine", "artist": "Steven Wilson", "album": "Insurgentes", "source": t1, "duration": 96.0},
+                    {"title": "Abandoner", "artist": "Steven Wilson", "album": "Insurgentes", "source": t2, "duration": 96.0},
+                ],
+                "playlistPos": 1,
+                "position": 95.5,
+                "stoppedMidTrack": False,
+                "albumTitle": "Insurgentes",
+                "artist": "Steven Wilson",
+            }, qf)
+        st_eoa = self.run_cli("now")
+        self.assertEqual(st_eoa["playlistPos"], 0)
+        self.assertEqual(st_eoa["title"], "Harmony Korine")
+        self.assertEqual(st_eoa["position"], 0.0)
+
+        # Case B: User explicitly stopped mid-track on Track 2 (stoppedMidTrack=True) -> preserves Track 2 (playlistPos 1) and position
+        with open(queue_file, "w", encoding="utf-8") as qf:
+            json.dump({
+                "tracks": [
+                    {"title": "Harmony Korine", "artist": "Steven Wilson", "album": "Insurgentes", "source": t1, "duration": 96.0},
+                    {"title": "Abandoner", "artist": "Steven Wilson", "album": "Insurgentes", "source": t2, "duration": 96.0},
+                ],
+                "playlistPos": 1,
+                "position": 42.5,
+                "stoppedMidTrack": True,
+                "albumTitle": "Insurgentes",
+                "artist": "Steven Wilson",
+            }, qf)
+        st_mid = self.run_cli("now")
+        self.assertEqual(st_mid["playlistPos"], 1)
+        self.assertEqual(st_mid["title"], "Abandoner")
+        self.assertAlmostEqual(st_mid["position"], 42.5, places=1)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
-
-

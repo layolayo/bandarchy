@@ -288,6 +288,22 @@ Item {
             event.accepted = true
             return
         }
+        if (event.key === Qt.Key_PageUp) {
+            if (root.service) {
+                root.service.adjustVolume(5)
+                panelVisualiser.showKeybindingFeedback("Volume: " + Math.min(100, root.service.volume) + "%")
+            }
+            event.accepted = true
+            return
+        }
+        if (event.key === Qt.Key_PageDown) {
+            if (root.service) {
+                root.service.adjustVolume(-5)
+                panelVisualiser.showKeybindingFeedback("Volume: " + Math.max(0, root.service.volume) + "%")
+            }
+            event.accepted = true
+            return
+        }
 
         if (!hasCtrlOrAlt && (root.activeTab === 2 || isFsViz || panelVisualiser.stageMode === "visualiser")) {
             if ((event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_1 || event.key === Qt.Key_Exclam || event.text === "!")) { panelVisualiser.toggleLayerRandomByNumber(1); event.accepted = true; return }
@@ -673,6 +689,8 @@ Item {
                 playSource: root.service ? root.service.playSource : "local"
                 position: root.service ? root.service.position : 0.0
                 duration: root.service ? root.service.duration : 0.0
+                volume: root.service ? root.service.volume : 100
+                muted: root.service ? root.service.muted : false
                 asciiLines: root.service ? root.service.asciiLines : []
                 bannerLines: root.service ? root.service.bannerLines : []
                 artLines: root.service ? root.service.artLines : []
@@ -709,6 +727,9 @@ Item {
                 onRequestNext: if (root.service) root.service.nextTrack()
                 onRequestPrev: if (root.service) root.service.prevTrack()
                 onRequestSeek: sec => { if (root.service) root.service.seekTo(sec) }
+                onRequestSetVolume: vol => { if (root.service) root.service.setVolume(vol) }
+                onRequestAdjustVolume: delta => { if (root.service) root.service.adjustVolume(delta) }
+                onRequestToggleMute: if (root.service) root.service.toggleMute()
                 onRequestToggleUseAlbumArt: if (root.service) root.service.toggleUseAlbumArt()
                 onRequestToggleAsciiMode: if (root.service) root.service.toggleAsciiMode()
                 onRequestSetAsciiSourceMode: modeStr => { if (root.service) root.service.setAsciiSourceMode(modeStr) }
@@ -2134,6 +2155,8 @@ Item {
                         playSource: root.service ? root.service.playSource : "local"
                         position: root.service ? root.service.position : 0.0
                         duration: root.service ? root.service.duration : 0.0
+                        volume: root.service ? root.service.volume : 100
+                        muted: root.service ? root.service.muted : false
                         asciiLines: root.service ? root.service.asciiLines : []
                         bannerLines: root.service ? root.service.bannerLines : []
                         artLines: root.service ? root.service.artLines : []
@@ -2170,6 +2193,9 @@ Item {
                         onRequestNext: if (root.service) root.service.nextTrack()
                         onRequestPrev: if (root.service) root.service.prevTrack()
                         onRequestSeek: sec => { if (root.service) root.service.seekTo(sec) }
+                        onRequestSetVolume: vol => { if (root.service) root.service.setVolume(vol) }
+                        onRequestAdjustVolume: delta => { if (root.service) root.service.adjustVolume(delta) }
+                        onRequestToggleMute: if (root.service) root.service.toggleMute()
                         onRequestToggleUseAlbumArt: if (root.service) root.service.toggleUseAlbumArt()
                         onRequestToggleAsciiMode: if (root.service) root.service.toggleAsciiMode()
                         onRequestSetAsciiSourceMode: modeStr => { if (root.service) root.service.setAsciiSourceMode(modeStr) }
@@ -2648,6 +2674,83 @@ Item {
                                 horizontalPad: 8
                                 pillHeight: 30
                                 onClicked: if (root.service) root.service.nextTrack()
+                            }
+
+                            // Compact Volume Control (Mute Toggle Icon + Interactive Slider + Read-out)
+                            RowLayout {
+                                spacing: 4
+                                Layout.leftMargin: 2
+
+                                ActionPill {
+                                    text: (root.service && (root.service.muted || root.service.volume <= 0)) ? "󰝟" : ((root.service && root.service.volume < 50) ? "󰖀" : "󰕾")
+                                    danger: Boolean(root.service && root.service.muted)
+                                    fontSize: 12
+                                    horizontalPad: 6
+                                    pillHeight: 30
+                                    onClicked: if (root.service) root.service.toggleMute()
+                                }
+
+                                Rectangle {
+                                    id: panelVolSliderTrack
+                                    Layout.preferredWidth: 52
+                                    Layout.preferredHeight: 6
+                                    radius: 3
+                                    color: Qt.rgba(1, 1, 1, 0.14)
+                                    border.width: 1
+                                    border.color: Qt.rgba(1, 1, 1, 0.18)
+
+                                    readonly property real volRatio: (!root.service || root.service.muted) ? 0.0 : Math.max(0.0, Math.min(1.0, root.service.volume / 100.0))
+
+                                    Rectangle {
+                                        width: parent.width * panelVolSliderTrack.volRatio
+                                        height: parent.height
+                                        radius: 3
+                                        color: (root.service && root.service.muted) ? root.colUrgent : root.colAccent
+                                    }
+
+                                    Rectangle {
+                                        x: Math.max(0, Math.min(parent.width - width, parent.width * panelVolSliderTrack.volRatio - width * 0.5))
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 10
+                                        height: 10
+                                        radius: 5
+                                        color: panelVolMouseArea.pressed ? root.colUrgent : "#ffffff"
+                                        border.width: 1
+                                        border.color: root.colAccent
+                                    }
+
+                                    MouseArea {
+                                        id: panelVolMouseArea
+                                        anchors.fill: parent
+                                        anchors.topMargin: -6
+                                        anchors.bottomMargin: -6
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        function setVolAtX(mx) {
+                                            if (root.service) {
+                                                var ratio = Math.max(0.0, Math.min(1.0, mx / Math.max(1, panelVolSliderTrack.width)))
+                                                root.service.setVolume(Math.round(ratio * 100))
+                                            }
+                                        }
+                                        onPressed: mouse => setVolAtX(mouse.x)
+                                        onPositionChanged: mouse => { if (pressed) setVolAtX(mouse.x) }
+                                        onWheel: wheel => {
+                                            if (root.service) {
+                                                root.service.adjustVolume(wheel.angleDelta.y > 0 ? 5 : -5)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    text: (root.service && root.service.muted) ? "MUTE" : ((root.service ? root.service.volume : 100) + "%")
+                                    textFormat: Text.PlainText
+                                    font.family: "JetBrainsMono Nerd Font"
+                                    font.pixelSize: 9
+                                    font.bold: true
+                                    color: (root.service && root.service.muted) ? root.colUrgent : root.colFg
+                                    Layout.preferredWidth: 30
+                                }
                             }
 
                             // Fullscreen Visualiser quick-launch button

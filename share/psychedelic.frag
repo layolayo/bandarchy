@@ -56,6 +56,12 @@ vec2 hash2(vec2 p) {
     return fract(sin(p) * 43758.5453123);
 }
 
+float segGlow(vec2 p, vec2 a, vec2 b, float lw) {
+    vec2 ab = b - a;
+    float t = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+    return exp(-length((p - a) - ab * t) * lw);
+}
+
 // Smooth polygon / star distance metric with branch-cut-free sector folding
 float shapeRadius(vec2 p, float folds, float starDepth, float roundness) {
     float r = length(p);
@@ -453,7 +459,7 @@ void main() {
     // =========================================================================
     if (uL1Enabled > 0.5) {
         int l1m = clamp(int(floor(uL1Mode + 0.5)), 0, 11);
-        float l1Bright = clamp(1.0 - uL1Dim, 0.12, 1.0);
+        float l1Bright = clamp(1.0 - uL1Dim, 0.04, 1.0);
         float l1Spd = clamp(uL1Speed, 0.0, 2.5);
         float l1Den = clamp(uL1Density, 0.2, 2.5);
         float l1Dir = (abs(uL1Direction) < 0.05) ? sin(uTime * 0.6) : sign(uL1Direction);
@@ -576,67 +582,118 @@ void main() {
                         + vec3(0.95, 0.99, 1.0) * strandCore * (0.70 + 0.40 * uBeat);
             col += dnaCol * (0.78 + uBass * 0.34) * l1Bright;
         } else if (l1m == 5) {
-            // Mode 5: Shader Death Star Trench — Creative 3D Curving Megastructure Hyper-Tunnel Dive, Iris Bulkhead Portals & Banking Interceptors
-            float rollAng5 = sin(l1T * 0.54) * 0.34 + cos(l1T * 0.29) * 0.16;
-            vec2 camWeave = vec2(sin(l1T * 0.68) * 0.10, cos(l1T * 0.51) * 0.07);
+            // Mode 5 (18:ShdTrench): ShdTrench: True 3D Star Wars Death Star Trench Run — Vertical Sidewalls, Trench Floor, Open Starry Sky Slot, Catwalk Girders & Exhaust Port Torpedo Bay
+            float rollAng5 = sin(l1T * 0.62) * 0.24 + cos(l1T * 0.27) * 0.10;
+            vec2 camWeave = vec2(sin(l1T * 0.72) * 0.08, cos(l1T * 0.54) * 0.04 - 0.03);
             vec2 tp0 = rot2D(rollAng5) * (p - camWeave);
 
-            // Octagonal 3D megastructure cross-section radius & curving spline path along Z
-            float rOct0 = max(max(abs(tp0.x), abs(tp0.y)), (abs(tp0.x) + abs(tp0.y)) * 0.7071);
-            float zEst = 0.58 / max(0.032, rOct0);
-            vec2 splineCurve = vec2(
-                sin(zEst * 0.26 - l1T * 1.45) * 0.18,
-                cos(zEst * 0.21 + l1T * 1.15) * 0.13
-            ) * clamp(zEst * 0.20, 0.0, 1.35);
-            vec2 tp = tp0 + splineCurve / max(0.65, zEst * 0.45);
-            float wallDist = max(max(abs(tp.x), abs(tp.y)), (abs(tp.x) + abs(tp.y)) * 0.7071);
-            float zTrench = 0.58 / max(0.030, wallDist);
-            float wz = zTrench + l1T * 4.8;
-            float fade = smoothstep(0.030, 0.12, wallDist) * exp(-zTrench * 0.095);
+            // True U-channel Death Star Trench geometry:
+            //   - Left & right vertical sidewalls at |x| = trenchHalfW (0.34)
+            //   - Trench floor at y = +trenchFloorY (0.28)
+            //   - Open starry space slot above y = -trenchTopY (-0.26)
+            float trenchHalfW = 0.34;
+            float trenchFloorY = 0.28;
+            float trenchTopY = -0.26;
 
-            // 8-wall octagonal architectural ribs, recessed reactor bays & longitudinal plasma rails
-            float wallAng = atan(tp.y, tp.x);
-            float sector8 = abs(fract(wallAng * 4.0 / PI + 0.5) - 0.5);
-            float longRails = smoothstep(0.075, 0.010, sector8);
-            float bayRibs = smoothstep(0.84, 0.985, cos((wz * (1.2 + 0.45 * l1Den)) * PI));
-            float bayId = fract(sin(floor(wallAng * 4.0 / PI) * 127.1 + floor(wz * 1.2) * 311.7) * 43758.5453);
-            float reactorCell = step(0.22, fract(wz * 2.4)) * step(0.18, sector8) * (0.35 + 0.65 * sin(wz * 1.6 - uTime * 6.5 + bayId * TAU));
-            float energyConduit = smoothstep(0.038, 0.005, abs(sector8 - 0.16)) * (0.55 + 0.45 * sin(wz * 2.2 - uTime * 9.0));
+            float wallRayDist = abs(tp0.x) / trenchHalfW;
+            float floorRayDist = (tp0.y > 0.0) ? (tp0.y / trenchFloorY) : 0.0;
+            bool isOpenSky = (tp0.y < 0.0) && (abs(tp0.x) < (-tp0.y / abs(trenchTopY)) * trenchHalfW);
+            bool hitFloor = (!isOpenSky) && (floorRayDist > wallRayDist);
 
-            // Receding 3D octagonal iris bulkhead gates & cross-catwalk portals flying past the camera
-            float catwalkBarriers = 0.0;
-            float irisRimGlow = 0.0;
-            for (int cb = 0; cb < 4; cb++) {
-                float cbFrac = fract(float(cb) * 0.25 - l1T * 0.34);
-                float gateScale = mix(0.96, 0.065, cbFrac);
-                float gateFade = (1.0 - cbFrac) * smoothstep(0.02, 0.14, cbFrac);
-                vec2 gp = tp - vec2(sin(cbFrac * 4.5 - l1T * 1.2), cos(cbFrac * 3.8 + l1T * 0.95)) * 0.07 * cbFrac;
-                float gOct = max(max(abs(gp.x), abs(gp.y)), (abs(gp.x) + abs(gp.y)) * 0.7071);
-                float outerFrame = exp(-abs(gOct - gateScale) * 95.0);
-                float innerIris = exp(-abs(gOct - gateScale * (0.66 + 0.08 * sin(uTime * 3.2 + float(cb)))) * 115.0);
-                float inAperture = step(gOct, gateScale * 1.02) * step(gateScale * 0.32, gOct);
-                float crossStrut = (exp(-abs(gp.y) * 130.0) + exp(-abs(gp.x) * 130.0) * 0.65 + exp(-abs(abs(gp.x) - abs(gp.y)) * 140.0) * 0.75) * inAperture;
-                catwalkBarriers += (outerFrame * 1.15 + crossStrut) * gateFade;
-                irisRimGlow += innerIris * gateFade;
+            float surfaceHit = hitFloor ? floorRayDist : wallRayDist;
+            float zTrench = 0.52 / max(0.024, surfaceHit);
+            float wz = zTrench + l1T * 6.4;
+
+            vec3 trenchCol = vec3(0.0);
+
+            if (isOpenSky) {
+                // Open space above the trench rim: starfield + upper trench lip rails receding to the vanishing point
+                float skyH = fract(sin(dot(floor((tp0 + vec2(0.0, l1T * 0.02)) * 95.0), vec2(127.1, 311.7))) * 43758.5453);
+                float stars = smoothstep(0.985, 0.999, skyH) * (0.65 + 0.35 * sin(uTime * 4.0 + skyH * 40.0));
+                float rimRatio = abs(tp0.x) / max(0.01, (-tp0.y / abs(trenchTopY)) * trenchHalfW);
+                float upperLip = smoothstep(0.86, 0.995, rimRatio) * exp(tp0.y * 2.5);
+                trenchCol += vec3(0.75, 0.88, 1.0) * stars + mix(uCol0.rgb, vec3(1.0, 0.85, 0.25), 0.45) * upperLip * 1.15;
+            } else {
+                float fade = smoothstep(0.025, 0.11, surfaceHit) * exp(-zTrench * 0.075);
+                float bayRibs = smoothstep(0.86, 0.99, cos(wz * (1.35 + 0.45 * l1Den) * PI));
+                float subRibs = smoothstep(0.92, 0.995, cos(wz * 5.4 * PI)) * 0.45;
+
+                if (hitFloor) {
+                    // Trench Floor: longitudinal trench guide tracks, exhaust conduits & recessed floor bays
+                    float floorX = tp0.x / max(0.02, floorRayDist);
+                    float trackRails = smoothstep(0.90, 0.995, cos(floorX * 28.0));
+                    float centreConduit = exp(-abs(floorX) * 28.0) * (0.55 + 0.45 * sin(wz * 2.5 - uTime * 8.0));
+                    float floorGreeble = step(0.35, sin(wz * 3.6 + floor(floorX * 14.0) * 2.1)) * 0.28;
+                    trenchCol += mix(uCol0.rgb, vec3(0.35, 0.75, 1.0), 0.35) * (bayRibs * 0.95 + subRibs + trackRails * 0.82 + floorGreeble) * fade;
+                    trenchCol += mix(uCol1.rgb, vec3(1.0, 0.45, 0.15), 0.5) * centreConduit * (0.95 + uBass * 0.65) * fade;
+                } else {
+                    // Left & Right Vertical Trench Sidewalls: horizontal armour strakes, recessed reactor bays & turbolaser ports
+                    float wallY = tp0.y / max(0.02, wallRayDist);
+                    float horizStrakes = smoothstep(0.88, 0.994, cos(wallY * 26.0));
+                    float topParapet = exp(-abs(wallY - trenchTopY) * 24.0) * 1.25;
+                    float floorCorner = exp(-abs(wallY - trenchFloorY) * 24.0) * 1.10;
+                    float bayHash = fract(sin(floor(wz * 1.35) * 127.1 + floor(wallY * 8.0) * 311.7 + sign(tp0.x) * 71.3) * 43758.5453);
+                    float reactorPanel = step(0.42, bayHash) * step(0.18, fract(wz * 1.35)) * (0.30 + 0.70 * sin(uTime * 5.5 + bayHash * TAU));
+                    trenchCol += mix(uCol0.rgb, uCol2.rgb, 0.30) * (bayRibs + subRibs + horizStrakes * 0.78 + topParapet + floorCorner) * fade;
+                    trenchCol += mix(uCol1.rgb, vec3(1.0, 0.72, 0.18), 0.45) * reactorPanel * 0.38 * fade;
+                }
             }
 
-            // Banking 3D Interceptor craft weaving down the curving megastructure core
-            float tieScale = 0.58 + 0.36 * fract(l1T * 0.38);
-            vec2 tieCenter = vec2(sin(l1T * 1.25) * 0.15, cos(l1T * 0.92) * 0.09);
-            vec2 tieP = rot2D(cos(l1T * 1.25) * 0.38) * (tp - tieCenter) / max(0.35, tieScale);
-            float tiePod = exp(-abs(length(tieP) - 0.026) * 165.0) + exp(-length(tieP) * 55.0) * 0.65;
-            float tieStrut = exp(-abs(tieP.y) * 180.0) * step(abs(tieP.x), 0.068);
-            float tieWings = exp(-abs(abs(tieP.x) - 0.068) * 155.0) * step(abs(tieP.y) + abs(abs(tieP.x) - 0.068) * 0.35, 0.060);
+            // Over-and-under 3D Trench Catwalk Girders & Defense Struts flying past the camera
+            float catwalkBarriers = 0.0;
+            float laserTurretAcc = 0.0;
+            for (int cb = 0; cb < 5; cb++) {
+                float cbFrac = fract(float(cb) * 0.20 - l1T * 0.44);
+                float zGate = mix(0.40, 12.5, cbFrac);
+                float gFade = smoothstep(12.5, 2.0, zGate) * smoothstep(0.40, 0.78, zGate);
+                float gHalfW = trenchHalfW * (0.52 / zGate);
+                float gFloorY = trenchFloorY * (0.52 / zGate);
+                float gTopY = trenchTopY * (0.52 / zGate);
+                float inSpanX = step(abs(tp0.x), gHalfW * 1.04);
+                float inSpanY = step(gTopY * 1.04, tp0.y) * step(tp0.y, gFloorY * 1.04);
+
+                // Alternate high/low catwalk beams (classic Atari Star Wars trench obstacles)
+                float beamY = ((cb & 1) == 0) ? mix(gTopY, gFloorY, 0.22) : mix(gTopY, gFloorY, 0.74);
+                float crossBeam = exp(-abs(tp0.y - beamY) * (95.0 + zGate * 7.0)) * inSpanX;
+                float sidePillars = (exp(-abs(abs(tp0.x) - gHalfW) * (95.0 + zGate * 7.0))) * inSpanY;
+                float floorTie = exp(-abs(tp0.y - gFloorY) * (90.0 + zGate * 6.0)) * inSpanX;
+                catwalkBarriers += (crossBeam * 1.25 + sidePillars + floorTie * 0.85) * gFade;
+                laserTurretAcc += exp(-length(vec2(abs(tp0.x) - gHalfW * 0.88, tp0.y - gTopY * 0.92)) * (65.0 + zGate * 5.0)) * gFade;
+            }
+
+            // End-of-Trench Thermal Exhaust Port Torpedo Bay & Twin Proton Torpedoes diving down the trench
+            float portPulse = 0.65 + 0.35 * sin(l1T * 4.5);
+            vec2 portCenter = vec2(0.0, 0.05);
+            vec2 portP = tp0 - portCenter;
+            float portBox = max(abs(portP.x) * 1.15, abs(portP.y) * 1.45);
+            float exhaustPort = (exp(-abs(portBox - 0.055) * 95.0) + exp(-abs(portBox - 0.028) * 120.0) * portPulse)
+                              * (0.75 + uBeat * 0.65);
+            float torpedoT = fract(l1T * 0.65);
+            float torpZ = mix(0.28, 0.04, torpedoT);
+            vec2 torpL = portCenter + vec2(-0.42 * torpZ, 0.32 * torpZ);
+            vec2 torpR = portCenter + vec2( 0.42 * torpZ, 0.32 * torpZ);
+            float protonTorpedoes = (exp(-length(tp0 - torpL) * 75.0) + exp(-length(tp0 - torpR) * 75.0)) * (1.0 + uBeat * 0.8);
+
+            // Banking TIE Advanced + Wingmen weaving through the trench
+            float tieScale = 0.56 + 0.34 * fract(l1T * 0.40);
+            vec2 tieCenter = vec2(sin(l1T * 1.35) * 0.12, cos(l1T * 0.95) * 0.06);
+            vec2 tieP = rot2D(cos(l1T * 1.35) * 0.32) * (tp0 - tieCenter) / max(0.35, tieScale);
+            float tiePod = exp(-abs(length(tieP) - 0.025) * 165.0) + exp(-length(tieP) * 58.0) * 0.65;
+            float tieStrut = exp(-abs(tieP.y) * 185.0) * step(abs(tieP.x), 0.066);
+            float tieWings = exp(-abs(abs(tieP.x) - 0.066) * 155.0) * step(abs(tieP.y) + abs(abs(tieP.x) - 0.066) * 0.38, 0.058);
             float tieShape = clamp(tiePod + tieStrut + tieWings, 0.0, 1.35);
 
-            float coreHorizon = exp(-wallDist * 15.0) * (0.65 + uBass * 0.65);
-            vec3 trenchCol = mix(uCol0.rgb, uCol2.rgb, 0.32) * (bayRibs * 0.85 + longRails * 0.72 + reactorCell * 0.26 * bayId) * fade
-                           + mix(uCol1.rgb, vec3(0.20, 0.95, 1.0), 0.45) * energyConduit * (0.85 + uBass * 0.65) * fade
-                           + mix(vec3(0.42, 0.92, 1.0), uCol2.rgb, 0.45) * catwalkBarriers * (0.88 + uBass * 0.42)
-                           + mix(vec3(1.0, 0.55, 0.16), uCol1.rgb, 0.5) * irisRimGlow * (0.85 + uBeat * 0.55)
-                           + vec3(0.45, 0.92, 1.0) * tieShape * (0.92 + uBeat * 0.45)
-                           + uCol2.rgb * coreHorizon * 0.55;
-            col += trenchCol * (0.78 + uBass * 0.32) * l1Bright;
+            // Rebel Red/Green Quad Laser bolts firing down the trench walls
+            float quadLaser = exp(-abs(abs(tp0.x) - abs(tp0.y - 0.04) * 1.05) * 110.0)
+                            * smoothstep(0.65, 0.99, sin(wz * 3.2 - uTime * 15.0)) * step(-0.18, tp0.y);
+
+            trenchCol += mix(vec3(1.0, 0.88, 0.22), uCol2.rgb, 0.38) * catwalkBarriers * (0.90 + uBass * 0.42)
+                       + vec3(0.20, 1.0, 0.35) * laserTurretAcc * (0.95 + uBeat * 0.55)
+                       + vec3(1.0, 0.28, 0.12) * exhaustPort * 1.15
+                       + vec3(1.0, 0.55, 0.95) * protonTorpedoes * 1.10
+                       + vec3(0.45, 0.94, 1.0) * tieShape * (0.95 + uBeat * 0.45)
+                       + mix(vec3(1.0, 0.16, 0.12), vec3(0.16, 1.0, 0.32), step(0.0, tp0.x)) * quadLaser * (0.95 + uBeat * 0.45);
+            col += trenchCol * (0.82 + uBass * 0.34) * l1Bright;
         } else if (l1m == 6) {
             // Mode 6: BlackHole — Multi-Octave Relativistic Spiral Accretion Vortex, Keplerian Shear & Gravitational Lensing Arch
             float ehR = 0.165 + uBass * 0.028;
@@ -671,146 +728,153 @@ void main() {
             col += accCol * (0.82 + uBass * 0.34) * l1Bright;
             col *= smoothstep(ehR * 0.76, ehR * 0.98, rq);
         } else if (l1m == 7) {
-            // Mode 7 (20:ShdTRON): Swooping & Rotational Banking 3D Surface Grid with Ground-Anchored 1983 Atari Star Wars 3D Wireframe Death Star Towers
-            vec3 tronCyan = vec3(0.12, 0.92, 1.0);
-            vec3 towerYellow = vec3(1.0, 0.94, 0.12);
-            vec3 towerRed = vec3(1.0, 0.16, 0.18);
+            // Mode 7 (20:ShdTRON): Swooping & Rotational Banking 3D Surface Grid + 3-Stage Atari Star Wars Surface Towers Locked to Grid Intersections (Zero Red Ground Lines)
+            vec3 towerYellow = vec3(1.0, 1.0, 0.08);
+            vec3 towerGreen = vec3(0.08, 1.0, 0.12);
+            vec3 towerRed = vec3(1.0, 0.14, 0.08);
+            vec3 gridCyan = vec3(0.10, 0.92, 1.0);
+            vec3 gridBlue = vec3(0.06, 0.42, 1.0);
 
-            // Rotational banking roll & high-speed lateral turning swoop
-            float bankAng = sin(l1T * 0.68) * 0.32 + cos(l1T * 0.31) * 0.14;
-            float turnYaw = cos(l1T * 0.68) * 0.36 + sin(l1T * 0.34) * 0.15;
+            // Swooping & rotational banking 3D camera flight over the surface grid
+            float bankAng = sin(l1T * 0.62) * 0.28 + cos(l1T * 0.27) * 0.11;
             vec2 bp = rot2D(bankAng) * p;
-            float horizonOffset = -0.02 + sin(l1T * 0.45) * 0.05;
+            float swoopPitch = sin(l1T * 0.48) * 0.075 + cos(l1T * 0.29) * 0.032;
+            float horizonOffset = -0.04 + swoopPitch;
+            float camPanX = sin(l1T * 0.41) * 0.85 + cos(l1T * 0.23) * 0.35;
             float hy = bp.y - horizonOffset;
-            float hGlow = exp(-abs(hy) * 38.0) * 0.68;
-            col += mix(tronCyan, uCol0.rgb, 0.35) * hGlow * l1Bright;
 
-            float gridScaleX = 2.2 * max(0.5, l1Den);
-            float gridScaleZ = 2.0 * max(0.5, l1Den);
-            float scrollGZ = l1T * 3.8;
-
-            if (hy > 0.002) {
-                float z = 0.25 / max(0.004, hy);
-                float swoopCurve = turnYaw * z * 0.48 + sin(z * 0.32 - l1T * 1.8) * 0.26;
-                float gx = (bp.x * z + swoopCurve) * gridScaleX;
-                float gz = z * gridScaleZ + scrollGZ;
-                float gLine = max(smoothstep(0.89, 0.99, cos(gx * PI)), smoothstep(0.88, 0.99, cos(gz * PI)));
-                float fade = smoothstep(0.002, 0.07, hy) * exp(-z * 0.065);
-                // Swooping flight-corridor guide rails curving across the surface
-                float railL = exp(-abs(gx - 1.0) * 6.2) * fade;
-                float railR = exp(-abs(gx + 1.0) * 6.2) * fade;
-                vec3 surfCol = mix(tronCyan, uCol0.rgb, 0.35) * gLine * 0.76
-                             + towerYellow * (railL + railR) * 0.82;
-                col += surfCol * fade * (0.78 + uBass * 0.32) * l1Bright;
+            // Horizon glow + upper sky vector starfield (strictly cyan/blue/gold, zero red ground lines)
+            float hGlow = exp(-abs(hy) * 38.0) * 0.78;
+            col += mix(gridCyan, uCol0.rgb, 0.28) * hGlow * l1Bright;
+            if (hy < 0.0) {
+                vec2 skyCell = floor((bp + vec2(l1T * 0.05, 0.0)) * 32.0);
+                float starH = hash2(skyCell + 19.3).x;
+                if (starH > 0.94) {
+                    vec2 starPos = (skyCell + 0.5 + 0.32 * vec2(sin(starH * 43.0), cos(starH * 29.0))) / 32.0 - vec2(l1T * 0.05, 0.0);
+                    float dStar = length(bp - starPos);
+                    col += mix(vec3(0.75, 0.95, 1.0), towerYellow, 0.35) * exp(-dStar * 190.0) * (0.65 + 0.35 * sin(uTime * 5.0 + starH * 40.0)) * l1Bright;
+                }
             }
 
-            // Authentic 1983 Atari Star Wars 3D Wireframe Death Star Surface Defence Towers
-            // Strictly anchored to fixed integer ground grid cells (worldGX, worldGZ) so tower bases NEVER slide on the grid!
+            float gridScaleX = 2.4 * max(0.5, l1Den);
+            float gridScaleZ = 2.2 * max(0.5, l1Den);
+            float scrollGZ = l1T * 5.0;
+
+            if (hy > 0.002) {
+                float z = 0.26 / max(0.004, hy);
+                float gx = bp.x * z * gridScaleX + camPanX;
+                float gz = z * gridScaleZ + scrollGZ;
+
+                // Crisp cyan/blue ground grid cells (strictly zero red lines on the ground plane)
+                float minorX = smoothstep(0.945, 0.996, abs(cos(gx * PI)));
+                float minorZ = smoothstep(0.940, 0.995, abs(cos(gz * PI)));
+                float majorX = smoothstep(0.978, 0.999, abs(cos(gx * PI * 0.5)));
+                float majorZ = smoothstep(0.975, 0.999, abs(cos(gz * PI * 0.5)));
+                float minorGrid = max(minorX, minorZ);
+                float majorGrid = max(majorX, majorZ);
+                float nodePulse = minorX * minorZ * (1.2 + 0.6 * uBeat);
+                float fade = smoothstep(0.002, 0.065, hy) * exp(-z * 0.058);
+
+                vec3 gridCol = gridBlue * minorGrid * 0.68
+                             + gridCyan * majorGrid * 1.15
+                             + mix(gridCyan, towerYellow, 0.45) * nodePulse * 0.95;
+                col += gridCol * fade * (0.84 + uBass * 0.32) * l1Bright;
+            }
+
+            // 3-Stage Atari Star Wars Stage 2 (Death Star Surface) Defence Towers strictly locked to exact integer ground grid intersections (gx0..gx1, rowWorldGZ)
             vec3 towerAcc = vec3(0.0);
-            float rowSpacingGZ = 3.0;
+            float rowSpacingGZ = 2.0; // exact integer multiple of ground grid period (1.0)
             float baseGridRow = floor(scrollGZ / rowSpacingGZ);
 
             for (int rStep = 1; rStep <= 5; rStep++) {
-                float rowWorldGZ = (baseGridRow + float(rStep)) * rowSpacingGZ;
-                float zCenter = (rowWorldGZ - scrollGZ) / gridScaleZ;
-                if (zCenter < 0.36 || zCenter > 7.5) continue;
+                float rowIdx = baseGridRow + float(rStep);
+                float rowWorldGZ = rowIdx * rowSpacingGZ; // exact integer gz intersection line
+                float zF = (rowWorldGZ - scrollGZ) / gridScaleZ;
+                if (zF < 0.28 || zF > 7.5) continue;
 
-                float dzHalf = 0.26 / gridScaleZ;
-                float zF = max(0.28, zCenter - dzHalf);
-                float zB = zCenter + dzHalf;
-                float swoopF = turnYaw * zF * 0.48 + sin(zF * 0.32 - l1T * 1.8) * 0.26;
-                float swoopB = turnYaw * zB * 0.48 + sin(zB * 0.32 - l1T * 1.8) * 0.26;
-                float hyF = 0.25 / zF;
-                float hyB = 0.25 / zB;
+                float hyF = 0.26 / zF;
                 float baseYF = horizonOffset + hyF;
-                float baseYB = horizonOffset + hyB;
-                float distFade = smoothstep(7.5, 1.8, zCenter) * smoothstep(0.34, 0.62, zCenter);
+                float scaleXF = 1.0 / (gridScaleX * zF);
+                float distFade = smoothstep(7.5, 1.5, zF) * smoothstep(0.28, 0.52, zF);
+                float lw = 215.0 + zF * 24.0;
 
-                // Two anchored tower columns per depth row (left & right of the central trench corridor)
-                for (int sideIdx = 0; sideIdx < 2; sideIdx++) {
-                    float sideSign = (sideIdx == 0) ? -1.0 : 1.0;
-                    float cellSeed = fract(sin((baseGridRow + float(rStep)) * 91.7 + float(sideIdx) * 37.3) * 43758.5453);
-                    // Anchor tower centre to exact half-integer grid cell (e.g. ±1.5 or ±2.5)
-                    float worldGX = sideSign * (1.5 + floor(cellSeed * 2.0));
-                    float halfGX = 0.34;
+                // Alternate 2 towers per row at exact integer grid cell columns (gx0 to gx0 + 1.0)
+                float parity = mod(abs(rowIdx), 2.0);
+                for (int tSlot = 0; tSlot < 2; tSlot++) {
+                    // Anchor left & right base feet to exact integer grid intersections gx0 and gx1 = gx0 + 1.0
+                    float gx0 = (tSlot == 0)
+                        ? (-2.0 + step(0.5, parity) * 1.0)
+                        : ( 1.0 - step(0.5, parity) * 1.0);
+                    float gx1 = gx0 + 1.0;
 
-                    // Exact screen X of front & back tower faces anchored to the ground grid equation gx = (bp.x * z + swoop) * gridScaleX
-                    float xFL = ((worldGX - halfGX) / gridScaleX - swoopF) / zF;
-                    float xFR = ((worldGX + halfGX) / gridScaleX - swoopF) / zF;
-                    float xBL = ((worldGX - halfGX) / gridScaleX - swoopB) / zB;
-                    float xBR = ((worldGX + halfGX) / gridScaleX - swoopB) / zB;
-                    float xFC = 0.5 * (xFL + xFR);
-                    float xBC = 0.5 * (xBL + xBR);
-                    float wF = max(0.003, 0.5 * abs(xFR - xFL));
-                    float wB = max(0.002, 0.5 * abs(xBR - xBL));
+                    float xBaseL = (gx0 - camPanX) * scaleXF;
+                    float xBaseR = (gx1 - camPanX) * scaleXF;
+                    float xMid = 0.5 * (xBaseL + xBaseR);
+                    float cellW = abs(xBaseR - xBaseL);
+                    float totalH = hyF * (2.25 + 0.24 * uBass);
 
-                    // Tower height scales in exact 3D perspective with 1/zF and 1/zB
-                    float hScale = 1.45 + 0.45 * fract(cellSeed * 5.7) + uBass * 0.16;
-                    float towHF = hyF * hScale;
-                    float towHB = hyB * hScale;
-                    float topYF = baseYF - towHF;
-                    float topYB = baseYB - towHB;
-                    float crownYF = topYF - wF * 0.85;
-                    float crownYB = topYB - wB * 0.85;
+                    // Stage heights: Stage 1 (Yellow base shaft 0..56%), Stage 2 (Green neck collar 56%..76%), Stage 3 (Red command head 76%..100%)
+                    float y0 = baseYF;
+                    float y1 = baseYF - totalH * 0.56;
+                    float y2 = baseYF - totalH * 0.76;
+                    float y3 = baseYF - totalH;
+                    float yRoof = y3 - totalH * 0.08;
 
-                    float minX = min(min(xFL, xBL), min(xFR, xBR)) - wF * 0.6;
-                    float maxX = max(max(xFL, xBL), max(xFR, xBR)) + wF * 0.6;
-                    float minY = min(crownYF, crownYB) - 0.025;
-                    float maxY = max(baseYF, baseYB) + 0.02;
+                    // Stage 1: Yellow (#FFFF11) tapered X-braced base shaft anchored at exact ground grid intersection corners
+                    vec2 bL = vec2(xBaseL, y0);
+                    vec2 bR = vec2(xBaseR, y0);
+                    vec2 s1L = vec2(xMid - cellW * 0.34, y1);
+                    vec2 s1R = vec2(xMid + cellW * 0.34, y1);
+                    vec2 s1MidL = mix(bL, s1L, 0.52);
+                    vec2 s1MidR = mix(bR, s1R, 0.52);
 
-                    if (bp.x >= minX && bp.x <= maxX && bp.y >= minY && bp.y <= maxY) {
-                        float lw = 185.0 + zCenter * 18.0;
-                        // 1. Front 3D lattice shaft (xFL..xFR, topYF..baseYF)
-                        float inYF = step(topYF, bp.y) * step(bp.y, baseYF);
-                        float inXF = step(xFL, bp.x) * step(bp.x, xFR);
-                        float uYF = clamp((bp.y - topYF) / max(0.003, towHF), 0.0, 1.0);
-                        float uXF = (bp.x - xFC) / wF;
-                        float colFL = exp(-abs(bp.x - xFL) * lw) * inYF;
-                        float colFR = exp(-abs(bp.x - xFR) * lw) * inYF;
-                        float decksF = smoothstep(0.84, 0.992, cos(uYF * 3.0 * PI)) * inXF * inYF;
-                        float tierLocalF = fract(uYF * 3.0) * 2.0 - 1.0;
-                        float xBraceF = (exp(-abs(uXF - tierLocalF) * 12.5) + exp(-abs(uXF + tierLocalF) * 12.5)) * inXF * inYF;
+                    float stage1Yellow = segGlow(bp, bL, bR, lw)
+                                       + segGlow(bp, bL, s1L, lw)
+                                       + segGlow(bp, bR, s1R, lw)
+                                       + segGlow(bp, s1L, s1R, lw)
+                                       + segGlow(bp, s1MidL, s1MidR, lw * 0.95)
+                                       + segGlow(bp, bL, s1MidR, lw * 0.92)
+                                       + segGlow(bp, bR, s1MidL, lw * 0.92)
+                                       + segGlow(bp, s1MidL, s1R, lw * 0.92)
+                                       + segGlow(bp, s1MidR, s1L, lw * 0.92);
 
-                        // 2. Back 3D lattice shaft (xBL..xBR, topYB..baseYB) for true 3D wireframe box depth
-                        float inYB = step(topYB, bp.y) * step(bp.y, baseYB);
-                        float inXB = step(xBL, bp.x) * step(bp.x, xBR);
-                        float uYB = clamp((bp.y - topYB) / max(0.003, towHB), 0.0, 1.0);
-                        float uXB = (bp.x - xBC) / wB;
-                        float colBL = exp(-abs(bp.x - xBL) * (lw * 1.1)) * inYB * 0.78;
-                        float colBR = exp(-abs(bp.x - xBR) * (lw * 1.1)) * inYB * 0.78;
-                        float decksB = smoothstep(0.85, 0.992, cos(uYB * 3.0 * PI)) * inXB * inYB * 0.72;
-                        float tierLocalB = fract(uYB * 3.0) * 2.0 - 1.0;
-                        float xBraceB = (exp(-abs(uXB - tierLocalB) * 13.5) + exp(-abs(uXB + tierLocalB) * 13.5)) * inXB * inYB * 0.58;
+                    // Stage 2: Green (#11FF11) narrowed upper turret neck collar & cross-strut
+                    vec2 s2L = vec2(xMid - cellW * 0.22, y2);
+                    vec2 s2R = vec2(xMid + cellW * 0.22, y2);
+                    float stage2Green = segGlow(bp, s1L, s2L, lw)
+                                      + segGlow(bp, s1R, s2R, lw)
+                                      + segGlow(bp, s2L, s2R, lw)
+                                      + segGlow(bp, s1L, s2R, lw * 0.90)
+                                      + segGlow(bp, s1R, s2L, lw * 0.90);
 
-                        // 3. 3D Side-Depth Struts connecting Front Corners (xFL/xFR) to Back Corners (xBL/xBR) at Base (y=baseY) and Roof (y=topY)
-                        float sideStruts = 0.0;
-                        for (int cIdx = 0; cIdx < 4; cIdx++) {
-                            vec2 pA = (cIdx == 0) ? vec2(xFL, baseYF) : ((cIdx == 1) ? vec2(xFR, baseYF) : ((cIdx == 2) ? vec2(xFL, topYF) : vec2(xFR, topYF)));
-                            vec2 pB = (cIdx == 0) ? vec2(xBL, baseYB) : ((cIdx == 1) ? vec2(xBR, baseYB) : ((cIdx == 2) ? vec2(xBL, topYB) : vec2(xBR, topYB)));
-                            vec2 ab = pB - pA;
-                            float tSeg = clamp(dot(bp - pA, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
-                            sideStruts += exp(-length((bp - pA) - ab * tSeg) * (lw * 1.05));
-                        }
+                    // Stage 3: Red (#FF2211) wide flared octagonal turret command head & rotating twin laser cannon dishes
+                    vec2 hJawL = vec2(xMid - cellW * 0.48, y2 - (y2 - y3) * 0.45);
+                    vec2 hJawR = vec2(xMid + cellW * 0.48, y2 - (y2 - y3) * 0.45);
+                    vec2 hTopL = vec2(xMid - cellW * 0.38, y3);
+                    vec2 hTopR = vec2(xMid + cellW * 0.38, y3);
+                    vec2 hPeak = vec2(xMid, yRoof);
+                    float gunSweep = sin(uTime * 3.4 + rowIdx * 1.7 + float(tSlot) * 2.1) * cellW * 0.16;
+                    vec2 gunTipL = hJawL + vec2(gunSweep - cellW * 0.10, -totalH * 0.08);
+                    vec2 gunTipR = hJawR + vec2(gunSweep + cellW * 0.10, -totalH * 0.08);
 
-                        // 4. 3D Pyramidal Laser Turret Crown & Twin Cannon Barrels at top of tower
-                        vec2 apex = vec2(0.5 * (xFC + xBC), 0.5 * (crownYF + crownYB));
-                        float crownWire = 0.0;
-                        for (int kIdx = 0; kIdx < 4; kIdx++) {
-                            vec2 cPt = (kIdx == 0) ? vec2(xFL, topYF) : ((kIdx == 1) ? vec2(xFR, topYF) : ((kIdx == 2) ? vec2(xBL, topYB) : vec2(xBR, topYB)));
-                            vec2 ca = apex - cPt;
-                            float tC = clamp(dot(bp - cPt, ca) / max(dot(ca, ca), 1e-6), 0.0, 1.0);
-                            crownWire += exp(-length((bp - cPt) - ca * tC) * (lw * 1.08));
-                        }
-                        // Twin horizontal laser cannon tips at the turret apex
-                        float cannonTips = exp(-abs(bp.y - apex.y) * (lw * 1.2)) * step(abs(bp.x - apex.x), wF * 0.55);
+                    float stage3Red = segGlow(bp, s2L, hJawL, lw)
+                                    + segGlow(bp, s2R, hJawR, lw)
+                                    + segGlow(bp, hJawL, hJawR, lw * 0.95)
+                                    + segGlow(bp, hJawL, hTopL, lw)
+                                    + segGlow(bp, hJawR, hTopR, lw)
+                                    + segGlow(bp, hTopL, hTopR, lw)
+                                    + segGlow(bp, hTopL, hPeak, lw * 0.92)
+                                    + segGlow(bp, hTopR, hPeak, lw * 0.92)
+                                    + segGlow(bp, hJawL, gunTipL, lw * 1.05) * (1.15 + 0.55 * uBeat)
+                                    + segGlow(bp, hJawR, gunTipR, lw * 1.05) * (1.15 + 0.55 * uBeat);
 
-                        towerAcc += (towerYellow * (colFL + colFR + colBL + colBR + (xBraceF + xBraceB) * 0.68)
-                                   + tronCyan * (decksF + decksB + sideStruts * 0.90) * 1.08
-                                   + towerRed * (crownWire + cannonTips * 0.85) * (1.15 + uBeat * 0.45)) * distFade;
-                    }
+                    vec3 tCol = towerYellow * clamp(stage1Yellow, 0.0, 2.4)
+                              + towerGreen  * clamp(stage2Green, 0.0, 2.2) * (1.05 + 0.30 * uMid)
+                              + towerRed    * clamp(stage3Red, 0.0, 2.5)   * (1.10 + 0.45 * uBeat);
+                    towerAcc += tCol * distFade;
                 }
             }
-            col += towerAcc * (0.85 + uBass * 0.30) * l1Bright;
+            col += towerAcc * (0.90 + uBass * 0.32) * l1Bright;
         } else if (l1m == 8) {
             // Mode 8 (21:ShdOrrery): Shader Dyson Hyper-Orrery & Ferrofluid Singularity — 3D Raymarched Morphing Star-Crystal, Precessing Gyroscope Gimbal Rings & Plasma Filaments
             vec2 op = q;
@@ -975,7 +1039,7 @@ void main() {
         m1 = clamp(m1, 0, 15);
         float sym = max(2.0, floor(uFacets + 0.5));
         float zoom = clamp(uZoom, 0.4, 2.5);
-        float bIntensity = clamp(uComplexity, 0.2, 2.0);
+        float bIntensity = clamp(uComplexity, 0.04, 2.0);
         float twist = (abs(uL4Twist) < 0.05) ? 1.0 : clamp(uL4Twist, -2.5, 2.5);
         int wallPat = clamp(int(floor(uL4WallPattern + 0.5)), 0, 4);
         vec2 cPos = (p - drift * 0.42) / zoom;

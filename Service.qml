@@ -33,7 +33,8 @@ Item {
     property string artPath: ""
     property real position: 0.0
     property real duration: 0.0
-    property real volume: 100.0
+    property int volume: 100
+    property bool muted: false
     property int playlistPos: 0
     property int playlistCount: 0
     property bool shuffle: false
@@ -128,7 +129,7 @@ Item {
     property bool topBarLedEnabled: true
     property string stageMode: "visualiser" // "off", "art", "turntable", "visualiser"
     property bool useAlbumArt: false
-    property string asciiMode: "braille" // "braille", "block", "text"
+    property string asciiMode: "text" // "braille", "block", "text"
     property string asciiSource: "omarchy-ascii"
     property var asciiLines: []
     property var bannerLines: []
@@ -295,7 +296,14 @@ Item {
                         ? Math.max(0.0, Number(p.position) || 0.0)
                         : ((p.position !== undefined && Number(p.position) > 0) ? Number(p.position) : ((fb && fb.position) ? Number(fb.position) : 0.0))
                     root.duration = Number(p.duration) || (fb && fb.duration ? Number(fb.duration) : 0.0)
-                    root.volume = p.volume !== undefined ? Number(p.volume) : 100.0
+                    if (Date.now() >= root._optimisticVolumeUntil) {
+                        if (p.volume !== undefined) {
+                            root.volume = Math.max(0, Math.min(100, Math.round(Number(p.volume) || 0)))
+                        }
+                        if (p.muted !== undefined) {
+                            root.muted = Boolean(p.muted)
+                        }
+                    }
                     root.playlistPos = (p.playlistPos !== undefined) ? (Number(p.playlistPos) || 0) : ((fb && fb.playlistPos) ? Number(fb.playlistPos) : 0)
                     root.playlistCount = Number(p.playlistCount) || 0
                     root.shuffle = Boolean(p.shuffle)
@@ -323,6 +331,7 @@ Item {
     property bool _topBarLedChangedLocally: false
     property bool _stageChangedLocally: false
     property double _optimisticPlayUntil: 0
+    property double _optimisticVolumeUntil: 0
 
     Timer {
         id: fastPlayPollTimer
@@ -596,7 +605,12 @@ Item {
                         root.useAlbumArt = Boolean(d.config.useAlbumArt)
                         changedAscii = true
                     }
-                    if (d.config.asciiMode === "braille" || d.config.asciiMode === "block" || d.config.asciiMode === "text") {
+                    if (!root.useAlbumArt) {
+                        if (root.asciiMode !== "text") {
+                            root.asciiMode = "text"
+                            changedAscii = true
+                        }
+                    } else if (d.config.asciiMode === "braille" || d.config.asciiMode === "block") {
                         if (root.asciiMode !== d.config.asciiMode) {
                             root.asciiMode = d.config.asciiMode
                             changedAscii = true
@@ -846,10 +860,9 @@ Item {
 
     function setUseAlbumArt(useArt) {
         root.useAlbumArt = Boolean(useArt)
-        if (root.useAlbumArt && root.asciiMode === "text") {
-            root.asciiMode = "braille"
-        }
-        if (root.asciiMode !== "braille" && root.asciiMode !== "block" && root.asciiMode !== "text") {
+        if (!root.useAlbumArt) {
+            root.asciiMode = "text"
+        } else if (root.asciiMode !== "braille" && root.asciiMode !== "block") {
             root.asciiMode = "braille"
         }
         Quickshell.execDetached([
@@ -861,9 +874,10 @@ Item {
     }
 
     function setAsciiGlyphMode(glyphMode) {
-        root.asciiMode = (glyphMode === "block") ? "block" : ((glyphMode === "text") ? "text" : "braille")
-        if (root.asciiMode === "text") {
-            root.useAlbumArt = false
+        if (!root.useAlbumArt) {
+            root.asciiMode = "text"
+        } else {
+            root.asciiMode = (glyphMode === "block") ? "block" : "braille"
         }
         Quickshell.execDetached([
             root.binPath, "auth",
@@ -883,18 +897,11 @@ Item {
                 root.asciiMode = "block"
             } else {
                 root.useAlbumArt = false
-                root.asciiMode = "braille"
+                root.asciiMode = "text"
             }
         } else {
-            var styles = ["braille", "block", "text"]
-            var idx = styles.indexOf(root.asciiMode)
-            if (idx < 0) idx = 0
-            if (idx < styles.length - 1) {
-                root.asciiMode = styles[idx + 1]
-            } else {
-                root.useAlbumArt = true
-                root.asciiMode = "braille"
-            }
+            root.useAlbumArt = true
+            root.asciiMode = "braille"
         }
         Quickshell.execDetached([
             root.binPath, "auth",
@@ -906,43 +913,24 @@ Item {
 
     function setAsciiSourceMode(modeStr) {
         var m = String(modeStr || "").toLowerCase()
-        if (m === "words" || m === "banner") {
+        if (m === "words" || m === "banner" || m === "text" || m === "crisp" || m === "art-text" || m === "words-braille" || m === "words-block" || m === "words-text") {
             root.useAlbumArt = false
+            root.asciiMode = "text"
         } else if (m === "art") {
             root.useAlbumArt = true
             if (root.asciiMode === "text") {
                 root.asciiMode = "braille"
             }
-        } else if (m === "block") {
-            root.asciiMode = "block"
-        } else if (m === "braille") {
-            root.asciiMode = "braille"
-        } else if (m === "text" || m === "crisp") {
-            root.useAlbumArt = false
-            root.asciiMode = "text"
-        } else if (m === "art-braille") {
-            root.useAlbumArt = true
-            root.asciiMode = "braille"
-        } else if (m === "art-block") {
+        } else if (m === "block" || m === "art-block") {
             root.useAlbumArt = true
             root.asciiMode = "block"
-        } else if (m === "art-text") {
-            root.useAlbumArt = false
-            root.asciiMode = "text"
-        } else if (m === "words-braille") {
-            root.useAlbumArt = false
-            root.asciiMode = "braille"
-        } else if (m === "words-block") {
-            root.useAlbumArt = false
-            root.asciiMode = "block"
-        } else if (m === "words-text") {
-            root.useAlbumArt = false
-            root.asciiMode = "text"
-        }
-        if (root.useAlbumArt && root.asciiMode === "text") {
+        } else if (m === "braille" || m === "art-braille") {
+            root.useAlbumArt = true
             root.asciiMode = "braille"
         }
-        if (root.asciiMode !== "braille" && root.asciiMode !== "block" && root.asciiMode !== "text") {
+        if (!root.useAlbumArt) {
+            root.asciiMode = "text"
+        } else if (root.asciiMode !== "braille" && root.asciiMode !== "block") {
             root.asciiMode = "braille"
         }
         Quickshell.execDetached([
@@ -1561,7 +1549,27 @@ Item {
         root.notifyAction(root.loop ? "Loop: OFF" : "Loop: ON")
     }
     function setVolume(vol) {
-        runAction(["cmd", "volume", "--value", String(vol)], false)
+        var clamped = Math.max(0, Math.min(100, Math.round(Number(vol) || 0)))
+        root._optimisticVolumeUntil = Date.now() + 1400
+        root.volume = clamped
+        if (clamped > 0 && root.muted) {
+            root.muted = false
+        }
+        Quickshell.execDetached([root.binPath, "volume", String(clamped)])
+        fastPlayPollTimer.restart()
+    }
+    function adjustVolume(delta) {
+        var step = Math.round(Number(delta) || 0)
+        if (step === 0) return
+        setVolume(root.volume + step)
+        root.notifyAction("Volume: " + root.volume + "%")
+    }
+    function toggleMute() {
+        root._optimisticVolumeUntil = Date.now() + 1400
+        root.muted = !root.muted
+        Quickshell.execDetached([root.binPath, "volume", "mute"])
+        fastPlayPollTimer.restart()
+        root.notifyAction(root.muted ? "Muted 󰝟" : ("Unmuted 󰕾 " + root.volume + "%"))
     }
     function seekTo(sec) {
         var targetSec = Math.max(0.0, Number(sec) || 0.0)

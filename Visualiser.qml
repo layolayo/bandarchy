@@ -34,6 +34,8 @@ FocusScope {
     property string playSource: "local"
     property real position: 0.0
     property real duration: 0.0
+    property int volume: 100
+    property bool muted: false
 
     // Stage mode: "off", "art", "turntable", "visualiser"
     property string stageMode: "visualiser"
@@ -99,6 +101,13 @@ FocusScope {
     property real masterBrightness: 1.00 // 0.30x .. 1.60x master visualiser brightness
     property int autoCycleIntervalSec: 18 // 5s .. 60s global auto-cycle interval
     property bool disableScreensaverInFullscreenOrVj: true // Automatically inhibit Omarchy screensaver & idle while Fullscreen or VJ Mode is active
+    property bool keybindingToastEnabled: true // Show transient HUD toast badge when keyboard shortcuts are pressed
+    onKeybindingToastEnabledChanged: {
+        if (!root.keybindingToastEnabled) {
+            root.keybindingToastOpacity = 0.0
+        }
+        scheduleSaveVisualiserConfig()
+    }
     property real frameAccumDt: 0.0
     property int telemetryTick: 0
 
@@ -115,6 +124,8 @@ FocusScope {
     property real layer1Speed: 1.0
     property real layer1Density: 1.0
     property real layer1Dim: 0.16
+    property real layer1Opacity: 1.0
+    onLayer1OpacityChanged: { vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
     property bool layer1EqEnabled: true
     property bool layerEqAutoRandomise: false
     property int layer1EqStyle: 0
@@ -124,6 +135,8 @@ FocusScope {
     property real layer1EqSpin: 1.0
     property real layer1EqGain: 1.25
     property int layer1EqDamping: 0
+    property real layer1EqOpacity: 1.0
+    onLayer1EqOpacityChanged: { vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
     property bool layer1ShapesEnabled: true
     property bool layerVectorsAutoRandomise: false
     property int layer1ShapeStyle: 0
@@ -133,6 +146,8 @@ FocusScope {
     property real layer1ShapeDensity: 1.0
     property real layer1ShapeLifespan: 1.0
     property real layer1ShapeFillRatio: 0.35
+    property real layer1ShapesOpacity: 1.0
+    onLayer1ShapesOpacityChanged: { vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
     property bool showBottomHud: true
     readonly property bool allRandomisationsActive: root.autoCycle && root.layer1AutoRandomise && root.layerEqAutoRandomise && root.layerVectorsAutoRandomise && root.layer2AutoRandomise && root.layer3AutoRandomise && root.layer4AutoRandomise
     readonly property bool anyLayerAutoRandomiseActive: root.layer1AutoRandomise || root.layerEqAutoRandomise || root.layerVectorsAutoRandomise || root.layer2AutoRandomise || root.layer3AutoRandomise || root.layer4AutoRandomise
@@ -153,6 +168,8 @@ FocusScope {
     property real layer2Speed: 1.0
     property real layer2Zoom: 1.0
     property real layer2Chaos: 0.50
+    property real layer2Opacity: 1.0
+    onLayer2OpacityChanged: { vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
     property bool backdropEnabled: true
     property int backdropMode: 0 // 0..15 in Engine.LAYER4_MODES (0..7 in legacy Engine.BACKDROP_MODES)
     property alias bgMode: root.backdropMode
@@ -174,6 +191,8 @@ FocusScope {
     property real layer4DualMix: 0.50 // 0.10 .. 0.90 blend balance between Primary and Secondary L4 modes
     property int layer4WallPattern: 0 // 0 = Rings, 1 = Hex Grid, 2 = Ribbons, 3 = Matrix, 4 = Strobe
     property real layer4Twist: 1.00 // 0.00 .. 3.00 spiral twist multiplier
+    property real layer4Opacity: 1.0
+    onLayer4OpacityChanged: { vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
     property alias layer4Speed: root.backdropSpeed
     property alias layer4Glow: root.backdropIntensity
     property alias layer4Symmetry: root.backdropSymmetry
@@ -210,6 +229,8 @@ FocusScope {
     property real layer3Evolution: 0.90
     property real layer3Scale: 1.0
     property int layer3Tracers: 3
+    property real layer3Opacity: 1.0
+    onLayer3OpacityChanged: { vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
     property real turntableRpm: 33.3
     property int turntableStyle: 0
     onTurntableRpmChanged: stageTurntable.rpm = root.turntableRpm
@@ -685,6 +706,9 @@ FocusScope {
     signal requestNext()
     signal requestPrev()
     signal requestSeek(real seconds)
+    signal requestSetVolume(int vol)
+    signal requestAdjustVolume(int delta)
+    signal requestToggleMute()
     signal requestToggleUseAlbumArt()
     signal requestToggleAsciiMode()
     signal requestSetAsciiSourceMode(string modeStr)
@@ -704,6 +728,7 @@ FocusScope {
     property string keybindingToastText: ""
     property real keybindingToastOpacity: 0.0
     function showKeybindingFeedback(message) {
+        if (!root.keybindingToastEnabled) return
         var txt = String(message || "").trim()
         if (!txt) return
         root.keybindingToastText = txt
@@ -1827,6 +1852,7 @@ FocusScope {
             layer4DualMix: root.layer4DualMix,
             layer4WallPattern: root.layer4WallPattern,
             layer4Twist: root.layer4Twist,
+            layer4Opacity: root.layer4Opacity,
             layer4AutoRandomise: root.layer4AutoRandomise,
             trackArcMode: root.trackArcMode,
             tracerCount: root.tracerCount,
@@ -1839,6 +1865,7 @@ FocusScope {
             geometryDetail: root.geometryDetail,
             antialiasingEnabled: root.antialiasingEnabled,
             disableScreensaverInFullscreenOrVj: root.disableScreensaverInFullscreenOrVj,
+            keybindingToastEnabled: root.keybindingToastEnabled,
             vjDeckActive: Boolean(root.vjDeckMode || root.externalStageOpen || root.isFullscreen),
             audioSensitivity: root.audioSensitivity,
             beatPunch: root.beatPunch,
@@ -1859,6 +1886,7 @@ FocusScope {
             layer1Speed: root.layer1Speed,
             layer1Density: root.layer1Density,
             layer1Dim: root.layer1Dim,
+            layer1Opacity: root.layer1Opacity,
             photoActiveCategory: root.photoActiveCategory,
             photoMotionMode: root.photoMotionMode,
             photoPoolMode: root.photoPoolMode,
@@ -1890,6 +1918,7 @@ FocusScope {
             layer1EqSpin: root.layer1EqSpin,
             layer1EqGain: root.layer1EqGain,
             layer1EqDamping: root.layer1EqDamping,
+            layer1EqOpacity: root.layer1EqOpacity,
             layer1ShapesEnabled: root.layer1ShapesEnabled,
             layer1ShapeStyle: root.layer1ShapeStyle,
             layer1ShapeSpin: root.layer1ShapeSpin,
@@ -1898,6 +1927,7 @@ FocusScope {
             layer1ShapeDensity: root.layer1ShapeDensity,
             layer1ShapeLifespan: root.layer1ShapeLifespan,
             layer1ShapeFillRatio: root.layer1ShapeFillRatio,
+            layer1ShapesOpacity: root.layer1ShapesOpacity,
             layer2Enabled: root.layer2Enabled,
             layer2AutoRandomise: root.layer2AutoRandomise,
             layer2VizEnabled: root.layer2VizEnabled,
@@ -1909,6 +1939,7 @@ FocusScope {
             layer2Speed: root.layer2Speed,
             layer2Zoom: root.layer2Zoom,
             layer2Chaos: root.layer2Chaos,
+            layer2Opacity: root.layer2Opacity,
             layer3Enabled: root.layer3Enabled,
             layer3AutoRandomise: root.layer3AutoRandomise,
             layer3Mode: root.layer3Mode,
@@ -1927,6 +1958,7 @@ FocusScope {
             layer3Evolution: root.layer3Evolution,
             layer3Scale: root.layer3Scale,
             layer3Tracers: root.layer3Tracers,
+            layer3Opacity: root.layer3Opacity,
             turntableRpm: root.turntableRpm,
             turntableStyle: root.turntableStyle,
             savedL1Configs: root.savedL1Configs,
@@ -1976,6 +2008,7 @@ FocusScope {
         if (cfg.layer4DualMix !== undefined) root.layer4DualMix = Math.max(0.10, Math.min(0.90, Number(cfg.layer4DualMix) || 0.50))
         if (cfg.layer4WallPattern !== undefined) root.layer4WallPattern = Number(cfg.layer4WallPattern) % Engine.LAYER4_WALL_PATTERNS.length
         if (cfg.layer4Twist !== undefined) root.layer4Twist = Math.max(0.0, Math.min(3.0, Number(cfg.layer4Twist)))
+        if (cfg.layer4Opacity !== undefined) root.layer4Opacity = Math.max(0.05, Math.min(1.00, Number(cfg.layer4Opacity)))
         if (cfg.layer4AutoRandomise !== undefined) root.layer4AutoRandomise = Boolean(cfg.layer4AutoRandomise)
         if (cfg.backdropSpeed !== undefined) root.backdropSpeed = Number(cfg.backdropSpeed)
         if (cfg.backdropIntensity !== undefined) root.backdropIntensity = Number(cfg.backdropIntensity)
@@ -1988,6 +2021,7 @@ FocusScope {
         if (cfg.tracerDirection !== undefined) root.tracerDirection = Number(cfg.tracerDirection)
         if (cfg.antialiasingEnabled !== undefined) root.antialiasingEnabled = Boolean(cfg.antialiasingEnabled)
         if (cfg.disableScreensaverInFullscreenOrVj !== undefined) root.disableScreensaverInFullscreenOrVj = Boolean(cfg.disableScreensaverInFullscreenOrVj)
+        if (cfg.keybindingToastEnabled !== undefined) root.keybindingToastEnabled = Boolean(cfg.keybindingToastEnabled)
         if (cfg.audioSensitivity !== undefined) root.audioSensitivity = Number(cfg.audioSensitivity)
         if (cfg.beatPunch !== undefined) root.beatPunch = Number(cfg.beatPunch)
         if (cfg.audioSmoothing !== undefined) root.audioSmoothing = Number(cfg.audioSmoothing)
@@ -2008,6 +2042,7 @@ FocusScope {
         if (cfg.layer1Speed !== undefined) root.layer1Speed = Number(cfg.layer1Speed)
         if (cfg.layer1Density !== undefined) root.layer1Density = Number(cfg.layer1Density)
         if (cfg.layer1Dim !== undefined) root.layer1Dim = Number(cfg.layer1Dim)
+        if (cfg.layer1Opacity !== undefined) root.layer1Opacity = Math.max(0.05, Math.min(1.00, Number(cfg.layer1Opacity)))
         if (cfg.photoActiveCategory !== undefined) root.photoActiveCategory = String(cfg.photoActiveCategory || "all")
         if (cfg.photoMotionMode !== undefined) root.photoMotionMode = Number(cfg.photoMotionMode) % PhotoMotion.PHOTO_MOTION_MODES.length
         if (cfg.photoPoolMode !== undefined) root.photoPoolMode = ((Math.floor(Number(cfg.photoPoolMode) || 0) % 3) + 3) % 3
@@ -2043,6 +2078,7 @@ FocusScope {
         if (cfg.layer1EqSpin !== undefined) root.layer1EqSpin = Math.max(-2.50, Math.min(2.50, Number(cfg.layer1EqSpin)))
         if (cfg.layer1EqGain !== undefined) root.layer1EqGain = Number(cfg.layer1EqGain)
         if (cfg.layer1EqDamping !== undefined) root.layer1EqDamping = Number(cfg.layer1EqDamping) % Engine.LAYER1_EQ_DAMPING.length
+        if (cfg.layer1EqOpacity !== undefined) root.layer1EqOpacity = Math.max(0.05, Math.min(1.00, Number(cfg.layer1EqOpacity)))
         if (cfg.layer1ShapesEnabled !== undefined) root.layer1ShapesEnabled = Boolean(cfg.layer1ShapesEnabled)
         if (cfg.layer1ShapeStyle !== undefined) root.layer1ShapeStyle = Number(cfg.layer1ShapeStyle) % Engine.LAYER1_SHAPE_STYLES.length
         if (cfg.layer1ShapeSpin !== undefined) root.layer1ShapeSpin = Number(cfg.layer1ShapeSpin)
@@ -2051,6 +2087,7 @@ FocusScope {
         if (cfg.layer1ShapeDensity !== undefined) root.layer1ShapeDensity = Number(cfg.layer1ShapeDensity)
         if (cfg.layer1ShapeLifespan !== undefined) root.layer1ShapeLifespan = Math.max(0.35, Math.min(3.00, Number(cfg.layer1ShapeLifespan)))
         if (cfg.layer1ShapeFillRatio !== undefined) root.layer1ShapeFillRatio = Math.max(0.00, Math.min(1.00, Number(cfg.layer1ShapeFillRatio)))
+        if (cfg.layer1ShapesOpacity !== undefined) root.layer1ShapesOpacity = Math.max(0.05, Math.min(1.00, Number(cfg.layer1ShapesOpacity)))
 
         if (cfg.layer2Enabled !== undefined) root.layer2Enabled = Boolean(cfg.layer2Enabled)
         if (cfg.layer2AutoRandomise !== undefined) root.layer2AutoRandomise = Boolean(cfg.layer2AutoRandomise)
@@ -2063,6 +2100,7 @@ FocusScope {
         if (cfg.layer2Speed !== undefined) root.layer2Speed = Number(cfg.layer2Speed)
         if (cfg.layer2Zoom !== undefined) root.layer2Zoom = Number(cfg.layer2Zoom)
         if (cfg.layer2Chaos !== undefined) root.layer2Chaos = Number(cfg.layer2Chaos)
+        if (cfg.layer2Opacity !== undefined) root.layer2Opacity = Math.max(0.05, Math.min(1.00, Number(cfg.layer2Opacity)))
 
         if (cfg.layer3Enabled !== undefined) root.layer3Enabled = Boolean(cfg.layer3Enabled)
         if (cfg.layer3AutoRandomise !== undefined) root.layer3AutoRandomise = Boolean(cfg.layer3AutoRandomise)
@@ -2096,6 +2134,7 @@ FocusScope {
         if (cfg.layer3Evolution !== undefined) root.layer3Evolution = Number(cfg.layer3Evolution)
         if (cfg.layer3Scale !== undefined) root.layer3Scale = Number(cfg.layer3Scale)
         if (cfg.layer3Tracers !== undefined) root.layer3Tracers = Number(cfg.layer3Tracers)
+        if (cfg.layer3Opacity !== undefined) root.layer3Opacity = Math.max(0.05, Math.min(1.00, Number(cfg.layer3Opacity)))
         if (cfg.turntableRpm !== undefined) {
             root.turntableRpm = Math.max(16.0, Math.min(78.0, Number(cfg.turntableRpm) || 33.3))
             stageTurntable.rpm = root.turntableRpm
@@ -2142,6 +2181,7 @@ FocusScope {
         root.geometryDetail = 1.0
         root.antialiasingEnabled = true
         root.disableScreensaverInFullscreenOrVj = true
+        root.keybindingToastEnabled = true
         root.audioSensitivity = 1.35
         root.beatPunch = 1.15
         root.audioSmoothing = 0.50
@@ -2159,6 +2199,7 @@ FocusScope {
         root.layer4DualMix = 0.50
         root.layer4WallPattern = 0
         root.layer4Twist = 1.00
+        root.layer4Opacity = 1.00
         root.backdropSpeed = 1.0
         root.backdropIntensity = 1.0
         root.backdropSymmetry = 6
@@ -2169,6 +2210,7 @@ FocusScope {
         root.layer1Direction = 1
         root.layer1Speed = 1.0
         root.layer1Density = 1.0
+        root.layer1Opacity = 1.00
         root.photoMotionMode = 0
         root.photoPoolMode = 0
         root.photoPlaneShearEnabled = false
@@ -2193,15 +2235,18 @@ FocusScope {
         root.layer1EqBandOrder = 0
         root.layer1EqScale = 1.0
         root.layer1EqSpin = 1.0
+        root.layer1EqOpacity = 1.00
         root.layer1ShapesEnabled = true
         root.layer1ShapeStyle = 0
         root.layer1ShapeDensity = 1.0
         root.layer1ShapeLifespan = 1.0
         root.layer1ShapeFillRatio = 0.35
+        root.layer1ShapesOpacity = 1.00
         root.layer2Enabled = true
         root.layer2VizEnabled = true
         root.layer2TracersEnabled = true
         root.visualMode = 0
+        root.layer2Opacity = 1.00
         root.tracerCount = 4
         root.tracerDirection = 1
         root.layer3Enabled = true
@@ -2214,6 +2259,7 @@ FocusScope {
         root.layer3ShowAlbum = true
         root.layer3ShowStatements = false
         root.layer3Tracers = 3
+        root.layer3Opacity = 1.00
         root.autoCycle = false
         root.layer1AutoRandomise = false
         root.layerEqAutoRandomise = false
@@ -2243,6 +2289,7 @@ FocusScope {
             l1Speed: root.layer1Speed,
             l1Density: root.layer1Density,
             l1Dim: root.layer1Dim,
+            l1Opacity: root.layer1Opacity,
             photoMotionMode: root.photoMotionMode,
             photoPoolMode: root.photoPoolMode,
             photoPlaneShearEnabled: root.photoPlaneShearEnabled,
@@ -2269,6 +2316,7 @@ FocusScope {
             l1EqSpin: root.layer1EqSpin,
             l1EqGain: root.layer1EqGain,
             l1EqDamping: root.layer1EqDamping,
+            l1EqOpacity: root.layer1EqOpacity,
             l1ShapesEnabled: root.layer1ShapesEnabled,
             l1ShapeStyle: root.layer1ShapeStyle,
             l1ShapeSpin: root.layer1ShapeSpin,
@@ -2277,6 +2325,7 @@ FocusScope {
             l1ShapeDensity: root.layer1ShapeDensity,
             l1ShapeLifespan: root.layer1ShapeLifespan,
             l1ShapeFillRatio: root.layer1ShapeFillRatio,
+            l1ShapesOpacity: root.layer1ShapesOpacity,
             l1AutoRandomise: root.layer1AutoRandomise
         }
         copy.push(item)
@@ -2300,6 +2349,7 @@ FocusScope {
         if (item.l1Speed !== undefined) root.layer1Speed = Number(item.l1Speed)
         if (item.l1Density !== undefined) root.layer1Density = Number(item.l1Density)
         if (item.l1Dim !== undefined) root.layer1Dim = Number(item.l1Dim)
+        if (item.l1Opacity !== undefined) root.layer1Opacity = Math.max(0.05, Math.min(1.00, Number(item.l1Opacity)))
         if (item.photoMotionMode !== undefined) root.photoMotionMode = Number(item.photoMotionMode) % PhotoMotion.PHOTO_MOTION_MODES.length
         if (item.photoPoolMode !== undefined) root.photoPoolMode = ((Math.floor(Number(item.photoPoolMode) || 0) % 3) + 3) % 3
         if (item.photoPlaneShearEnabled !== undefined) root.photoPlaneShearEnabled = Boolean(item.photoPlaneShearEnabled)
@@ -2326,6 +2376,7 @@ FocusScope {
         if (item.l1EqSpin !== undefined) root.layer1EqSpin = Math.max(-2.50, Math.min(2.50, Number(item.l1EqSpin)))
         if (item.l1EqGain !== undefined) root.layer1EqGain = Number(item.l1EqGain)
         if (item.l1EqDamping !== undefined) root.layer1EqDamping = Number(item.l1EqDamping) % Engine.LAYER1_EQ_DAMPING.length
+        if (item.l1EqOpacity !== undefined) root.layer1EqOpacity = Math.max(0.05, Math.min(1.00, Number(item.l1EqOpacity)))
         if (item.l1ShapesEnabled !== undefined) root.layer1ShapesEnabled = Boolean(item.l1ShapesEnabled)
         if (item.l1ShapeStyle !== undefined) root.layer1ShapeStyle = Number(item.l1ShapeStyle) % Engine.LAYER1_SHAPE_STYLES.length
         if (item.l1ShapeSpin !== undefined) root.layer1ShapeSpin = Number(item.l1ShapeSpin)
@@ -2334,6 +2385,7 @@ FocusScope {
         if (item.l1ShapeDensity !== undefined) root.layer1ShapeDensity = Number(item.l1ShapeDensity)
         if (item.l1ShapeLifespan !== undefined) root.layer1ShapeLifespan = Math.max(0.35, Math.min(3.00, Number(item.l1ShapeLifespan)))
         if (item.l1ShapeFillRatio !== undefined) root.layer1ShapeFillRatio = Math.max(0.00, Math.min(1.00, Number(item.l1ShapeFillRatio)))
+        if (item.l1ShapesOpacity !== undefined) root.layer1ShapesOpacity = Math.max(0.05, Math.min(1.00, Number(item.l1ShapesOpacity)))
         if (item.l1AutoRandomise !== undefined) root.layer1AutoRandomise = Boolean(item.l1AutoRandomise)
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
@@ -2373,6 +2425,7 @@ FocusScope {
             l2Speed: root.layer2Speed,
             l2Zoom: root.layer2Zoom,
             l2Chaos: root.layer2Chaos,
+            l2Opacity: root.layer2Opacity,
             l2TracersEnabled: root.layer2TracersEnabled,
             tracerCount: root.tracerCount,
             tracerSpeed: root.tracerSpeed,
@@ -2403,6 +2456,7 @@ FocusScope {
         if (item.l2Speed !== undefined) root.layer2Speed = Number(item.l2Speed)
         if (item.l2Zoom !== undefined) root.layer2Zoom = Number(item.l2Zoom)
         if (item.l2Chaos !== undefined) root.layer2Chaos = Number(item.l2Chaos)
+        if (item.l2Opacity !== undefined) root.layer2Opacity = Math.max(0.05, Math.min(1.00, Number(item.l2Opacity)))
         if (item.l2TracersEnabled !== undefined) root.layer2TracersEnabled = Boolean(item.l2TracersEnabled)
         if (item.tracerCount !== undefined) root.tracerCount = Number(item.tracerCount)
         if (item.tracerSpeed !== undefined) root.tracerSpeed = Number(item.tracerSpeed)
@@ -2455,6 +2509,7 @@ FocusScope {
             l3Evolution: root.layer3Evolution,
             l3Scale: root.layer3Scale,
             l3Tracers: root.layer3Tracers,
+            l3Opacity: root.layer3Opacity,
             trackArcMode: root.trackArcMode,
             l3AutoRandomise: root.layer3AutoRandomise
         }
@@ -2491,6 +2546,7 @@ FocusScope {
         if (item.l3Evolution !== undefined) root.layer3Evolution = Number(item.l3Evolution)
         if (item.l3Scale !== undefined) root.layer3Scale = Number(item.l3Scale)
         if (item.l3Tracers !== undefined) root.layer3Tracers = Number(item.l3Tracers)
+        if (item.l3Opacity !== undefined) root.layer3Opacity = Math.max(0.05, Math.min(1.00, Number(item.l3Opacity)))
         if (item.trackArcMode !== undefined) root.trackArcMode = Number(item.trackArcMode) % Engine.TRACK_ARC_MODES.length
         if (item.l3AutoRandomise !== undefined) root.layer3AutoRandomise = Boolean(item.l3AutoRandomise)
         if (root.layer3Mode === 5) {
@@ -2533,6 +2589,7 @@ FocusScope {
             l4DualMix: root.layer4DualMix,
             l4WallPattern: root.layer4WallPattern,
             l4Twist: root.layer4Twist,
+            l4Opacity: root.layer4Opacity,
             l4Speed: root.backdropSpeed,
             l4Glow: root.backdropIntensity,
             l4Symmetry: root.backdropSymmetry,
@@ -2559,6 +2616,7 @@ FocusScope {
         if (item.l4DualMix !== undefined) root.layer4DualMix = Math.max(0.10, Math.min(0.90, Number(item.l4DualMix)))
         if (item.l4WallPattern !== undefined) root.layer4WallPattern = Number(item.l4WallPattern) % Engine.LAYER4_WALL_PATTERNS.length
         if (item.l4Twist !== undefined) root.layer4Twist = Math.max(0.0, Math.min(3.0, Number(item.l4Twist)))
+        if (item.l4Opacity !== undefined) root.layer4Opacity = Math.max(0.05, Math.min(1.00, Number(item.l4Opacity)))
         if (item.l4Speed !== undefined) root.backdropSpeed = Number(item.l4Speed)
         if (item.l4Glow !== undefined) root.backdropIntensity = Number(item.l4Glow)
         if (item.l4Symmetry !== undefined) root.backdropSymmetry = Number(item.l4Symmetry)
@@ -2777,6 +2835,7 @@ FocusScope {
             layer4DualMix: root.layer4DualMix,
             layer4WallPattern: root.layer4WallPattern,
             layer4Twist: root.layer4Twist,
+            layer4Opacity: root.layer4Opacity,
             layer4Speed: root.backdropSpeed,
             layer4Glow: root.backdropIntensity,
             layer4Symmetry: root.backdropSymmetry,
@@ -2810,6 +2869,7 @@ FocusScope {
             layer1Speed: root.layer1Speed,
             layer1Density: root.layer1Density,
             layer1Dim: root.layer1Dim,
+            layer1Opacity: root.layer1Opacity,
             layer1EqEnabled: root.layer1EqEnabled,
             layer1EqStyle: root.layer1EqStyle,
             layer1EqLayout: root.layer1EqLayout,
@@ -2818,6 +2878,7 @@ FocusScope {
             layer1EqSpin: root.layer1EqSpin,
             layer1EqGain: root.layer1EqGain,
             layer1EqDamping: root.layer1EqDamping,
+            layer1EqOpacity: root.layer1EqOpacity,
             layer1ShapesEnabled: root.layer1ShapesEnabled,
             layer1ShapeStyle: root.layer1ShapeStyle,
             layer1ShapeSpin: root.layer1ShapeSpin,
@@ -2826,6 +2887,7 @@ FocusScope {
             layer1ShapeDensity: root.layer1ShapeDensity,
             layer1ShapeLifespan: root.layer1ShapeLifespan,
             layer1ShapeFillRatio: root.layer1ShapeFillRatio,
+            layer1ShapesOpacity: root.layer1ShapesOpacity,
             layer2Enabled: root.layer2Enabled,
             layer2VizEnabled: root.layer2VizEnabled,
             layer2TracersEnabled: root.layer2TracersEnabled,
@@ -2837,6 +2899,7 @@ FocusScope {
             layer2Speed: root.layer2Speed,
             layer2Zoom: root.layer2Zoom,
             layer2Chaos: root.layer2Chaos,
+            layer2Opacity: root.layer2Opacity,
             layer3Enabled: root.layer3Enabled,
             layer3Mode: root.layer3Mode,
             layer3TextStyle: root.layer3TextStyle,
@@ -2852,6 +2915,7 @@ FocusScope {
             layer3Evolution: root.layer3Evolution,
             layer3Scale: root.layer3Scale,
             layer3Tracers: root.layer3Tracers,
+            layer3Opacity: root.layer3Opacity,
             layer3AutoRandomise: root.layer3AutoRandomise,
             autoCycle: root.autoCycle,
             photoMotionRenderCallback: function(ctx, w, h, engState, palette, cfgObj) {
@@ -4366,6 +4430,18 @@ FocusScope {
             else if (event.key === Qt.Key_Space) { root.requestPlayPause(); event.accepted = true }
             else if (event.key === Qt.Key_N || event.key === Qt.Key_Right) { root.requestNext(); event.accepted = true }
             else if (event.key === Qt.Key_P || event.key === Qt.Key_Left) { root.requestPrev(); event.accepted = true }
+            else if (event.key === Qt.Key_PageUp) {
+                var nextVolUp = Math.min(100, root.volume + 5)
+                root.requestAdjustVolume(5)
+                root.suppressActionFeedback("Volume: " + nextVolUp + "%")
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_PageDown) {
+                var nextVolDn = Math.max(0, root.volume - 5)
+                root.requestAdjustVolume(-5)
+                root.suppressActionFeedback("Volume: " + nextVolDn + "%")
+                event.accepted = true
+            }
             else if (event.key === Qt.Key_F || event.key === Qt.Key_V) {
                 if (event.modifiers & Qt.ShiftModifier) {
                     root.toggleZenFullscreen()
@@ -4459,6 +4535,16 @@ FocusScope {
                     if (event.key === Qt.Key_Escape) {
                         root.externalStageOpen = false
                         root.suppressActionFeedback("Closed External VJ Stage Window")
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_PageUp) {
+                        var extVolUp = Math.min(100, root.volume + 5)
+                        root.requestAdjustVolume(5)
+                        root.suppressActionFeedback("Volume: " + extVolUp + "%")
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_PageDown) {
+                        var extVolDn = Math.max(0, root.volume - 5)
+                        root.requestAdjustVolume(-5)
+                        root.suppressActionFeedback("Volume: " + extVolDn + "%")
                         event.accepted = true
                     } else if (root.stageMode === "visualiser" && (event.modifiers & Qt.ShiftModifier) && (event.key === Qt.Key_1 || event.key === Qt.Key_Exclam || event.text === "!")) {
                         root.toggleLayerRandomByNumber(1); event.accepted = true
@@ -4718,7 +4804,7 @@ FocusScope {
                     gpuPhotoStage.uPlaneShear = (stepInfo && stepInfo.effectivePlaneShear !== undefined)
                         ? stepInfo.effectivePlaneShear
                         : (root.photoPlaneShearEnabled ? root.photoPlaneShear : 0.0)
-                    gpuPhotoStage.uPhotoOpacity = root.photoOpacity * (1.0 - Math.min(0.85, root.layer1Dim * 0.75))
+                    gpuPhotoStage.uPhotoOpacity = root.photoOpacity * root.layer1Opacity * (1.0 - Math.min(0.85, root.layer1Dim * 0.75))
                     gpuPhotoStage.uBlackOpacity = root.photoBlackOpacity
                     gpuPhotoStage.uMidOpacity = root.photoMidOpacity
                     gpuPhotoStage.uWhiteOpacity = root.photoWhiteOpacity
@@ -5057,6 +5143,11 @@ FocusScope {
             id: gpuShaderStage
             anchors.fill: parent
             visible: root.stageMode === "visualiser" && root.gpuShaderEnabled && ((root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode >= 12) || root.layer4Enabled || (root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || (root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5))
+            opacity: Math.max(
+                (root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode >= 12) ? root.layer1Opacity : 0.0,
+                root.layer4Enabled ? root.layer4Opacity : 0.0,
+                ((root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || (root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5)) ? root.layer2Opacity : 0.0
+            )
             fragmentShader: Qt.resolvedUrl("share/psychedelic.frag.qsb")
 
             property real uTime: 0.0
@@ -5069,7 +5160,7 @@ FocusScope {
             property real uAspect: height > 0 ? (width / height) : 1.777
             property real uL1Enabled: 0.0
             property real uL1Mode: Math.max(0, root.layer1Mode - 12)
-            property real uL1Dim: root.layer1Dim
+            property real uL1Dim: 1.0 - (1.0 - root.layer1Dim) * root.layer1Opacity
             property real uL1Speed: root.layer1Speed
             property real uL1Density: root.layer1Density
             property real uL1Direction: root.layer1Direction
@@ -5078,7 +5169,7 @@ FocusScope {
             property real uL2VizMode: (root.layer2Enabled && root.layer2VizEnabled) ? root.visualMode : -1.0
             property real uZoom: root.layer2Zoom
             property real uFacets: root.backdropSymmetry
-            property real uComplexity: root.backdropIntensity
+            property real uComplexity: root.backdropIntensity * (root.layer4Enabled ? root.layer4Opacity : root.layer2Opacity)
             property real uTracerCount: root.tracerCount
             property real uTracerDir: (root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5) ? root.tracerDirection : root.backdropDirection
             property real uDriftX: 0.0
@@ -5134,9 +5225,9 @@ FocusScope {
             id: gpuPhotoStage
             anchors.fill: parent
             visible: root.stageMode === "visualiser" && root.gpuShaderEnabled && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11
-            opacity: (root.layer4Enabled || (root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || (root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5))
+            opacity: ((root.layer4Enabled || (root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || (root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5))
                 ? 0.84
-                : 1.0
+                : 1.0) * root.layer1Opacity
             fragmentShader: Qt.resolvedUrl("share/photo_motion.frag.qsb")
 
             property size uResolution: Qt.size(Math.max(1, width), Math.max(1, height))
@@ -5173,7 +5264,7 @@ FocusScope {
             property real uPlaneShear: root.photoPlaneShearEnabled ? root.photoPlaneShear : 0.0
 
             // 4-sector tonal opacity & palette colour-snatch bloom
-            property real uPhotoOpacity: root.photoOpacity
+            property real uPhotoOpacity: root.photoOpacity * root.layer1Opacity
             property real uBlackOpacity: root.photoBlackOpacity
             property real uMidOpacity: root.photoMidOpacity
             property real uWhiteOpacity: root.photoWhiteOpacity
@@ -5262,7 +5353,7 @@ FocusScope {
             anchors.leftMargin: 12
             anchors.bottomMargin: (root.showHud && !root.externalStageOpen) ? 44 : 12
             z: 20
-            visible: opacity > 0.01 && root.keybindingToastText.length > 0
+            visible: root.keybindingToastEnabled && opacity > 0.01 && root.keybindingToastText.length > 0
             opacity: root.keybindingToastOpacity
             height: 22
             width: Math.min(parent.width - 24, keybindingToastLabel.implicitWidth + 18)
@@ -5823,6 +5914,30 @@ FocusScope {
                 VizPillButton {
                     pillHeight: 22
                     fontSize: 9
+                    horizontalPad: 4
+                    text: "Opac:" + Math.round(root.layer1Opacity * 100) + "%"
+                    active: root.layer1Opacity < 0.99
+                    onClicked: {
+                        var oSteps = [0.25, 0.50, 0.75, 1.00]
+                        var nextO = 1.00
+                        for (var i = 0; i < oSteps.length; i++) {
+                            if (oSteps[i] > root.layer1Opacity + 0.04) {
+                                nextO = oSteps[i]
+                                break
+                            }
+                            if (i === oSteps.length - 1) nextO = oSteps[0]
+                        }
+                        root.layer1Opacity = nextO
+                    }
+                    onRightClicked: root.layer1Opacity = 1.00
+                    onWheelScrolled: delta => {
+                        root.layer1Opacity = Math.max(0.05, Math.min(1.00, Math.round((root.layer1Opacity + (delta > 0 ? 0.05 : -0.05)) * 100) / 100))
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
                     horizontalPad: 5
                     text: root.layer1AutoRandomise ? "󰒟 Rand:AUTO" : "󰒟 Rand:OFF"
                     active: root.layer1AutoRandomise
@@ -6032,6 +6147,30 @@ FocusScope {
                 VizPillButton {
                     pillHeight: 22
                     fontSize: 9
+                    horizontalPad: 4
+                    text: "Opac:" + Math.round(root.layer1EqOpacity * 100) + "%"
+                    active: root.layer1EqOpacity < 0.99
+                    onClicked: {
+                        var oSteps = [0.25, 0.50, 0.75, 1.00]
+                        var nextO = 1.00
+                        for (var i = 0; i < oSteps.length; i++) {
+                            if (oSteps[i] > root.layer1EqOpacity + 0.04) {
+                                nextO = oSteps[i]
+                                break
+                            }
+                            if (i === oSteps.length - 1) nextO = oSteps[0]
+                        }
+                        root.layer1EqOpacity = nextO
+                    }
+                    onRightClicked: root.layer1EqOpacity = 1.00
+                    onWheelScrolled: delta => {
+                        root.layer1EqOpacity = Math.max(0.05, Math.min(1.00, Math.round((root.layer1EqOpacity + (delta > 0 ? 0.05 : -0.05)) * 100) / 100))
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
                     horizontalPad: 5
                     text: root.layerEqAutoRandomise ? "󰒟 Rand:AUTO" : "󰒟 Rand:OFF"
                     active: root.layerEqAutoRandomise
@@ -6207,6 +6346,30 @@ FocusScope {
                 VizPillButton {
                     pillHeight: 22
                     fontSize: 9
+                    horizontalPad: 4
+                    text: "Opac:" + Math.round(root.layer1ShapesOpacity * 100) + "%"
+                    active: root.layer1ShapesOpacity < 0.99
+                    onClicked: {
+                        var oSteps = [0.25, 0.50, 0.75, 1.00]
+                        var nextO = 1.00
+                        for (var i = 0; i < oSteps.length; i++) {
+                            if (oSteps[i] > root.layer1ShapesOpacity + 0.04) {
+                                nextO = oSteps[i]
+                                break
+                            }
+                            if (i === oSteps.length - 1) nextO = oSteps[0]
+                        }
+                        root.layer1ShapesOpacity = nextO
+                    }
+                    onRightClicked: root.layer1ShapesOpacity = 1.00
+                    onWheelScrolled: delta => {
+                        root.layer1ShapesOpacity = Math.max(0.05, Math.min(1.00, Math.round((root.layer1ShapesOpacity + (delta > 0 ? 0.05 : -0.05)) * 100) / 100))
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
                     horizontalPad: 5
                     text: root.layerVectorsAutoRandomise ? "󰒟 Rand:AUTO" : "󰒟 Rand:OFF"
                     active: root.layerVectorsAutoRandomise
@@ -6342,6 +6505,30 @@ FocusScope {
                 VizPillButton {
                     pillHeight: 22
                     fontSize: 9
+                    horizontalPad: 4
+                    text: "Opac:" + Math.round(root.layer2Opacity * 100) + "%"
+                    active: root.layer2Opacity < 0.99
+                    onClicked: {
+                        var oSteps = [0.25, 0.50, 0.75, 1.00]
+                        var nextO = 1.00
+                        for (var i = 0; i < oSteps.length; i++) {
+                            if (oSteps[i] > root.layer2Opacity + 0.04) {
+                                nextO = oSteps[i]
+                                break
+                            }
+                            if (i === oSteps.length - 1) nextO = oSteps[0]
+                        }
+                        root.layer2Opacity = nextO
+                    }
+                    onRightClicked: root.layer2Opacity = 1.00
+                    onWheelScrolled: delta => {
+                        root.layer2Opacity = Math.max(0.05, Math.min(1.00, Math.round((root.layer2Opacity + (delta > 0 ? 0.05 : -0.05)) * 100) / 100))
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
                     horizontalPad: 5
                     text: root.layer2AutoRandomise ? "󰒟 Rand:AUTO" : "󰒟 Rand:OFF"
                     active: root.layer2AutoRandomise
@@ -6463,6 +6650,30 @@ FocusScope {
                         root.backdropDirection = root.layer4Direction
                         vizCanvas.requestPaint()
                         scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "Opac:" + Math.round(root.layer4Opacity * 100) + "%"
+                    active: root.layer4Opacity < 0.99
+                    onClicked: {
+                        var oSteps = [0.25, 0.50, 0.75, 1.00]
+                        var nextO = 1.00
+                        for (var i = 0; i < oSteps.length; i++) {
+                            if (oSteps[i] > root.layer4Opacity + 0.04) {
+                                nextO = oSteps[i]
+                                break
+                            }
+                            if (i === oSteps.length - 1) nextO = oSteps[0]
+                        }
+                        root.layer4Opacity = nextO
+                    }
+                    onRightClicked: root.layer4Opacity = 1.00
+                    onWheelScrolled: delta => {
+                        root.layer4Opacity = Math.max(0.05, Math.min(1.00, Math.round((root.layer4Opacity + (delta > 0 ? 0.05 : -0.05)) * 100) / 100))
                     }
                 }
 
@@ -6644,6 +6855,30 @@ FocusScope {
                     onWheelScrolled: delta => {
                         root.layer3Tracers = Math.max(1, Math.min(8, root.layer3Tracers + delta))
                         vizCanvas.requestPaint()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "Opac:" + Math.round(root.layer3Opacity * 100) + "%"
+                    active: root.layer3Opacity < 0.99
+                    onClicked: {
+                        var oSteps = [0.25, 0.50, 0.75, 1.00]
+                        var nextO = 1.00
+                        for (var i = 0; i < oSteps.length; i++) {
+                            if (oSteps[i] > root.layer3Opacity + 0.04) {
+                                nextO = oSteps[i]
+                                break
+                            }
+                            if (i === oSteps.length - 1) nextO = oSteps[0]
+                        }
+                        root.layer3Opacity = nextO
+                    }
+                    onRightClicked: root.layer3Opacity = 1.00
+                    onWheelScrolled: delta => {
+                        root.layer3Opacity = Math.max(0.05, Math.min(1.00, Math.round((root.layer3Opacity + (delta > 0 ? 0.05 : -0.05)) * 100) / 100))
                     }
                 }
 
@@ -7137,6 +7372,20 @@ FocusScope {
                                         maxValue: 0.65
                                         onValueEdited: v => {
                                             root.layer1Dim = v
+                                            vizCanvas.requestPaint()
+                                            scheduleSaveVisualiserConfig()
+                                        }
+                                    }
+
+                                    LayerSlider {
+                                        label: "Layer 1 Opacity"
+                                        value: Math.round(root.layer1Opacity * 100)
+                                        minValue: 5
+                                        maxValue: 100
+                                        integerSteps: true
+                                        unitSuffix: "%"
+                                        onValueEdited: v => {
+                                            root.layer1Opacity = Math.max(0.05, Math.min(1.0, Math.round(v) / 100.0))
                                             vizCanvas.requestPaint()
                                             scheduleSaveVisualiserConfig()
                                         }
@@ -8062,6 +8311,21 @@ FocusScope {
                                         }
                                     }
 
+                                    LayerSlider {
+                                        Layout.fillWidth: true
+                                        label: "Layer 2 Opacity"
+                                        value: Math.round(root.layer1EqOpacity * 100)
+                                        minValue: 5
+                                        maxValue: 100
+                                        integerSteps: true
+                                        unitSuffix: "%"
+                                        onValueEdited: v => {
+                                            root.layer1EqOpacity = Math.max(0.05, Math.min(1.0, Math.round(v) / 100.0))
+                                            vizCanvas.requestPaint()
+                                            scheduleSaveVisualiserConfig()
+                                        }
+                                    }
+
                                     RowLayout {
                                         Layout.fillWidth: true
                                         spacing: 5
@@ -8270,6 +8534,20 @@ FocusScope {
                                         unitSuffix: "%"
                                         onValueEdited: v => {
                                             root.layer1ShapeFillRatio = Math.max(0.0, Math.min(1.0, Math.round(v) / 100.0))
+                                            vizCanvas.requestPaint()
+                                            scheduleSaveVisualiserConfig()
+                                        }
+                                    }
+
+                                    LayerSlider {
+                                        label: "Layer 3 Opacity"
+                                        value: Math.round(root.layer1ShapesOpacity * 100)
+                                        minValue: 5
+                                        maxValue: 100
+                                        integerSteps: true
+                                        unitSuffix: "%"
+                                        onValueEdited: v => {
+                                            root.layer1ShapesOpacity = Math.max(0.05, Math.min(1.0, Math.round(v) / 100.0))
                                             vizCanvas.requestPaint()
                                             scheduleSaveVisualiserConfig()
                                         }
@@ -8548,6 +8826,16 @@ FocusScope {
                                 maxValue: 2.00
                                 unitSuffix: "x"
                                 onValueEdited: v => { root.layer2Zoom = v; root.layer2Chaos = Math.min(1.5, v * 0.6); vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                            }
+
+                            LayerSlider {
+                                label: "Layer 4 Opacity"
+                                value: Math.round(root.layer2Opacity * 100)
+                                minValue: 5
+                                maxValue: 100
+                                integerSteps: true
+                                unitSuffix: "%"
+                                onValueEdited: v => { root.layer2Opacity = Math.max(0.05, Math.min(1.0, Math.round(v) / 100.0)); vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
                             }
                         }
                     }
@@ -8838,6 +9126,16 @@ FocusScope {
                                 maxValue: 0.90
                                 unitSuffix: ""
                                 onValueEdited: v => { root.layer4DualMix = v; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                            }
+
+                            LayerSlider {
+                                label: "Layer 5 Opacity"
+                                value: Math.round(root.layer4Opacity * 100)
+                                minValue: 5
+                                maxValue: 100
+                                integerSteps: true
+                                unitSuffix: "%"
+                                onValueEdited: v => { root.layer4Opacity = Math.max(0.05, Math.min(1.0, Math.round(v) / 100.0)); vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
                             }
                         }
                     }
@@ -9652,6 +9950,16 @@ FocusScope {
                                 unitSuffix: "x"
                                 onValueEdited: v => { root.layer3Tracers = Math.round(v); vizCanvas.requestPaint() }
                             }
+
+                            LayerSlider {
+                                label: "Layer 6 Opacity"
+                                value: Math.round(root.layer3Opacity * 100)
+                                minValue: 5
+                                maxValue: 100
+                                integerSteps: true
+                                unitSuffix: "%"
+                                onValueEdited: v => { root.layer3Opacity = Math.max(0.05, Math.min(1.0, Math.round(v) / 100.0)); vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                            }
                         }
                     }
 
@@ -9757,6 +10065,20 @@ FocusScope {
                                         horizontalPad: 7
                                         onClicked: {
                                             root.disableScreensaverInFullscreenOrVj = !root.disableScreensaverInFullscreenOrVj
+                                            scheduleSaveVisualiserConfig()
+                                        }
+                                    }
+
+                                    VizPillButton {
+                                        text: root.keybindingToastEnabled ? "⌨ Key Toast: ON" : "⌨ Key Toast: OFF"
+                                        active: root.keybindingToastEnabled
+                                        horizontalPad: 7
+                                        onClicked: {
+                                            root.keybindingToastEnabled = !root.keybindingToastEnabled
+                                            if (!root.keybindingToastEnabled) {
+                                                root.keybindingToastText = ""
+                                                keybindingToastTimer.stop()
+                                            }
                                             scheduleSaveVisualiserConfig()
                                         }
                                     }
@@ -10280,6 +10602,80 @@ FocusScope {
                         pillHeight: 26
                         onClicked: root.requestNext()
                     }
+
+                    // Compact Volume Control (Mute Toggle Icon + Interactive Slider + Read-out)
+                    RowLayout {
+                        spacing: 5
+                        Layout.leftMargin: 4
+
+                        VizPillButton {
+                            text: root.muted || root.volume <= 0 ? "󰝟" : (root.volume < 50 ? "󰖀" : "󰕾")
+                            urgent: root.muted
+                            fontSize: 12
+                            horizontalPad: 6
+                            pillHeight: 26
+                            onClicked: root.requestToggleMute()
+                        }
+
+                        Rectangle {
+                            id: hudVolSliderTrack
+                            Layout.preferredWidth: 56
+                            Layout.preferredHeight: 6
+                            radius: 3
+                            color: Qt.rgba(1, 1, 1, 0.14)
+                            border.width: 1
+                            border.color: Qt.rgba(1, 1, 1, 0.18)
+
+                            readonly property real volRatio: root.muted ? 0.0 : Math.max(0.0, Math.min(1.0, root.volume / 100.0))
+
+                            Rectangle {
+                                width: parent.width * hudVolSliderTrack.volRatio
+                                height: parent.height
+                                radius: 3
+                                color: root.muted ? root.urgentColour : root.accentColour
+                            }
+
+                            Rectangle {
+                                x: Math.max(0, Math.min(parent.width - width, parent.width * hudVolSliderTrack.volRatio - width * 0.5))
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 10
+                                height: 10
+                                radius: 5
+                                color: hudVolMouseArea.pressed ? root.urgentColour : "#ffffff"
+                                border.width: 1
+                                border.color: root.accentColour
+                            }
+
+                            MouseArea {
+                                id: hudVolMouseArea
+                                anchors.fill: parent
+                                anchors.topMargin: -6
+                                anchors.bottomMargin: -6
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                function setVolAtX(mx) {
+                                    var ratio = Math.max(0.0, Math.min(1.0, mx / Math.max(1, hudVolSliderTrack.width)))
+                                    root.requestSetVolume(Math.round(ratio * 100))
+                                }
+                                onPressed: mouse => setVolAtX(mouse.x)
+                                onPositionChanged: mouse => { if (pressed) setVolAtX(mouse.x) }
+                                onWheel: wheel => {
+                                    var delta = wheel.angleDelta.y > 0 ? 5 : -5
+                                    root.requestAdjustVolume(delta)
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: root.muted ? "MUTE" : (root.volume + "%")
+                            textFormat: Text.PlainText
+                            font.family: "JetBrainsMono Nerd Font"
+                            font.pixelSize: 9
+                            font.bold: true
+                            color: root.muted ? root.urgentColour : root.foregroundColour
+                            Layout.preferredWidth: 30
+                        }
+                    }
                 }
             }
         }
@@ -10403,6 +10799,7 @@ FocusScope {
                                     items: [
                                         "Space           : Play / Pause (or Replay Finished Album)",
                                         "N / → · P / ←   : Next Track / Previous Track",
+                                        "PgUp / PgDn     : Volume Up (+5%) / Volume Down (-5%)",
                                         "F / V           : Toggle Fullscreen Stage",
                                         "Z / Shift + F   : Toggle Zen Fullscreen (HUD Hidden)",
                                         "H               : Toggle Top & Bottom HUD Bars",

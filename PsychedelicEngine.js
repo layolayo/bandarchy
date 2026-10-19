@@ -2399,7 +2399,11 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
     // SUB-SYSTEM 1: L1 FIELD (11 Volumetric Background Fields 0..10 + Photo-Motion 11)
     // Skipped on CPU when native GPU ShaderEffect (gpuL1Active) is rendering L1!
     // =========================================================================
+    var l1Opac = cfg && cfg.layer1Opacity !== undefined ? clamp(Number(cfg.layer1Opacity), 0.05, 1.0) : 1.0
     if (fieldOn && !gpuL1Active) {
+        ctx.save()
+        ctx.globalAlpha = l1Opac
+        try {
         if (l1Mode === 0) {
             // Mode 0: MilkDrop / Geiss 3D Expanding Logarithmic Warp Tunnel Web & Volumetric Curtains
             // Rings expand all the way past diagR so every ring moves towards the user and passes OFF the screen!
@@ -3897,7 +3901,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             drawTronLightCycleAndTrail(playerTrail, bikeX, bikeZ, bikeYaw, "#33FFFF")
 
             // 4B. 3D Vectored Light Cycle Crash Explosions in World Space in Vivid RED (while bikes continue moving without losing flow!)
-            var crashesList = state.tronCrashes || []
+            var crashesList = (rawL1Mode === 19) ? [] : (state.tronCrashes || [])
             for (var crIdx = 0; crIdx < crashesList.length; crIdx++) {
                 var cr = crashesList[crIdx]
                 var crashProg = clamp(cr.age / (cr.maxAge || 1.55), 0.0, 1.0)
@@ -3991,90 +3995,158 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             }
             strokeQuadraScanPass(ctx, bitCol, 1.6, 0.90 * (1.0 - dim), true)
 
-            // 6. When in Mode 19 (UI 20: ShdTRON Swoop Towers), render 1983 Atari Star Wars 3D Wireframe Surface Defence Towers
-            // strictly anchored to the 3D ground grid intersections (gx, 0, gz) with 4-column X-braced yellow lattice shafts,
-            // cyan horizontal decks, and red pyramidal rotating laser turret crowns!
+            // 6. When in Mode 19 (UI 20: ShdTRON Swoop Towers), render authentic 1983 Atari Star Wars Stage 2 (Death Star Surface)
+            // 3D Wireframe Defence Towers strictly anchored to exact ground grid vertices (gridSpacing = 80.0):
+            //   Pass A (#FFFF11 Yellow): Tapered X-braced base shaft locked to ground grid cell vertices
+            //   Pass B (#11FF11 Green): Narrowed upper turret neck collar
+            //   Pass C (#FF2211 Red): Wide flared trapezoidal/octagonal turret command head & rotating twin laser cannon dishes
             if (rawL1Mode === 19) {
-                var swStep = 320.0
+                var gridSpacing = cellSize
+                var swStep = gridSpacing * 4.0 // 320.0 (exact multiple of gridSpacing = 80.0)
                 var swBaseX = Math.floor(camX / swStep) * swStep
                 var swBaseZ = Math.floor(camZ / swStep) * swStep
-                // Pass A: Yellow (#FFEE1A) 4-column vertical corner struts & X-braced lattice shafts anchored at y=0
+                var baseHalfW = gridSpacing * 0.5 // 40.0 -> twX ± 40 sits on exact integer multiples of gridSpacing (80.0) when twX is shifted by 40.0!
+                var neck0HalfW = gridSpacing * 0.34
+                var neck1HalfW = gridSpacing * 0.22
+                var headHalfW = gridSpacing * 0.45
+                var roofHalfW = gridSpacing * 0.30
+
+                // Pass A: Yellow (#FFFF11) Tapered X-braced base shaft anchored at exact ground grid intersections (y = 0 .. 0.56 * twH)
                 ctx.beginPath()
                 for (var txI = -3; txI <= 3; txI++) {
                     if (txI === 0) continue
                     for (var tzI = -1; tzI <= 5; tzI++) {
-                        var twX = swBaseX + txI * swStep
-                        var twZ = swBaseZ + tzI * swStep
+                        // Centre of cell [N*80, (N+1)*80] is N*80 + 40, so corners ±40 sit at exact multiples of 80!
+                        var twX = swBaseX + txI * swStep + baseHalfW
+                        var twZ = swBaseZ + tzI * swStep + baseHalfW
                         var tHash = Math.abs(Math.sin(twX * 0.0137 + twZ * 0.0293) * 43758.5453) % 1.0
-                        if (tHash > clamp(0.45 * denCurve, 0.18, 0.78)) continue
-                        var twHW = 42.0
-                        var twH = 260.0 + (tHash * 140.0) + state.bassSmooth * 45.0
-                        var cCorners = [
-                            [twX - twHW, twZ - twHW],
-                            [twX + twHW, twZ - twHW],
-                            [twX + twHW, twZ + twHW],
-                            [twX - twHW, twZ + twHW]
+                        if (tHash > clamp(0.48 * denCurve, 0.22, 0.82)) continue
+                        var twH = 270.0 + (tHash * 140.0) + state.bassSmooth * 45.0
+                        var yMidA = twH * 0.28
+                        var yTopA = twH * 0.56
+                        var midHalfW = (baseHalfW + neck0HalfW) * 0.5
+                        var cB = [
+                            [twX - baseHalfW, twZ - baseHalfW],
+                            [twX + baseHalfW, twZ - baseHalfW],
+                            [twX + baseHalfW, twZ + baseHalfW],
+                            [twX - baseHalfW, twZ + baseHalfW]
+                        ]
+                        var cM = [
+                            [twX - midHalfW, twZ - midHalfW],
+                            [twX + midHalfW, twZ - midHalfW],
+                            [twX + midHalfW, twZ + midHalfW],
+                            [twX - midHalfW, twZ + midHalfW]
+                        ]
+                        var cN0 = [
+                            [twX - neck0HalfW, twZ - neck0HalfW],
+                            [twX + neck0HalfW, twZ - neck0HalfW],
+                            [twX + neck0HalfW, twZ + neck0HalfW],
+                            [twX - neck0HalfW, twZ + neck0HalfW]
                         ]
                         for (var cc = 0; cc < 4; cc++) {
                             var cn = (cc + 1) & 3
-                            appendClippedTronLine(cCorners[cc][0], 0, cCorners[cc][1], cCorners[cc][0], twH, cCorners[cc][1])
-                            // 3-tier X-braced lattice diagonals on each tower face
-                            for (var tr = 0; tr < 3; tr++) {
-                                var y0T = (tr / 3.0) * twH
-                                var y1T = ((tr + 1) / 3.0) * twH
-                                appendClippedTronLine(cCorners[cc][0], y0T, cCorners[cc][1], cCorners[cn][0], y1T, cCorners[cn][1])
-                                appendClippedTronLine(cCorners[cn][0], y0T, cCorners[cn][1], cCorners[cc][0], y1T, cCorners[cc][1])
-                            }
+                            // Ground perimeter, mid ring, upper shaft ring & 4 tapered corner struts
+                            appendClippedTronLine(cB[cc][0], 0, cB[cc][1], cB[cn][0], 0, cB[cn][1])
+                            appendClippedTronLine(cM[cc][0], yMidA, cM[cc][1], cM[cn][0], yMidA, cM[cn][1])
+                            appendClippedTronLine(cN0[cc][0], yTopA, cN0[cc][1], cN0[cn][0], yTopA, cN0[cn][1])
+                            appendClippedTronLine(cB[cc][0], 0, cB[cc][1], cN0[cc][0], yTopA, cN0[cc][1])
+                            // 2-tier diagonal X-braces on each face of the yellow base shaft
+                            appendClippedTronLine(cB[cc][0], 0, cB[cc][1], cM[cn][0], yMidA, cM[cn][1])
+                            appendClippedTronLine(cB[cn][0], 0, cB[cn][1], cM[cc][0], yMidA, cM[cc][1])
+                            appendClippedTronLine(cM[cc][0], yMidA, cM[cc][1], cN0[cn][0], yTopA, cN0[cn][1])
+                            appendClippedTronLine(cM[cn][0], yMidA, cM[cn][1], cN0[cc][0], yTopA, cN0[cc][1])
                         }
                     }
                 }
-                strokeQuadraScanPass(ctx, "#FFEE1A", 1.65 + state.bassSmooth * 0.5, 0.92 * (1.0 - dim), true)
+                strokeQuadraScanPass(ctx, "#FFFF11", 1.70 + state.bassSmooth * 0.5, 0.94 * (1.0 - dim), true)
 
-                // Pass B: Cyan (#00E5FF) horizontal structural decks & base ground anchor plates
+                // Pass B: Green (#11FF11) Narrowed Upper Turret Neck Collar (y = 0.56 * twH .. 0.74 * twH)
                 ctx.beginPath()
                 for (var txI2 = -3; txI2 <= 3; txI2++) {
                     if (txI2 === 0) continue
                     for (var tzI2 = -1; tzI2 <= 5; tzI2++) {
-                        var twX2 = swBaseX + txI2 * swStep
-                        var twZ2 = swBaseZ + tzI2 * swStep
+                        var twX2 = swBaseX + txI2 * swStep + baseHalfW
+                        var twZ2 = swBaseZ + tzI2 * swStep + baseHalfW
                         var tHash2 = Math.abs(Math.sin(twX2 * 0.0137 + twZ2 * 0.0293) * 43758.5453) % 1.0
-                        if (tHash2 > clamp(0.45 * denCurve, 0.18, 0.78)) continue
-                        var twHW2 = 42.0
-                        var twH2 = 260.0 + (tHash2 * 140.0) + state.bassSmooth * 45.0
-                        for (var dk = 0; dk <= 3; dk++) {
-                            var yDk = (dk / 3.0) * twH2
-                            appendClippedTronLine(twX2 - twHW2, yDk, twZ2 - twHW2, twX2 + twHW2, yDk, twZ2 - twHW2)
-                            appendClippedTronLine(twX2 + twHW2, yDk, twZ2 - twHW2, twX2 + twHW2, yDk, twZ2 + twHW2)
-                            appendClippedTronLine(twX2 + twHW2, yDk, twZ2 + twHW2, twX2 - twHW2, yDk, twZ2 + twHW2)
-                            appendClippedTronLine(twX2 - twHW2, yDk, twZ2 + twHW2, twX2 - twHW2, yDk, twZ2 - twHW2)
+                        if (tHash2 > clamp(0.48 * denCurve, 0.22, 0.82)) continue
+                        var twH2 = 270.0 + (tHash2 * 140.0) + state.bassSmooth * 45.0
+                        var yN0 = twH2 * 0.56
+                        var yN1 = twH2 * 0.74
+                        var cN0B = [
+                            [twX2 - neck0HalfW, twZ2 - neck0HalfW],
+                            [twX2 + neck0HalfW, twZ2 - neck0HalfW],
+                            [twX2 + neck0HalfW, twZ2 + neck0HalfW],
+                            [twX2 - neck0HalfW, twZ2 + neck0HalfW]
+                        ]
+                        var cN1B = [
+                            [twX2 - neck1HalfW, twZ2 - neck1HalfW],
+                            [twX2 + neck1HalfW, twZ2 - neck1HalfW],
+                            [twX2 + neck1HalfW, twZ2 + neck1HalfW],
+                            [twX2 - neck1HalfW, twZ2 + neck1HalfW]
+                        ]
+                        for (var cc2 = 0; cc2 < 4; cc2++) {
+                            var cn2 = (cc2 + 1) & 3
+                            appendClippedTronLine(cN0B[cc2][0], yN0, cN0B[cc2][1], cN1B[cc2][0], yN1, cN1B[cc2][1])
+                            appendClippedTronLine(cN1B[cc2][0], yN1, cN1B[cc2][1], cN1B[cn2][0], yN1, cN1B[cn2][1])
+                            appendClippedTronLine(cN0B[cc2][0], yN0, cN0B[cc2][1], cN1B[cn2][0], yN1, cN1B[cn2][1])
                         }
                     }
                 }
-                strokeQuadraScanPass(ctx, "#00E5FF", 1.55, 0.90 * (1.0 - dim), true)
+                strokeQuadraScanPass(ctx, "#11FF11", 1.65, 0.92 * (1.0 - dim), true)
 
-                // Pass C: Red (#FF1E26) pyramidal rotating laser turret crowns & twin cannon barrels atop each tower
+                // Pass C: Red (#FF2211) Wide Flared Trapezoidal/Octagonal Turret Command Head & Rotating Twin Laser Cannon Dishes
                 ctx.beginPath()
                 for (var txI3 = -3; txI3 <= 3; txI3++) {
                     if (txI3 === 0) continue
                     for (var tzI3 = -1; tzI3 <= 5; tzI3++) {
-                        var twX3 = swBaseX + txI3 * swStep
-                        var twZ3 = swBaseZ + tzI3 * swStep
+                        var twX3 = swBaseX + txI3 * swStep + baseHalfW
+                        var twZ3 = swBaseZ + tzI3 * swStep + baseHalfW
                         var tHash3 = Math.abs(Math.sin(twX3 * 0.0137 + twZ3 * 0.0293) * 43758.5453) % 1.0
-                        if (tHash3 > clamp(0.45 * denCurve, 0.18, 0.78)) continue
-                        var twHW3 = 42.0
-                        var twH3 = 260.0 + (tHash3 * 140.0) + state.bassSmooth * 45.0
-                        var apexY3 = twH3 + 58.0
-                        appendClippedTronLine(twX3 - twHW3, twH3, twZ3 - twHW3, twX3, apexY3, twZ3)
-                        appendClippedTronLine(twX3 + twHW3, twH3, twZ3 - twHW3, twX3, apexY3, twZ3)
-                        appendClippedTronLine(twX3 + twHW3, twH3, twZ3 + twHW3, twX3, apexY3, twZ3)
-                        appendClippedTronLine(twX3 - twHW3, twH3, twZ3 + twHW3, twX3, apexY3, twZ3)
-                        var gunAng = l1T * 1.4 + tHash3 * 6.28
-                        var gxDir = Math.cos(gunAng) * 34.0, gzDir = Math.sin(gunAng) * 34.0
-                        appendClippedTronLine(twX3 - 6.0, apexY3 - 8.0, twZ3, twX3 - 6.0 + gxDir, apexY3 + 6.0, twZ3 + gzDir)
-                        appendClippedTronLine(twX3 + 6.0, apexY3 - 8.0, twZ3, twX3 + 6.0 + gxDir, apexY3 + 6.0, twZ3 + gzDir)
+                        if (tHash3 > clamp(0.48 * denCurve, 0.22, 0.82)) continue
+                        var twH3 = 270.0 + (tHash3 * 140.0) + state.bassSmooth * 45.0
+                        var yNeckTop = twH3 * 0.74
+                        var yHeadBelt = twH3 * 0.88
+                        var yRoofTop = twH3 * 1.00
+                        var cN1C = [
+                            [twX3 - neck1HalfW, twZ3 - neck1HalfW],
+                            [twX3 + neck1HalfW, twZ3 - neck1HalfW],
+                            [twX3 + neck1HalfW, twZ3 + neck1HalfW],
+                            [twX3 - neck1HalfW, twZ3 + neck1HalfW]
+                        ]
+                        var cHead = [
+                            [twX3 - headHalfW, twZ3 - headHalfW],
+                            [twX3 + headHalfW, twZ3 - headHalfW],
+                            [twX3 + headHalfW, twZ3 + headHalfW],
+                            [twX3 - headHalfW, twZ3 + headHalfW]
+                        ]
+                        var cRoof = [
+                            [twX3 - roofHalfW, twZ3 - roofHalfW],
+                            [twX3 + roofHalfW, twZ3 - roofHalfW],
+                            [twX3 + roofHalfW, twZ3 + roofHalfW],
+                            [twX3 - roofHalfW, twZ3 + roofHalfW]
+                        ]
+                        for (var cc3 = 0; cc3 < 4; cc3++) {
+                            var cn3 = (cc3 + 1) & 3
+                            // Flared lower chin struts from green neck out to wide command head
+                            appendClippedTronLine(cN1C[cc3][0], yNeckTop, cN1C[cc3][1], cHead[cc3][0], yHeadBelt, cHead[cc3][1])
+                            // Wide equatorial turret belt
+                            appendClippedTronLine(cHead[cc3][0], yHeadBelt, cHead[cc3][1], cHead[cn3][0], yHeadBelt, cHead[cn3][1])
+                            // Upper bevelled octagonal roof slopes & roof crown ring
+                            appendClippedTronLine(cHead[cc3][0], yHeadBelt, cHead[cc3][1], cRoof[cc3][0], yRoofTop, cRoof[cc3][1])
+                            appendClippedTronLine(cRoof[cc3][0], yRoofTop, cRoof[cc3][1], cRoof[cn3][0], yRoofTop, cRoof[cn3][1])
+                            // Viewport diagonal struts
+                            appendClippedTronLine(cHead[cc3][0], yHeadBelt, cHead[cc3][1], cRoof[cn3][0], yRoofTop, cRoof[cn3][1])
+                        }
+                        // Rotating twin vector laser cannon dishes & barrels
+                        var gunAng = l1T * 1.6 + tHash3 * 6.28
+                        var gxDir = Math.cos(gunAng) * 38.0, gzDir = Math.sin(gunAng) * 38.0
+                        var pXDir = -Math.sin(gunAng) * 14.0, pZDir = Math.cos(gunAng) * 14.0
+                        appendClippedTronLine(twX3 - pXDir, yRoofTop, twZ3 - pZDir, twX3 + pXDir, yRoofTop, twZ3 + pZDir)
+                        appendClippedTronLine(twX3 - pXDir, yRoofTop, twZ3 - pZDir, twX3 - pXDir + gxDir, yRoofTop + 14.0, twZ3 - pZDir + gzDir)
+                        appendClippedTronLine(twX3 + pXDir, yRoofTop, twZ3 + pZDir, twX3 + pXDir + gxDir, yRoofTop + 14.0, twZ3 + pZDir + gzDir)
                     }
                 }
-                strokeQuadraScanPass(ctx, "#FF1E26", 1.75 + state.beatPulse * 0.7, 0.95 * (1.0 - dim), true)
+                strokeQuadraScanPass(ctx, "#FF2211", 1.75 + state.beatPulse * 0.7, 0.95 * (1.0 - dim), true)
             }
 
             ctx.restore()
@@ -4507,6 +4579,9 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.restore()
             }
         }
+        } finally {
+            ctx.restore()
+        }
     }
 
     // =========================================================================
@@ -4522,9 +4597,11 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
         var eqSpinT = state.eqSpinTime !== undefined ? state.eqSpinTime : (l1T * eqSpin)
         var eqSpinDir = eqSpin === 0 ? 0.0 : (eqSpin < 0 ? -1.0 : 1.0)
         var eqDamping = cfg && cfg.layer1EqDamping !== undefined ? ((Number(cfg.layer1EqDamping) || 0) % 3) : 0
+        var eqOpac = cfg && cfg.layer1EqOpacity !== undefined ? clamp(Number(cfg.layer1EqOpacity), 0.05, 1.0) : 1.0
         var maxEqH = h * 0.42 * eqScale
 
         ctx.save()
+        ctx.globalAlpha = eqOpac
         ctx.globalCompositeOperation = "source-over"
 
         // Universal L1 Equaliser Position & Orientation Transform (`eqLayout` 0..3) affecting ALL 24 EQ styles (0..23):
@@ -4533,9 +4610,9 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
         //   1: Mid ▲ (Up)      — Keep anchor at horizonY, pointing UP (identity)
         //   2: Mid ▼ (Down)    — Flip vertically around horizonY to point DOWN
         //   3: Top ▼ (Down)    — Shift anchor to top edge (h * 0.06) and flip vertically to point DOWN
-        var isSculptural3D = (eqStyle >= 7 && eqStyle <= 12) || eqStyle === 16 || (eqStyle >= 18 && eqStyle <= 20)
+        var isSculptural3D = (eqStyle >= 7 && eqStyle <= 12) || (eqStyle >= 18 && eqStyle <= 20)
         if (isSculptural3D) {
-            // Sculptural 3D EQs (7..12, 16, and 18..20)
+            // Sculptural 3D EQs (7..12 and 18..20)
             // Anchor directly towards the vertical screen zone defined by `eqLayout` (0: Bottom, 1/2: Middle, 3: Top),
             // roam across horizontal zones within that band, and scale in/out (breathe-style) around their local centre!
             var zoneTargetY = (eqLayout === 0)
@@ -4568,7 +4645,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             }
 
             if (eqStyle === 4 || eqStyle >= 13) {
-                var scaleAnchorY = (eqStyle === 4 || eqStyle === 15 || eqStyle === 21 || eqStyle === 23) ? horizonY : (horizonY - minDim * 0.20)
+                var scaleAnchorY = (eqStyle === 4 || eqStyle === 15 || eqStyle === 21 || eqStyle === 22 || eqStyle === 23) ? horizonY : (horizonY - minDim * 0.20)
                 ctx.translate(vanishX, scaleAnchorY)
                 ctx.scale(eqScale, eqScale)
                 ctx.translate(-vanishX, -scaleAnchorY)
@@ -4618,13 +4695,15 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             }
             ctx.fill()
 
-            // 2. Lit 3D Bevelled LED Segments grouped into 4 vertical harmonic colour tiers (Low -> Mid-Low -> Mid-High -> Peak)
+            // 2. Lit 3D Bevelled LED Segments grouped into 4 vertical harmonic colour tiers (Green -> Lime -> Amber -> Red/Peak blended with Palette)
+            var hwLedTiers1 = ["#10B981", "#84CC16", "#F59E0B", "#EF4444"]
             for (var tier1 = 0; tier1 < 4; tier1++) {
                 var sMin1 = tier1 === 0 ? 0 : (tier1 === 1 ? 5 : (tier1 === 2 ? 9 : 12))
                 var sMax1 = tier1 === 0 ? 4 : (tier1 === 1 ? 8 : (tier1 === 2 ? 11 : (segCount1 - 1)))
-                var frontCol1 = palette[(tier1 * 2 + palShift1) % palette.length]
-                var topCol1 = mixHexColours(frontCol1, "#ffffff", 0.42)
-                var sideCol1 = mixHexColours(frontCol1, "#05070e", 0.45)
+                var palCol1 = palette[(tier1 * 2 + palShift1) % palette.length]
+                var frontCol1 = mixHexColours(hwLedTiers1[tier1], palCol1, 0.42)
+                var topCol1 = mixHexColours(frontCol1, "#ffffff", 0.45)
+                var sideCol1 = mixHexColours(frontCol1, "#05070e", 0.48)
 
                 // Pass A: 3D Top & Right Side Bevel Faces
                 ctx.fillStyle = colourWithAlpha(topCol1, (0.78 + state.bassSmooth * 0.20) * (1.0 - dim))
@@ -4704,7 +4783,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             ctx.fill()
             ctx.stroke()
         } else if (eqStyle === 2) {
-            // Style 2: Mirrored Horizon Reflection — Segmented 3D Bevelled Upper LED Blocks + Rippling Segmented 3D Water Reflection
+            // Style 2: Mirrored Horizon Reflection — Segmented 3D Bevelled Upper LED Blocks + Rippling Segmented 3D Water Reflection & Peak Caps
             var mBars = 36
             var mSegs = 12
             var mSlot = w / mBars
@@ -4717,12 +4796,14 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             var mStepDn = maxReflH2 / mSegs
             var mBoxDn = Math.max(1.8, mStepDn * 0.68)
             var palShift2 = Math.floor((state.hueShift || 0) / 45)
+            var hwLedTiers2 = ["#10B981", "#F59E0B", "#EF4444"]
 
             for (var tier2 = 0; tier2 < 3; tier2++) {
-                var sMin2 = tier2 === 0 ? 0 : (tier2 === 1 ? 4 : 8)
-                var sMax2 = tier2 === 0 ? 3 : (tier2 === 1 ? 7 : (mSegs - 1))
-                var colUp2 = palette[(tier2 * 3 + palShift2) % palette.length]
-                var colTop2 = mixHexColours(colUp2, "#ffffff", 0.40)
+                var sMin2 = tier2 === 0 ? 0 : (tier2 === 1 ? 5 : 9)
+                var sMax2 = tier2 === 0 ? 4 : (tier2 === 1 ? 8 : (mSegs - 1))
+                var palCol2 = palette[(tier2 * 3 + palShift2) % palette.length]
+                var colUp2 = mixHexColours(hwLedTiers2[tier2], palCol2, 0.44)
+                var colTop2 = mixHexColours(colUp2, "#ffffff", 0.42)
 
                 // Upper 3D Top/Side Bevels
                 ctx.fillStyle = colourWithAlpha(colTop2, (0.74 + state.energy * 0.22) * (1.0 - dim))
@@ -4766,10 +4847,12 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.fill()
                 ctx.stroke()
 
-                // Downward Rippling Segmented 3D Water Reflection Blocks
-                var colRefl2 = palette[(tier2 * 3 + 1 + palShift2) % palette.length]
-                var reflAlpha2 = (0.38 - tier2 * 0.08) * (1.0 - dim)
+                // Downward Rippling Segmented 3D Water Reflection Blocks with 3D Bevel Rims
+                var colRefl2 = mixHexColours(colUp2, palette[(tier2 * 3 + 1 + palShift2) % palette.length], 0.35)
+                var reflAlpha2 = (0.42 - tier2 * 0.08) * (1.0 - dim)
                 ctx.fillStyle = colourWithAlpha(colRefl2, reflAlpha2)
+                ctx.strokeStyle = colourWithAlpha(colTop2, reflAlpha2 * 0.65)
+                ctx.lineWidth = 0.65
                 ctx.beginPath()
                 for (var mr = 0; mr < mBars; mr++) {
                     var idx2r = mapEqBandIndex(mr, mBars, eqBandOrder)
@@ -4783,7 +4866,27 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                     }
                 }
                 ctx.fill()
+                ctx.stroke()
             }
+
+            // Floating 3D Peak-Hold Cap Blocks & Mirrored Water Peak Caps for Style 2
+            var pkCol2 = mixHexColours("#EF4444", palette[(7 + palShift2) % palette.length], 0.45)
+            ctx.fillStyle = colourWithAlpha(pkCol2, 0.92 * (1.0 - dim))
+            ctx.strokeStyle = colourWithAlpha("#ffffff", 0.85 * (1.0 - dim))
+            ctx.lineWidth = 0.9
+            ctx.beginPath()
+            for (var pi2 = 0; pi2 < mBars; pi2++) {
+                var idxP2 = mapEqBandIndex(pi2, mBars, eqBandOrder)
+                var pk2 = clamp((state.peakBands[idxP2] || 0.08) * eqGain, 0.06, 1.38)
+                var pkSeg2 = Math.min(mSegs + 1, Math.max(1, Math.round(pk2 * mSegs)))
+                var pY2 = horizonY - (pkSeg2 + 0.62) * mStepUp
+                var pX2 = pi2 * mSlot + (mSlot - mBarW) * 0.5
+                ctx.rect(pX2, pY2, mBarW, mBoxUp * 0.76)
+                var reflPY2 = horizonY + 3.0 + (pkSeg2 + 0.25) * mStepDn
+                ctx.rect(pX2, reflPY2, mBarW, mBoxDn * 0.65)
+            }
+            ctx.fill()
+            ctx.stroke()
         } else if (eqStyle === 3) {
             // Style 3: 3D Waterfall Ridges — Joy Division / Plexamp 3D Pulsar Spectrum Ridges
             var ridgeHist = (state.eqRidgeHistory && state.eqRidgeHistory.length > 0) ? state.eqRidgeHistory : null
@@ -4894,12 +4997,29 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.stroke()
             }
         } else if (eqStyle === 6) {
-            // Style 6: Ground-Mounted Horizon Searchlights Sweeping the Night Sky & Illuminating Airborne Objects
+            // Style 6: Ground-Mounted Horizon Searchlights Sweeping the Night Sky & Actively Spotting Airborne Objects
             var spotCount = 8
-            var maxReach = Math.max(horizonY * 1.15, h * 0.84)
+            var effSpotScale6 = clamp(eqScale, 0.45, 1.65)
+            var maxReach = Math.max(horizonY * 1.05, h * 0.78) * effSpotScale6
             var palShiftSpot = Math.floor((state.hueShift || 0) / 45)
             var hasGrad = typeof ctx.createLinearGradient === "function"
             var activeBeams6 = []
+
+            // Precompute airborne objects so ground searchlights can actively sweep & lock onto nearby targets overhead!
+            var skyObjCount = 5
+            var skyObjs6 = []
+            for (var soPre = 0; soPre < skyObjCount; soPre++) {
+                var soSpd = (0.045 + (soPre % 3) * 0.018) * (soPre % 2 === 0 ? 1.0 : -1.0)
+                var soUPre = (((eqSpinT * soSpd + soPre * 0.21) % 1.0) + 1.0) % 1.0
+                var oXPre = lerp(w * 0.10, w * 0.90, soUPre)
+                var oYPre = horizonY - maxReach * (0.36 + 0.38 * (0.5 + 0.5 * Math.sin(soPre * 2.1 + eqSpinT * 0.35)))
+                skyObjs6.push({
+                    x: oXPre,
+                    y: oYPre,
+                    speed: soSpd,
+                    scale: minDim * (0.028 + (soPre % 2) * 0.009) * clamp(effSpotScale6, 0.75, 1.35)
+                })
+            }
 
             for (var sp = 0; sp < spotCount; sp++) {
                 var uSp = (sp + 0.5) / spotCount
@@ -4912,18 +5032,23 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 var spotCol = palette[(sp * 2 + palShiftSpot) % palette.length]
                 var coreCol = palette[(sp * 2 + 2 + palShiftSpot) % palette.length]
 
-                // Ground-station sky-scanner choreography: sweeping across the upper night sky
+                // Ground-station sky-scanner choreography blended with active target-tracking lock toward overhead airborne craft
                 var sweepPhase = eqSpinT * (0.58 + (sp % 3) * 0.15) + sp * 1.12
                 var crossBias = -wingSign * (0.12 + wingU * 0.26) * Math.cos(eqSpinT * 0.42)
-                var tilt = crossBias
-                         + Math.sin(sweepPhase) * 0.42
-                         + Math.cos(eqSpinT * 0.88 - sp * 1.7) * 0.15 * (0.5 + state.bassSmooth * 0.5)
+                var freeTilt = crossBias
+                             + Math.sin(sweepPhase) * 0.42
+                             + Math.cos(eqSpinT * 0.88 - sp * 1.7) * 0.15 * (0.5 + state.bassSmooth * 0.5)
+                var targetObj6 = skyObjs6[sp % skyObjCount]
+                var targetTilt = clamp(Math.atan2(targetObj6.x - baseX, Math.max(40.0, baseY - targetObj6.y)), -0.78, 0.78)
+                var trackWeight = 0.52 + 0.38 * (0.5 + 0.5 * Math.sin(eqSpinT * 0.95 + sp * 1.4))
+                var tilt = lerp(freeTilt, targetTilt, trackWeight)
                 var dirX = Math.sin(tilt)
                 var dirY = -Math.cos(tilt)
                 var nx = Math.cos(tilt)
                 var ny = Math.sin(tilt)
 
-                var reach = maxReach * (0.64 + Math.min(1.15, v6) * 0.38 + state.beatPulse * 0.08)
+                var distToTarget6 = Math.sqrt((targetObj6.x - baseX) * (targetObj6.x - baseX) + (targetObj6.y - baseY) * (targetObj6.y - baseY))
+                var reach = Math.max(distToTarget6 * 1.08, maxReach * (0.64 + Math.min(1.15, v6) * 0.38 + state.beatPulse * 0.08))
                 var topX = baseX + dirX * reach
                 var topY = baseY + dirY * reach
                 var baseHalfW = Math.max(2.0, w * 0.0024)
@@ -4972,6 +5097,12 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.lineTo(baseX + dirX * reach * 0.92, baseY + dirY * reach * 0.92)
                 ctx.stroke()
 
+                // Cloud-deck elliptical projection disc where the collimated beam pierces the upper night sky
+                ctx.fillStyle = colourWithAlpha(coreCol, clamp((0.18 + v6 * 0.22) * (1.0 - dim), 0.06, 0.48))
+                ctx.beginPath()
+                ctx.arc(topX, topY, topHalfW * 0.85, 0, Math.PI * 2.0)
+                ctx.fill()
+
                 // 2. Ground-Mounted 3D Armoured Searchlight Pedestal, Gimbal Yoke & Parabolic Drum at baseY
                 var pedW6 = Math.max(6.5, w * 0.008)
                 var pedH6 = Math.max(5.5, h * 0.011)
@@ -4994,15 +5125,14 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             }
 
             // 3. Airborne Night-Sky Objects (Stealth Delta Craft, 3D Flying Saucers & Orbital Satellites)
-            //    They cruise silently across the upper sky as faint stealth silhouettes, and flare up brightly
-            //    with illuminated 3D wireframe geometry, specular glints, and target-lock rings when a searchlight beam hits them!
-            var skyObjCount = 5
+            //    They cruise across the upper sky and flare up brightly with illuminated 3D wireframe geometry,
+            //    specular glints, and target-lock rings when a searchlight beam hits them!
             for (var so = 0; so < skyObjCount; so++) {
-                var soSpeed = (0.045 + (so % 3) * 0.018) * (so % 2 === 0 ? 1.0 : -1.0)
-                var soU = (((eqSpinT * soSpeed + so * 0.21) % 1.0) + 1.0) % 1.0
-                var objX = lerp(w * 0.08, w * 0.92, soU)
-                var objY = horizonY - maxReach * (0.34 + 0.42 * (0.5 + 0.5 * Math.sin(so * 2.1 + eqSpinT * 0.35)))
-                var objScale = minDim * (0.026 + (so % 2) * 0.008)
+                var skyObj = skyObjs6[so]
+                var soSpeed = skyObj.speed
+                var objX = skyObj.x
+                var objY = skyObj.y
+                var objScale = skyObj.scale
 
                 // Check illumination from all sweeping searchlight beams
                 var illum = 0.0
@@ -5012,11 +5142,11 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                     var dxB = objX - bm.x0
                     var dyB = objY - bm.y0
                     var along = dxB * bm.dirX + dyB * bm.dirY
-                    if (along > 20.0 && along < bm.reach * 1.05) {
+                    if (along > 20.0 && along < bm.reach * 1.08) {
                         var perp = Math.abs(dxB * bm.nx + dyB * bm.ny)
-                        var coneHalfW = lerp(bm.baseHalfW, bm.topHalfW, clamp(along / bm.reach, 0.0, 1.0)) * 1.75
+                        var coneHalfW = lerp(bm.baseHalfW, bm.topHalfW, clamp(along / bm.reach, 0.0, 1.0)) * 2.15
                         if (perp < coneHalfW) {
-                            var hitStrength = Math.pow(1.0 - perp / coneHalfW, 0.75) * clamp(0.65 + bm.v * 0.55, 0.5, 1.4)
+                            var hitStrength = Math.pow(1.0 - perp / coneHalfW, 0.68) * clamp(0.72 + bm.v * 0.58, 0.55, 1.45)
                             if (hitStrength > illum) {
                                 illum = hitStrength
                                 hitCol = bm.coreCol
@@ -5029,8 +5159,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 // When spotted by a searchlight beam, draw an illuminated atmospheric scatter halo & radar lock ring
                 if (illum > 0.08) {
                     var lockR = objScale * (1.55 + (1.0 - Math.min(1.0, illum)) * 0.45)
-                    ctx.fillStyle = colourWithAlpha(hitCol, clamp(illum * 0.32 * (1.0 - dim), 0.04, 0.48))
-                    ctx.strokeStyle = colourWithAlpha("#ffffff", clamp(illum * 0.88 * (1.0 - dim), 0.12, 0.96))
+                    ctx.fillStyle = colourWithAlpha(hitCol, clamp(illum * 0.34 * (1.0 - dim), 0.04, 0.52))
+                    ctx.strokeStyle = colourWithAlpha("#ffffff", clamp(illum * 0.90 * (1.0 - dim), 0.12, 0.96))
                     ctx.lineWidth = 1.2 + illum * 1.1
                     ctx.beginPath()
                     ctx.arc(objX, objY, lockR, 0, Math.PI * 2.0)
@@ -5039,7 +5169,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 }
 
                 // Draw the airborne 3D craft (dim stealth outline in the dark; blazing white/neon wireframe when illuminated by a beam!)
-                var hullAlpha = clamp((0.20 + illum * 0.80) * (1.0 - dim), 0.12, 1.0)
+                var hullAlpha = clamp((0.22 + illum * 0.78) * (1.0 - dim), 0.14, 1.0)
                 ctx.strokeStyle = illum > 0.25
                     ? colourWithAlpha("#ffffff", hullAlpha)
                     : colourWithAlpha(hitCol, hullAlpha)
@@ -5880,11 +6010,11 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.stroke()
             }
         } else if (eqStyle === 16) {
-            // Style 16: 3D Tubes — Tilting, Rotating 3D Structured Cages with 3 Orthogonal Circle Circumferences (X, Y, Z Axes) & Tubular Meridian Ribs
+            // Style 16: 3D Tubes — Tilting, Rotating 3D Structured Cages with 3 Orthogonal Circle Circumferences (X, Y, Z Axes), Cylindrical Tube Collars & Longitudinal Struts
             var cageCount16 = 7
             var circleSegs16 = 24
             var centerY16 = horizonY - minDim * 0.22
-            var spanX16 = w * 0.78
+            var spanX16 = w * 0.80
             ctx.lineCap = "round"
             ctx.lineJoin = "round"
 
@@ -5898,7 +6028,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 var arcAng16 = (u16 - 0.5) * Math.PI * 0.86
                 var cageCX16 = vanishX + (u16 - 0.5) * spanX16
                 var cageCY16 = centerY16 - Math.cos(arcAng16) * minDim * 0.06 - v16 * minDim * 0.08
-                var cageScale16 = minDim * (0.085 + v16 * 0.065 + (1.0 - Math.abs(u16 - 0.5) * 0.5) * 0.025)
+                var cageScale16 = minDim * (0.105 + v16 * 0.068 + (1.0 - Math.abs(u16 - 0.5) * 0.5) * 0.028)
 
                 // Each 3D tubular cage tilts and rotates continuously around all 3 axes (X, Y, Z)
                 var rx16 = eqSpinT * (0.72 + c16 * 0.09) + c16 * 0.65 + state.bassSmooth * 0.35
@@ -5911,10 +6041,36 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 var colZ16 = palette[(c16 * 2 + 4 + Math.floor((state.hueShift || 0) / 30)) % palette.length]
                 var axisCols16 = [colX16, colY16, colZ16]
 
-                // 1. Inner 3D Tubular Axial Core Struts (X, Y, Z orthogonal axes pulsing with audio energy)
-                var coreR16 = 0.82 + v16 * 0.24
-                ctx.strokeStyle = colourWithAlpha("#ffffff", (0.35 + v16 * 0.35) * (1.0 - dim))
-                ctx.lineWidth = 1.2 + v16 * 0.9
+                // 1. Cylindrical Tube Cage Structure: 6 Longitudinal Generator Struts + Top/Bottom End-Cap Tube Rings
+                var cylHalfH16 = 0.62 + v16 * 0.58
+                var cylRad16 = 0.64 + v16 * 0.16
+                ctx.strokeStyle = colourWithAlpha(colY16, (0.52 + v16 * 0.32) * (1.0 - dim))
+                ctx.lineWidth = 1.2 + v16 * 0.95
+                ctx.beginPath()
+                for (var genIdx = 0; genIdx < 6; genIdx++) {
+                    var gAng16 = (genIdx / 6.0) * Math.PI * 2.0
+                    var gx16 = Math.cos(gAng16) * cylRad16
+                    var gz16 = Math.sin(gAng16) * cylRad16
+                    var pTop16 = project3DPoint(gx16, -cylHalfH16, gz16, rx16, ry16, rz16, cageCX16, cageCY16, cageScale16, fov16)
+                    var pBot16 = project3DPoint(gx16,  cylHalfH16, gz16, rx16, ry16, rz16, cageCX16, cageCY16, cageScale16, fov16)
+                    ctx.moveTo(pTop16.x, pTop16.y)
+                    ctx.lineTo(pBot16.x, pBot16.y)
+                }
+                for (var capSign = -1; capSign <= 1; capSign += 2) {
+                    var capY16 = capSign * cylHalfH16
+                    for (var cs16 = 0; cs16 <= 16; cs16++) {
+                        var caCap = (cs16 / 16.0) * Math.PI * 2.0
+                        var pCap = project3DPoint(Math.cos(caCap) * cylRad16, capY16, Math.sin(caCap) * cylRad16, rx16, ry16, rz16, cageCX16, cageCY16, cageScale16, fov16)
+                        if (cs16 === 0) ctx.moveTo(pCap.x, pCap.y)
+                        else ctx.lineTo(pCap.x, pCap.y)
+                    }
+                }
+                ctx.stroke()
+
+                // 2. Inner 3D Tubular Axial Core Struts (X, Y, Z orthogonal axes pulsing with audio energy)
+                var coreR16 = 0.86 + v16 * 0.26
+                ctx.strokeStyle = colourWithAlpha("#ffffff", (0.42 + v16 * 0.38) * (1.0 - dim))
+                ctx.lineWidth = 1.3 + v16 * 0.95
                 ctx.beginPath()
                 for (var axLine = 0; axLine < 3; axLine++) {
                     var pNeg = project3DPoint(
@@ -5934,7 +6090,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 }
                 ctx.stroke()
 
-                // 2. Three Orthogonal Circle Circumferences (one on each X, Y, Z axis) rendered as 3D tubular rings
+                // 3. Three Orthogonal Circle Circumferences (one on each X, Y, Z axis) rendered as 3D tubular rings
                 for (var axisIdx = 0; axisIdx < 3; axisIdx++) {
                     // axisIdx 0: X-axis normal (circle in YZ plane)
                     // axisIdx 1: Y-axis normal (circle in XZ plane)
@@ -5973,7 +6129,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                     ctx.stroke()
                 }
 
-                // 3. Outer Peak-Hold Gyroscopic Halo Circumference (tilted 45° diagonal 3D ring)
+                // 4. Outer Peak-Hold Gyroscopic Halo Circumference (tilted 45° diagonal 3D ring)
                 var pkRad16 = 1.05 + pk16 * 0.32
                 ctx.beginPath()
                 for (var spk = 0; spk <= 20; spk++) {
@@ -6204,68 +6360,78 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 }
             }
         } else if (eqStyle === 22) {
-            // Style 22: Laser Harp Cathedral — Jean-Michel Jarre 3D Stage Emitter Console, Upper Parabolic Reflector Arch, Standing-Wave Plucked Beams & Diffraction Starbursts
+            // Style 22: Laser Harp Cathedral — Jean-Michel Jarre Central Stage Emitter Pedestal, Outward Radial Laser Fan, Standing-Wave Plucked Beams & Diffraction Starbursts
             var stringCount22 = 24
-            var apexY22 = horizonY - maxEqH * 1.08
-            var consoleW22 = w * 0.88
+            var harpReachH22 = Math.max(h * 0.46, maxEqH * 1.12)
+            var apexY22 = horizonY - harpReachH22
+            var emitterSpanW22 = w * 0.24
+            var canopySpanW22 = w * 0.88
             var consoleDepth22 = Math.min(h * 0.045, minDim * 0.055)
             ctx.lineCap = "round"
             ctx.lineJoin = "round"
 
-            // 1. 3D Perspective Stage Laser Emitter Console Deck at Horizon Base
-            ctx.fillStyle = "rgba(6, 10, 22, " + (0.84 * (1.0 - dim)).toFixed(3) + ")"
-            ctx.strokeStyle = colourWithAlpha("#00e5ff", (0.62 + state.bassSmooth * 0.25) * (1.0 - dim))
-            ctx.lineWidth = 1.8
+            // 1. 3D Perspective Central Stage Laser Emitter Pedestal at Horizon Base
+            ctx.fillStyle = "rgba(6, 10, 22, " + (0.88 * (1.0 - dim)).toFixed(3) + ")"
+            ctx.strokeStyle = colourWithAlpha("#00e5ff", (0.72 + state.bassSmooth * 0.25) * (1.0 - dim))
+            ctx.lineWidth = 2.0
             ctx.beginPath()
-            ctx.moveTo(vanishX - consoleW22 * 0.52, horizonY + consoleDepth22 * 0.35)
-            ctx.lineTo(vanishX + consoleW22 * 0.52, horizonY + consoleDepth22 * 0.35)
-            ctx.lineTo(vanishX + consoleW22 * 0.44, horizonY - consoleDepth22 * 0.65)
-            ctx.lineTo(vanishX - consoleW22 * 0.44, horizonY - consoleDepth22 * 0.65)
+            ctx.moveTo(vanishX - emitterSpanW22 * 0.62, horizonY + consoleDepth22 * 0.45)
+            ctx.lineTo(vanishX + emitterSpanW22 * 0.62, horizonY + consoleDepth22 * 0.45)
+            ctx.lineTo(vanishX + emitterSpanW22 * 0.48, horizonY - consoleDepth22 * 0.65)
+            ctx.lineTo(vanishX - emitterSpanW22 * 0.48, horizonY - consoleDepth22 * 0.65)
             ctx.closePath()
             ctx.fill()
             ctx.stroke()
 
-            // 2. Upper Parabolic Cathedral Reflector Arch Truss
-            ctx.strokeStyle = colourWithAlpha("#ff00aa", (0.58 + state.highSmooth * 0.32) * (1.0 - dim))
+            // 2. Upper Wide Parabolic Cathedral Reflector Canopy Truss (beams fan OUTWARD from emitter to canopy)
+            ctx.strokeStyle = colourWithAlpha("#ff00aa", (0.62 + state.highSmooth * 0.34) * (1.0 - dim))
             ctx.lineWidth = 2.2
             ctx.beginPath()
             for (var aStep22 = 0; aStep22 <= stringCount22; aStep22++) {
                 var uArch22 = aStep22 / stringCount22
                 var archNorm22 = (uArch22 - 0.5) * 2.0
-                var ax22 = vanishX + archNorm22 * w * 0.34
-                var ay22 = apexY22 + Math.pow(Math.abs(archNorm22), 1.65) * maxEqH * 0.48
+                var ax22 = vanishX + archNorm22 * (canopySpanW22 * 0.5)
+                var ay22 = apexY22 + Math.pow(Math.abs(archNorm22), 1.55) * harpReachH22 * 0.34
                 if (aStep22 === 0) ctx.moveTo(ax22, ay22)
                 else ctx.lineTo(ax22, ay22)
             }
             ctx.stroke()
 
-            // 3. Multi-Pass Plucked Laser Strings with Sinusoidal Standing-Wave Harmonics & Travelling Light-Rings
+            // 3. Multi-Pass Plucked Laser Strings Fanning Outward with Sinusoidal Standing-Wave Harmonics & Travelling Light-Rings
             for (var s22 = 0; s22 < stringCount22; s22++) {
                 var u22 = s22 / (stringCount22 - 1)
                 var archU22 = (u22 - 0.5) * 2.0
-                var baseX22 = vanishX + archU22 * consoleW22 * 0.46
-                var baseY22 = horizonY - consoleDepth22 * 0.15
-                var topX22 = vanishX + archU22 * w * 0.34
-                var topY22 = apexY22 + Math.pow(Math.abs(archU22), 1.65) * maxEqH * 0.48
+                var baseX22 = vanishX + archU22 * (emitterSpanW22 * 0.44)
+                var baseY22 = horizonY - consoleDepth22 * 0.25
+                var topX22 = vanishX + archU22 * (canopySpanW22 * 0.5)
+                var topY22 = apexY22 + Math.pow(Math.abs(archU22), 1.55) * harpReachH22 * 0.34
+
+                var bdx22 = topX22 - baseX22
+                var bdy22 = topY22 - baseY22
+                var bLen22 = Math.max(1.0, Math.sqrt(bdx22 * bdx22 + bdy22 * bdy22))
+                var nx22 = -bdy22 / bLen22
+                var ny22 = bdx22 / bLen22
 
                 var bIdx22 = mapEqBandIndex(s22, stringCount22, eqBandOrder)
                 var v22 = clamp(sampleEqBandValue(state, bIdx22, eqDamping, eqGain), 0.05, 1.40)
                 var col22 = palette[(s22 + Math.floor((state.hueShift || 0) / 30)) % palette.length]
-                var isPlucked22 = v22 > 0.32
+                var isPlucked22 = v22 > 0.26
 
-                // Sample 7 points along the beam to render high-frequency sinusoidal string vibration when plucked
-                var segsStr22 = 6
+                // Sample 16 segments along the beam to render smooth, high-Q sinusoidal standing-wave string vibration when plucked
+                var segsStr22 = 16
                 var strPts22 = []
-                var pluckU22 = clamp(0.28 + v22 * 0.52, 0.20, 0.85)
+                var pluckU22 = clamp(((eqSpinT * 1.4 + s22 * 0.19) % 0.72) + 0.16, 0.16, 0.88)
                 var pluckX22 = lerp(baseX22, topX22, pluckU22)
                 var pluckY22 = lerp(baseY22, topY22, pluckU22)
 
                 for (var k22 = 0; k22 <= segsStr22; k22++) {
                     var tStr = k22 / segsStr22
                     var envStr = Math.sin(tStr * Math.PI)
-                    var vibAmp = isPlucked22 ? (v22 * 11.5 * envStr * Math.sin(tStr * Math.PI * 3.0 + eqSpinT * 18.0 + s22 * 1.7)) : 0.0
-                    var sx22 = lerp(baseX22, topX22, tStr) + vibAmp
-                    var sy22 = lerp(baseY22, topY22, tStr)
+                    var standingWave = Math.sin(tStr * Math.PI * 2.0) * Math.cos(eqSpinT * 20.0 + s22 * 1.3)
+                                     + 0.55 * Math.sin(tStr * Math.PI * 3.0 + eqSpinT * 26.0 + s22 * 2.1)
+                    var vibAmp = isPlucked22 ? (v22 * 13.5 * envStr * standingWave) : 0.0
+                    var sx22 = lerp(baseX22, topX22, tStr) + nx22 * vibAmp
+                    var sy22 = lerp(baseY22, topY22, tStr) + ny22 * vibAmp
                     strPts22.push({ x: sx22, y: sy22 })
                     if (k22 === Math.round(pluckU22 * segsStr22)) {
                         pluckX22 = sx22
@@ -6274,8 +6440,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 }
 
                 // Outer atmospheric laser bloom pass
-                ctx.strokeStyle = colourWithAlpha(col22, (0.24 + v22 * 0.36) * (1.0 - dim))
-                ctx.lineWidth = 3.2 + v22 * 4.5
+                ctx.strokeStyle = colourWithAlpha(col22, (0.26 + v22 * 0.38) * (1.0 - dim))
+                ctx.lineWidth = 3.2 + v22 * 4.6
                 ctx.beginPath()
                 for (var pA22 = 0; pA22 <= segsStr22; pA22++) {
                     if (pA22 === 0) ctx.moveTo(strPts22[pA22].x, strPts22[pA22].y)
@@ -6285,9 +6451,9 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
 
                 // Coherent neon laser core pass
                 ctx.strokeStyle = isPlucked22
-                    ? "rgba(248, 254, 255, " + ((0.75 + v22 * 0.24) * (1.0 - dim)).toFixed(3) + ")"
-                    : colourWithAlpha(col22, (0.68 + v22 * 0.28) * (1.0 - dim))
-                ctx.lineWidth = 1.2 + v22 * 1.6
+                    ? "rgba(248, 254, 255, " + ((0.78 + v22 * 0.22) * (1.0 - dim)).toFixed(3) + ")"
+                    : colourWithAlpha(col22, (0.70 + v22 * 0.28) * (1.0 - dim))
+                ctx.lineWidth = 1.25 + v22 * 1.65
                 ctx.stroke()
 
                 // Emitter nozzle lens on the stage console + upper mirror facet on the parabolic arch
@@ -6376,12 +6542,14 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
         var shapeScale = cfg && cfg.layer1ShapeScale !== undefined ? clamp(Number(cfg.layer1ShapeScale), 0.3, 2.5) : 1.0
         var shapeDensityDraw = cfg && cfg.layer1ShapeDensity !== undefined ? clamp(Number(cfg.layer1ShapeDensity), 0.25, 2.5) : 1.0
         var shapeFillRatio = cfg && cfg.layer1ShapeFillRatio !== undefined ? clamp(Number(cfg.layer1ShapeFillRatio), 0.0, 1.0) : 0.35
+        var shapesOpac = cfg && cfg.layer1ShapesOpacity !== undefined ? clamp(Number(cfg.layer1ShapesOpacity), 0.05, 1.0) : 1.0
         var drawTargetCount = shapeDensityDraw <= 1.5
             ? Math.round(1.0 + Math.pow((shapeDensityDraw - 0.25) / 1.25, 1.15) * 4.0)
             : Math.round(5.0 + Math.pow(shapeDensityDraw - 1.5, 0.78) * 3.0)
         var maxDrawShapes = Math.max(1, Math.min(state.shockwaves.length, Math.min(8, drawTargetCount)))
 
         ctx.save()
+        ctx.globalAlpha = shapesOpac
         ctx.globalCompositeOperation = "source-over"
         for (var sw = 0; sw < maxDrawShapes; sw++) {
             var wave = state.shockwaves[sw]
@@ -6403,7 +6571,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             var spinAngle = l1T * shapeSpin * 0.85 + (shapeSpin !== 0 ? sw * 0.25 : 0.0)
             var distFadeIn = smoothstep(0.0, 0.08, uProg)
             var nearFadeOut = 1.0 - smoothstep(0.90, 1.14, uProg)
-            var sAlpha = clamp(wave.alpha * (1.0 - dim * 0.65) * distFadeIn * nearFadeOut * 1.18, 0.08, 0.99)
+            var sAlpha = clamp(wave.alpha * (1.0 - dim * 0.65) * distFadeIn * nearFadeOut * 1.18, 0.08, 0.99) * shapesOpac
             var craftStrokeCol = hslToHex(wave.hueOffset, 1.0, 0.66, 1.0)
             var craftLineW = (1.65 + state.bass * 1.65) * Math.sqrt(shapeScale * wSizeMul) * (0.52 + 0.52 * Math.min(1.0, uProg))
             ctx.beginPath()
@@ -8210,7 +8378,7 @@ function drawMode7SpacetimeQuasar(ctx, w, h, state, palette, cfg) {
 function drawMode8AlienMycelium(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
-    var minDim = Math.min(w, h) * 0.58 * (cfg.layer2Zoom || 1.0)
+    var minDim = Math.min(w, h) * 0.34 * (cfg.layer2Zoom || 1.0)
     var isEcho = Boolean(state.isTracerEcho)
     var lod = state.echoLod || 1.0
     var comp = clamp(cfg.layer2Complexity || 1.0, 0.4, 2.0) * lod
@@ -8241,7 +8409,7 @@ function drawMode8AlienMycelium(ctx, w, h, state, palette, cfg) {
 
         ctx.fillStyle = colourWithAlpha(canopyCol, (0.10 + (1.0 - bFrac) * 0.12 + state.bass * 0.08) * (isEcho ? 0.5 : 1.0))
         ctx.strokeStyle = colourWithAlpha(rimCol, 0.55 + (1.0 - bFrac) * 0.40)
-        ctx.lineWidth = (1.5 + (1.0 - bFrac) * 2.0 + state.beatPulse * 1.2) * (isEcho ? 0.75 : 1.0)
+        ctx.lineWidth = (1.2 + (1.0 - bFrac) * 1.5 + state.beatPulse * 0.9) * (isEcho ? 0.75 : 1.0)
 
         ctx.beginPath()
         // Upper 3D umbrella dome arch
@@ -8276,7 +8444,7 @@ function drawMode8AlienMycelium(ctx, w, h, state, palette, cfg) {
         var tendrilStroke = palette[(bucket * 3) % palette.length]
         ctx.fillStyle = colourWithAlpha(tendrilFill, (0.15 + state.mid * 0.16) * (isEcho ? 0.55 : 1.0))
         ctx.strokeStyle = colourWithAlpha(tendrilStroke, 0.65 + state.bass * 0.32)
-        ctx.lineWidth = 1.8 + state.bass * 1.5
+        ctx.lineWidth = 1.4 + state.bass * 1.1
         ctx.beginPath()
 
         var nodeSpores = []
@@ -8284,9 +8452,9 @@ function drawMode8AlienMycelium(ctx, w, h, state, palette, cfg) {
             var tNorm = (td / Math.max(1, tendrils - 1)) * 2.0 - 1.0 // -1 .. +1 across bell rim
             var px = tNorm * baseSpanW
             var py = bellCentreY + Math.sin((td / tendrils) * Math.PI) * minDim * 0.04
-            var stepLen = (minDim * (0.36 + state.bass * 0.16)) / segs
-            var leftX = [px - 3.2], leftY = [py]
-            var rightX = [px + 3.2], rightY = [py]
+            var stepLen = (minDim * (0.34 + state.bass * 0.14)) / segs
+            var leftX = [px - 2.2], leftY = [py]
+            var rightX = [px + 2.2], rightY = [py]
 
             for (var s = 1; s <= segs; s++) {
                 var frac = s / segs
@@ -8296,7 +8464,7 @@ function drawMode8AlienMycelium(ctx, w, h, state, palette, cfg) {
                 var curAng = Math.PI * 0.5 + tNorm * 0.28 * (1.0 - frac * 0.5) + wave * frac
                 px += Math.cos(curAng) * stepLen
                 py += Math.sin(curAng) * stepLen
-                var ribW = (4.2 * (1.0 - frac * 0.72) + bVal * 4.5) * (isEcho ? 0.65 : 1.0)
+                var ribW = (2.6 * (1.0 - frac * 0.72) + bVal * 2.8) * (isEcho ? 0.65 : 1.0)
                 var nx = -Math.sin(curAng) * ribW
                 var ny = Math.cos(curAng) * ribW
                 leftX.push(px + nx)
@@ -8306,7 +8474,7 @@ function drawMode8AlienMycelium(ctx, w, h, state, palette, cfg) {
 
                 var isTravelHead = Math.abs(((s - travelPulse + segs) % segs) - 1.0) < 1.2
                 if (!isEcho && (s % 4 === 0 || s === segs || isTravelHead)) {
-                    nodeSpores.push(px, py, (isTravelHead ? 3.2 : 2.0) + bVal * 4.2)
+                    nodeSpores.push(px, py, (isTravelHead ? 2.2 : 1.4) + bVal * 2.6)
                 }
             }
 
@@ -9236,6 +9404,7 @@ function drawLayer2Visualiser(ctx, w, h, state, palette, cfg) {
     if (cfg && cfg.layer2VizEnabled === false) return
     var m = ((Number(cfg && cfg.layer2Mode !== undefined ? cfg.layer2Mode : (cfg && cfg.mode)) || 0) % ALL_MODE_NAMES.length + ALL_MODE_NAMES.length) % ALL_MODE_NAMES.length
 
+    var l2Opac = cfg && cfg.layer2Opacity !== undefined ? clamp(Number(cfg.layer2Opacity), 0.05, 1.0) : 1.0
     var trEnabled = cfg && cfg.layer2TracersEnabled !== undefined ? Boolean(cfg.layer2TracersEnabled) : true
     var tracerCount = trEnabled ? clamp(Math.round(Number(cfg && cfg.tracerCount !== undefined ? cfg.tracerCount : 9)), 1, 16) : 1
     var tracerSpeed = state.liveTracerSpeed !== undefined
@@ -9255,7 +9424,13 @@ function drawLayer2Visualiser(ctx, w, h, state, palette, cfg) {
         state.echoCount = tracerCount
         state.echoAge = 0.0
         state.echoLod = 1.0
-        drawSingleLayer2Mode(ctx, w, h, state, palette, cfg, m)
+        ctx.save()
+        ctx.globalAlpha = l2Opac
+        try {
+            drawSingleLayer2Mode(ctx, w, h, state, palette, cfg, m)
+        } finally {
+            ctx.restore()
+        }
         return
     }
 
@@ -9289,11 +9464,13 @@ function drawLayer2Visualiser(ctx, w, h, state, palette, cfg) {
         if (effDir >= 0) {
             var towardsAmt = 0.5 + 0.5 * effDir
             zScale = 0.58 + curveU * (1.05 + 0.65 * tracerSpeed * towardsAmt)
+            if (m === 8) zScale = Math.min(zScale, 0.55 + curveU * 0.48)
             tx = endPt.dx * (0.45 * (1.0 - curveU) - 0.35 * curveU)
             ty = endPt.dy * (0.45 * (1.0 - curveU) - 0.35 * curveU)
         } else {
             var awayAmt = Math.abs(effDir)
             zScale = 1.18 / (1.0 + curveU * (1.35 + 0.75 * tracerSpeed * awayAmt))
+            if (m === 8) zScale = Math.min(zScale, 0.92 / (1.0 + curveU * 0.85))
             tx = endPt.dx * curveU
             ty = endPt.dy * curveU
         }
@@ -9303,7 +9480,7 @@ function drawLayer2Visualiser(ctx, w, h, state, palette, cfg) {
 
         ctx.save()
         ctx.globalCompositeOperation = "source-over"
-        ctx.globalAlpha = clamp(alphaE, 0.04, 1.0)
+        ctx.globalAlpha = clamp(alphaE * l2Opac, 0.02, 1.0)
         ctx.translate(cx + tx, cy + ty)
         ctx.scale(zScale, zScale)
         ctx.rotate(twistAngle)
@@ -9394,6 +9571,7 @@ var COOL_RETRO_TERM_PHOSPHORS = [
 function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFrames) {
     if (!cfg || !cfg.layer3Enabled) return
 
+    var l3Opac = cfg.layer3Opacity !== undefined ? clamp(Number(cfg.layer3Opacity), 0.05, 1.0) : 0.90
     var l3Mode = (Number(cfg.layer3Mode) || 0) % LAYER3_MODES.length
     var rawAsciiMode = String(cfg.layer3AsciiMode || cfg.asciiMode || "braille").toLowerCase()
     var isWordsSource = (l3Mode === 5 || cfg.useAlbumArt === false || rawAsciiMode === "banner")
@@ -9535,7 +9713,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
             var passAlphaT = isEchoT ? (Math.pow(1.0 - uT * 0.78, 1.30) * (textStyle === 6 ? 0.54 : 0.42)) : 0.99
 
             ctx.save()
-            ctx.globalAlpha = clamp(passAlphaT, 0.06, 1.0)
+            ctx.globalAlpha = clamp(passAlphaT * l3Opac, 0.03, 1.0)
             if (isEchoT) {
                 ctx.translate(cx + txT, cy + tyT)
                 ctx.scale(zScaleT, zScaleT)
@@ -10552,7 +10730,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
 
         ctx.save()
         ctx.globalCompositeOperation = "source-over"
-        ctx.globalAlpha = clamp(passAlpha, 0.05, 1.0)
+        ctx.globalAlpha = clamp(passAlpha * l3Opac, 0.03, 1.0)
         if (isEcho) {
             ctx.translate(cx + tx, cy + ty)
             ctx.scale(zScale, zScale)
@@ -10831,6 +11009,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer4Twist: c.layer4Twist !== undefined ? clamp(Number(c.layer4Twist), -2.5, 2.5) : 1.0,
         layer4Speed: c.layer4Speed !== undefined ? clamp(Number(c.layer4Speed), 0.1, 3.0) : (c.backdropSpeed !== undefined ? clamp(Number(c.backdropSpeed), 0.1, 3.0) : 1.0),
         layer4Glow: c.layer4Glow !== undefined ? clamp(Number(c.layer4Glow), 0.2, 2.0) : (c.backdropIntensity !== undefined ? clamp(Number(c.backdropIntensity), 0.2, 2.0) : 1.0),
+        layer4Opacity: c.layer4Opacity !== undefined ? clamp(Number(c.layer4Opacity), 0.05, 1.0) : 1.0,
         layer4Symmetry: c.layer4Symmetry !== undefined ? clamp(Math.round(Number(c.layer4Symmetry)), 2, 16) : (c.backdropSymmetry !== undefined ? clamp(Math.round(Number(c.backdropSymmetry)), 2, 16) : 6),
         layer4Direction: c.layer4Direction !== undefined ? Number(c.layer4Direction) : (c.backdropDirection !== undefined ? Number(c.backdropDirection) : 1),
         trackArcMode: c.trackArcMode !== undefined ? clamp(Math.round(Number(c.trackArcMode)), 0, 4) : 0,
@@ -10846,6 +11025,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer1Speed: Number(c.layer1Speed !== undefined ? c.layer1Speed : 1.0),
         layer1Density: Number(c.layer1Density !== undefined ? c.layer1Density : 1.0) * geomDetail,
         layer1Dim: Number(c.layer1Dim !== undefined ? c.layer1Dim : 0.15),
+        layer1Opacity: c.layer1Opacity !== undefined ? clamp(Number(c.layer1Opacity), 0.05, 1.0) : 1.0,
         layer1EqEnabled: c.layer1EqEnabled !== undefined ? Boolean(c.layer1EqEnabled) : false,
         layer1EqStyle: c.layer1EqStyle !== undefined ? clamp(Math.round(Number(c.layer1EqStyle)), 0, ALL_LAYER1_EQ_STYLES.length - 1) : 0,
         layer1EqLayout: c.layer1EqLayout !== undefined ? clamp(Math.round(Number(c.layer1EqLayout)), 0, 3) : 0,
@@ -10854,6 +11034,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer1EqScale: c.layer1EqScale !== undefined ? clamp(Number(c.layer1EqScale), 0.15, 2.25) : 1.0,
         layer1EqSpin: c.layer1EqSpin !== undefined ? clamp(Number(c.layer1EqSpin), -2.5, 2.5) : 1.0,
         layer1EqDamping: c.layer1EqDamping !== undefined ? clamp(Math.round(Number(c.layer1EqDamping)), 0, 2) : 0,
+        layer1EqOpacity: c.layer1EqOpacity !== undefined ? clamp(Number(c.layer1EqOpacity), 0.05, 1.0) : 1.0,
         layer1ShapesEnabled: c.layer1ShapesEnabled !== undefined ? Boolean(c.layer1ShapesEnabled) : true,
         layer1ShapeStyle: c.layer1ShapeStyle !== undefined ? clamp(Math.round(Number(c.layer1ShapeStyle)), 0, LAYER1_SHAPE_STYLES.length - 1) : 0,
         layer1ShapeSpin: c.layer1ShapeSpin !== undefined ? clamp(Number(c.layer1ShapeSpin), -2.5, 2.5) : 0.25,
@@ -10862,6 +11043,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer1ShapeDensity: c.layer1ShapeDensity !== undefined ? clamp(Number(c.layer1ShapeDensity), 0.25, 2.5) : 1.0,
         layer1ShapeLifespan: c.layer1ShapeLifespan !== undefined ? clamp(Number(c.layer1ShapeLifespan), 0.35, 3.0) : 1.0,
         layer1ShapeFillRatio: c.layer1ShapeFillRatio !== undefined ? clamp(Number(c.layer1ShapeFillRatio), 0.0, 1.0) : 0.35,
+        layer1ShapesOpacity: c.layer1ShapesOpacity !== undefined ? clamp(Number(c.layer1ShapesOpacity), 0.05, 1.0) : 1.0,
         layer2Enabled: c.layer2Enabled !== undefined ? Boolean(c.layer2Enabled) : true,
         layer2VizEnabled: c.layer2VizEnabled !== undefined ? Boolean(c.layer2VizEnabled) : true,
         layer2TracersEnabled: c.layer2TracersEnabled !== undefined ? Boolean(c.layer2TracersEnabled) : true,
@@ -10872,6 +11054,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer2Reactivity: Number(c.layer2Reactivity !== undefined ? c.layer2Reactivity : (c.sensitivity !== undefined ? c.sensitivity : 1.35)),
         layer2Zoom: Number(c.layer2Zoom !== undefined ? c.layer2Zoom : 1.0),
         layer2Chaos: Number(c.layer2Chaos !== undefined ? c.layer2Chaos : 0.45),
+        layer2Opacity: c.layer2Opacity !== undefined ? clamp(Number(c.layer2Opacity), 0.05, 1.0) : 1.0,
         layer3Enabled: c.layer3Enabled !== undefined ? Boolean(c.layer3Enabled) : true,
         layer3AutoRandomise: Boolean(c.layer3AutoRandomise),
         autoCycle: Boolean(c.autoCycle),
@@ -10888,6 +11071,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer3Rebuild: Number(c.layer3Rebuild !== undefined ? c.layer3Rebuild : 1.0),
         layer3Evolution: Number(c.layer3Evolution !== undefined ? c.layer3Evolution : 0.85),
         layer3Scale: Number(c.layer3Scale !== undefined ? c.layer3Scale : 1.0),
+        layer3Opacity: c.layer3Opacity !== undefined ? clamp(Number(c.layer3Opacity), 0.05, 1.0) : 0.90,
         layer3Tracers: c.layer3Tracers !== undefined ? clamp(Math.round(Number(c.layer3Tracers)), 1, 8) : 3,
         layer3AsciiMode: c.layer3AsciiMode || c.asciiMode || "braille",
         asciiMode: c.asciiMode || c.layer3AsciiMode || "braille",

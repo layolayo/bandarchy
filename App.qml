@@ -633,6 +633,16 @@ ShellRoot {
                     if (appVisualiser.showKeybindingsSheet) appVisualiser.showHud = true
                     event.accepted = true
                 }
+                else if (event.key === Qt.Key_PageUp) {
+                    service.adjustVolume(5)
+                    appVisualiser.showKeybindingFeedback("Volume: " + Math.min(100, service.volume) + "%")
+                    event.accepted = true
+                }
+                else if (event.key === Qt.Key_PageDown) {
+                    service.adjustVolume(-5)
+                    appVisualiser.showKeybindingFeedback("Volume: " + Math.max(0, service.volume) + "%")
+                    event.accepted = true
+                }
                 else if (event.key === Qt.Key_Space) { service.togglePlayPause(); event.accepted = true }
                 else if (event.key === Qt.Key_N) { service.nextTrack(); event.accepted = true }
             }
@@ -737,6 +747,78 @@ ShellRoot {
                     }
 
                     Item { Layout.fillWidth: true }
+
+                    // Compact Volume Control (Mute Toggle Icon + Interactive Slider + Read-out)
+                    RowLayout {
+                        spacing: 5
+
+                        ActionPill {
+                            text: service.muted || service.volume <= 0 ? "󰝟" : (service.volume < 50 ? "󰖀" : "󰕾")
+                            danger: service.muted
+                            fontSize: 11
+                            horizontalPad: 6
+                            pillHeight: 26
+                            onClicked: service.toggleMute()
+                        }
+
+                        Rectangle {
+                            id: appHeaderVolTrack
+                            Layout.preferredWidth: 58
+                            Layout.preferredHeight: 6
+                            radius: 3
+                            color: Qt.rgba(1, 1, 1, 0.14)
+                            border.width: 1
+                            border.color: Qt.rgba(1, 1, 1, 0.18)
+
+                            readonly property real volRatio: service.muted ? 0.0 : Math.max(0.0, Math.min(1.0, service.volume / 100.0))
+
+                            Rectangle {
+                                width: parent.width * appHeaderVolTrack.volRatio
+                                height: parent.height
+                                radius: 3
+                                color: service.muted ? win.colUrgent : win.colAccent
+                            }
+
+                            Rectangle {
+                                x: Math.max(0, Math.min(parent.width - width, parent.width * appHeaderVolTrack.volRatio - width * 0.5))
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 10
+                                height: 10
+                                radius: 5
+                                color: appHeaderVolMouse.pressed ? win.colUrgent : "#ffffff"
+                                border.width: 1
+                                border.color: win.colAccent
+                            }
+
+                            MouseArea {
+                                id: appHeaderVolMouse
+                                anchors.fill: parent
+                                anchors.topMargin: -6
+                                anchors.bottomMargin: -6
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                function setVolAtX(mx) {
+                                    var ratio = Math.max(0.0, Math.min(1.0, mx / Math.max(1, appHeaderVolTrack.width)))
+                                    service.setVolume(Math.round(ratio * 100))
+                                }
+                                onPressed: mouse => setVolAtX(mouse.x)
+                                onPositionChanged: mouse => { if (pressed) setVolAtX(mouse.x) }
+                                onWheel: wheel => {
+                                    service.adjustVolume(wheel.angleDelta.y > 0 ? 5 : -5)
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: service.muted ? "MUTE" : (service.volume + "%")
+                            textFormat: Text.PlainText
+                            font.family: "JetBrainsMono Nerd Font"
+                            font.pixelSize: 9
+                            font.bold: true
+                            color: service.muted ? win.colUrgent : win.colFg
+                            Layout.preferredWidth: 30
+                        }
+                    }
 
                     // 4 Stage Modes Quick Switcher (Off / Art / Turntable / Visualiser)
                     RowLayout {
@@ -2332,6 +2414,8 @@ ShellRoot {
                             playSource: service.playSource
                             position: service.position
                             duration: service.duration
+                            volume: service.volume
+                            muted: service.muted
                             asciiLines: service.asciiLines
                             bannerLines: service.bannerLines
                             artLines: service.artLines
@@ -2368,6 +2452,9 @@ ShellRoot {
                             onRequestNext: service.nextTrack()
                             onRequestPrev: service.prevTrack()
                             onRequestSeek: seconds => service.seekTo(seconds)
+                            onRequestSetVolume: vol => service.setVolume(vol)
+                            onRequestAdjustVolume: delta => service.adjustVolume(delta)
+                            onRequestToggleMute: service.toggleMute()
                             onRequestToggleUseAlbumArt: service.toggleUseAlbumArt()
                             onRequestToggleAsciiMode: service.toggleAsciiMode()
                             onRequestSetAsciiSourceMode: modeStr => service.setAsciiSourceMode(modeStr)

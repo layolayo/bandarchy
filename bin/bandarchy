@@ -4152,7 +4152,8 @@ def save_playback_resume_state(position_override: float | None = None, mark_stop
         pos = mpv_get("playlist-pos")
         raw_t = mpv_get("time-pos")
         dur = bounded_float(mpv_get("duration") or 0.0, 0.0)
-        vol = bounded_float(mpv_get("volume") or 100.0, 100.0, 0.0, 130.0)
+        vol = bounded_int(mpv_get("volume") if mpv_get("volume") is not None else 100, 100, 0, 100)
+        muted_val = bool(mpv_get("mute"))
         path = mpv_get("path") or ""
         queue = read_json(QUEUE_FILE, {}) or {}
         hist = read_json(HISTORY_FILE, {}) or {}
@@ -4193,6 +4194,7 @@ def save_playback_resume_state(position_override: float | None = None, mark_stop
             write_json(QUEUE_FILE, queue)
         if isinstance(hist, dict):
             hist["volume"] = vol
+            hist["muted"] = muted_val
             write_json(HISTORY_FILE, hist)
         if entry and entry.get("title"):
             eff_entry = dict(entry)
@@ -4250,6 +4252,9 @@ def mpv_launch(
     mpv_stop(save_state=False)
     ensure_private_dir(os.path.dirname(IPC_SOCKET))
     mpv_bin = resolve_bin("mpv", required=True)
+    hist = read_json(HISTORY_FILE, {}) or {}
+    saved_vol = bounded_int(hist.get("volume", 100) if isinstance(hist, dict) else 100, 100, 0, 100)
+    saved_muted = bool(hist.get("muted", False)) if isinstance(hist, dict) else False
     args = [
         mpv_bin,
         "--no-config",
@@ -4265,6 +4270,8 @@ def mpv_launch(
         "--force-window=no",
         f"--input-ipc-server={IPC_SOCKET}",
         f"--playlist={os.path.abspath(playlist_path)}",
+        f"--volume={saved_vol}",
+        f"--mute={'yes' if saved_muted else 'no'}",
         "--cache=yes",
         "--demuxer-max-bytes=64MiB",
         "--replaygain=track",
@@ -4977,27 +4984,33 @@ def get_playback_state() -> dict:
         tracks = list(queue.get("tracks") or []) if isinstance(queue, dict) else []
         hist = read_json(HISTORY_FILE, {}) or {}
         last = (hist.get("lastPlayedTrack") if isinstance(hist, dict) else None) or {}
-        q_pos = bounded_int(queue.get("playlistPos", last.get("playlistPos", 0)), 0)
+        has_stopped_flag = isinstance(queue, dict) and ("stoppedMidTrack" in queue)
+        stopped_mid = bool(queue.get("stoppedMidTrack")) if has_stopped_flag else True
+        q_pos = bounded_int(queue.get("playlistPos", queue.get("currentIndex", last.get("playlistPos", 0))), 0)
         entry = {}
         if tracks:
-            if last.get("id"):
-                if 0 <= q_pos < len(tracks) and tracks[q_pos].get("id") == last.get("id"):
-                    entry = tracks[q_pos]
-                else:
-                    for idx_t, t in enumerate(tracks):
-                        if t.get("id") == last.get("id"):
-                            entry = t
-                            q_pos = idx_t
-                            break
-            if not entry:
-                if 0 <= q_pos < len(tracks):
-                    entry = tracks[q_pos]
-                else:
-                    entry = tracks[0]
-                    q_pos = 0
+            if not stopped_mid:
+                q_pos = 0
+                entry = tracks[0]
+            else:
+                if last.get("id") and "playlistPos" not in queue and "currentIndex" not in queue:
+                    if 0 <= q_pos < len(tracks) and tracks[q_pos].get("id") == last.get("id"):
+                        entry = tracks[q_pos]
+                    else:
+                        for idx_t, t in enumerate(tracks):
+                            if t.get("id") == last.get("id"):
+                                entry = t
+                                q_pos = idx_t
+                                break
+                if not entry:
+                    if 0 <= q_pos < len(tracks):
+                        entry = tracks[q_pos]
+                    else:
+                        entry = tracks[0]
+                        q_pos = 0
         elif isinstance(last, dict) and last.get("title"):
             entry = last
-            q_pos = bounded_int(last.get("playlistPos", 0), 0)
+            q_pos = 0 if not stopped_mid else bounded_int(last.get("playlistPos", 0), 0)
 
         title = bounded_text(entry.get("title") or last.get("title") or "")
         artist = bounded_text(entry.get("artist") or last.get("artist") or "")
@@ -5028,11 +5041,13 @@ def get_playback_state() -> dict:
             art_path = ensure_cover_svg(album_id or "now", artist or "Bandarchy", album or title or "Music")
 
         l_pos = bounded_float(last.get("position", 0.0), 0.0) if isinstance(last, dict) else 0.0
-        q_saved_pos = bounded_float(queue.get("position", 0.0), 0.0) if isinstance(queue, dict) else 0.0
-        saved_pos = l_pos if (last.get("id") and last.get("id") == track_id and l_pos > 0) else (q_saved_pos if q_saved_pos > 0 else l_pos)
+        q_saved_pos = bounded_float(queue.get("savedPosition", queue.get("position", 0.0)), 0.0) if isinstance(queue, dict) else 0.0
+        saved_pos = 0.0 if not stopped_mid else (
+            l_pos if (track_id and last.get("id") == track_id and l_pos > 0) else (q_saved_pos if q_saved_pos > 0 else l_pos)
+        )
         saved_dur = max(
             bounded_float(last.get("duration") if isinstance(last, dict) and last.get("id") == track_id else 0.0, 0.0),
-            bounded_float(queue.get("duration") if isinstance(queue, dict) else 0.0, 0.0),
+            bounded_float(queue.get("duration") if (isinstance(queue, dict) and stopped_mid) else 0.0, 0.0),
             bounded_float(entry.get("duration") or 0.0, 0.0),
         )
         if saved_dur > 5.0 and saved_pos >= saved_dur - 0.5:
@@ -5051,7 +5066,8 @@ def get_playback_state() -> dict:
             "artPath": art_path,
             "position": saved_pos,
             "duration": saved_dur,
-            "volume": bounded_float(hist.get("volume", 100.0) if isinstance(hist, dict) else 100.0, 100.0, 0.0, 130.0),
+            "volume": bounded_int(hist.get("volume", 100) if isinstance(hist, dict) else 100, 100, 0, 100),
+            "muted": bool(hist.get("muted", False)) if isinstance(hist, dict) else False,
             "playlistPos": q_pos,
             "playlistCount": len(tracks),
             "shuffle": bool(queue.get("shuffle")) if isinstance(queue, dict) else False,
@@ -5180,6 +5196,17 @@ def get_playback_state() -> dict:
                     tracks[matched_idx]["duration"] = dur_val
             write_json(QUEUE_FILE, queue)
 
+    hist_live = read_json(HISTORY_FILE, {}) or {}
+    raw_mpv_vol = mpv_get("volume")
+    live_vol = bounded_int(
+        raw_mpv_vol if raw_mpv_vol is not None else (hist_live.get("volume", 100) if isinstance(hist_live, dict) else 100),
+        100,
+        0,
+        100,
+    )
+    raw_mpv_mute = mpv_get("mute")
+    live_muted = bool(raw_mpv_mute) if raw_mpv_mute is not None else (bool(hist_live.get("muted", False)) if isinstance(hist_live, dict) else False)
+
     return {
         "playing": True,
         "paused": bool(mpv_get("pause")),
@@ -5193,7 +5220,8 @@ def get_playback_state() -> dict:
         "artPath": art_path,
         "position": time_pos,
         "duration": dur_val,
-        "volume": bounded_float(mpv_get("volume") or 100.0, 100.0, 0.0, 130.0),
+        "volume": live_vol,
+        "muted": live_muted,
         "playlistPos": matched_idx,
         "playlistCount": bounded_int(mpv_get("playlist-count") or len(tracks), len(tracks)),
         "shuffle": bool(queue.get("shuffle")),
@@ -6305,6 +6333,11 @@ def cmd_favourites(args) -> None:
 
 def cmd_cmd(args) -> None:
     action = args.action
+    if getattr(args, "value", None) is None and getattr(args, "pos_value", None) is not None:
+        try:
+            args.value = float(str(args.pos_value).rstrip("%"))
+        except ValueError:
+            pass
     is_running = mpv_running()
     if action == "play-pause":
         if is_running:
@@ -6369,14 +6402,41 @@ def cmd_cmd(args) -> None:
         mpv_stop(save_state=True)
     elif action == "volume":
         if args.value is None:
-            die("volume requires --value 0-130")
-        vol_val = bounded_float(args.value, 100.0, 0.0, 130.0)
+            die("volume requires --value 0-100")
+        vol_val = bounded_int(round(float(args.value)), 100, 0, 100)
+        hist = read_json(HISTORY_FILE, {}) or {}
+        if not isinstance(hist, dict):
+            hist = {}
+        hist["volume"] = vol_val
+        if vol_val > 0 and hist.get("muted"):
+            hist["muted"] = False
+            if is_running:
+                mpv_request(["set_property", "mute", False])
         if is_running:
             mpv_request(["set_property", "volume", vol_val])
+        write_json(HISTORY_FILE, hist)
+        emit({"action": action, "volume": vol_val, "muted": bool(hist.get("muted", False))})
+        return
+    elif action == "mute":
         hist = read_json(HISTORY_FILE, {}) or {}
-        if isinstance(hist, dict):
-            hist["volume"] = vol_val
-            write_json(HISTORY_FILE, hist)
+        if not isinstance(hist, dict):
+            hist = {}
+        if args.value is None:
+            cur_m = mpv_get("mute") if is_running else None
+            is_muted = bool(cur_m) if cur_m is not None else bool(hist.get("muted", False))
+            target_mute = not is_muted
+        else:
+            target_mute = float(args.value) > 0
+        if is_running:
+            mpv_request(["set_property", "mute", target_mute])
+        hist["muted"] = target_mute
+        write_json(HISTORY_FILE, hist)
+        emit({
+            "action": action,
+            "volume": bounded_int(hist.get("volume", 100), 100, 0, 100),
+            "muted": target_mute,
+        })
+        return
     elif action == "seek":
         if args.value is None:
             die("seek requires --value SECONDS")
@@ -6425,6 +6485,65 @@ def cmd_cmd(args) -> None:
     else:
         die(f"unknown transport command: {action}")
     emit({"action": action})
+
+
+def cmd_volume(args) -> None:
+    is_running = mpv_running()
+    hist = read_json(HISTORY_FILE, {}) or {}
+    if not isinstance(hist, dict):
+        hist = {}
+    raw_cur_vol = mpv_get("volume") if is_running else None
+    cur_vol = bounded_int(
+        raw_cur_vol if raw_cur_vol is not None else hist.get("volume", 100),
+        100,
+        0,
+        100,
+    )
+    raw_cur_mute = mpv_get("mute") if is_running else None
+    cur_muted = bool(raw_cur_mute) if raw_cur_mute is not None else bool(hist.get("muted", False))
+
+    spec = str(getattr(args, "level", None) or "").strip().lower()
+    if not spec:
+        emit({"volume": cur_vol, "muted": cur_muted})
+        return
+
+    if spec in ("mute", "toggle-mute", "m"):
+        new_muted = not cur_muted
+        if is_running:
+            mpv_request(["set_property", "mute", new_muted])
+        hist["volume"] = cur_vol
+        hist["muted"] = new_muted
+        write_json(HISTORY_FILE, hist)
+        emit({"volume": cur_vol, "muted": new_muted})
+        return
+    if spec == "unmute":
+        if is_running:
+            mpv_request(["set_property", "mute", False])
+        hist["volume"] = cur_vol
+        hist["muted"] = False
+        write_json(HISTORY_FILE, hist)
+        emit({"volume": cur_vol, "muted": False})
+        return
+
+    try:
+        if spec.startswith("+") or spec.startswith("-"):
+            delta = int(round(float(spec)))
+            new_vol = bounded_int(cur_vol + delta, cur_vol, 0, 100)
+        else:
+            new_vol = bounded_int(round(float(spec.rstrip("%"))), cur_vol, 0, 100)
+    except Exception:
+        die(f"invalid volume argument: {spec} (expected 0..100, +N, -N, or mute)")
+        return
+
+    new_muted = False if (new_vol > 0 and cur_muted) else cur_muted
+    if is_running:
+        mpv_request(["set_property", "volume", new_vol])
+        if new_muted != cur_muted:
+            mpv_request(["set_property", "mute", new_muted])
+    hist["volume"] = new_vol
+    hist["muted"] = new_muted
+    write_json(HISTORY_FILE, hist)
+    emit({"volume": new_vol, "muted": new_muted})
 
 
 
@@ -7132,10 +7251,15 @@ def main() -> None:
     p = sub.add_parser("cmd", help="control running mpv player")
     p.add_argument(
         "action",
-        choices=["play-pause", "play", "pause", "next", "prev", "stop", "volume", "seek", "loop", "jump"],
+        choices=["play-pause", "play", "pause", "next", "prev", "stop", "volume", "mute", "seek", "loop", "jump"],
     )
+    p.add_argument("pos_value", nargs="?", default=None, help="optional positional value (e.g. bandarchy cmd volume 80)")
     p.add_argument("--value", type=float)
     p.set_defaults(func=cmd_cmd)
+
+    p = sub.add_parser("volume", help="get or set playback volume (0..100, +N, -N, or mute)")
+    p.add_argument("level", nargs="?", default=None, help="volume level 0..100, +N, -N, or mute")
+    p.set_defaults(func=cmd_volume)
 
     sub.add_parser("now", help="current playback state").set_defaults(func=cmd_now)
 
