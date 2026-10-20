@@ -2324,14 +2324,11 @@ FocusScope {
             stageTurntable.vinylStyle = root.turntableStyle
         }
 
-        if (Array.isArray(cfg.savedL1Configs) && cfg.savedL1Configs.length > 0) root.savedL1Configs = cfg.savedL1Configs
-        if (Array.isArray(cfg.savedL2Configs) && cfg.savedL2Configs.length > 0) root.savedL2Configs = cfg.savedL2Configs
-        if (Array.isArray(cfg.savedL3Configs) && cfg.savedL3Configs.length > 0) {
-            root.savedL3Configs = cfg.savedL3Configs
-        } else {
-            root.savedL3Configs = root.defaultSavedL3Configs()
-        }
-        if (Array.isArray(cfg.savedL4Configs) && cfg.savedL4Configs.length > 0) root.savedL4Configs = cfg.savedL4Configs
+        if (Array.isArray(cfg.savedL1Configs)) root.savedL1Configs = cfg.savedL1Configs
+        if (Array.isArray(cfg.savedL2Configs)) root.savedL2Configs = cfg.savedL2Configs
+        if (Array.isArray(cfg.savedL3Configs)) root.savedL3Configs = cfg.savedL3Configs
+        if (!root.savedL3Configs || root.savedL3Configs.length === 0) root.savedL3Configs = root.defaultSavedL3Configs()
+        if (Array.isArray(cfg.savedL4Configs)) root.savedL4Configs = cfg.savedL4Configs
         if (Array.isArray(cfg.collectivePresets) && cfg.collectivePresets.length > 0) root.collectivePresets = cfg.collectivePresets
 
         root.syncPhotoStateFromRoot()
