@@ -52,7 +52,8 @@ var ALL_LAYER1_MODES = [
     "Shader PolyTunnel",
     "Shader Tempest Web",
     "Death Star 3D Warp Trench",
-    "CRT Rave-Man E-Pill Roam"
+    "CRT Rave-Man E-Pill Roam",
+    "Sumerian TARDIS"
 ]
 
 var SHORT_LAYER1_MODES = [
@@ -60,7 +61,7 @@ var SHORT_LAYER1_MODES = [
     "7:BlackHole", "8:TRON", "9:SynthGrid", "10:PolyTunnel", "11:Tempest", "12:Photo",
     "13:ShdWarp", "14:ShdSpiral", "15:ShdFlame", "16:ShdStars", "17:ShdDNA", "18:ShdTrench",
     "19:ShdVoid", "20:ShdTRON", "21:ShdOrrery", "22:ShdPoly", "23:ShdTempest", "24:3DWarpTrench",
-    "25:RaveMan"
+    "25:RaveMan", "26:SumerTardis"
 ]
 
 var MODE_NAMES = [
@@ -2619,10 +2620,10 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
     var l2BackdropOn = cfg ? Boolean(cfg.backdropEnabled || cfg.layer4Enabled || (l2On && cfg.layer2VizEnabled !== false && l2VizMode === 5)) : false
     var l3On = cfg ? Boolean(cfg.layer3Enabled) : true
     var rawL1Mode = cfg ? (((Number(cfg.layer1Mode) || 0) % ALL_LAYER1_MODES.length + ALL_LAYER1_MODES.length) % ALL_LAYER1_MODES.length) : 0
-    var l1Mode = (rawL1Mode === 24) ? 24 : ((rawL1Mode === 23) ? 5 : ((rawL1Mode >= 12) ? (rawL1Mode - 12) : rawL1Mode))
-    var isStarWarsMode = Boolean(enabled && fieldOn && (l1Mode === 5 || l1Mode === 24))
+    var l1Mode = (rawL1Mode >= 24) ? rawL1Mode : ((rawL1Mode === 23) ? 5 : ((rawL1Mode >= 12) ? (rawL1Mode - 12) : rawL1Mode))
+    var isStarWarsMode = Boolean(enabled && fieldOn && (l1Mode === 5 || l1Mode === 24 || l1Mode === 25))
     var gpuHw = cfg && cfg.gpuShaderEnabled !== undefined ? Boolean(cfg.gpuShaderEnabled) : true
-    var gpuL1Active = Boolean(gpuHw && cfg && cfg.gpuL1Active === true && enabled && fieldOn && rawL1Mode !== 24)
+    var gpuL1Active = Boolean(gpuHw && cfg && cfg.gpuL1Active === true && enabled && fieldOn && rawL1Mode < 24)
     var gpuOn = Boolean(gpuHw && (l2BackdropOn || gpuL1Active))
     var bgHex = (isStarWarsMode && !gpuOn) ? "#000000" : rawBgHex
 
@@ -5478,6 +5479,298 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             ctx.stroke()
 
             ctx.restore()
+            ctx.restore()
+        } else if (l1Mode === 25) {
+            // =================================================================
+            // WORLD #26: SUMERIAN TARDIS (Ancient Mesopotamian Lapis-Lazuli &
+            // Electrum-Gold Stepped Ziggurat Time-Vessel Hurtling Through a
+            // Relativistic Star-of-Inanna & Cuneiform Time-Vortex Tunnel)
+            // =================================================================
+            ctx.save()
+            ctx.lineCap = "round"
+            ctx.lineJoin = "round"
+            var TAU26 = Math.PI * 2.0
+            var l1Den26 = density
+            var palShift26 = Math.floor((state.hueShift || 0) / 45)
+            var lapisDeep = mixHexColours("#0c4a6e", palette[(0 + palShift26) % palette.length], 0.30)
+            var lapisBright = mixHexColours("#0284c7", palette[(1 + palShift26) % palette.length], 0.35)
+            var turquoiseGlaze = mixHexColours("#22d3ee", palette[(2 + palShift26) % palette.length], 0.32)
+            var electrumGold = mixHexColours("#f59e0b", palette[(3 + palShift26) % palette.length], 0.28)
+            var solarGold = mixHexColours("#fde047", palette[(4 + palShift26) % palette.length], 0.24)
+            var carnelianRotor = mixHexColours("#f43f5e", palette[(5 + palShift26) % palette.length], 0.32)
+
+            // Helper: draw a cuneiform wedge stroke (triangularstylus head + tapered tail)
+            var appendCuneiformWedge = function (wx, wy, wLen, wAng, headR) {
+                var ca = Math.cos(wAng), sa = Math.sin(wAng)
+                var na = -sa, nb = ca
+                var hL = headR * 0.95
+                // Triangular stylus impression head
+                ctx.moveTo(wx + na * headR, wy + nb * headR)
+                ctx.lineTo(wx - na * headR, wy - nb * headR)
+                ctx.lineTo(wx + ca * hL, wy + sa * hL)
+                ctx.closePath()
+                // Tapered cuneiform shaft
+                ctx.moveTo(wx, wy)
+                ctx.lineTo(wx + ca * wLen, wy + sa * wLen)
+            }
+
+            // 1. Relativistic Sumerian Time-Vortex Tunnel (14 Counter-Rotating Star-of-Inanna & Cuneiform Rings)
+            var ringCount26 = clamp(Math.round(10 + l1Den26 * 3.0), 10, 16)
+            var zFlow26 = ((l1T * 1.35) % 1.0 + 1.0) % 1.0
+
+            for (var rStep26 = ringCount26 - 1; rStep26 >= 0; rStep26--) {
+                var uDepth26 = (rStep26 + 1.0 - zFlow26) / ringCount26 // 1 = far, 0 = near foreground
+                var zDist26 = 0.22 + uDepth26 * 2.85
+                var sc26 = (minDim * 0.48) / zDist26
+                var ringWorldId = Math.floor(l1T * 1.35) - rStep26
+                var spinSign26 = (ringWorldId & 1) === 0 ? 1.0 : -1.0
+                var ringRot26 = l1T * (0.65 + (ringWorldId & 3) * 0.14) * spinSign26 + ringWorldId * 0.52
+
+                // Sinuous 3D Time-Vortex bend along the tunnel axis
+                var bendPhase = uDepth26 * 3.6 - l1T * 1.25
+                var ringCX = cx + Math.sin(bendPhase) * (w * 0.13) * uDepth26
+                var ringCY = cy + Math.cos(bendPhase * 0.85) * (h * 0.11) * uDepth26
+                var depthAlpha = Math.sin(clamp(1.0 - uDepth26, 0.02, 0.98) * Math.PI) * (1.0 - dim)
+
+                // A. 8-Pointed Star of Inanna / Ishtar (two interlocking rotated squares / octagram)
+                var isGoldRing = (Math.abs(ringWorldId) % 3) === 0
+                var ringCol = isGoldRing ? electrumGold : ((Math.abs(ringWorldId) & 1) ? turquoiseGlaze : lapisBright)
+                ctx.strokeStyle = colourWithAlpha(ringCol, clamp(depthAlpha * (0.68 + state.bassSmooth * 0.24), 0.05, 0.94))
+                ctx.lineWidth = clamp(2.6 * (1.0 - uDepth26 * 0.65), 0.9, 3.0)
+                ctx.beginPath()
+                for (var sqPass = 0; sqPass < 2; sqPass++) {
+                    var sqOffset = sqPass * (Math.PI * 0.25)
+                    for (var vIdx = 0; vIdx <= 8; vIdx++) {
+                        var octAng = ringRot26 + sqOffset + (vIdx / 8.0) * TAU26
+                        var starR = sc26 * ((vIdx & 1) === 0 ? 1.08 : 0.82)
+                        var vx = ringCX + Math.cos(octAng) * starR
+                        var vy = ringCY + Math.sin(octAng) * starR
+                        if (vIdx === 0) ctx.moveTo(vx, vy)
+                        else ctx.lineTo(vx, vy)
+                    }
+                }
+                ctx.stroke()
+
+                // B. Orbiting Sumerian Cuneiform Wedge Inscriptions around every second Time-Vortex Ring
+                if ((rStep26 & 1) === 0 && sc26 > 24.0) {
+                    var wedgeCount = 12
+                    var wLen = Math.max(4.5, sc26 * 0.14)
+                    var headR = Math.max(1.8, sc26 * 0.032)
+                    ctx.strokeStyle = colourWithAlpha(solarGold, clamp(depthAlpha * 0.82, 0.06, 0.95))
+                    ctx.lineWidth = clamp(1.6 * (1.0 - uDepth26 * 0.55), 0.8, 2.0)
+                    ctx.beginPath()
+                    for (var wi = 0; wi < wedgeCount; wi++) {
+                        var wTheta = -ringRot26 * 1.15 + (wi / wedgeCount) * TAU26
+                        var wx = ringCX + Math.cos(wTheta) * (sc26 * 0.94)
+                        var wy = ringCY + Math.sin(wTheta) * (sc26 * 0.94)
+                        // Tangent + radial cuneiform triad
+                        appendCuneiformWedge(wx, wy, wLen, wTheta + Math.PI * 0.5, headR)
+                        if ((wi & 1) === 0) {
+                            appendCuneiformWedge(wx - Math.cos(wTheta) * headR * 2.2, wy - Math.sin(wTheta) * headR * 2.2, wLen * 0.72, wTheta, headR * 0.8)
+                        }
+                    }
+                    ctx.stroke()
+                }
+            }
+
+            // 2. Tumbling 3D Sumerian Ziggurat-TARDIS Time-Capsule at the Heart of the Vortex
+            //    (Lapis-Lazuli Stepped Ziggurat Monolith + Reciprocating Central Time-Rotor + Cuneiform Door Tablets + Beacon Crystal)
+            var tardisScale = minDim * (0.23 + 0.04 * Math.sin(l1T * 0.85) + state.bassSmooth * 0.035)
+            var tardisFov = minDim * 1.35
+            // Smooth 3-axis relativistic tumble through the Time Vortex
+            var tYaw = l1T * 0.78
+            var tPitch = 0.28 * Math.sin(l1T * 0.54) + 0.12 * Math.cos(l1T * 0.31)
+            var tRoll = 0.24 * Math.cos(l1T * 0.47)
+            var cY = Math.cos(tYaw), sY = Math.sin(tYaw)
+            var cP = Math.cos(tPitch), sP = Math.sin(tPitch)
+            var cR = Math.cos(tRoll), sR = Math.sin(tRoll)
+
+            // Subtle orbital float around vortex centre
+            var tardisCX = cx + Math.sin(l1T * 0.62) * (w * 0.055)
+            var tardisCY = cy + Math.cos(l1T * 0.49) * (h * 0.045)
+
+            // Materialisation / Dematerialisation "VWORP" harmonic phase pulse
+            var vworpWave = 0.82 + 0.18 * Math.sin(l1T * 3.4)
+            var tardisOpac = clamp(vworpWave * (1.0 - dim), 0.25, 1.0)
+
+            var projTardisPt = function (lx, ly, lz) {
+                // Rotate Y (yaw around monolith vertical axis)
+                var x1 = lx * cY - lz * sY
+                var z1 = lx * sY + lz * cY
+                var y1 = ly
+                // Rotate X (pitch)
+                var y2 = y1 * cP - z1 * sP
+                var z2 = y1 * sP + z1 * cP
+                // Rotate Z (roll)
+                var x3 = x1 * cR - y2 * sR
+                var y3 = x1 * sR + y2 * cR
+                var sc = tardisFov / Math.max(tardisFov * 0.35, tardisFov + z2 * tardisScale)
+                return {
+                    x: tardisCX + x3 * tardisScale * sc,
+                    y: tardisCY + y3 * tardisScale * sc,
+                    z: z2,
+                    sc: sc
+                }
+            }
+
+            // Helper to project & draw a 3D rectangular prism tier (used for the Base Plinth, Lapis Cabinet Body, and 3 Stepped Ziggurat Roof Tiers)
+            var drawZigguratTierBox = function (halfW, yTop, yBot, halfD, fillHex, fillAlpha, edgeHex, lineW, drawPanelGrid) {
+                var crn = [
+                    projTardisPt(-halfW, yTop, -halfD),
+                    projTardisPt( halfW, yTop, -halfD),
+                    projTardisPt( halfW, yBot, -halfD),
+                    projTardisPt(-halfW, yBot, -halfD),
+                    projTardisPt(-halfW, yTop,  halfD),
+                    projTardisPt( halfW, yTop,  halfD),
+                    projTardisPt( halfW, yBot,  halfD),
+                    projTardisPt(-halfW, yBot,  halfD)
+                ]
+                var faces = [
+                    { ids: [0, 1, 2, 3], nx:  0, nz: -1 }, // Front (-Z)
+                    { ids: [5, 4, 7, 6], nx:  0, nz:  1 }, // Back (+Z)
+                    { ids: [4, 0, 3, 7], nx: -1, nz:  0 }, // Left (-X)
+                    { ids: [1, 5, 6, 2], nx:  1, nz:  0 }, // Right (+X)
+                    { ids: [4, 5, 1, 0], nx:  0, nz:  0 }, // Top (-Y)
+                    { ids: [3, 2, 6, 7], nx:  0, nz:  0 }  // Bottom (+Y)
+                ]
+                // Sort faces back-to-front by average depth z
+                faces.sort(function (a, b) {
+                    var za = (crn[a.ids[0]].z + crn[a.ids[1]].z + crn[a.ids[2]].z + crn[a.ids[3]].z) * 0.25
+                    var zb = (crn[b.ids[0]].z + crn[b.ids[1]].z + crn[b.ids[2]].z + crn[b.ids[3]].z) * 0.25
+                    return zb - za
+                })
+
+                for (var fi = 0; fi < faces.length; fi++) {
+                    var f = faces[fi]
+                    var p0 = crn[f.ids[0]], p1 = crn[f.ids[1]], p2 = crn[f.ids[2]], p3 = crn[f.ids[3]]
+                    ctx.fillStyle = colourWithAlpha(fillHex, fillAlpha * tardisOpac)
+                    ctx.strokeStyle = colourWithAlpha(edgeHex, 0.90 * tardisOpac)
+                    ctx.lineWidth = lineW
+                    ctx.beginPath()
+                    ctx.moveTo(p0.x, p0.y)
+                    ctx.lineTo(p1.x, p1.y)
+                    ctx.lineTo(p2.x, p2.y)
+                    ctx.lineTo(p3.x, p3.y)
+                    ctx.closePath()
+                    ctx.fill()
+                    ctx.stroke()
+
+                    // Etch Police-Box / Babylonian Cuneiform Recessed Coffered Panels on the 4 vertical cabinet walls
+                    if (drawPanelGrid && (f.nx !== 0 || f.nz !== 0)) {
+                        ctx.strokeStyle = colourWithAlpha(solarGold, 0.78 * tardisOpac)
+                        ctx.lineWidth = Math.max(1.0, lineW * 0.65)
+                        ctx.beginPath()
+                        // Central vertical double-door seam
+                        var topMidX = (p0.x + p1.x) * 0.5, topMidY = (p0.y + p1.y) * 0.5
+                        var botMidX = (p3.x + p2.x) * 0.5, botMidY = (p3.y + p2.y) * 0.5
+                        ctx.moveTo(topMidX, topMidY)
+                        ctx.lineTo(botMidX, botMidY)
+                        // 3 horizontal panel lintels (forming 8 recessed Sumerian TARDIS door tablets per wall)
+                        for (var hRow = 1; hRow <= 3; hRow++) {
+                            var vf = hRow / 4.0
+                            var lx = p0.x + (p3.x - p0.x) * vf
+                            var ly = p0.y + (p3.y - p0.y) * vf
+                            var rx = p1.x + (p2.x - p1.x) * vf
+                            var ry = p1.y + (p2.y - p1.y) * vf
+                            ctx.moveTo(lx, ly)
+                            ctx.lineTo(rx, ry)
+                        }
+                        // Upper frieze lintel sign box ("DINGIR / TARDIS" cuneiform nameplate)
+                        var fTopL_X = p0.x + (p3.x - p0.x) * 0.08, fTopL_Y = p0.y + (p3.y - p0.y) * 0.08
+                        var fTopR_X = p1.x + (p2.x - p1.x) * 0.08, fTopR_Y = p1.y + (p2.y - p1.y) * 0.08
+                        ctx.moveTo(fTopL_X, fTopL_Y)
+                        ctx.lineTo(fTopR_X, fTopR_Y)
+                        ctx.stroke()
+                    }
+                }
+            }
+
+            // 2A. Internal Reciprocating Sumerian Time-Rotor Column (glowing inside the translucent Lapis-Lazuli cabinet)
+            var rotorCycle = Math.sin(l1T * 4.2)
+            var rotorTopY = -0.58 + rotorCycle * 0.16
+            var rotorBotY =  0.58 + rotorCycle * 0.16
+            var pRotorTop = projTardisPt(0, -0.78, 0)
+            var pRotorBot = projTardisPt(0,  0.82, 0)
+            ctx.strokeStyle = colourWithAlpha(carnelianRotor, 0.85 * tardisOpac)
+            ctx.lineWidth = 4.5 + state.beatPulse * 2.5
+            ctx.beginPath()
+            ctx.moveTo(pRotorTop.x, pRotorTop.y)
+            ctx.lineTo(pRotorBot.x, pRotorBot.y)
+            ctx.stroke()
+
+            // Spinning Hexagonal Time-Rotor Seal Rings inside the column
+            for (var rRing = 0; rRing < 4; rRing++) {
+                var ryPos = rotorTopY + (rRing / 3.0) * (rotorBotY - rotorTopY)
+                var rRad = 0.24 + (rRing & 1) * 0.06
+                var rSpin = l1T * 3.6 * ((rRing & 1) ? 1.0 : -1.0)
+                ctx.strokeStyle = colourWithAlpha(rRing & 1 ? solarGold : turquoiseGlaze, 0.92 * tardisOpac)
+                ctx.lineWidth = 1.8
+                ctx.beginPath()
+                for (var hs = 0; hs <= 6; hs++) {
+                    var ha = rSpin + (hs / 6.0) * TAU26
+                    var hp = projTardisPt(Math.cos(ha) * rRad, ryPos, Math.sin(ha) * rRad)
+                    if (hs === 0) ctx.moveTo(hp.x, hp.y)
+                    else ctx.lineTo(hp.x, hp.y)
+                }
+                ctx.stroke()
+            }
+
+            // 2B. Stepped Sumerian Ziggurat Base Plinth & Main Lapis-Lazuli TARDIS Cabinet
+            // Base stepped foundation plinth
+            drawZigguratTierBox(0.68,  0.82,  0.96, 0.68, lapisDeep,   0.52, electrumGold, 2.0, false)
+            // Main Police-Box / Babylonian Temple Sanctuary Body (translucent Lapis Lazuli so internal Time-Rotor shines through!)
+            drawZigguratTierBox(0.54, -0.68,  0.82, 0.54, lapisBright, 0.26, turquoiseGlaze, 2.4, true)
+            // 3 Stepped Sumerian Ziggurat Roof Tiers (ascending pyramid-ziggurat crown)
+            drawZigguratTierBox(0.60, -0.82, -0.68, 0.60, lapisDeep,   0.48, electrumGold, 2.1, false)
+            drawZigguratTierBox(0.44, -0.96, -0.82, 0.44, lapisBright, 0.52, solarGold,    1.9, false)
+            drawZigguratTierBox(0.28, -1.10, -0.96, 0.28, electrumGold, 0.46, "#ffffff",   1.7, false)
+
+            // 2C. Apex Time-Rotor Lantern Beacon & Volumetric Babylonian Lightning Arcs
+            var pBeaconBase = projTardisPt(0, -1.10, 0)
+            var pBeaconTip  = projTardisPt(0, -1.32, 0)
+            var pBeaconMid  = projTardisPt(0, -1.21, 0)
+            var beaconR = Math.max(5.0, tardisScale * 0.11 * pBeaconMid.sc * (1.0 + state.beatPulse * 0.35))
+
+            // Glowing Dingir (8-Rayed Sumerian Divinity Starburst) at the Ziggurat TARDIS Roof Lantern
+            ctx.fillStyle = colourWithAlpha("#ffffff", 0.96 * tardisOpac)
+            ctx.strokeStyle = colourWithAlpha(solarGold, 0.94 * tardisOpac)
+            ctx.lineWidth = 2.2
+            ctx.beginPath()
+            ctx.arc(pBeaconMid.x, pBeaconMid.y, beaconR * 0.55, 0, TAU26)
+            ctx.fill()
+            ctx.stroke()
+
+            ctx.beginPath()
+            for (var dRay = 0; dRay < 8; dRay++) {
+                var dAng = l1T * 2.4 + (dRay / 8.0) * TAU26
+                var rayLen = beaconR * ((dRay & 1) ? 1.8 : 2.6) * (1.0 + state.bassSmooth * 0.35)
+                ctx.moveTo(pBeaconMid.x - Math.cos(dAng) * rayLen, pBeaconMid.y - Math.sin(dAng) * rayLen)
+                ctx.lineTo(pBeaconMid.x + Math.cos(dAng) * rayLen, pBeaconMid.y + Math.sin(dAng) * rayLen)
+            }
+            ctx.moveTo(pBeaconBase.x, pBeaconBase.y)
+            ctx.lineTo(pBeaconTip.x, pBeaconTip.y)
+            ctx.stroke()
+
+            // Temporal Lightning Filaments arcing from the Ziggurat Beacon out to the surrounding Time-Vortex
+            var arcCount = 4 + (state.beatPulse > 0.3 ? 2 : 0)
+            ctx.strokeStyle = colourWithAlpha(turquoiseGlaze, (0.58 + state.beatPulse * 0.36) * tardisOpac)
+            ctx.lineWidth = 1.6 + state.beatPulse * 1.2
+            ctx.beginPath()
+            for (var ai = 0; ai < arcCount; ai++) {
+                var arcAng = l1T * 1.9 + (ai / arcCount) * TAU26
+                var outerR = minDim * (0.38 + 0.06 * Math.sin(l1T * 3.1 + ai))
+                var ax0 = pBeaconMid.x, ay0 = pBeaconMid.y
+                ctx.moveTo(ax0, ay0)
+                for (var segA = 1; segA <= 4; segA++) {
+                    var ufA = segA / 4.0
+                    var jag = (segA < 4) ? Math.sin(l1T * 14.0 + ai * 2.7 + segA * 1.9) * (minDim * 0.032) : 0.0
+                    var nxA = ax0 + (cx + Math.cos(arcAng) * outerR - ax0) * ufA - Math.sin(arcAng) * jag
+                    var nyA = ay0 + (cy + Math.sin(arcAng) * outerR - ay0) * ufA + Math.cos(arcAng) * jag
+                    ctx.lineTo(nxA, nyA)
+                }
+            }
+            ctx.stroke()
+
             ctx.restore()
         }
         } finally {

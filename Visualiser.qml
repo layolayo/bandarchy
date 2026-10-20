@@ -5166,7 +5166,7 @@ FocusScope {
         }
     }
 
-    readonly property bool hasActiveCpuLayers: (root.layer1Enabled && ((!root.gpuShaderEnabled && root.layer1FieldEnabled) || (root.layer1FieldEnabled && (root.layer1Mode < 11 || root.layer1Mode === 24)) || root.layer1EqEnabled || root.layer1ShapesEnabled))
+    readonly property bool hasActiveCpuLayers: (root.layer1Enabled && ((!root.gpuShaderEnabled && root.layer1FieldEnabled) || (root.layer1FieldEnabled && (root.layer1Mode < 11 || root.layer1Mode >= 24)) || root.layer1EqEnabled || root.layer1ShapesEnabled))
         || (root.layer2Enabled && ((root.layer2VizEnabled && (!root.gpuShaderEnabled || root.visualMode !== 5)) || root.layer2TracersEnabled))
         || root.layer3Enabled
     property var _cachedFrameConfig: null

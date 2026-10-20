@@ -2594,8 +2594,8 @@ const vm = require('vm');
 let code = fs.readFileSync('PsychedelicEngine.js', 'utf8').replace(/^\.pragma\s+library\s*$/m, '');
 vm.runInThisContext(code);
 
-if (ALL_LAYER1_MODES.length !== 25 || SHORT_LAYER1_MODES.length !== 25) {
-    throw new Error('Expected 25 ALL_LAYER1_MODES and 25 SHORT_LAYER1_MODES, got ' + ALL_LAYER1_MODES.length);
+if (ALL_LAYER1_MODES.length !== 26 || SHORT_LAYER1_MODES.length !== 26) {
+    throw new Error('Expected 26 ALL_LAYER1_MODES and 26 SHORT_LAYER1_MODES, got ' + ALL_LAYER1_MODES.length);
 }
 if (ALL_LAYER1_EQ_STYLES.length !== 24) {
     throw new Error('Expected 24 ALL_LAYER1_EQ_STYLES, got ' + ALL_LAYER1_EQ_STYLES.length);
@@ -2658,8 +2658,8 @@ function makeTrackCtx() {
 const bands = new Array(64).fill(520);
 const theme = { background: '#07090e', foreground: '#e2e8f0', accent: '#6ee7b7', urgent: '#f472b6' };
 
-// 1. Verify all 25 L1 Worlds normalise and render (0..10 and 24 on CPU canvas when gpuL1Active=false; 12..23 map to CPU fallback when gpuShaderEnabled=false)
-for (let m = 0; m < 25; m++) {
+// 1. Verify all 26 L1 Worlds normalise and render (0..10 and 24..25 on CPU canvas when gpuL1Active=false; 12..23 map to CPU fallback when gpuShaderEnabled=false)
+for (let m = 0; m < 26; m++) {
     const st = createState();
     const cfg = normaliseConfig({
         gpuShaderEnabled: false,
