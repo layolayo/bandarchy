@@ -7488,19 +7488,12 @@ function drawMode1AvsSuperScope(ctx, w, h, state, palette, cfg) {
         var colFill = palette[(pass * 2 + palShift) % palette.length]
         var colLine = palette[(pass * 2 + 1 + palShift) % palette.length]
 
-        if (pass < 2) {
-            ctx.fillStyle = colourWithAlpha(colFill, (0.14 + state.bassSmooth * 0.10) * alpha)
-            ctx.beginPath()
-            for (var f0 = 0; f0 <= N; f0++) {
-                if (f0 === 0) ctx.moveTo(ptsTop[f0].x, ptsTop[f0].y)
-                else ctx.lineTo(ptsTop[f0].x, ptsTop[f0].y)
-            }
-            for (var f1 = N; f1 >= 0; f1--) {
-                ctx.lineTo(ptsBot[f1].x, ptsBot[f1].y)
-            }
-            ctx.closePath()
-            ctx.fill()
+        var avsQuads1 = []
+        for (var fq = 0; fq < N; fq += 2) {
+            var fnq = Math.min(N, fq + 2)
+            avsQuads1.push([ptsTop[fq], ptsTop[fnq], ptsBot[fnq], ptsBot[fq]])
         }
+        fillGeometrySegments(ctx, avsQuads1, cfg, pass * 2 + palShift, palette, (0.48 + state.bassSmooth * 0.28) * alpha)
 
         ctx.strokeStyle = colourWithAlpha(colLine, alpha)
         ctx.lineWidth = (pass === 0 ? 2.4 : 1.5) + state.beatPulse * 0.9
@@ -7508,6 +7501,14 @@ function drawMode1AvsSuperScope(ctx, w, h, state, palette, cfg) {
         for (var s0 = 0; s0 <= N; s0++) {
             if (s0 === 0) ctx.moveTo(ptsTop[s0].x, ptsTop[s0].y)
             else ctx.lineTo(ptsTop[s0].x, ptsTop[s0].y)
+        }
+        for (var sb0 = 0; sb0 <= N; sb0++) {
+            if (sb0 === 0) ctx.moveTo(ptsBot[sb0].x, ptsBot[sb0].y)
+            else ctx.lineTo(ptsBot[sb0].x, ptsBot[sb0].y)
+        }
+        for (var sr0 = 0; sr0 < N; sr0 += 4) {
+            ctx.moveTo(ptsTop[sr0].x, ptsTop[sr0].y)
+            ctx.lineTo(ptsBot[sr0].x, ptsBot[sr0].y)
         }
         ctx.stroke()
     }
@@ -7651,7 +7652,9 @@ function drawMode3CthughaRave(ctx, w, h, state, palette, cfg) {
     var cthZFract = ((cthTravel % 1.0) + 1.0) % 1.0
     var cthZBase = Math.floor(cthTravel)
 
-    // 1. Volumetric Flame & Plasma Shroud Waves expanding past all 4 screen borders
+    // 1. Volumetric Flame & Plasma Shroud Waves expanding past all 4 screen borders with segmented vector cells
+    var prevSlicePts3 = null
+    var segStep3 = isEcho ? 4 : 3
     for (var s = numSlices - 1; s >= 0; s--) {
         var zProg = clamp((s + cthZFract) / numSlices, 0.0, 1.15)
         var worldSlice = cthZBase - s
@@ -7660,16 +7663,11 @@ function drawMode3CthughaRave(ctx, w, h, state, palette, cfg) {
         var persp = Math.pow(zProg, 1.68) * 1.26
         var baseR = diagR * persp * (0.78 + state.bass * 0.18)
         var rot = state.phase * 0.42 + worldSlice * 0.28
-        var colFill = palette[((worldSlice * 2 + palShift) % palette.length + palette.length) % palette.length]
         var colStroke = palette[((worldSlice * 2 + 3 + palShift) % palette.length + palette.length) % palette.length]
         var ringX = endPt.dx * 0.60 * Math.pow(1.0 - Math.min(1.0, zProg), 1.25)
         var ringY = endPt.dy * 0.60 * Math.pow(1.0 - Math.min(1.0, zProg), 1.25)
 
-        ctx.fillStyle = colourWithAlpha(colFill, (0.14 + (1.0 - Math.min(1.0, zProg)) * 0.14 + state.bass * 0.06) * birthFade3 * (isEcho ? 0.52 : 1.0))
-        ctx.strokeStyle = colourWithAlpha(colStroke, (0.45 + Math.sin(Math.min(1.0, zProg) * Math.PI) * 0.50) * birthFade3)
-        ctx.lineWidth = (1.0 + zProg * 2.6 + state.bass * 1.2) * birthFade3 * (isEcho ? 0.75 : 1.0)
-
-        ctx.beginPath()
+        var curSlicePts3 = []
         for (var i = 0; i <= ringSteps; i++) {
             var u = i / ringSteps
             var a = u * Math.PI * 2 + rot
@@ -7680,37 +7678,83 @@ function drawMode3CthughaRave(ctx, w, h, state, palette, cfg) {
             var r = Math.max(0.0, baseR + excursion)
             var px = ringX + Math.cos(a) * r
             var py = ringY + Math.sin(a) * r - Math.abs(excursion) * 0.18
-            if (i === 0) ctx.moveTo(px, py)
-            else ctx.lineTo(px, py)
+            curSlicePts3.push({ x: px, y: py })
+        }
+
+        // Segmented polygon quads between adjacent oscilloscope rings (or radial inner wedges on the innermost ring)
+        var slicePolys3 = []
+        for (var sq3 = 0; sq3 < ringSteps; sq3 += segStep3) {
+            var sn3 = Math.min(ringSteps, sq3 + segStep3)
+            if (prevSlicePts3) {
+                slicePolys3.push([prevSlicePts3[sq3], prevSlicePts3[sn3], curSlicePts3[sn3], curSlicePts3[sq3]])
+            } else {
+                slicePolys3.push([{ x: ringX, y: ringY }, curSlicePts3[sq3], curSlicePts3[sn3]])
+            }
+        }
+        fillGeometrySegments(
+            ctx,
+            slicePolys3,
+            cfg,
+            worldSlice + palShift,
+            palette,
+            (0.42 + (1.0 - Math.min(1.0, zProg)) * 0.32 + state.bass * 0.18) * birthFade3 * (isEcho ? 0.55 : 1.0)
+        )
+
+        ctx.strokeStyle = colourWithAlpha(colStroke, (0.45 + Math.sin(Math.min(1.0, zProg) * Math.PI) * 0.50) * birthFade3)
+        ctx.lineWidth = (1.0 + zProg * 2.6 + state.bass * 1.2) * birthFade3 * (isEcho ? 0.75 : 1.0)
+        ctx.beginPath()
+        for (var ip3 = 0; ip3 <= ringSteps; ip3++) {
+            if (ip3 === 0) ctx.moveTo(curSlicePts3[ip3].x, curSlicePts3[ip3].y)
+            else ctx.lineTo(curSlicePts3[ip3].x, curSlicePts3[ip3].y)
         }
         ctx.closePath()
-        ctx.fill()
+        if (prevSlicePts3) {
+            for (var sr3 = 0; sr3 < ringSteps; sr3 += segStep3 * 2) {
+                ctx.moveTo(prevSlicePts3[sr3].x, prevSlicePts3[sr3].y)
+                ctx.lineTo(curSlicePts3[sr3].x, curSlicePts3[sr3].y)
+            }
+        }
         ctx.stroke()
+        prevSlicePts3 = curSlicePts3
     }
 
-    // 2. Dual-Channel Stereo Flame Ribbon Oscilloscope across the horizon core
+    // 2. Dual-Channel Stereo Flame Ribbon Oscilloscope across the horizon core (segmented vector quads)
     if (!isEcho || (state.echoIndex || 0) < 3) {
         var hSteps = isEcho ? 24 : 48
         var spanW = w * 0.44 * (cfg.layer2Zoom || 1.0)
-        ctx.fillStyle = colourWithAlpha(palette[1 % palette.length], 0.22 + state.bass * 0.14)
-        ctx.strokeStyle = colourWithAlpha(palette[0 % palette.length], 0.90)
-        ctx.lineWidth = 2.4 + state.beatPulse * 1.5
-        ctx.beginPath()
+        var topPts3 = []
+        var botPts3 = []
         for (var k = 0; k <= hSteps; k++) {
             var kx = ((k / hSteps) * 2.0 - 1.0) * spanW
             var kb = state.smoothBands[(k * 2) & 63]
             var ky = (kb - 0.25) * Math.sin(k * 0.55 + state.t * 4.2) * maxR * (0.42 + state.bass * 0.35)
-            if (k === 0) ctx.moveTo(kx, ky)
-            else ctx.lineTo(kx, ky)
-        }
-        for (var k2 = hSteps; k2 >= 0; k2--) {
-            var kx2 = ((k2 / hSteps) * 2.0 - 1.0) * spanW
-            var kb2 = state.smoothBands[(k2 * 2 + 1) & 63]
+            var kb2 = state.smoothBands[(k * 2 + 1) & 63]
             var ky2 = -(kb2 * 0.55 + 0.08) * maxR * 0.28
-            ctx.lineTo(kx2, ky2)
+            topPts3.push({ x: kx, y: ky })
+            botPts3.push({ x: kx, y: ky2 })
+        }
+        var ribbonPolys3 = []
+        for (var rq3 = 0; rq3 < hSteps; rq3 += 2) {
+            var rn3 = Math.min(hSteps, rq3 + 2)
+            ribbonPolys3.push([topPts3[rq3], topPts3[rn3], botPts3[rn3], botPts3[rq3]])
+        }
+        fillGeometrySegments(ctx, ribbonPolys3, cfg, palShift + 1, palette, 0.58 + state.bass * 0.28)
+
+        ctx.strokeStyle = colourWithAlpha(palette[0 % palette.length], 0.90)
+        ctx.lineWidth = 2.4 + state.beatPulse * 1.5
+        ctx.beginPath()
+        for (var kt = 0; kt <= hSteps; kt++) {
+            if (kt === 0) ctx.moveTo(topPts3[kt].x, topPts3[kt].y)
+            else ctx.lineTo(topPts3[kt].x, topPts3[kt].y)
+        }
+        for (var kbIdx = hSteps; kbIdx >= 0; kbIdx--) {
+            ctx.lineTo(botPts3[kbIdx].x, botPts3[kbIdx].y)
         }
         ctx.closePath()
-        ctx.fill()
+        for (var ks3 = 0; ks3 <= hSteps; ks3 += 4) {
+            ctx.moveTo(topPts3[ks3].x, topPts3[ks3].y)
+            ctx.lineTo(botPts3[ks3].x, botPts3[ks3].y)
+        }
         ctx.stroke()
     }
 
@@ -8023,7 +8067,6 @@ function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
         ctx.lineWidth = (1.1 + uOct * 2.2 + state.beatPulse * 0.9) * envAlpha
 
         var boundaryPts = []
-        ctx.beginPath()
         for (var s = 0; s <= contourSteps; s++) {
             var u = s / contourSteps
             var theta = u * Math.PI * 2
@@ -8034,11 +8077,22 @@ function drawMode5JuliaFractals(ctx, w, h, state, palette, cfg) {
             var jx = shapeOriginX + rx * octScale
             var jy = shapeOriginY + ry * octScale
             boundaryPts.push({ x: jx, y: jy, theta: theta + octRot, pot: ptL.escapePot, band: bVal })
-            if (s === 0) ctx.moveTo(jx, jy)
-            else ctx.lineTo(jx, jy)
+        }
+
+        var juliaSectors5 = []
+        var jStep5 = Math.max(2, Math.floor(contourSteps / 16))
+        for (var js5 = 0; js5 < contourSteps; js5 += jStep5) {
+            var jn5 = Math.min(contourSteps, js5 + jStep5)
+            juliaSectors5.push([{ x: shapeOriginX, y: shapeOriginY }, boundaryPts[js5], boundaryPts[jn5]])
+        }
+        fillGeometrySegments(ctx, juliaSectors5, cfg, octWorld + palShift, palette, (0.36 + (1.0 - uOct) * 0.28 + state.bassSmooth * 0.16) * envAlpha)
+
+        ctx.beginPath()
+        for (var sp5 = 0; sp5 <= contourSteps; sp5++) {
+            if (sp5 === 0) ctx.moveTo(boundaryPts[sp5].x, boundaryPts[sp5].y)
+            else ctx.lineTo(boundaryPts[sp5].x, boundaryPts[sp5].y)
         }
         ctx.closePath()
-        ctx.fill()
         ctx.stroke()
 
         if (!isEcho) {
@@ -8370,7 +8424,13 @@ function drawMode7SpacetimeQuasar(ctx, w, h, state, palette, cfg) {
             rightJet.push({ x: helixSwirl + coneW * 0.45, y: jy })
         }
 
-        ctx.fillStyle = colourWithAlpha(jetCol, 0.18 + state.bassSmooth * 0.20)
+        var jetQuads7 = []
+        for (var jq7 = 0; jq7 < jetSteps; jq7 += 2) {
+            var jn7 = Math.min(jetSteps, jq7 + 2)
+            jetQuads7.push([leftJet[jq7], leftJet[jn7], rightJet[jn7], rightJet[jq7]])
+        }
+        fillGeometrySegments(ctx, jetQuads7, cfg, (pole < 0 ? 3 : 5) + palShift, palette, 0.52 + state.bassSmooth * 0.30)
+
         ctx.strokeStyle = colourWithAlpha(coreCol, 0.84 + state.beatSmooth * 0.16)
         ctx.lineWidth = 2.0 + state.bassSmooth * 2.0
         ctx.beginPath()
@@ -8382,7 +8442,6 @@ function drawMode7SpacetimeQuasar(ctx, w, h, state, palette, cfg) {
             ctx.lineTo(rightJet[j1].x, rightJet[j1].y)
         }
         ctx.closePath()
-        ctx.fill()
         ctx.stroke()
     }
 
@@ -8488,11 +8547,8 @@ function drawMode8AlienMycelium(ctx, w, h, state, palette, cfg) {
             var canopyCol = palette[(bl * 2 + jIdx * 3 + palShift) % palette.length]
             var rimCol = palette[(bl * 2 + 1 + jIdx * 3 + palShift) % palette.length]
 
-            ctx.fillStyle = colourWithAlpha(canopyCol, (0.11 + (1.0 - bFrac) * 0.13 + state.bass * 0.09) * (isEcho ? 0.5 : 1.0))
-            ctx.strokeStyle = colourWithAlpha(rimCol, 0.58 + (1.0 - bFrac) * 0.38)
-            ctx.lineWidth = (1.2 + (1.0 - bFrac) * 1.5 + state.beatPulse * 1.0) * (isEcho ? 0.75 : 1.0)
-
-            ctx.beginPath()
+            var topBell8 = []
+            var botBell8 = []
             for (var bs = 0; bs <= bellSteps; bs++) {
                 var u = bs / bellSteps
                 var a = Math.PI + u * Math.PI
@@ -8500,18 +8556,30 @@ function drawMode8AlienMycelium(ctx, w, h, state, palette, cfg) {
                 var scallop = Math.sin(u * Math.PI * 8 + state.t * 3.2 + phaseOff) * minDim * 0.018 * (1.0 + bVal0)
                 var bx = Math.cos(a) * (bellW + scallop)
                 var by = bellCentreY + Math.sin(a) * bellH
-                if (bs === 0) ctx.moveTo(bx, by)
-                else ctx.lineTo(bx, by)
+                var sc = Math.sin((1.0 - u) * Math.PI * 10 + state.t * 4.4 + bl + phaseOff) * minDim * (0.018 + state.mid * 0.028)
+                var mx = Math.cos((1.0 - u) * Math.PI) * bellW
+                var my = bellCentreY + Math.sin((1.0 - u) * Math.PI) * (bellH * 0.28) + sc
+                topBell8.push({ x: bx, y: by })
+                botBell8.push({ x: mx, y: my })
             }
-            for (var bs2 = bellSteps; bs2 >= 0; bs2--) {
-                var u2 = bs2 / bellSteps
-                var sc = Math.sin(u2 * Math.PI * 10 + state.t * 4.4 + bl + phaseOff) * minDim * (0.018 + state.mid * 0.028)
-                var mx = Math.cos(u2 * Math.PI) * bellW
-                var my = bellCentreY + Math.sin(u2 * Math.PI) * (bellH * 0.28) + sc
-                ctx.lineTo(mx, my)
+            var bellQuads8 = []
+            for (var bq8 = 0; bq8 < bellSteps; bq8 += 2) {
+                var bn8 = Math.min(bellSteps, bq8 + 2)
+                bellQuads8.push([topBell8[bq8], topBell8[bn8], botBell8[bn8], botBell8[bq8]])
+            }
+            fillGeometrySegments(ctx, bellQuads8, cfg, bl * 2 + jIdx * 3 + palShift, palette, (0.48 + (1.0 - bFrac) * 0.28 + state.bass * 0.16) * (isEcho ? 0.55 : 1.0))
+
+            ctx.strokeStyle = colourWithAlpha(rimCol, 0.58 + (1.0 - bFrac) * 0.38)
+            ctx.lineWidth = (1.2 + (1.0 - bFrac) * 1.5 + state.beatPulse * 1.0) * (isEcho ? 0.75 : 1.0)
+            ctx.beginPath()
+            for (var b0 = 0; b0 <= bellSteps; b0++) {
+                if (b0 === 0) ctx.moveTo(topBell8[b0].x, topBell8[b0].y)
+                else ctx.lineTo(topBell8[b0].x, topBell8[b0].y)
+            }
+            for (var b1 = bellSteps; b1 >= 0; b1--) {
+                ctx.lineTo(botBell8[b1].x, botBell8[b1].y)
             }
             ctx.closePath()
-            ctx.fill()
             ctx.stroke()
         }
 
@@ -8956,19 +9024,14 @@ function drawMode11StrangeAttractor(ctx, w, h, state, palette, cfg) {
         var ribFillCol = palette[(ribbon * 3 + palShift) % palette.length]
         var ribStrokeCol = palette[(ribbon * 3 + 1 + palShift) % palette.length]
 
-        // 1. Filled translucent 3D phase-space manifold ribbon
+        // 1. Segmented 3D phase-space manifold ribbon quads
         if (!isEcho || (state.echoIndex || 0) < 3) {
-            ctx.fillStyle = colourWithAlpha(ribFillCol, (0.14 + state.energy * 0.16) * (isEcho ? 0.55 : 1.0))
-            ctx.beginPath()
-            for (var f0 = 0; f0 <= steps; f0++) {
-                if (f0 === 0) ctx.moveTo(leftPts[f0].x, leftPts[f0].y)
-                else ctx.lineTo(leftPts[f0].x, leftPts[f0].y)
+            var attrQuads11 = []
+            for (var fq11 = 0; fq11 < steps; fq11 += 2) {
+                var fn11 = Math.min(steps, fq11 + 2)
+                attrQuads11.push([leftPts[fq11], leftPts[fn11], rightPts[fn11], rightPts[fq11]])
             }
-            for (var f1 = steps; f1 >= 0; f1--) {
-                ctx.lineTo(rightPts[f1].x, rightPts[f1].y)
-            }
-            ctx.closePath()
-            ctx.fill()
+            fillGeometrySegments(ctx, attrQuads11, cfg, ribbon * 3 + palShift, palette, (0.52 + state.energy * 0.28) * (isEcho ? 0.55 : 1.0))
         }
 
         // 2. Thick glowing trajectory rails (lineWidth = 2.2..4.2)
@@ -9368,27 +9431,19 @@ function drawMode17QuantumBlochSphere(ctx, w, h, state, palette, cfg) {
         ctx.stroke()
     }
 
-    // 2. Precessing Quantum Spinor State Vector |ψ(t)> & Spiral Rabi Trajectory Ribbon
-    var thetaPsi = (0.5 + 0.42 * Math.sin(state.t * 1.15 + state.bassSmooth)) * Math.PI
-    var phiPsi = state.t * 2.4 + state.phase
-    var tipX = Math.sin(thetaPsi) * Math.cos(phiPsi)
-    var tipY = -Math.cos(thetaPsi)
-    var tipZ = Math.sin(thetaPsi) * Math.sin(phiPsi)
-    var pOrigin = project3DPoint(0.0, 0.0, 0.0, rx, ry, rz, cx, cy, scale, fov)
-    var pTip = project3DPoint(tipX, tipY, tipZ, rx, ry, rz, cx, cy, scale, fov)
+        // 2. Orbiting Quantum Spinor Tip Node (moving white radial line removed for clean geometry)
+        var thetaPsi = (0.5 + 0.42 * Math.sin(state.t * 1.15 + state.bassSmooth)) * Math.PI
+        var phiPsi = state.t * 2.4 + state.phase
+        var tipX = Math.sin(thetaPsi) * Math.cos(phiPsi)
+        var tipY = -Math.cos(thetaPsi)
+        var tipZ = Math.sin(thetaPsi) * Math.sin(phiPsi)
+        var pTip = project3DPoint(tipX, tipY, tipZ, rx, ry, rz, cx, cy, scale, fov)
 
-    ctx.strokeStyle = colourWithAlpha("#ffffff", 0.94 * (isEcho ? 0.7 : 1.0))
-    ctx.lineWidth = 2.6 + state.beatPulse * 1.6
-    ctx.beginPath()
-    ctx.moveTo(pOrigin.x, pOrigin.y)
-    ctx.lineTo(pTip.x, pTip.y)
-    ctx.stroke()
-
-    // Glowing Bloch vector tip orb
-    ctx.fillStyle = colourWithAlpha(palette[(3 + palShift) % palette.length], 0.92)
-    ctx.beginPath()
-    ctx.arc(pTip.x, pTip.y, 4.5 + state.bassSmooth * 4.0, 0, Math.PI * 2.0)
-    ctx.fill()
+        // Glowing Bloch vector tip orb
+        ctx.fillStyle = colourWithAlpha(palette[(3 + palShift) % palette.length], 0.92)
+        ctx.beginPath()
+        ctx.arc(pTip.x, pTip.y, 4.5 + state.bassSmooth * 4.0, 0, Math.PI * 2.0)
+        ctx.fill()
 
     ctx.restore()
 }
