@@ -28,7 +28,9 @@ Item {
     property string trackArtist: ""
     property string trackAlbum: ""
     property string albumId: ""
+    readonly property string currentAlbumId: root.albumId
     property string trackId: ""
+    property bool statusLoaded: false
     property string playSource: "local"
     property string artPath: ""
     property real position: 0.0
@@ -318,9 +320,12 @@ Item {
                         root.trackId !== prevTrackId ||
                         root.artPath !== prevArtPath
                     )
+                    root.statusLoaded = true
                     if (metaChanged && (root.trackTitle || root.trackArtist || root.trackAlbum)) {
                         root.refreshAsciiArt("", "random")
                     }
+                } else {
+                    root.statusLoaded = true
                 }
             } catch (e) {
                 root._batchUpdatingTrack = false
@@ -357,7 +362,7 @@ Item {
                     root.albums = d.albums || []
                     root.searchTracks = d.tracks || []
                     if (d.availableZips) root.availableZips = d.availableZips
-                    if (!root.playing && root.albums.length > 0) {
+                    if (root.statusLoaded && !root.playing && !root.albumId && !root.trackTitle && root.albums.length > 0) {
                         var fb = root.lastPlayedTrack || root.albums[0]
                         if (fb) {
                             var prevT = root.trackTitle

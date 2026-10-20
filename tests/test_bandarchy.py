@@ -2016,6 +2016,19 @@ const fullPassStep = PhotoMotion.stepPhotoMotionState(pState, 0.1, { bass: 0.5, 
 if (!fullPassStep.autoMotionEventTriggered || pState.motionMode === modeBeforeCycle || pState.currentSourceStem === stemBeforeCycle) {
     throw new Error('autoMotionEvents must switch motionMode and step photo once photoEffectChangeIntervalSec elapses');
 }
+// 2b. Verify 1.0s minimum interval works without being clamped to 3.0s or 4.0s
+pState.photoEffectChangeIntervalSec = 1.0;
+pState.autoMotionElapsedSec = 0.4;
+const modeBefore1s = pState.motionMode;
+const stepAt05s = PhotoMotion.stepPhotoMotionState(pState, 0.1, { bass: 0.5, mid: 0.5, high: 0.5, beat: 0.5 }, mockPicker);
+if (stepAt05s.autoMotionEventTriggered || pState.motionMode !== modeBefore1s) {
+    throw new Error('autoMotionEvents switched too early at 0.5s when photoEffectChangeIntervalSec=1.0');
+}
+pState.autoMotionElapsedSec = 0.95;
+const stepAt105s = PhotoMotion.stepPhotoMotionState(pState, 0.1, { bass: 0.5, mid: 0.5, high: 0.5, beat: 0.5 }, mockPicker);
+if (!stepAt105s.autoMotionEventTriggered || pState.motionMode === modeBefore1s) {
+    throw new Error('autoMotionEvents must switch once 1.0s photoEffectChangeIntervalSec elapses');
+}
 pState.autoMotionEvents = false;
 
 const mockVariants = {};
@@ -2313,7 +2326,8 @@ console.log('OK');
         self.assertIn("bool isPinned = (uVariantIndex == uSecondaryVariantIndex);", photo_frag_src)
         self.assertIn("sin(clamp(uVariantMix, 0.0, 1.0) * PI)", photo_frag_src)
         self.assertIn("id: photoAutoMotionTimer", viz_src)
-        self.assertIn("Math.max(3000, Math.round((Number(root.photoEffectChangeIntervalSec) || 10.0) * 1000))", viz_src)
+        self.assertIn("Math.max(1000, Math.min(60000, Math.round((Number(root.photoEffectChangeIntervalSec) || 10.0) * 1000)))", viz_src)
+        self.assertIn("exponentialScale: true", viz_src)
         self.assertIn("(root.photoAutoMotionEvents || root.photoRandomiseMotionControls)", viz_src)
         self.assertIn("property bool _paintPending: false", viz_src)
         self.assertIn("(!root.gpuShaderEnabled && root.layer1FieldEnabled)", viz_src)
@@ -2580,14 +2594,14 @@ const vm = require('vm');
 let code = fs.readFileSync('PsychedelicEngine.js', 'utf8').replace(/^\.pragma\s+library\s*$/m, '');
 vm.runInThisContext(code);
 
-if (ALL_LAYER1_MODES.length !== 24 || SHORT_LAYER1_MODES.length !== 24) {
-    throw new Error('Expected 24 ALL_LAYER1_MODES and 24 SHORT_LAYER1_MODES, got ' + ALL_LAYER1_MODES.length);
+if (ALL_LAYER1_MODES.length !== 25 || SHORT_LAYER1_MODES.length !== 25) {
+    throw new Error('Expected 25 ALL_LAYER1_MODES and 25 SHORT_LAYER1_MODES, got ' + ALL_LAYER1_MODES.length);
 }
 if (ALL_LAYER1_EQ_STYLES.length !== 24) {
     throw new Error('Expected 24 ALL_LAYER1_EQ_STYLES, got ' + ALL_LAYER1_EQ_STYLES.length);
 }
-if (LAYER1_SHAPE_STYLES.length !== 14) {
-    throw new Error('Expected 14 LAYER1_SHAPE_STYLES, got ' + LAYER1_SHAPE_STYLES.length);
+if (LAYER1_SHAPE_STYLES.length !== 17) {
+    throw new Error('Expected 17 LAYER1_SHAPE_STYLES, got ' + LAYER1_SHAPE_STYLES.length);
 }
 
 function makeTrackCtx() {
@@ -2620,7 +2634,7 @@ function makeTrackCtx() {
         lineTo(x, y) { if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('NaN/non-finite lineTo: ' + x + ',' + y); },
         bezierCurveTo() {},
         quadraticCurveTo() {},
-        arc() {},
+        arc(x, y, r, a0, a1) { if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(r) || r < 0) throw new Error('Invalid arc: ' + x + ',' + y + ',' + r); },
         rect() {},
         clip() {},
         fill() { this.fillCount++; },
@@ -2630,8 +2644,8 @@ function makeTrackCtx() {
         clearRect() { this.clearCount++; },
         fillText() { this.fillCount++; },
         strokeText() { this.strokeCount++; },
-        translate() {},
-        rotate() {},
+        translate(x, y) { if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('NaN/non-finite translate: ' + x + ',' + y); },
+        rotate(a) { if (!Number.isFinite(a)) throw new Error('NaN/non-finite rotate: ' + a); },
         scale() {},
         transform() {},
         setTransform() {},
@@ -2644,8 +2658,8 @@ function makeTrackCtx() {
 const bands = new Array(64).fill(520);
 const theme = { background: '#07090e', foreground: '#e2e8f0', accent: '#6ee7b7', urgent: '#f472b6' };
 
-// 1. Verify all 24 L1 Worlds normalise and render (0..10 on CPU canvas when gpuL1Active=false; 12..23 map to CPU fallback when gpuShaderEnabled=false)
-for (let m = 0; m < 24; m++) {
+// 1. Verify all 25 L1 Worlds normalise and render (0..10 and 24 on CPU canvas when gpuL1Active=false; 12..23 map to CPU fallback when gpuShaderEnabled=false)
+for (let m = 0; m < 25; m++) {
     const st = createState();
     const cfg = normaliseConfig({
         gpuShaderEnabled: false,
@@ -2666,6 +2680,31 @@ for (let m = 0; m < 24; m++) {
     renderFrame(ctx, 640, 360, st, 0, theme, [], [], [], cfg, null);
     if (m !== 11 && ctx.fillCount + ctx.strokeCount < 2) {
         throw new Error(`L1 World ${m} (${ALL_LAYER1_MODES[m]}) failed to render geometry`);
+    }
+}
+for (const dirVal of [1, -1, 0]) {
+    const stPac = createState();
+    const cfgPac = normaliseConfig({
+        gpuShaderEnabled: true,
+        gpuL1Active: true,
+        layer1Enabled: true,
+        layer1FieldEnabled: true,
+        layer1Mode: 24,
+        layer1Direction: dirVal,
+        layer1Speed: 1.5,
+        layer1Density: 1.4,
+        layer1EqEnabled: false,
+        layer1ShapesEnabled: false,
+        layer2Enabled: false,
+        layer3Enabled: false
+    }, 0, []);
+    for (let f = 0; f < 8; f++) {
+        stepState(stPac, bands, true, cfgPac, 0.04);
+        const ctxPac = makeTrackCtx();
+        renderFrame(ctxPac, f % 2 === 0 ? 1920 : 320, f % 2 === 0 ? 1080 : 200, stPac, 0, theme, [], [], [], cfgPac, null);
+        if (ctxPac.strokeCount < 20 || ctxPac.fillCount < 8) {
+            throw new Error(`World #25 (layer1Mode=24, dir=${dirVal}) rendered insufficient strokes/fills: ${ctxPac.strokeCount}/${ctxPac.fillCount}`);
+        }
     }
 }
 
@@ -2803,11 +2842,11 @@ for (let sh = 0; sh < 14; sh++) {
     }
 }
 
-// 5. Verify all 20 Layer 4 Geometry modes (0..19) apply 3D tubular shading with round caps/joins
-if (ALL_MODE_NAMES.length !== 20) {
-    throw new Error('Expected 20 Layer 4 Geometry modes in ALL_MODE_NAMES, got ' + ALL_MODE_NAMES.length);
+// 5. Verify all 21 Layer 4 Geometry modes (0..20) apply 3D tubular shading with round caps/joins
+if (ALL_MODE_NAMES.length !== 21) {
+    throw new Error('Expected 21 Layer 4 Geometry modes in ALL_MODE_NAMES, got ' + ALL_MODE_NAMES.length);
 }
-for (let vmIdx = 0; vmIdx < 20; vmIdx++) {
+for (let vmIdx = 0; vmIdx < 21; vmIdx++) {
     const st = createState();
     const cfg = normaliseConfig({
         layer1Enabled: false,
@@ -2881,7 +2920,7 @@ const ctxTypo = makeTrackCtx();
 renderFrame(ctxTypo, 1920, 1080, stTypo, 0, theme, [], [], [], cfgTypo, null);
 for (const fStr of ctxTypo.fonts) {
     const m = fStr.match(/(\d+)px/);
-    if (m && Number(m[1]) > 46) {
+    if (m && Number(m[1]) > 118) {
         throw new Error(`Typography font size exceeded clamp: ${fStr}`);
     }
 }

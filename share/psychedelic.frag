@@ -413,7 +413,7 @@ vec3 evalLayer4Mode(int m, vec2 cPos, float sym, float bIntensity, float dir, fl
         if (inFrontBelt && rBH < rHorizon) {
             col = diskCol * diskMask * bIntensity;
         }
-    } else {
+    } else if (m == 15) {
         // Mode 15: Voronoi Bio-Cells (Bioluminescent Living Cellular Tessellation)
         float flowPhase = uZoomTime * 1.15 * dir;
         float cellScale = 3.2 + bIntensity * 1.4;
@@ -453,6 +453,74 @@ vec3 evalLayer4Mode(int m, vec2 cPos, float sym, float bIntensity, float dir, fl
                         + membraneCol * edge * (0.85 + 0.45 * uBass)
                         + mix(uCol1.rgb, vec3(1.0), 0.6) * nucleus * (0.65 + 0.55 * uBeat);
         col = mix(col, voronoiCol, clamp((0.68 + 0.24 * uBass) * bIntensity, 0.0, 0.95));
+    } else {
+        // Mode 16: DMT Machine Elves (Hyper-Dimensional Fractal Entity Morphogenesis & Toroidal Pillar Lattice)
+        float flow = uZoomTime * 1.35 * dir;
+        // Morphogenesis growth envelope (0 -> 1 -> 0 breathing emergence from the hyperbolic lattice)
+        float growth = 0.58 + 0.42 * sin(uTime * 0.42 + uBass * 1.2);
+        // Bilateral mirror symmetry for the central emerging hyper-being + peripheral column elves
+        vec2 bp = vec2(abs(cPos.x), cPos.y);
+        float r0 = max(length(cPos), 0.001);
+        float ang0 = atan(cPos.y, cPos.x);
+
+        // 1. Hyperbolic Toroidal Vault & Alex Grey Pillar Columns
+        float torusWarp = 1.0 / (r0 + 0.36);
+        float vaultRings = sin(10.0 * torusWarp - flow * 3.2 + sin(ang0 * sym) * 0.75 * twist);
+        float pillarWave = cos((cPos.x * 3.6 + sin(cPos.y * 2.8 + uTime * 0.5) * 0.45) * PI);
+
+        // 2. Recursive KIFS (Kaleidoscopic Iterated Function System) Fold for Self-Transforming Elf Facets
+        vec2 q = bp * (1.55 + 0.25 * (1.0 - growth));
+        float kifsAccum = 0.0;
+        float kifsScale = 1.0;
+        for (int i = 0; i < 4; i++) {
+            q = abs(q) - vec2(0.46 + 0.08 * sin(uTime * 0.55 + float(i)), 0.38 + 0.07 * cos(uTime * 0.43 + float(i) * 1.3));
+            q = rot2D(0.42 * twist + 0.18 * sin(uTime * 0.37 + float(i)) + uMid * 0.22) * q;
+            q *= 1.38;
+            kifsScale *= 1.38;
+            float dFold = abs(min(q.x, q.y)) / kifsScale;
+            kifsAccum += exp(-dFold * 28.0);
+        }
+
+        // 3. Implicit SDF Entity Anatomy (Cranial Dome, Almond Eyes, Pineal Third-Eye Crown, Ribbed Torso)
+        vec2 headP = vec2(bp.x, cPos.y - 0.06 * sin(uTime * 0.8));
+        // Cranial chalice / dome contour
+        float dHead = length(headP * vec2(1.15, 0.92 + 0.12 * cPos.y)) - (0.48 * growth + uBass * 0.05);
+        // Bilateral Almond Eyes (vesica intersection)
+        vec2 eyeP = bp - vec2(0.19 * growth, 0.08 + 0.02 * sin(uTime * 1.3));
+        eyeP = rot2D(-0.18) * eyeP;
+        float dEye = length(eyeP * vec2(1.0, 2.15)) - (0.095 * growth + uBeat * 0.02);
+        float dPupil = length(eyeP) - 0.036 * growth;
+        // Pineal Third-Eye Mandala at forehead centre (x = 0, y = 0.26)
+        vec2 thirdEyeP = vec2(bp.x, cPos.y - 0.26 * growth);
+        float dThirdEye = length(thirdEyeP * vec2(1.45, 0.95)) - (0.085 * growth + uHigh * 0.03);
+        // Harmonic mouth / энергетический throat lattice
+        vec2 mouthP = vec2(bp.x, cPos.y + 0.14 * growth);
+        float dMouth = abs(length(mouthP * vec2(0.95, 1.85)) - 0.11 * growth) - 0.018;
+        // Smooth-min blend of cranial anatomy + ribbed torso spine
+        float dSpine = abs(bp.x - (0.12 + 0.08 * sin(cPos.y * 14.0 - flow * 2.5)) * smoothstep(0.1, -0.65, cPos.y)) - 0.04;
+        float dEntity = min(dHead, dSpine);
+
+        // 4. Multi-Eyes & Sacred Rib Striations Across the Entity & Vault
+        float entityShell = exp(-abs(dEntity) * 14.0) + 0.65 * smoothstep(0.08, -0.12, dHead);
+        float anatomicalRibs = 0.5 + 0.5 * cos(dEntity * 48.0 - flow * 4.2 + kifsAccum * 2.4);
+        float eyeGlow = exp(-max(0.0, dEye) * 32.0) + 1.35 * exp(-dPupil * dPupil * 900.0);
+        float thirdEyeGlow = exp(-abs(dThirdEye) * 36.0) + 1.2 * exp(- dot(thirdEyeP, thirdEyeP) * 420.0);
+        float mouthGlow = exp(-max(0.0, dMouth) * 42.0);
+
+        // Peripheral Twin Column Elves flanking left & right in the hyperbolic colonnade
+        vec2 sideElfP = vec2(abs(bp.x - 0.72), cPos.y - 0.04 * cos(uTime * 0.9));
+        float dSideHead = length(sideElfP * vec2(1.35, 1.0)) - 0.26 * growth;
+        float dSideEye = length(( abs(sideElfP) - vec2(0.09, 0.04) ) * vec2(1.0, 2.0)) - 0.045 * growth;
+        float sideElfGlow = exp(-abs(dSideHead) * 18.0) + exp(-max(0.0, dSideEye) * 38.0);
+
+        // Chromatic Alex Grey / DMT Jewel Palette Synthesis
+        vec3 vaultCol = mix(uCol0.rgb, uCol2.rgb, 0.5 + 0.5 * vaultRings) * (0.28 + 0.32 * max(0.0, pillarWave));
+        vec3 elfSkin = mix(uCol0.rgb, uCol1.rgb, anatomicalRibs) * entityShell * (0.65 + 0.45 * kifsAccum);
+        vec3 jewelFacets = mix(uCol1.rgb, uCol2.rgb, fract(kifsAccum * 0.55 + uTime * 0.15)) * kifsAccum * 0.48;
+        vec3 visionEyes = mix(uCol2.rgb, vec3(1.0, 0.97, 0.85), 0.65) * (eyeGlow + thirdEyeGlow * 1.25 + mouthGlow * 0.7 + sideElfGlow * 0.65);
+
+        vec3 dmtCol = vaultCol + (elfSkin + jewelFacets + visionEyes) * (0.78 + 0.35 * uBass + 0.35 * uBeat);
+        col = mix(col, dmtCol, clamp((0.76 + 0.22 * uBass) * bIntensity, 0.0, 0.96));
     }
     return col;
 }
@@ -741,37 +809,63 @@ void main() {
             col += accCol * (0.82 + uBass * 0.34) * l1Bright;
             col *= smoothstep(ehR * 0.76, ehR * 0.98, rq);
         } else if (l1m == 7) {
-            // Mode 7 (20:ShdTRON): Swooping & Rotational Banking 3D Surface Grid + 3-Stage Atari Star Wars Surface Towers Locked to Grid Intersections (Zero Red Ground Lines)
+            // Mode 7 (20:TowerRun): Swooping & Rotational Banking 3D Surface Grid with Separated Gun Turrets Firing Laser Bolts (Zero Red Ground Lines)
             vec3 towerYellow = vec3(1.0, 1.0, 0.08);
             vec3 towerGreen = vec3(0.08, 1.0, 0.12);
             vec3 towerRed = vec3(1.0, 0.14, 0.08);
             vec3 gridCyan = vec3(0.10, 0.92, 1.0);
             vec3 gridBlue = vec3(0.06, 0.42, 1.0);
 
-            // Swooping & rotational banking 3D camera flight over the surface grid
-            float bankAng = sin(l1T * 0.62) * 0.28 + cos(l1T * 0.27) * 0.11;
+            float gridScaleX = 2.4 * max(0.5, l1Den);
+            float gridScaleZ = 2.2 * max(0.5, l1Den);
+            float scrollGZ = l1T * 4.6;
+            float rowSpacingGZ = 3.2; // Well-separated longitudinal spacing between turret rows
+            float rowPhase = scrollGZ / rowSpacingGZ;
+            float curRowIdx = floor(rowPhase);
+            float uRow = fract(rowPhase);
+
+            // Varied, non-repeating multi-lane flight path (L -> L -> Centre -> R -> Far-R -> Centre-L etc.)
+            // Interpolated with a C1-continuous Catmull-Rom spline across 4 consecutive row waypoints
+            // so velocity and banking are 100% smooth with zero jerky stops or repetitive L-R-L-R oscillation!
+            float wM1 = (hash2(vec2(curRowIdx - 1.0, 7.1)).x - 0.5) * 5.2 + sin((curRowIdx - 1.0) * 1.73) * 1.35;
+            float w0  = (hash2(vec2(curRowIdx,       7.1)).x - 0.5) * 5.2 + sin( curRowIdx        * 1.73) * 1.35;
+            float wP1 = (hash2(vec2(curRowIdx + 1.0, 7.1)).x - 0.5) * 5.2 + sin((curRowIdx + 1.0) * 1.73) * 1.35;
+            float wP2 = (hash2(vec2(curRowIdx + 2.0, 7.1)).x - 0.5) * 5.2 + sin((curRowIdx + 2.0) * 1.73) * 1.35;
+
+            float u2 = uRow * uRow;
+            float u3 = u2 * uRow;
+            // Catmull-Rom position & analytical first derivative (lateral velocity)
+            float camPanX = 0.5 * (
+                (2.0 * w0) +
+                (-wM1 + wP1) * uRow +
+                (2.0 * wM1 - 5.0 * w0 + 4.0 * wP1 - wP2) * u2 +
+                (-wM1 + 3.0 * w0 - 3.0 * wP1 + wP2) * u3
+            );
+            float lateralVel = 0.5 * (
+                (-wM1 + wP1) +
+                (2.0 * wM1 - 5.0 * w0 + 4.0 * wP1 - wP2) * (2.0 * uRow) +
+                (-wM1 + 3.0 * w0 - 3.0 * wP1 + wP2) * (3.0 * u2)
+            );
+
+            // Gentle, fluid aerodynamic banking roll (capped at ~7 degrees so it never whips or feels jerky)
+            float bankAng = clamp(-lateralVel * 0.045, -0.12, 0.12) + sin(l1T * 0.42) * 0.025;
             vec2 bp = rot2D(bankAng) * p;
-            float swoopPitch = sin(l1T * 0.48) * 0.075 + cos(l1T * 0.29) * 0.032;
+            float swoopPitch = sin(l1T * 0.48) * 0.038 + cos(l1T * 0.29) * 0.018;
             float horizonOffset = -0.04 + swoopPitch;
-            float camPanX = sin(l1T * 0.41) * 0.85 + cos(l1T * 0.23) * 0.35;
             float hy = bp.y - horizonOffset;
 
             // Horizon glow + upper sky vector starfield (strictly cyan/blue/gold, zero red ground lines)
             float hGlow = exp(-abs(hy) * 38.0) * 0.78;
             col += mix(gridCyan, uCol0.rgb, 0.28) * hGlow * l1Bright;
             if (hy < 0.0) {
-                vec2 skyCell = floor((bp + vec2(l1T * 0.05, 0.0)) * 32.0);
+                vec2 skyCell = floor((bp + vec2(camPanX * 0.08, 0.0)) * 32.0);
                 float starH = hash2(skyCell + 19.3).x;
                 if (starH > 0.94) {
-                    vec2 starPos = (skyCell + 0.5 + 0.32 * vec2(sin(starH * 43.0), cos(starH * 29.0))) / 32.0 - vec2(l1T * 0.05, 0.0);
+                    vec2 starPos = (skyCell + 0.5 + 0.32 * vec2(sin(starH * 43.0), cos(starH * 29.0))) / 32.0 - vec2(camPanX * 0.08, 0.0);
                     float dStar = length(bp - starPos);
                     col += mix(vec3(0.75, 0.95, 1.0), towerYellow, 0.35) * exp(-dStar * 190.0) * (0.65 + 0.35 * sin(uTime * 5.0 + starH * 40.0)) * l1Bright;
                 }
             }
-
-            float gridScaleX = 2.4 * max(0.5, l1Den);
-            float gridScaleZ = 2.2 * max(0.5, l1Den);
-            float scrollGZ = l1T * 5.0;
 
             if (hy > 0.002) {
                 float z = 0.26 / max(0.004, hy);
@@ -794,50 +888,57 @@ void main() {
                 col += gridCol * fade * (0.84 + uBass * 0.32) * l1Bright;
             }
 
-            // 3-Stage Atari Star Wars Stage 2 (Death Star Surface) Defence Towers strictly locked to exact integer ground grid intersections (gx0..gx1, rowWorldGZ)
+            // Separated 3D Armoured Gun Turrets with Articulated Twin Laser Cannons & Tracer Fire locked to integer ground grid intersections
             vec3 towerAcc = vec3(0.0);
-            float rowSpacingGZ = 2.0; // exact integer multiple of ground grid period (1.0)
             float baseGridRow = floor(scrollGZ / rowSpacingGZ);
 
             for (int rStep = 1; rStep <= 5; rStep++) {
                 float rowIdx = baseGridRow + float(rStep);
-                float rowWorldGZ = rowIdx * rowSpacingGZ; // exact integer gz intersection line
+                float rowWorldGZ = rowIdx * rowSpacingGZ;
                 float zF = (rowWorldGZ - scrollGZ) / gridScaleZ;
-                if (zF < 0.28 || zF > 7.5) continue;
+                if (zF < 0.26 || zF > 8.2) continue;
 
                 float hyF = 0.26 / zF;
                 float baseYF = horizonOffset + hyF;
                 float scaleXF = 1.0 / (gridScaleX * zF);
-                float distFade = smoothstep(7.5, 1.5, zF) * smoothstep(0.28, 0.52, zF);
+                float distFade = smoothstep(8.2, 1.4, zF) * smoothstep(0.26, 0.48, zF);
                 float lw = 215.0 + zF * 24.0;
 
-                // Alternate 2 towers per row at exact integer grid cell columns (gx0 to gx0 + 1.0)
-                float parity = mod(abs(rowIdx), 2.0);
+                // Exact spline waypoint where the camera passes through this row (uRow == 0 at rowIdx),
+                // ensuring turrets are always placed outside our flight corridor with varied asymmetric formations!
+                float rowPassX = (hash2(vec2(rowIdx, 7.1)).x - 0.5) * 5.2 + sin(rowIdx * 1.73) * 1.35;
+                vec2 rowRand = hash2(vec2(rowIdx, 19.7));
                 for (int tSlot = 0; tSlot < 2; tSlot++) {
-                    // Anchor left & right base feet to exact integer grid intersections gx0 and gx1 = gx0 + 1.0
+                    // Place one turret to the left of our pass-through lane and one to the right,
+                    // snapped to integer grid cells with asymmetric spacing so formations look organic and never collide with the camera
+                    float clearGapL = 1.6 + floor(rowRand.x * 2.0); // 1.6 to 2.6 cells left of pass-through
+                    float clearGapR = 1.2 + floor(rowRand.y * 2.0); // 1.2 to 2.2 cells right of pass-through
                     float gx0 = (tSlot == 0)
-                        ? (-2.0 + step(0.5, parity) * 1.0)
-                        : ( 1.0 - step(0.5, parity) * 1.0);
+                        ? floor(rowPassX - clearGapL)
+                        : ceil(rowPassX + clearGapR);
                     float gx1 = gx0 + 1.0;
 
                     float xBaseL = (gx0 - camPanX) * scaleXF;
                     float xBaseR = (gx1 - camPanX) * scaleXF;
                     float xMid = 0.5 * (xBaseL + xBaseR);
                     float cellW = abs(xBaseR - xBaseL);
-                    float totalH = hyF * (2.25 + 0.24 * uBass);
+                    float totalH = hyF * (1.72 + 0.20 * uBass);
 
-                    // Stage heights: Stage 1 (Yellow base shaft 0..56%), Stage 2 (Green neck collar 56%..76%), Stage 3 (Red command head 76%..100%)
+                    // Turret proportions:
+                    // Stage 1 (0..45%): Yellow armoured bunker pedestal & X-braced base ring
+                    // Stage 2 (45%..78%): Green rotating gun-house turret dome & trunnion cheeks
+                    // Stage 3 (78%..100%): Red rangefinder cupola + twin long articulated gun barrels & muzzle flashes
                     float y0 = baseYF;
-                    float y1 = baseYF - totalH * 0.56;
-                    float y2 = baseYF - totalH * 0.76;
+                    float y1 = baseYF - totalH * 0.45;
+                    float y2 = baseYF - totalH * 0.78;
                     float y3 = baseYF - totalH;
-                    float yRoof = y3 - totalH * 0.08;
+                    float yCupola = y3 - totalH * 0.12;
 
-                    // Stage 1: Yellow (#FFFF11) tapered X-braced base shaft anchored at exact ground grid intersection corners
+                    // Stage 1: Yellow (#FFFF11) armoured turret pedestal anchored at exact integer grid corners
                     vec2 bL = vec2(xBaseL, y0);
                     vec2 bR = vec2(xBaseR, y0);
-                    vec2 s1L = vec2(xMid - cellW * 0.34, y1);
-                    vec2 s1R = vec2(xMid + cellW * 0.34, y1);
+                    vec2 s1L = vec2(xMid - cellW * 0.38, y1);
+                    vec2 s1R = vec2(xMid + cellW * 0.38, y1);
                     vec2 s1MidL = mix(bL, s1L, 0.52);
                     vec2 s1MidR = mix(bR, s1R, 0.52);
 
@@ -845,45 +946,102 @@ void main() {
                                        + segGlow(bp, bL, s1L, lw)
                                        + segGlow(bp, bR, s1R, lw)
                                        + segGlow(bp, s1L, s1R, lw)
-                                       + segGlow(bp, s1MidL, s1MidR, lw * 0.95)
-                                       + segGlow(bp, bL, s1MidR, lw * 0.92)
-                                       + segGlow(bp, bR, s1MidL, lw * 0.92)
-                                       + segGlow(bp, s1MidL, s1R, lw * 0.92)
-                                       + segGlow(bp, s1MidR, s1L, lw * 0.92);
+                                       + segGlow(bp, s1MidL, s1MidR, lw * 0.94)
+                                       + segGlow(bp, bL, s1R, lw * 0.88)
+                                       + segGlow(bp, bR, s1L, lw * 0.88);
 
-                    // Stage 2: Green (#11FF11) narrowed upper turret neck collar & cross-strut
-                    vec2 s2L = vec2(xMid - cellW * 0.22, y2);
-                    vec2 s2R = vec2(xMid + cellW * 0.22, y2);
-                    float stage2Green = segGlow(bp, s1L, s2L, lw)
-                                      + segGlow(bp, s1R, s2R, lw)
+                    // Stage 2: Green (#11FF11) swivelling octagonal gun-house turret dome & cannon trunnion mounts
+                    float aimSign = sign(-xMid); // Turret tracks towards the player's evasive flight path!
+                    float aimShift = clamp(-xMid * 0.22, -cellW * 0.18, cellW * 0.18);
+                    vec2 gJawL = vec2(xMid - cellW * 0.52 + aimShift * 0.5, mix(y1, y2, 0.45));
+                    vec2 gJawR = vec2(xMid + cellW * 0.52 + aimShift * 0.5, mix(y1, y2, 0.45));
+                    vec2 s2L = vec2(xMid - cellW * 0.36 + aimShift, y2);
+                    vec2 s2R = vec2(xMid + cellW * 0.36 + aimShift, y2);
+                    vec2 visorL = vec2(xMid - cellW * 0.24 + aimShift, mix(y1, y2, 0.62));
+                    vec2 visorR = vec2(xMid + cellW * 0.24 + aimShift, mix(y1, y2, 0.62));
+
+                    float stage2Green = segGlow(bp, s1L, gJawL, lw)
+                                      + segGlow(bp, s1R, gJawR, lw)
+                                      + segGlow(bp, gJawL, s2L, lw)
+                                      + segGlow(bp, gJawR, s2R, lw)
                                       + segGlow(bp, s2L, s2R, lw)
-                                      + segGlow(bp, s1L, s2R, lw * 0.90)
-                                      + segGlow(bp, s1R, s2L, lw * 0.90);
+                                      + segGlow(bp, gJawL, gJawR, lw * 0.92)
+                                      + segGlow(bp, visorL, visorR, lw * 1.05);
 
-                    // Stage 3: Red (#FF2211) wide flared octagonal turret command head & rotating twin laser cannon dishes
-                    vec2 hJawL = vec2(xMid - cellW * 0.48, y2 - (y2 - y3) * 0.45);
-                    vec2 hJawR = vec2(xMid + cellW * 0.48, y2 - (y2 - y3) * 0.45);
-                    vec2 hTopL = vec2(xMid - cellW * 0.38, y3);
-                    vec2 hTopR = vec2(xMid + cellW * 0.38, y3);
-                    vec2 hPeak = vec2(xMid, yRoof);
-                    float gunSweep = sin(uTime * 3.4 + rowIdx * 1.7 + float(tSlot) * 2.1) * cellW * 0.16;
-                    vec2 gunTipL = hJawL + vec2(gunSweep - cellW * 0.10, -totalH * 0.08);
-                    vec2 gunTipR = hJawR + vec2(gunSweep + cellW * 0.10, -totalH * 0.08);
+                    // Stage 3: Red (#FF2211) rangefinder cupola + Twin 3D Forward-Aiming Gun Barrels & Incoming 3D Perspective Laser Bolts!
+                    vec2 cTopL = vec2(xMid - cellW * 0.22 + aimShift, y3);
+                    vec2 cTopR = vec2(xMid + cellW * 0.22 + aimShift, y3);
+                    vec2 cPeak = vec2(xMid + aimShift * 1.1, yCupola);
 
-                    float stage3Red = segGlow(bp, s2L, hJawL, lw)
-                                    + segGlow(bp, s2R, hJawR, lw)
-                                    + segGlow(bp, hJawL, hJawR, lw * 0.95)
-                                    + segGlow(bp, hJawL, hTopL, lw)
-                                    + segGlow(bp, hJawR, hTopR, lw)
-                                    + segGlow(bp, hTopL, hTopR, lw)
-                                    + segGlow(bp, hTopL, hPeak, lw * 0.92)
-                                    + segGlow(bp, hTopR, hPeak, lw * 0.92)
-                                    + segGlow(bp, hJawL, gunTipL, lw * 1.05) * (1.15 + 0.55 * uBeat)
-                                    + segGlow(bp, hJawR, gunTipR, lw * 1.05) * (1.15 + 0.55 * uBeat);
+                    // Gun breeches mounted on the turret cheeks at depth zF, with muzzles projecting FORWARD in 3D (-z towards camera!)
+                    float fireCycle = fract(abs(l1T) * 0.72 + rowIdx * 0.37 + float(tSlot) * 0.53);
+                    float recoil = exp(-fireCycle * 8.0) * 0.06;
+                    vec2 breechL = vec2(xMid - cellW * 0.30 + aimShift, mix(y1, y2, 0.55));
+                    vec2 breechR = vec2(xMid + cellW * 0.30 + aimShift, mix(y1, y2, 0.55));
+
+                    // True 3D perspective projection for the gun muzzles (closer to the camera at zMuzzle < zF)
+                    // and incoming laser bolts/missiles flying from zMuzzle -> zNear (0.22) towards the player!
+                    float zMuzzle = max(0.22, zF - (0.28 - recoil));
+                    float scaleXMuz = 1.0 / (gridScaleX * zMuzzle);
+                    float hyMuz = 0.26 / zMuzzle;
+                    // Aim from turret world X (gx0 + 0.5) slightly towards the player's camPanX lane, but keeping clear of direct centre impact
+                    float gxTurret = gx0 + 0.5;
+                    float aimTowardPlayer = clamp(camPanX - gxTurret, -2.2, 2.2) * 0.14;
+                    float gxMuzL = gxTurret - 0.26 + aimTowardPlayer;
+                    float gxMuzR = gxTurret + 0.26 + aimTowardPlayer;
+                    float yMuz = horizonOffset + hyMuz - hyMuz * (1.02 + 0.12 * uBass);
+                    vec2 muzzleL = vec2((gxMuzL - camPanX) * scaleXMuz, yMuz);
+                    vec2 muzzleR = vec2((gxMuzR - camPanX) * scaleXMuz, yMuz);
+                    vec2 railOffset = vec2(0.0, -totalH * 0.048);
+
+                    float stage3Red = segGlow(bp, s2L, cTopL, lw)
+                                    + segGlow(bp, s2R, cTopR, lw)
+                                    + segGlow(bp, cTopL, cTopR, lw)
+                                    + segGlow(bp, cTopL, cPeak, lw * 0.92)
+                                    + segGlow(bp, cTopR, cPeak, lw * 0.92)
+                                    // Twin heavy 3D gun barrels projecting forward towards the camera
+                                    + segGlow(bp, breechL, muzzleL, lw * 1.15) * 1.25
+                                    + segGlow(bp, breechL + railOffset, muzzleL + railOffset, lw * 1.05)
+                                    + segGlow(bp, muzzleL, muzzleL + railOffset, lw)
+                                    + segGlow(bp, breechR, muzzleR, lw * 1.15) * 1.25
+                                    + segGlow(bp, breechR + railOffset, muzzleR + railOffset, lw * 1.05)
+                                    + segGlow(bp, muzzleR, muzzleR + railOffset, lw);
+
+                    // Incoming 3D Laser Bolts / Missiles travelling FORWARD from the turret muzzles (zMuzzle)
+                    // towards the foreground camera (zNear = 0.20) as we fly forward!
+                    float laserBolts = 0.0;
+                    if (zF > 0.55) {
+                        float zNear = 0.20;
+                        float s0 = fireCycle;
+                        float s1 = min(1.0, fireCycle + 0.16);
+                        float zB0 = mix(zMuzzle, zNear, s0);
+                        float zB1 = mix(zMuzzle, zNear, s1);
+                        float scX0 = 1.0 / (gridScaleX * zB0);
+                        float scX1 = 1.0 / (gridScaleX * zB1);
+                        float hyB0 = 0.26 / zB0;
+                        float hyB1 = 0.26 / zB1;
+                        float yB0 = horizonOffset + hyB0 - hyB0 * mix(1.02, 0.72, s0);
+                        float yB1 = horizonOffset + hyB1 - hyB1 * mix(1.02, 0.72, s1);
+                        float gxB0L = gxMuzL + aimTowardPlayer * (s0 * 2.2);
+                        float gxB1L = gxMuzL + aimTowardPlayer * (s1 * 2.2);
+                        float gxB0R = gxMuzR + aimTowardPlayer * (s0 * 2.2);
+                        float gxB1R = gxMuzR + aimTowardPlayer * (s1 * 2.2);
+
+                        vec2 boltL0 = vec2((gxB0L - camPanX) * scX0, yB0);
+                        vec2 boltL1 = vec2((gxB1L - camPanX) * scX1, yB1);
+                        vec2 boltR0 = vec2((gxB0R - camPanX) * scX0, yB0);
+                        vec2 boltR1 = vec2((gxB1R - camPanX) * scX1, yB1);
+                        float boltFade = (1.0 - smoothstep(0.82, 1.0, s0));
+                        laserBolts = (segGlow(bp, boltL0, boltL1, lw * 0.85) + segGlow(bp, boltR0, boltR1, lw * 0.85))
+                                   * boltFade * (1.35 + 0.65 * uBeat);
+                    }
+                    float muzzleFlash = (exp(-length(bp - muzzleL) * (lw * 0.85)) + exp(-length(bp - muzzleR) * (lw * 0.85)))
+                                      * exp(-fireCycle * 6.0) * 1.6;
 
                     vec3 tCol = towerYellow * clamp(stage1Yellow, 0.0, 2.4)
                               + towerGreen  * clamp(stage2Green, 0.0, 2.2) * (1.05 + 0.30 * uMid)
-                              + towerRed    * clamp(stage3Red, 0.0, 2.5)   * (1.10 + 0.45 * uBeat);
+                              + towerRed    * clamp(stage3Red + laserBolts, 0.0, 2.8) * (1.10 + 0.45 * uBeat)
+                              + vec3(1.0, 0.96, 0.75) * muzzleFlash;
                     towerAcc += tCol * distFade;
                 }
             }
@@ -956,18 +1114,98 @@ void main() {
                             * smoothstep(0.18, 0.38, rO) * exp(-max(0.0, rO - 0.55) * 2.8);
             col += (coreCol + gimbalCol * (0.82 + 0.32 * uMid) + uCol2.rgb * plasmaArc * (0.85 + 0.55 * uBeat)) * (0.80 + uBass * 0.32) * l1Bright;
         } else if (l1m == 9) {
-            // Mode 9: Demoscene Polygon Tunnel — Expanding Multi-Ring Geometric Polygon Tunnel & Struts
+            // Mode 9 (World #22): Demoscene Polygon Tunnel & Rotating 3D Cyber-Mandala Iris Rings
             float sides = 5.0 + mod(floor(uTime * 0.12), 4.0);
-            vec2 tp = rot2D(l1T * 0.22) * q;
-            float dPoly = shapeRadius(tp, sides, 0.06, 0.12);
-            float zPoly = 0.55 / max(0.03, dPoly);
-            float ringPhase = zPoly * (1.8 * l1Den) + l1T * 2.2;
-            float polyRing = smoothstep(0.82, 0.98, cos(ringPhase * PI));
-            float polyStrut = smoothstep(0.92, 0.995, cos(atan(tp.y, tp.x) * sides));
-            float fade = smoothstep(0.03, 0.16, dPoly);
-            vec3 pCol = mix(uCol0.rgb, uCol1.rgb, 0.5 + 0.5 * sin(ringPhase * 0.7));
-            pCol = mix(pCol, uCol2.rgb, polyStrut * 0.65);
-            col += pCol * max(polyRing, polyStrut * 0.72) * fade * (0.76 + uBass * 0.38) * l1Bright;
+            float rQ = length(q);
+            float baseAng = atan(q.y, q.x);
+            float fade = smoothstep(0.03, 0.15, rQ);
+
+            // 1. Expanding Geometric Polygon Tunnel with Tear-Free Interleaved CW & CCW Counter-Rotating Rings
+            vec2 tpCW = rot2D(l1T * 0.62) * q;
+            vec2 tpCCW = rot2D(-l1T * 0.62 + PI / sides) * q;
+            float dPolyCW = shapeRadius(tpCW, sides, 0.07, 0.12);
+            float dPolyCCW = shapeRadius(tpCCW, sides, 0.07, 0.12);
+            float phaseCW = (0.55 / max(0.03, dPolyCW)) * (0.85 * l1Den) + l1T * 1.15;
+            float phaseCCW = (0.55 / max(0.03, dPolyCCW)) * (0.85 * l1Den) + l1T * 1.15 + 1.0;
+            float ringCW = smoothstep(0.84, 0.99, cos(phaseCW * PI));
+            float ringCCW = smoothstep(0.84, 0.99, cos(phaseCCW * PI));
+            float polyRing = max(ringCW, ringCCW);
+            float strutCW = smoothstep(0.93, 0.996, cos(atan(tpCW.y, tpCW.x) * sides));
+            float strutCCW = smoothstep(0.93, 0.996, cos(atan(tpCCW.y, tpCCW.x) * sides));
+            float polyStrut = max(strutCW * (0.45 + 0.55 * ringCW), strutCCW * (0.45 + 0.55 * ringCCW));
+            vec3 pCol = mix(uCol0.rgb, uCol1.rgb, 0.5 + 0.5 * sin((phaseCW + phaseCCW) * 0.7)) * ringCW
+                      + mix(uCol1.rgb, uCol0.rgb, 0.5 + 0.5 * cos(phaseCCW * 1.1)) * ringCCW;
+            pCol = mix(max(pCol, 0.35 * (uCol0.rgb + uCol1.rgb)), uCol2.rgb, polyStrut * 0.65);
+            vec3 tunnelCol = pCol * max(polyRing * 0.86, polyStrut * 0.58) * fade;
+
+            // 2. Travelling Counter-Rotating Segmented 3D Circular Rings Rushing Through the Tunnel
+            float zCirc = 0.55 / max(0.028, rQ);
+            float circStream = zCirc * (1.45 * l1Den) + l1T * 2.1;
+            float circIdx = floor(circStream);
+            float circLocal = abs(fract(circStream) - 0.5) * 2.0;
+            float circSign = (mod(abs(circIdx), 2.0) < 0.5) ? 1.0 : -1.0;
+            // Pure monotonic l1T angular phase (l1T already integrates bass speed on the engine side)
+            float circRotAng = baseAng + l1T * 2.35 * circSign + circIdx * 0.7854;
+            // Wide open gaps between the 6 circular arc segments + radial vernier spokes so rotation is unmistakable
+            float circArcMask = smoothstep(0.04, 0.32, cos(circRotAng * 6.0));
+            float circTeeth = smoothstep(0.42, 0.90, cos(circRotAng * 18.0)) * exp(-abs(circLocal - 0.16) * 15.0) * (0.20 + 0.80 * circArcMask);
+            float circSpokes = smoothstep(0.93, 0.997, cos(circRotAng * 6.0)) * exp(-circLocal * 5.5);
+            float circBand = (exp(-circLocal * 11.5) * (0.03 + 0.97 * circArcMask) + circTeeth * 0.72 + circSpokes * 0.65) * fade;
+            vec3 streamCircCol = mix(uCol2.rgb, uCol0.rgb, 0.5 + 0.5 * sin(circIdx * 1.2 + l1T * 0.8)) * circBand * (1.08 + 0.45 * uBeat);
+
+            // 3. Visibly Rotating & 3D-Precessing Concentric Chronometer / Mandala Gear Rings with Rigid Spokes & Directional Satellites
+            vec3 wheelCol = vec3(0.0);
+            for (int wi = 0; wi < 4; wi++) {
+                float fwi = float(wi);
+                float wSign = (wi % 2 == 0) ? 1.0 : -1.0;
+                // Smooth 3D gyroscopic tilt axis precession + elliptical foreshortening
+                float tiltYaw = -l1T * (0.32 + fwi * 0.08) * wSign + fwi * 1.05;
+                vec2 wp = rot2D(tiltYaw) * q;
+                float tiltSquash = 1.0 + (0.24 + 0.10 * uMid) * sin(l1T * 0.88 + fwi * 1.55);
+                vec2 ellW = vec2(wp.x, wp.y * tiltSquash);
+                float rEll = length(ellW);
+                float aEll = atan(ellW.y, ellW.x);
+
+                float wRad = (0.145 + fwi * 0.135) * (1.0 + 0.07 * sin(l1T * 1.7 + fwi * 1.4) + uBeat * 0.10 + uBass * 0.06);
+                float dWheel = abs(rEll - wRad);
+                // Rigid-body monotonic rotation angle (aligned with tiltYaw so spin is never cancelled or scrambled by uBass)
+                float rotAng = aEll + l1T * (1.85 + fwi * 0.42) * wSign;
+                float segCount = 4.0 + fwi * 2.0;
+                float gearTeeth = segCount * 3.0;
+                // High-contrast segmented arcs (near-zero in gaps so rotation leaps off the screen) + outer gear teeth
+                float segWave = cos(rotAng * segCount);
+                float segArc = smoothstep(0.04, 0.30, segWave);
+                float toothWave = cos(rotAng * gearTeeth);
+                float toothNotch = smoothstep(0.48, 0.92, toothWave) * exp(-abs(rEll - (wRad + 0.013)) * 135.0) * (0.22 + 0.78 * segArc);
+                float wheelRim = exp(-dWheel * 108.0) * (0.03 + 0.97 * segArc) + toothNotch * 0.90 + exp(-dWheel * 26.0) * segArc * 0.28;
+
+                // Rigidly locked radial rotor spokes & cardinal keyway needle rotating together with the wheel rim
+                float innerRad = max(0.035, wRad - 0.095);
+                float inBand = smoothstep(innerRad - 0.008, innerRad + 0.014, rEll) * smoothstep(wRad + 0.010, wRad - 0.008, rEll);
+                float spokeHelix = (rEll - wRad) * 5.5 * wSign;
+                float irisBlades = smoothstep(0.92, 0.996, cos((rotAng + spokeHelix) * segCount)) * inBand;
+                float keywayNeedle = smoothstep(0.965, 0.999, cos(rotAng * 2.0)) * inBand;
+
+                // Directional orbiting satellite nodes with true asymmetric trailing comet wakes
+                float satPhase = fract((rotAng * 2.0) / TAU - l1T * 0.55 * wSign);
+                float satTrail = (wSign > 0.0) ? (1.0 - satPhase) : satPhase;
+                float satHotspot = exp(-satTrail * 32.0) * exp(-dWheel * 54.0);
+                float satWake = exp(-satTrail * 5.5) * smoothstep(0.0, 0.04, satTrail) * exp(-dWheel * 78.0) * 0.62;
+
+                vec3 wTint = (wi % 3 == 0) ? uCol2.rgb : ((wi % 3 == 1) ? uCol0.rgb : uCol1.rgb);
+                wheelCol += wTint * (wheelRim + irisBlades * 0.78 + satWake)
+                          + vec3(1.0, 0.98, 0.92) * (satHotspot * 1.65 + keywayNeedle * 0.85 + toothNotch * 0.58);
+            }
+
+            // 4. Central Rotating Cyber-Lotus Starburst & Mechanical Shutter Core
+            float lotusAng = baseAng - l1T * 2.55;
+            float lotusR = (0.112 + 0.045 * cos(lotusAng * 6.0) + 0.022 * sin(baseAng * 12.0 + l1T * 3.8)) * (1.0 + uBass * 0.45 + uBeat * 0.22);
+            float dLotus = abs(rQ - lotusR);
+            float innerSpokes = smoothstep(0.88, 0.995, cos(lotusAng * 6.0 + rQ * 14.0)) * smoothstep(lotusR + 0.02, 0.018, rQ);
+            float lotusGlow = exp(-dLotus * 92.0) + innerSpokes * 0.82 + exp(-rQ * 15.0) * (0.38 + 0.42 * uBeat);
+            vec3 lotusCol = mix(uCol1.rgb, vec3(1.0, 0.96, 0.88), 0.55) * lotusGlow;
+
+            col += (tunnelCol * 0.74 + streamCircCol * 0.85 + wheelCol * (0.98 + 0.38 * uMid) + lotusCol) * (0.82 + uBass * 0.38) * l1Bright;
         } else if (l1m == 10) {
             // Mode 10: Tempest & Asteroids 3D — 16-Lane Electric Blue Tube Web, Yellow Claw/Zapper & Sparse 1-2 Enemies
             vec3 tempBlue = vec3(0.13, 0.33, 1.0);
@@ -1049,7 +1287,7 @@ void main() {
         int m1 = l4Active
             ? int(floor(((uL4Enabled > 0.5) ? uL4Mode : uL2Mode) + 0.5))
             : 13;
-        m1 = clamp(m1, 0, 15);
+        m1 = clamp(m1, 0, 16);
         float sym = max(2.0, floor(uFacets + 0.5));
         float zoom = clamp(uZoom, 0.4, 2.5);
         float bIntensity = clamp(uComplexity, 0.04, 2.0);
@@ -1057,7 +1295,7 @@ void main() {
         int wallPat = clamp(int(floor(uL4WallPattern + 0.5)), 0, 4);
         vec2 cPos = (p - drift * 0.42) / zoom;
 
-        int m2 = clamp(int(floor(uL4SecondaryMode + 0.5)), 0, 15);
+        int m2 = clamp(int(floor(uL4SecondaryMode + 0.5)), 0, 16);
         int dualPasses = (l4Active && uL4DualEnabled > 0.5) ? 2 : 1;
         vec3 colPrimary = col;
         for (int pass = 0; pass < dualPasses; ++pass) {

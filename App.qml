@@ -74,6 +74,7 @@ ShellRoot {
         property string selectedAlbumId: ""
         property string selectedPlaylistId: ""
         property bool visualiserMaximised: false
+        property bool _initialAlbumSelected: false
 
         // Keyboard navigation state
         property int focusedAlbumIndex: 0
@@ -91,6 +92,7 @@ ShellRoot {
         }
 
         function toggleAlbumExpand(albumId, albumIdx) {
+            win._initialAlbumSelected = true
             if (albumIdx !== undefined && albumIdx >= 0) {
                 win.focusedAlbumIndex = albumIdx
             }
@@ -104,12 +106,13 @@ ShellRoot {
             }
         }
 
-        function selectPlayingAlbumInCatalog() {
+        function selectPlayingAlbumInCatalog(preserveTab) {
             var albums = service.albums || []
-            if (albums.length === 0) return
-            var targetId = String(service.currentAlbumId || "")
-            var targetTitle = String(service.trackAlbum || "").trim().toLowerCase()
-            var targetArtist = String(service.trackArtist || "").trim().toLowerCase()
+            if (albums.length === 0) return false
+            var targetId = String(service.albumId || service.currentAlbumId || (service.lastPlayedTrack && (service.lastPlayedTrack.albumId || service.lastPlayedTrack.id)) || "")
+            var targetTitle = String(service.trackAlbum || (service.lastPlayedTrack && (service.lastPlayedTrack.album || service.lastPlayedTrack.title)) || "").trim().toLowerCase()
+            var targetArtist = String(service.trackArtist || (service.lastPlayedTrack && service.lastPlayedTrack.artist) || "").trim().toLowerCase()
+            if (targetId === "" && targetTitle === "") return false
             var matchIdx = -1
             for (var i = 0; i < albums.length; i++) {
                 var a = albums[i]
@@ -128,7 +131,7 @@ ShellRoot {
             }
             if (matchIdx >= 0) {
                 var matched = albums[matchIdx]
-                win.leftTab = 0
+                if (!preserveTab) win.leftTab = 0
                 win.focusedAlbumIndex = matchIdx
                 win.selectedAlbumId = String(matched.id || "")
                 win.focusedTrackIndex = Math.max(0, Number(service.playlistPos) || 0)
@@ -138,6 +141,33 @@ ShellRoot {
                         appAlbumList.positionViewAtIndex(matchIdx, ListView.Center)
                     }
                 })
+                return true
+            }
+            return false
+        }
+
+        Connections {
+            target: service
+            function onAlbumsChanged() {
+                if (!win._initialAlbumSelected && service.statusLoaded) {
+                    if (win.selectPlayingAlbumInCatalog(true)) {
+                        win._initialAlbumSelected = true
+                    }
+                }
+            }
+            function onAlbumIdChanged() {
+                if (!win._initialAlbumSelected && service.albums && service.albums.length > 0) {
+                    if (win.selectPlayingAlbumInCatalog(true)) {
+                        win._initialAlbumSelected = true
+                    }
+                }
+            }
+            function onStatusLoadedChanged() {
+                if (!win._initialAlbumSelected && service.statusLoaded && service.albums && service.albums.length > 0) {
+                    if (win.selectPlayingAlbumInCatalog(true)) {
+                        win._initialAlbumSelected = true
+                    }
+                }
             }
         }
 

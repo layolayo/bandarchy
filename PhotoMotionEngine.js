@@ -765,7 +765,7 @@ function createPhotoMotionState() {
         autoMotionEvents: false,
         effectAutoRandomise: false,
         randomiseMotionControls: false,     // Switch: when ON, randomises movement controls on every effect change; when OFF, restores user settings
-        photoEffectChangeIntervalSec: 18.0, // User-configurable interval (4s .. 60s, default 18s)
+        photoEffectChangeIntervalSec: 18.0, // User-configurable interval (1s .. 60s, default 18s)
         autoMotionMinVariantsPass: 0.0,     // Do not block short user-configured intervals on slow strobe speeds
         autoMotionMinDwellSec: 18.0,        // Synchronised with photoEffectChangeIntervalSec
         autoMotionElapsedSec: 0.0,
@@ -1097,7 +1097,7 @@ function togglePhotoAutoMotionEvents(state, forceEnabled) {
     state.effectAutoRandomise = nextEnabled
     state.autoMotionElapsedSec = 0.0
     state.autoMotionAccumulatedPhase = 0.0
-    var intervalSec = Math.round(clamp(Number(state.photoEffectChangeIntervalSec || state.autoMotionMinDwellSec || 18.0), 4.0, 60.0))
+    var intervalSec = Math.round(clamp(Number(state.photoEffectChangeIntervalSec || state.autoMotionMinDwellSec || 18.0), 1.0, 60.0))
     return {
         action: "togglePhotoAutoMotionEvents",
         enabled: nextEnabled,
@@ -1626,7 +1626,7 @@ function stepPhotoMotionState(state, dt, audioTelemetry, pickNewEntryCallback) {
         var rawInterval = (state.photoEffectChangeIntervalSec !== undefined)
             ? Number(state.photoEffectChangeIntervalSec)
             : Number(state.autoMotionMinDwellSec !== undefined ? state.autoMotionMinDwellSec : 18.0)
-        var minDwellSec = clamp(isNaN(rawInterval) ? 18.0 : rawInterval, 3.0, 120.0)
+        var minDwellSec = clamp(isNaN(rawInterval) ? 18.0 : rawInterval, 1.0, 60.0)
         var rawMinPass = Number(state.autoMotionMinVariantsPass !== undefined ? state.autoMotionMinVariantsPass : 0.0)
         var minVariantsPass = Math.max(0.0, isNaN(rawMinPass) ? 0.0 : rawMinPass)
         if (state.autoMotionElapsedSec >= minDwellSec && state.autoMotionAccumulatedPhase >= minVariantsPass) {

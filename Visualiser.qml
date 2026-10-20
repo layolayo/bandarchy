@@ -484,7 +484,8 @@ FocusScope {
         "21:ShdOrrery",
         "22:ShdPoly",
         "23:ShdTempest",
-        "24:3DWarpTrench"
+        "24:3DWarpTrench",
+        "25:RaveMan"
     ]
 
     readonly property var photoMotionModes: PhotoMotion.PHOTO_MOTION_MODES
@@ -517,7 +518,7 @@ FocusScope {
     property real photoPlaneShear: 0.00 // 0.00..2.00x Controlled 3D Plane Shearing intensity
     property bool photoAutoMotionEvents: false // '~' key: Dedicated Photo-Engine Effect Randomisation
     property bool photoRandomiseMotionControls: false // Switch: when ON, randomises movement controls on every effect change; when OFF, restores user settings
-    property real photoEffectChangeIntervalSec: 18.0 // 4.0..60.0s Dedicated Photo-Engine Effect Randomisation interval
+    property real photoEffectChangeIntervalSec: 18.0 // 1.0..60.0s Dedicated Photo-Engine Effect Randomisation interval
     property int photoPinnedVariant: -1 // -1 = Auto-Strobe all 16 slots of the active pool, 0..15 = pinned variant
     property real photoOpacity: 0.88 // 0.05..1.00 master photo opacity
     property real photoFadeDuration: 0.35 // 0.00..6.00s cross-fade duration
@@ -617,7 +618,8 @@ FocusScope {
         "Moiré",
         "Mandel",
         "BlackHole",
-        "Voronoi"
+        "Voronoi",
+        "MachElves"
     ]
 
     readonly property var shortModeLabels: [
@@ -640,8 +642,11 @@ FocusScope {
         "17:Poincare",
         "18:BlochSphere",
         "19:KleinBottle",
-        "20:Quasicrystal"
+        "20:Quasicrystal",
+        "21:3DTetris"
     ]
+
+    property bool layer3IterationPaused: false
 
     readonly property var shortL3ModeLabels: [
         "Shatter",
@@ -1769,6 +1774,11 @@ FocusScope {
             ? Number(root.userPhotoMotionSettings.photoMotionActivity)
             : 1.00
         root._applyingRandomPhotoMotion = true
+        root.photoPinnedVariant = (Math.random() < 0.45) ? -1 : Math.floor(Math.random() * PhotoMotion.STAGE1_EFFECT_IDS.length)
+        root.photoPlaneShearEnabled = (Math.random() < 0.55)
+        root.photoPlaneShear = root.photoPlaneShearEnabled
+            ? (Math.round((0.25 + Math.random() * 1.45) * 100) / 100)
+            : 0.00
         root.photoMotionActivity = Math.round(Math.max(0.25, Math.min(2.00, userAct * (0.70 + Math.random() * 0.70))) * 100) / 100
         root.photoStrobeSpeed = Math.round(Math.max(0.25, Math.min(2.00, 0.50 + Math.random() * 1.15)) * 100) / 100
         root.photoFadeDuration = Math.round((0.20 + Math.random() * 1.30) * 100) / 100
@@ -1841,6 +1851,7 @@ FocusScope {
 
     function selectL3SourceOrGlyph(modeStr) {
         var m = String(modeStr || "").toLowerCase()
+        root.layer3IterationPaused = false
         root.layer3Enabled = true
         if (m === "art") {
             root.useAlbumArt = true
@@ -2128,7 +2139,7 @@ FocusScope {
         if (cfg.photoPlaneShear !== undefined) root.photoPlaneShear = Math.max(0.00, Math.min(2.00, Number(cfg.photoPlaneShear)))
         if (cfg.photoAutoMotionEvents !== undefined) root.photoAutoMotionEvents = Boolean(cfg.photoAutoMotionEvents)
         if (cfg.photoRandomiseMotionControls !== undefined) root.photoRandomiseMotionControls = Boolean(cfg.photoRandomiseMotionControls)
-        if (cfg.photoEffectChangeIntervalSec !== undefined) root.photoEffectChangeIntervalSec = Math.max(4.0, Math.min(60.0, Number(cfg.photoEffectChangeIntervalSec)))
+        if (cfg.photoEffectChangeIntervalSec !== undefined) root.photoEffectChangeIntervalSec = Math.max(1.0, Math.min(60.0, Number(cfg.photoEffectChangeIntervalSec)))
         if (cfg.photoPinnedVariant !== undefined) root.photoPinnedVariant = Math.max(-1, Math.min(PhotoMotion.STAGE1_EFFECT_IDS.length - 1, Math.round(Number(cfg.photoPinnedVariant))))
         if (cfg.photoOpacity !== undefined) root.photoOpacity = Math.max(0.05, Math.min(1.00, Number(cfg.photoOpacity)))
         if (cfg.photoFadeDuration !== undefined) root.photoFadeDuration = Math.max(0.00, Math.min(6.00, Number(cfg.photoFadeDuration)))
@@ -2439,7 +2450,7 @@ FocusScope {
         if (item.photoPlaneShearEnabled !== undefined) root.photoPlaneShearEnabled = Boolean(item.photoPlaneShearEnabled)
         if (item.photoPlaneShear !== undefined) root.photoPlaneShear = Math.max(0.00, Math.min(2.00, Number(item.photoPlaneShear)))
         if (item.photoAutoMotionEvents !== undefined) root.photoAutoMotionEvents = Boolean(item.photoAutoMotionEvents)
-        if (item.photoEffectChangeIntervalSec !== undefined) root.photoEffectChangeIntervalSec = Math.max(4.0, Math.min(60.0, Number(item.photoEffectChangeIntervalSec)))
+        if (item.photoEffectChangeIntervalSec !== undefined) root.photoEffectChangeIntervalSec = Math.max(1.0, Math.min(60.0, Number(item.photoEffectChangeIntervalSec)))
         if (item.photoPinnedVariant !== undefined) root.photoPinnedVariant = Math.max(-1, Math.min(PhotoMotion.STAGE1_EFFECT_IDS.length - 1, Math.round(Number(item.photoPinnedVariant))))
         if (item.photoOpacity !== undefined) root.photoOpacity = Math.max(0.05, Math.min(1.00, Number(item.photoOpacity)))
         if (item.photoFadeDuration !== undefined) root.photoFadeDuration = Math.max(0.00, Math.min(6.00, Number(item.photoFadeDuration)))
@@ -2742,7 +2753,7 @@ FocusScope {
             root.engineState.clearFeedbackFrames = 3
         }
         if (typeof gpuShaderStage !== "undefined" && gpuShaderStage) {
-            gpuShaderStage.uL1Enabled = (root.gpuShaderEnabled && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode >= 12) ? 1.0 : 0.0
+            gpuShaderStage.uL1Enabled = (root.gpuShaderEnabled && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode >= 12 && root.layer1Mode < 24) ? 1.0 : 0.0
         }
         if (root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11) {
             root.syncGpuPhotoTextures()
@@ -2928,7 +2939,8 @@ FocusScope {
             palette: root.paletteIndex,
             musicDrive: root.musicDrive,
             gpuShaderEnabled: root.gpuShaderEnabled,
-            gpuL1Active: Boolean(root.gpuShaderEnabled && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode >= 11),
+            gpuL1Active: Boolean(root.gpuShaderEnabled && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode >= 11 && root.layer1Mode < 24),
+            layer3IterationPaused: root.layer3IterationPaused,
             backdropEnabled: root.backdropEnabled,
             backdropMode: root.backdropMode,
             backdropSpeed: root.backdropSpeed,
@@ -3525,6 +3537,7 @@ FocusScope {
     function selectStatementLive(stmtText) {
         var s = String(stmtText || "").trim()
         if (!s) return
+        root.layer3IterationPaused = false
         root.currentStatement = s
         root.layer3ShowStatements = true
         root.layer3Enabled = true
@@ -3668,12 +3681,21 @@ FocusScope {
             scheduleSaveVisualiserConfig()
             root.suppressActionFeedback("5: Vortex: " + (root.layer4Enabled ? "ON" : "OFF"))
         } else if (layerNum === 6) {
-            root.layer3Enabled = !root.layer3Enabled
+            root.layer3IterationPaused = false
             root.hudFocusedLayer = 6
             if (root.showLayerDrawer) root.activeConfigLayer = 6
-            root.clearCanvasImmediate()
-            scheduleSaveVisualiserConfig()
-            root.suppressActionFeedback("6: Typography: " + (root.layer3Enabled ? "ON" : "OFF"))
+            if (!root.layer3Enabled) {
+                root.selectL3SourceOrGlyph("art")
+                root.suppressActionFeedback("6: Typography: ART")
+            } else if (root.useAlbumArt) {
+                root.selectL3SourceOrGlyph("words")
+                root.suppressActionFeedback("6: Typography: WORDS")
+            } else {
+                root.layer3Enabled = false
+                root.clearCanvasImmediate()
+                scheduleSaveVisualiserConfig()
+                root.suppressActionFeedback("6: Typography: OFF")
+            }
         }
     }
 
@@ -3712,6 +3734,7 @@ FocusScope {
     }
 
     function toggleLayer3TextField(field) {
+        root.layer3IterationPaused = false
         if (field === "artist") {
             root.layer3ShowArtist = !root.layer3ShowArtist
             if (root.layer3ShowArtist) root.layer3Enabled = true
@@ -3962,6 +3985,8 @@ FocusScope {
             root.layer1Mode = mRoll
             root.layer1Density = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
             root.layer1Speed = Math.round((0.60 + Math.random() * 1.25) * 100) / 100
+            root.layer1Persistence = Math.round((0.55 + Math.random() * 0.40) * 100) / 100
+            root.layer1Dim = Math.round((0.06 + Math.random() * 0.36) * 100) / 100
             root.layer1Direction = [1, -1, 0][Math.floor(Math.random() * 3)]
             root.layer1Opacity = Math.round((0.45 + Math.random() * 0.55) * 100) / 100
         } else {
@@ -3978,6 +4003,8 @@ FocusScope {
                 root.layer1Mode = fRoll
                 root.layer1Density = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
                 root.layer1Speed = Math.round((0.60 + Math.random() * 1.25) * 100) / 100
+                root.layer1Persistence = Math.round((0.55 + Math.random() * 0.40) * 100) / 100
+                root.layer1Dim = Math.round((0.06 + Math.random() * 0.36) * 100) / 100
                 root.layer1Direction = [1, -1, 0][Math.floor(Math.random() * 3)]
                 root.layer1Opacity = Math.round((0.45 + Math.random() * 0.55) * 100) / 100
             }
@@ -4107,6 +4134,17 @@ FocusScope {
         var nextM = roll2 < total ? roll2 : ((root.visualMode + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total)
         root.visualMode = nextM
         root.symmetryIndex = Math.floor(Math.random() * Engine.SYMMETRY_OPTIONS.length)
+        root.layer2TracersEnabled = (Math.random() < 0.78)
+        var trSteps2 = [2, 4, 6, 8, 12, 16]
+        root.tracerCount = root.layer2TracersEnabled ? trSteps2[Math.floor(Math.random() * trSteps2.length)] : 1
+        root.tracerDirection = [1, -1, 0][Math.floor(Math.random() * 3)]
+        root.tracerSpeed = Math.round((0.45 + Math.random() * 1.85) * 100) / 100
+        root.tracerDrift = Math.round((0.20 + Math.random() * 1.65) * 100) / 100
+        root.sensitivity = Math.round((0.65 + Math.random() * 1.65) * 100) / 100
+        root.layer2Complexity = Math.round((0.55 + Math.random() * 1.25) * 100) / 100
+        root.layer2Speed = Math.round((0.45 + Math.random() * 1.55) * 100) / 100
+        root.layer2Zoom = Math.round((0.65 + Math.random() * 1.15) * 100) / 100
+        root.layer2Chaos = Math.min(1.5, root.layer2Zoom * 0.6)
         root.layer2FillRatio = Math.round((0.15 + Math.random() * 0.75) * 20) / 20
         root.layer2FillOpacity = Math.round((0.25 + Math.random() * 0.65) * 20) / 20
         root.layer2Opacity = Math.round((0.45 + Math.random() * 0.55) * 100) / 100
@@ -4140,14 +4178,20 @@ FocusScope {
             scheduleSaveVisualiserConfig()
             return
         }
+        root.layer3IterationPaused = false
         root.layer3Enabled = true
         root._internalLayerChange = false
         var nextM = roll3 < total ? roll3 : ((root.layer3Mode + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total)
         root.layer3Mode = nextM
         var totalStyles = root.useAlbumArt ? Engine.LAYER3_ART_STYLES.length : Engine.LAYER3_TEXT_STYLES.length
         root.layer3TextStyle = (root.layer3TextStyle + 1 + Math.floor(Math.random() * Math.max(1, totalStyles - 1))) % totalStyles
+        root.layer3ColourMode = Math.floor(Math.random() * Engine.LAYER3_COLOUR_MODES.length)
         root.layer3CylinderDir = Math.floor(Math.random() * Engine.LAYER3_CYLINDER_DIRS.length)
-        root.layer3Scale = Math.round((0.55 + Math.random() * 1.15) * 100) / 100
+        var l3TrChoices = [1, 2, 3, 4, 5, 6, 8]
+        root.layer3Tracers = l3TrChoices[Math.floor(Math.random() * l3TrChoices.length)]
+        root.layer3Dismantle = Math.round((0.35 + Math.random() * 1.65) * 100) / 100
+        root.layer3Rebuild = Math.round((0.40 + Math.random() * 1.60) * 100) / 100
+        root.layer3Scale = Math.round((0.55 + Math.random() * 2.45) * 100) / 100
         root.layer3Opacity = Math.round((0.55 + Math.random() * 0.45) * 100) / 100
         root.pickRandomStatement()
         if (root.engineState) {
@@ -4186,9 +4230,18 @@ FocusScope {
         if (root.layer4DualEnabled) {
             root.layer4SecondaryMode = (root.layer4Mode + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total
         }
+        root.layer4DualMix = Math.round((0.25 + Math.random() * 0.55) * 100) / 100
         root.layer4WallPattern = Math.floor(Math.random() * Engine.LAYER4_WALL_PATTERNS.length)
         root.layer4Twist = Math.round((0.65 + Math.random() * 1.45) * 100) / 100
-        root.backdropDirection = [1, -1, 0][Math.floor(Math.random() * 3)]
+        root.layer4Speed = Math.round((0.45 + Math.random() * 1.85) * 100) / 100
+        root.backdropSpeed = root.layer4Speed
+        root.layer4Glow = Math.round((0.50 + Math.random() * 1.25) * 100) / 100
+        root.backdropIntensity = root.layer4Glow
+        var l4SymOpts = [2, 3, 4, 6, 8, 12, 16]
+        root.layer4Symmetry = l4SymOpts[Math.floor(Math.random() * l4SymOpts.length)]
+        root.backdropSymmetry = root.layer4Symmetry
+        root.layer4Direction = [1, -1, 0][Math.floor(Math.random() * 3)]
+        root.backdropDirection = root.layer4Direction
         root.layer4Opacity = Math.round((0.40 + Math.random() * 0.60) * 100) / 100
         root.rebalanceRandomLayerOpacities()
         clearCanvasImmediate()
@@ -4427,6 +4480,7 @@ FocusScope {
         property string unitSuffix: ""
         property bool integerSteps: false
         property bool notBoundToRand: false
+        property bool exponentialScale: false
         signal valueEdited(real newVal)
 
         readonly property color unboundRed: "#ef4444"
@@ -4454,7 +4508,9 @@ FocusScope {
             border.width: 1
             border.color: sliderRow.notBoundToRand ? Qt.rgba(0.94, 0.27, 0.27, 0.65) : Qt.rgba(1, 1, 1, 0.16)
 
-            readonly property real norm: Math.max(0, Math.min(1, (sliderRow.value - sliderRow.minValue) / Math.max(0.0001, sliderRow.maxValue - sliderRow.minValue)))
+            readonly property real norm: (sliderRow.exponentialScale && sliderRow.minValue > 0 && sliderRow.maxValue > sliderRow.minValue)
+                ? Math.max(0, Math.min(1, Math.log(Math.max(sliderRow.minValue, Math.min(sliderRow.maxValue, sliderRow.value)) / sliderRow.minValue) / Math.log(sliderRow.maxValue / sliderRow.minValue)))
+                : Math.max(0, Math.min(1, (sliderRow.value - sliderRow.minValue) / Math.max(0.0001, sliderRow.maxValue - sliderRow.minValue)))
 
             Rectangle {
                 width: parent.width * parent.norm
@@ -4483,7 +4539,9 @@ FocusScope {
                 cursorShape: Qt.PointingHandCursor
                 function updateFromX(mx) {
                     var ratio = Math.max(0, Math.min(1, mx / Math.max(1, trackRect.width)))
-                    var v = sliderRow.minValue + ratio * (sliderRow.maxValue - sliderRow.minValue)
+                    var v = (sliderRow.exponentialScale && sliderRow.minValue > 0 && sliderRow.maxValue > sliderRow.minValue)
+                        ? (sliderRow.minValue * Math.pow(sliderRow.maxValue / sliderRow.minValue, ratio))
+                        : (sliderRow.minValue + ratio * (sliderRow.maxValue - sliderRow.minValue))
                     if (sliderRow.integerSteps) {
                         sliderRow.valueEdited(Math.round(v))
                     } else {
@@ -4954,7 +5012,7 @@ FocusScope {
 
             // Explicitly push dynamic time, audio, and smoothly blended palette uniforms to GPU shader stages every frame
             // (since plain JS object mutations on root.engineState / root.photoState do not emit QML notify signals)
-            var l1WorldGpu = root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode >= 12
+            var l1WorldGpu = root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode >= 12 && root.layer1Mode < 24
             var l1PhotoGpu = root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11
             var l2FractalGpu = root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5
             if (root.stageMode === "visualiser" && root.gpuShaderEnabled) {
@@ -5108,7 +5166,7 @@ FocusScope {
         }
     }
 
-    readonly property bool hasActiveCpuLayers: (root.layer1Enabled && ((!root.gpuShaderEnabled && root.layer1FieldEnabled) || (root.layer1FieldEnabled && root.layer1Mode < 11) || root.layer1EqEnabled || root.layer1ShapesEnabled))
+    readonly property bool hasActiveCpuLayers: (root.layer1Enabled && ((!root.gpuShaderEnabled && root.layer1FieldEnabled) || (root.layer1FieldEnabled && (root.layer1Mode < 11 || root.layer1Mode === 24)) || root.layer1EqEnabled || root.layer1ShapesEnabled))
         || (root.layer2Enabled && ((root.layer2VizEnabled && (!root.gpuShaderEnabled || root.visualMode !== 5)) || root.layer2TracersEnabled))
         || root.layer3Enabled
     property var _cachedFrameConfig: null
@@ -5116,19 +5174,20 @@ FocusScope {
     // Independent Photo-Motion Auto Event Timer (`~` key / photoAutoMotionEvents / photoRandomiseMotionControls) on the main GUI thread
     Timer {
         id: photoAutoMotionTimer
-        interval: Math.max(3000, Math.round((Number(root.photoEffectChangeIntervalSec) || 10.0) * 1000))
+        interval: Math.max(1000, Math.min(60000, Math.round((Number(root.photoEffectChangeIntervalSec) || 10.0) * 1000)))
         running: root.visible && root.stageMode === "visualiser" && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11 && (root.photoAutoMotionEvents || root.photoRandomiseMotionControls)
         repeat: true
         onTriggered: {
             root._inHudPillInteraction = true
             try {
                 var pSt = root.syncPhotoStateFromRoot()
+                var minDebounceSec = Math.min(1.5, Math.max(0.5, (Number(root.photoEffectChangeIntervalSec) || 10.0) * 0.5))
                 if (root.photoAutoMotionEvents) {
-                    if ((Number(pSt.autoMotionElapsedSec) || 0.0) >= 1.5 || !pSt._lastStepInfo) {
+                    if ((Number(pSt.autoMotionElapsedSec) || 0.0) >= minDebounceSec || !pSt._lastStepInfo) {
                         root.triggerRandomPhotoMotionEvent()
                     }
                 } else if (root.photoRandomiseMotionControls) {
-                    if ((Number(pSt.autoMotionElapsedSec) || 0.0) >= 1.5 || !pSt._lastStepInfo) {
+                    if ((Number(pSt.autoMotionElapsedSec) || 0.0) >= minDebounceSec || !pSt._lastStepInfo) {
                         PhotoMotion.randomiseMotionControlsForEvent(pSt)
                         root.applyRandomisedStateMotionToRoot(pSt)
                         if (!root.photoHoldActive) {
@@ -5242,14 +5301,22 @@ FocusScope {
         }
     }
 
-    // Independent 6: Typography Statements Rotation Timer (every 9s when Statements is enabled and Layer 6 Rand is active)
+    // Independent 6: Typography Statements Rotation Timer (with random 1–30s pause between iterations)
     Timer {
         id: statementCycleTimer
         interval: 9000
-        running: root.visible && root.stageMode === "visualiser" && root.layer3Enabled && root.layer3ShowStatements && root.layer3AutoRandomise
+        running: root.visible && root.stageMode === "visualiser" && root.layer3Enabled && root.layer3ShowStatements && !root.layer3AutoRandomise
         repeat: true
         onTriggered: {
-            root.pickRandomStatement()
+            if (!root.layer3IterationPaused) {
+                root.layer3IterationPaused = true
+                interval = (1 + Math.floor(Math.random() * 30)) * 1000
+                root.clearCanvasImmediate()
+            } else {
+                root.layer3IterationPaused = false
+                interval = 9000
+                root.pickRandomStatement()
+            }
         }
     }
 
@@ -5264,14 +5331,22 @@ FocusScope {
         }
     }
 
-    // Independent 6: Typography Auto-Randomise Timer (every 9s)
+    // Independent 6: Typography Auto-Randomise Timer (with random 1–30s pause between each text/art iteration)
     Timer {
         id: l3RandomiseTimer
         interval: 9000
         running: root.visible && root.stageMode === "visualiser" && root.layer3AutoRandomise
         repeat: true
         onTriggered: {
-            root.randomiseLayer3()
+            if (!root.layer3IterationPaused) {
+                root.layer3IterationPaused = true
+                interval = (1 + Math.floor(Math.random() * 30)) * 1000
+                root.clearCanvasImmediate()
+            } else {
+                root.layer3IterationPaused = false
+                interval = 9000
+                root.randomiseLayer3()
+            }
         }
     }
 
@@ -5418,9 +5493,9 @@ FocusScope {
         ShaderEffect {
             id: gpuShaderStage
             anchors.fill: parent
-            visible: root.stageMode === "visualiser" && root.gpuShaderEnabled && ((root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode >= 12) || root.layer4Enabled || (root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || (root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5))
+            visible: root.stageMode === "visualiser" && root.gpuShaderEnabled && ((root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode >= 12 && root.layer1Mode < 24) || root.layer4Enabled || (root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || (root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5))
             opacity: Math.max(
-                (root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode >= 12) ? root.layer1Opacity : 0.0,
+                (root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode >= 12 && root.layer1Mode < 24) ? root.layer1Opacity : 0.0,
                 root.layer4Enabled ? root.layer4Opacity : 0.0,
                 ((root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || (root.layer2Enabled && root.layer2VizEnabled && root.visualMode === 5)) ? root.layer2Opacity : 0.0
             )
@@ -5864,17 +5939,15 @@ FocusScope {
                     }
                 }
 
-                // 6: Typography (Album Art & 3D Text Styles)
+                // 6: Typography (Album Art & 3D Text Styles — cycles OFF -> ART -> WORDS -> OFF)
                 VizPillButton {
                     visible: root.stageMode === "visualiser"
-                    text: "6:Type"
+                    text: !root.layer3Enabled ? "6:Type" : (root.useAlbumArt ? "6:Art" : "6:Words")
                     fontSize: 9
                     active: root.layer3Enabled
                     horizontalPad: 5
                     onClicked: {
-                        root.layer3Enabled = !root.layer3Enabled
-                        root.hudFocusedLayer = 6
-                        root.clearCanvasImmediate()
+                        root.toggleVisualiserLayerByNumber(6)
                     }
                     onRightClicked: {
                         root.hudFocusedLayer = 6
@@ -5930,11 +6003,12 @@ FocusScope {
                     onWheelScrolled: delta => root.cycleSelectedPreset(delta > 0 ? 1 : -1)
                 }
 
-                // Palette selector (30 palettes)
+                // Palette selector (30 palettes — under random control so highlighted in yellow accent)
                 VizPillButton {
                     visible: root.stageMode === "visualiser"
                     Layout.preferredWidth: 74
                     text: "󰏘 " + (root.shortPaletteNames[root.paletteIndex % root.shortPaletteNames.length] || "Rainbow")
+                    active: true
                     fontSize: 9
                     horizontalPad: 5
                     onClicked: root.cyclePalette(1)
@@ -6465,7 +6539,9 @@ FocusScope {
                     onClicked: root.togglePhotoAutoMotionByKey()
                     onRightClicked: root.triggerRandomPhotoMotionEvent()
                     onWheelScrolled: delta => {
-                        root.photoEffectChangeIntervalSec = Math.max(4.0, Math.min(60.0, Math.round(root.photoEffectChangeIntervalSec + (delta > 0 ? 2.0 : -2.0))))
+                        var u = Math.log(Math.max(1.0, Math.min(60.0, root.photoEffectChangeIntervalSec))) / Math.log(60.0)
+                        var nextU = Math.max(0.0, Math.min(1.0, u + (delta > 0 ? 0.05 : -0.05)))
+                        root.photoEffectChangeIntervalSec = Math.max(1.0, Math.min(60.0, Math.round(Math.pow(60.0, nextU) * 100) / 100))
                     }
                 }
 
@@ -7853,7 +7929,7 @@ FocusScope {
                     text: "Sz:" + root.layer3Scale.toFixed(1) + "x"
                     active: Math.abs(root.layer3Scale - 1.0) > 0.05
                     onClicked: {
-                        var l3SzSteps = [0.5, 0.75, 1.0, 1.3, 1.65, 2.0]
+                        var l3SzSteps = [0.5, 0.75, 1.0, 1.3, 1.65, 2.0, 2.5, 3.0]
                         var nextL3Sz = 1.0
                         for (var i = 0; i < l3SzSteps.length; i++) {
                             if (l3SzSteps[i] > root.layer3Scale + 0.05) { nextL3Sz = l3SzSteps[i]; break }
@@ -7865,7 +7941,7 @@ FocusScope {
                     }
                     onRightClicked: { root.layer3Scale = 1.0; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
                     onWheelScrolled: delta => {
-                        root.layer3Scale = Math.max(0.35, Math.min(2.50, Math.round((root.layer3Scale + delta * 0.12) * 100) / 100))
+                        root.layer3Scale = Math.max(0.35, Math.min(3.00, Math.round((root.layer3Scale + delta * 0.12) * 100) / 100))
                         vizCanvas.requestPaint()
                         scheduleSaveVisualiserConfig()
                     }
@@ -8419,7 +8495,6 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "Trail Persistence"
-                                        notBoundToRand: true
                                         value: root.layer1Persistence
                                         minValue: 0.20
                                         maxValue: 0.96
@@ -8445,7 +8520,6 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "Backdrop Dim"
-                                        notBoundToRand: true
                                         value: root.layer1Dim
                                         minValue: 0.04
                                         maxValue: 0.65
@@ -8599,7 +8673,6 @@ FocusScope {
                                             ? ("󰔡 Plane Shear [:]: ON (" + Math.round(root.photoPlaneShear * 100) + "%)")
                                             : "󰔡 Plane Shear [:]: OFF (Clean)"
                                         active: root.photoPlaneShearEnabled
-                                        notBoundToRand: true
                                         pillHeight: 22
                                         horizontalPad: 8
                                         onClicked: root.togglePhotoPlaneShearByKey()
@@ -8968,7 +9041,7 @@ FocusScope {
                                         font.family: "JetBrainsMono Nerd Font"
                                         font.pixelSize: 9
                                         font.bold: true
-                                        color: "#ef4444"
+                                        color: root.accentColour
                                         height: 21
                                         verticalAlignment: Text.AlignVCenter
                                     }
@@ -8976,7 +9049,6 @@ FocusScope {
                                     VizPillButton {
                                         text: "󰑐 Auto-Strobe All 17"
                                         active: root.photoPinnedVariant < 0
-                                        notBoundToRand: true
                                         pillHeight: 21
                                         fontSize: 8
                                         horizontalPad: 6
@@ -8995,7 +9067,6 @@ FocusScope {
                                             readonly property string effId: PhotoMotion.STAGE1_EFFECT_IDS[index]
                                             text: "V" + (index < 9 ? ("0" + (index + 1)) : (index + 1))
                                             active: root.photoPinnedVariant === index
-                                            notBoundToRand: true
                                             pillHeight: 21
                                             fontSize: 8
                                             horizontalPad: 5
@@ -9028,16 +9099,16 @@ FocusScope {
                                     LayerSlider {
                                         label: "Effect Change Interval (~)"
                                         notBoundToRand: true
+                                        exponentialScale: true
                                         value: root.photoEffectChangeIntervalSec
-                                        minValue: 4.00
+                                        minValue: 1.00
                                         maxValue: 60.00
                                         unitSuffix: "s"
-                                        onValueEdited: v => { root.photoEffectChangeIntervalSec = Math.round(v) }
+                                        onValueEdited: v => { root.photoEffectChangeIntervalSec = Math.max(1.0, Math.min(60.0, v)) }
                                     }
 
                                     LayerSlider {
                                         label: "Controlled Plane Shear (:)"
-                                        notBoundToRand: true
                                         value: root.photoPlaneShear
                                         minValue: 0.00
                                         maxValue: 2.00
@@ -9817,7 +9888,6 @@ FocusScope {
                             VizPillButton {
                                 text: root.layer2TracersEnabled ? "󰄬 L2 3D Tracers: ON" : "󰅖 L2 3D Tracers: OFF"
                                 active: root.layer2TracersEnabled
-                                notBoundToRand: true
                                 horizontalPad: 7
                                 pillHeight: 22
                                 onClicked: {
@@ -9837,7 +9907,6 @@ FocusScope {
                                     required property int modelData
                                     text: modelData + "x"
                                     active: root.layer2TracersEnabled && root.tracerCount === modelData
-                                    notBoundToRand: true
                                     horizontalPad: 6
                                     pillHeight: 22
                                     onClicked: {
@@ -9852,7 +9921,6 @@ FocusScope {
                             VizPillButton {
                                 text: "3D Flow: " + (root.tracerDirection > 0 ? "Towards User" : (root.tracerDirection < 0 ? "To Endpoint" : "Breathe In/Out"))
                                 active: root.layer2TracersEnabled
-                                notBoundToRand: true
                                 pillHeight: 22
                                 onClicked: {
                                     root.tracerDirection = (root.tracerDirection === 1) ? -1 : ((root.tracerDirection === -1) ? 0 : 1)
@@ -9873,7 +9941,6 @@ FocusScope {
 
                             LayerSlider {
                                 label: "3D Tracers (1–16x)"
-                                notBoundToRand: true
                                 value: root.tracerCount
                                 minValue: 1
                                 maxValue: 16
@@ -9884,7 +9951,6 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Tracer Z-Speed"
-                                notBoundToRand: true
                                 value: root.tracerSpeed
                                 minValue: 0.20
                                 maxValue: 2.80
@@ -9894,7 +9960,6 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Endpoint Drift"
-                                notBoundToRand: true
                                 value: root.tracerDrift
                                 minValue: 0.00
                                 maxValue: 2.40
@@ -9904,7 +9969,6 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Audio Reactivity"
-                                notBoundToRand: true
                                 value: root.sensitivity
                                 minValue: 0.35
                                 maxValue: 2.80
@@ -9914,7 +9978,6 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Mode Complexity"
-                                notBoundToRand: true
                                 value: root.layer2Complexity
                                 minValue: 0.35
                                 maxValue: 2.00
@@ -9924,7 +9987,6 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Evolution Speed"
-                                notBoundToRand: true
                                 value: root.layer2Speed
                                 minValue: 0.20
                                 maxValue: 2.50
@@ -9934,7 +9996,6 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Scale / Zoom"
-                                notBoundToRand: true
                                 value: root.layer2Zoom
                                 minValue: 0.50
                                 maxValue: 2.00
@@ -10083,7 +10144,6 @@ FocusScope {
                             VizPillButton {
                                 text: root.layer4Direction === 0 ? "󰘁 Dir: Ping-Pong" : (root.layer4Direction < 0 ? "󰁍 Dir: Reverse" : "󰁔 Dir: Forward")
                                 active: root.layer4Direction !== 1
-                                notBoundToRand: true
                                 onClicked: {
                                     root.layer4Direction = (root.layer4Direction === 1 ? -1 : (root.layer4Direction === -1 ? 0 : 1))
                                     root.backdropDirection = root.layer4Direction
@@ -10227,7 +10287,6 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Vortex Speed"
-                                notBoundToRand: true
                                 value: root.layer4Speed
                                 minValue: 0.15
                                 maxValue: 3.00
@@ -10237,7 +10296,6 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Vortex Glow"
-                                notBoundToRand: true
                                 value: root.layer4Glow
                                 minValue: 0.15
                                 maxValue: 2.00
@@ -10256,7 +10314,6 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Symmetry Folds"
-                                notBoundToRand: true
                                 value: root.layer4Symmetry
                                 minValue: 2
                                 maxValue: 16
@@ -10267,7 +10324,6 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Dual 2x Mix"
-                                notBoundToRand: true
                                 value: root.layer4DualMix
                                 minValue: 0.10
                                 maxValue: 0.90
@@ -10910,7 +10966,7 @@ FocusScope {
                                 font.family: "JetBrainsMono Nerd Font"
                                 font.pixelSize: 10
                                 font.bold: true
-                                color: "#ef4444"
+                                color: root.accentColour
                             }
 
                             Repeater {
@@ -10919,7 +10975,6 @@ FocusScope {
                                     required property int index
                                     text: (index + 1) + ". " + Engine.LAYER3_COLOUR_MODES[index]
                                     active: root.layer3ColourMode === index
-                                    notBoundToRand: true
                                     horizontalPad: 7
                                     onClicked: {
                                         root.layer3ColourMode = index
@@ -11028,7 +11083,7 @@ FocusScope {
                                 font.family: "JetBrainsMono Nerd Font"
                                 font.pixelSize: 10
                                 font.bold: true
-                                color: "#ef4444"
+                                color: root.accentColour
                             }
 
                             Repeater {
@@ -11037,7 +11092,6 @@ FocusScope {
                                     required property int modelData
                                     text: modelData + "x"
                                     active: root.layer3Tracers === modelData
-                                    notBoundToRand: true
                                     horizontalPad: 6
                                     pillHeight: 22
                                     onClicked: {
@@ -11059,7 +11113,6 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Dismantle Force"
-                                notBoundToRand: true
                                 value: root.layer3Dismantle
                                 minValue: 0.10
                                 maxValue: 2.50
@@ -11069,7 +11122,6 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Rebuild Cohesion"
-                                notBoundToRand: true
                                 value: root.layer3Rebuild
                                 minValue: 0.10
                                 maxValue: 2.50
@@ -11091,14 +11143,13 @@ FocusScope {
                                 label: "Art/Words Scale"
                                 value: root.layer3Scale
                                 minValue: 0.45
-                                maxValue: 1.95
+                                maxValue: 3.00
                                 unitSuffix: "x"
                                 onValueEdited: v => { root.layer3Scale = v; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
                             }
 
                             LayerSlider {
                                 label: "Ghost Tracer Echoes"
-                                notBoundToRand: true
                                 value: root.layer3Tracers
                                 minValue: 1
                                 maxValue: 8
@@ -11861,19 +11912,20 @@ FocusScope {
                 }
             }
         }
+    }
 
-        // Categorised Keybinding Reference Sheet Modal Overlay (toggled via `?` / `/` or `󰌌 Keys (?)` button)
-        Rectangle {
-            id: keybindingsSheetModal
-            anchors.centerIn: parent
-            width: Math.min(parent.width - 36, 780)
-            height: Math.min(parent.height - 64, 520)
-            visible: root.showKeybindingsSheet
-            z: 95
-            radius: 10
-            color: Qt.rgba(0.03, 0.04, 0.08, 0.95)
-            border.width: 1
-            border.color: root.accentColour
+    // Categorised Keybinding Reference Sheet Modal Overlay (toggled via `?` / `/` or `󰌌 Keys (?)` button)
+    Rectangle {
+        id: keybindingsSheetModal
+        anchors.centerIn: parent
+        width: Math.min(parent.width - 36, 780)
+        height: Math.min(parent.height - 64, 520)
+        visible: root.showKeybindingsSheet
+        z: 95
+        radius: 10
+        color: Qt.rgba(0.03, 0.04, 0.08, 0.95)
+        border.width: 1
+        border.color: root.accentColour
 
             MouseArea {
                 anchors.fill: parent
@@ -12035,5 +12087,4 @@ FocusScope {
                 }
             }
         }
-    }
 }

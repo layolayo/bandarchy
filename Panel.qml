@@ -597,13 +597,16 @@ Item {
         root.service.visualiserActive = Boolean((root.opened || root.standaloneMode) && root.visible && root.activeTab === 2 && stageOn)
     }
 
-    function selectPlayingAlbumInCatalog() {
-        if (!root.service) return
+    property bool _initialAlbumSelected: false
+
+    function selectPlayingAlbumInCatalog(preserveTab) {
+        if (!root.service) return false
         var albums = root.service.albums || []
-        if (albums.length === 0) return
-        var targetId = String(root.service.currentAlbumId || "")
-        var targetTitle = String(root.service.trackAlbum || "").trim().toLowerCase()
-        var targetArtist = String(root.service.trackArtist || "").trim().toLowerCase()
+        if (albums.length === 0) return false
+        var targetId = String(root.service.albumId || root.service.currentAlbumId || (root.service.lastPlayedTrack && (root.service.lastPlayedTrack.albumId || root.service.lastPlayedTrack.id)) || "")
+        var targetTitle = String(root.service.trackAlbum || (root.service.lastPlayedTrack && (root.service.lastPlayedTrack.album || root.service.lastPlayedTrack.title)) || "").trim().toLowerCase()
+        var targetArtist = String(root.service.trackArtist || (root.service.lastPlayedTrack && root.service.lastPlayedTrack.artist) || "").trim().toLowerCase()
+        if (targetId === "" && targetTitle === "") return false
         var matchIdx = -1
         for (var i = 0; i < albums.length; i++) {
             var a = albums[i]
@@ -622,7 +625,7 @@ Item {
         }
         if (matchIdx >= 0) {
             var matched = albums[matchIdx]
-            root.activeTab = 0
+            if (!preserveTab) root.activeTab = 0
             root.focusedAlbumIndex = matchIdx
             root.selectedAlbumId = String(matched.id || "")
             root.focusedTrackIndex = Math.max(0, Number(root.service.playlistPos) || 0)
@@ -632,6 +635,33 @@ Item {
                     albumList.positionViewAtIndex(matchIdx, ListView.Center)
                 }
             })
+            return true
+        }
+        return false
+    }
+
+    Connections {
+        target: root.service
+        function onAlbumsChanged() {
+            if (!root._initialAlbumSelected && root.service && root.service.statusLoaded) {
+                if (root.selectPlayingAlbumInCatalog(true)) {
+                    root._initialAlbumSelected = true
+                }
+            }
+        }
+        function onAlbumIdChanged() {
+            if (!root._initialAlbumSelected && root.service && root.service.albums && root.service.albums.length > 0) {
+                if (root.selectPlayingAlbumInCatalog(true)) {
+                    root._initialAlbumSelected = true
+                }
+            }
+        }
+        function onStatusLoadedChanged() {
+            if (!root._initialAlbumSelected && root.service && root.service.statusLoaded && root.service.albums && root.service.albums.length > 0) {
+                if (root.selectPlayingAlbumInCatalog(true)) {
+                    root._initialAlbumSelected = true
+                }
+            }
         }
     }
 
@@ -646,6 +676,11 @@ Item {
             root.service.loadPlaylists()
             root.service.refreshSmartPlaylist(root.service.smartPreset, "")
             root.syncVisualiserActive()
+            if (root.selectedAlbumId === "") {
+                if (root.selectPlayingAlbumInCatalog(true)) {
+                    root._initialAlbumSelected = true
+                }
+            }
             if (root.activeTab === 2) {
                 root.service.refreshAsciiArt()
             }
