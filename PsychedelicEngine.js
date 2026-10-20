@@ -1924,24 +1924,31 @@ function fillCraftFaces(ctx, faces, fillRatio, seedIdx, baseHue, sAlpha, palette
 }
 
 // Deterministically fills a configurable fraction (`cfg.layer2FillRatio` 0.0..1.0 = 0%..100%) of Layer 4 Geometry
-// polygon segments/facets with configurable per-segment opacity (`cfg.layer2FillOpacity` 0.05..1.00 = 5%..100%).
+// polygon segments/facets with per-face random opacity scaled up to the layer's maximum (`cfg.layer2Opacity` & `cfg.layer2FillOpacity`)
+// so the collection of faces exhibits smooth multi-layered 3D depth without stark jumps.
 function fillGeometrySegments(ctx, polys, cfg, seedIdx, palette, baseAlpha) {
     if (!polys || polys.length === 0) return
     var ratio = cfg && cfg.layer2FillRatio !== undefined ? clamp(Number(cfg.layer2FillRatio), 0.0, 1.0) : 0.45
     if (ratio <= 0.01) return
     var segOpac = cfg && cfg.layer2FillOpacity !== undefined ? clamp(Number(cfg.layer2FillOpacity), 0.05, 1.0) : 0.55
+    var layerMaxOpac = cfg && cfg.layer2Opacity !== undefined ? clamp(Number(cfg.layer2Opacity), 0.05, 1.0) : 1.0
     var isEcho = Boolean(cfg && cfg._isEcho)
     var echoMul = isEcho ? 0.55 : 1.0
-    var bAlpha = baseAlpha !== undefined ? Number(baseAlpha) : 0.85
+    var bAlpha = baseAlpha !== undefined ? clamp(Number(baseAlpha), 0.15, 1.0) : 0.85
+    var maxLayerAlpha = clamp(layerMaxOpac * segOpac * echoMul * bAlpha, 0.04, layerMaxOpac)
     var total = polys.length
     var targetCount = (ratio >= 0.99) ? total : Math.max(1, Math.min(total, Math.round(total * ratio)))
     var coprimeStep = (total % 3 !== 0) ? 3 : ((total % 5 !== 0) ? 5 : ((total % 7 !== 0) ? 7 : 1))
-    var startIdx = Math.abs((seedIdx || 0) * 7) % total
     for (var k = 0; k < targetCount; k++) {
-        var fIdx = (ratio >= 0.99) ? k : ((startIdx + k * coprimeStep) % total)
+        var fIdx = (ratio >= 0.99) ? k : ((k * coprimeStep) % total)
         var poly = polys[fIdx]
         if (!poly || poly.length < 3) continue
-        var fAlpha = clamp(bAlpha * segOpac * echoMul * (0.82 + 0.18 * ((fIdx & 1) ? 1.0 : 0.72)), 0.03, 0.96)
+        var h1 = Math.sin((fIdx + 1) * 12.9898 + total * 4.1414) * 43758.5453
+        var r1 = h1 - Math.floor(h1)
+        var h2 = Math.sin((fIdx + 1) * 78.233 + k * 19.19) * 19642.349
+        var r2 = h2 - Math.floor(h2)
+        var faceDepthWeight = 0.12 + 0.88 * (0.65 * r1 + 0.35 * r2)
+        var fAlpha = clamp(maxLayerAlpha * faceDepthWeight, 0.02, layerMaxOpac)
         var col = (palette && palette.length > 0)
             ? palette[(fIdx + Math.abs(seedIdx || 0)) % palette.length]
             : "#00e5ff"
@@ -3189,7 +3196,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             ctx.save()
             ctx.globalCompositeOperation = "source-over"
 
-            var bankAngle = Math.sin(driftT * 0.48) * 0.06
+            var bankAngle = Math.sin(driftT * 0.52) * 0.16 + Math.cos(l1T * 0.31) * 0.07
             var trenchVX = Math.sin(driftT * 0.42) * w * 0.06
             var camAlt = clamp(
                 Math.sin(l1T * 0.82 + driftT * 0.35) * 0.60
@@ -3401,55 +3408,65 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
 
             // 3. Green (#11FF11) Looming 3D Wireframe Death Star Sphere in Upper Horizon + Scrolling Trench Floor Grid + Exhaust Port Bay
             ctx.beginPath()
-            // 3A. Looming 3D Wireframe Death Star Sphere (latitude bands, longitude meridians, equatorial trench & Superlaser Dish)
+            // 3A. Looming 3D Wireframe Death Star Sphere (latitude bands, longitude meridians, equatorial trench & Superlaser Dish rotating slightly CW and CCW)
             var dsR = minDim * (0.145 + state.bassSmooth * 0.025)
             var dsX = clamp(trenchVX * 0.65 - w * 0.18, -halfWNear * 0.65, halfWNear * 0.65)
             var dsY = Math.min(yTFar - dsR * 1.18, -h * 0.24)
+            var dsTilt = Math.sin(driftT * 0.54) * 0.22 + Math.cos(l1T * 0.33) * 0.09
+            var dsCosT = Math.cos(dsTilt)
+            var dsSinT = Math.sin(dsTilt)
+            var dsYawOsc = Math.sin(driftT * 0.44) * 0.48 + Math.cos(l1T * 0.27) * 0.20
             var dsSegs = 20
             for (var dsi = 0; dsi <= dsSegs; dsi++) {
-                var dsa = (dsi / dsSegs) * Math.PI * 2
+                var dsa = (dsi / dsSegs) * Math.PI * 2 + dsTilt
                 var dspx = clamp(dsX + Math.cos(dsa) * dsR, -halfWNear * 0.95, halfWNear * 0.95)
                 var dspy = dsY + Math.sin(dsa) * dsR
                 if (dsi === 0) ctx.moveTo(dspx, dspy); else ctx.lineTo(dspx, dspy)
             }
-            // Latitude rings & double Equatorial Trench band
+            // Latitude rings & double Equatorial Trench band tilting CW and CCW with the Death Star sphere
             var latFracs = [-0.68, -0.36, -0.05, 0.05, 0.38, 0.70]
             for (var lfi = 0; lfi < latFracs.length; lfi++) {
                 var lf = latFracs[lfi]
-                var latY = dsY + lf * dsR
                 var latHalfW = Math.sqrt(Math.max(0.0, 1.0 - lf * lf)) * dsR
                 var latCurve = (1.0 - lf * lf) * dsR * 0.10
                 for (var lsi = 0; lsi <= 10; lsi++) {
                     var lsu = (lsi / 10.0) * 2.0 - 1.0
-                    var lxPt = clamp(dsX + lsu * latHalfW, -halfWNear * 0.95, halfWNear * 0.95)
-                    var lyPt = latY + (1.0 - lsu * lsu) * latCurve
+                    var locX = lsu * latHalfW
+                    var locY = lf * dsR + (1.0 - lsu * lsu) * latCurve
+                    var lxPt = clamp(dsX + locX * dsCosT - locY * dsSinT, -halfWNear * 0.95, halfWNear * 0.95)
+                    var lyPt = dsY + locX * dsSinT + locY * dsCosT
                     if (lsi === 0) ctx.moveTo(lxPt, lyPt); else ctx.lineTo(lxPt, lyPt)
                 }
             }
-            // Rotating 3D Longitude Meridians
-            var dsRot = driftT * 0.24
+            // Slight CW / CCW Rotating 3D Longitude Meridians
+            var dsRot = dsYawOsc
             for (var mri = 0; mri < 5; mri++) {
                 var mAng = dsRot + (mri / 5.0) * Math.PI
                 var mHoriz = Math.cos(mAng) * dsR
                 for (var msi = 0; msi <= 12; msi++) {
                     var mTheta = (msi / 12.0 - 0.5) * Math.PI
-                    var mxPt = clamp(dsX + Math.cos(mTheta) * mHoriz, -halfWNear * 0.95, halfWNear * 0.95)
-                    var myPt = dsY + Math.sin(mTheta) * dsR
+                    var mLocX = Math.cos(mTheta) * mHoriz
+                    var mLocY = Math.sin(mTheta) * dsR
+                    var mxPt = clamp(dsX + mLocX * dsCosT - mLocY * dsSinT, -halfWNear * 0.95, halfWNear * 0.95)
+                    var myPt = dsY + mLocX * dsSinT + mLocY * dsCosT
                     if (msi === 0) ctx.moveTo(mxPt, myPt); else ctx.lineTo(mxPt, myPt)
                 }
             }
-            // Recessed circular Superlaser Dish in upper hemisphere with 8 radial focus spokes
-            var dishX = dsX + dsR * 0.32
-            var dishY = dsY - dsR * 0.28
+            // Recessed circular Superlaser Dish in upper hemisphere rotating slightly CW and CCW with 8 radial focus spokes
+            var dishAz = 0.34 + Math.sin(dsYawOsc) * 0.22
+            var dishLocX = dsR * Math.sin(dishAz)
+            var dishLocY = -dsR * 0.28
+            var dishX = dsX + dishLocX * dsCosT - dishLocY * dsSinT
+            var dishY = dsY + dishLocX * dsSinT + dishLocY * dsCosT
             var dishR = dsR * 0.30
             for (var ddi = 0; ddi <= 12; ddi++) {
-                var dda = (ddi / 12.0) * Math.PI * 2
+                var dda = (ddi / 12.0) * Math.PI * 2 + dsTilt
                 var ddx = clamp(dishX + Math.cos(dda) * dishR * 0.88, -halfWNear * 0.95, halfWNear * 0.95)
                 var ddy = dishY + Math.sin(dda) * dishR
                 if (ddi === 0) ctx.moveTo(ddx, ddy); else ctx.lineTo(ddx, ddy)
             }
             for (var dsp = 0; dsp < 8; dsp++) {
-                var dspa = (dsp / 8.0) * Math.PI * 2
+                var dspa = (dsp / 8.0) * Math.PI * 2 + dsTilt + dsYawOsc * 0.35
                 ctx.moveTo(dishX, dishY)
                 ctx.lineTo(clamp(dishX + Math.cos(dspa) * dishR * 0.88, -halfWNear * 0.95, halfWNear * 0.95), dishY + Math.sin(dspa) * dishR)
             }

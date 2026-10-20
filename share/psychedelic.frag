@@ -1003,17 +1003,17 @@ void main() {
                       + tempCyan * exp(-abs(dWeb - (0.58 + 0.08 * sin(aq * 5.0 + l1T))) * 45.0) * 0.65;
             col += tCol * fade * (0.82 + uBass * 0.36 + uBeat * 0.24) * l1Bright;
         } else {
-            // Mode 11 (UI 24: Death Star 3D Warp Trench): 3D Rotating, Twisting & Warping Trench Corridor with Catwalk Ribs & Quad Lasers (Zero Cockpit)
-            float rollAng = l1T * 0.24 + sin(l1T * 0.52) * 0.68;
+            // Mode 11 (UI 24: Death Star 3D Warp Trench): 3D Trench Corridor rotating slightly CW and CCW with Catwalk Ribs & Quad Lasers (Zero Cockpit)
+            float rollAng = sin(l1T * 0.52) * 0.26 + cos(l1T * 0.29) * 0.11;
             vec2 rp = rot2D(rollAng) * q;
             float prelimDist = max(abs(rp.x) * 0.78, abs(rp.y) * 0.92);
             float zPre = 0.32 / max(0.025, prelimDist);
-            // 3D sinusoidal tunnel bending & barrel warp along depth zPre
+            // 3D sinusoidal tunnel bending & slight CW/CCW warp along depth zPre
             vec2 bend = vec2(
                 sin(zPre * 0.42 + l1T * 1.65) * 0.14,
                 cos(zPre * 0.34 - l1T * 1.35) * 0.11
             ) * smoothstep(1.2, 0.04, prelimDist);
-            vec2 tp = rot2D(sin(zPre * 0.28 + l1T * 0.9) * 0.35) * (rp + bend);
+            vec2 tp = rot2D(sin(zPre * 0.26 + l1T * 0.85) * 0.18) * (rp + bend);
             float wallDist = max(abs(tp.x) * 0.80, abs(tp.y) * 0.96);
             float octDist = max(wallDist, (abs(tp.x) + abs(tp.y)) * 0.62);
             float zTrench = 0.30 / max(0.022, octDist);
