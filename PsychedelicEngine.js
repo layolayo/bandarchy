@@ -8955,108 +8955,144 @@ function drawMode10SacredPolytope(ctx, w, h, state, palette, cfg) {
     ctx.restore()
 }
 
-// Mode 11: 3D Lorenz / Clifford Chaos Ribbon Manifold & Phase-Space Vortex
+// Mode 11: 3D Lorenz Butterfly & Aizawa Twin-Wing Strange Attractor Manifold
 function drawMode11StrangeAttractor(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
-    var scale = Math.min(w, h) * 0.34 * (cfg.layer2Zoom || 1.0) * (1.0 + state.bass * 0.22)
+    var zoom = cfg.layer2Zoom || 1.0
+    var minDim = Math.min(w, h) * zoom
     var isEcho = Boolean(state.isTracerEcho)
     var lod = state.echoLod || 1.0
     var comp = clamp(cfg.layer2Complexity || 1.0, 0.4, 2.0) * lod
-    var steps = isEcho ? 34 : Math.max(44, Math.floor(72 * clamp(comp, 0.5, 1.35)))
+    var palShift = Math.floor((state.hueShift || 0) / 45)
+    var scale = minDim * (0.31 + state.bassSmooth * 0.05)
 
-    // 3D camera rotation around the chaotic strange attractor lobes
-    var rotX = state.t * 0.54 + state.bass * 0.65
-    var rotY = state.t * 0.72 - state.mid * 0.55
-    var cosX = Math.cos(rotX), sinX = Math.sin(rotX)
-    var cosY = Math.cos(rotY), sinY = Math.sin(rotY)
+    // Smooth 3D gimbal rotation around the twin-wing Lorenz butterfly manifold
+    var rx = 0.42 + Math.sin(state.t * 0.38) * 0.28 + state.bassSmooth * 0.14
+    var ry = state.phase * 0.46 + Math.cos(state.t * 0.29) * 0.22
+    var rz = Math.sin(state.t * 0.24) * 0.20
+    var fov = 3.8
+
+    var shells = isEcho ? 3 : 4
+    var segs = isEcho ? 24 : Math.max(32, Math.min(48, Math.floor(36 * clamp(comp, 0.65, 1.35))))
+    var segStep = isEcho ? 3 : 2
 
     ctx.save()
-    ctx.translate(cx, cy)
-    ctx.rotate(state.phase * 0.22)
     ctx.globalCompositeOperation = "source-over"
 
-    var ribbonCount = isEcho ? 2 : 3
-    for (var ribbon = 0; ribbon < ribbonCount; ribbon++) {
-        var rPhase = ribbon * (Math.PI * 2 / 3.0)
-        var leftPts = []
-        var rightPts = []
-        var corePts = []
+    // 1. Twin Counter-Rotating 3D Lorenz Butterfly Wing Manifolds (Left Wing = -1, Right Wing = +1)
+    for (var wingIdx = 0; wingIdx < 2; wingIdx++) {
+        var wSign = wingIdx === 0 ? -1.0 : 1.0
+        var wingTilt = wSign * (0.52 + state.midSmooth * 0.12)
+        var cosWT = Math.cos(wingTilt)
+        var sinWT = Math.sin(wingTilt)
+        var wingCenterX = wSign * (0.54 + state.bassSmooth * 0.08)
+        var wingCenterY = wSign * 0.10
+        var wingCenterZ = -0.08 * wSign
 
-        // Continuous 3D double-scroll Lorenz/Clifford chaotic manifold parameterised along u
-        for (var i = 0; i <= steps; i++) {
-            var u = (i / steps) * Math.PI * 4.0
-            var bVal = state.smoothBands[(i + ribbon * 17) & 63]
-            // Smooth transition between two counter-scrolling 3D strange attractor wings
-            var wing = Math.sin(u * 0.5 + state.t * 0.85 + rPhase)
-            var lobeR = 0.38 + (0.28 + bVal * 0.36) * Math.cos(u * 1.5 - state.t * 1.4 + rPhase)
-            var x3 = wing * 0.52 + lobeR * Math.cos(u * 2.0 + rPhase)
-            var y3 = lobeR * Math.sin(u * 2.0 + rPhase) + Math.sin(u * 3.0 + state.t * 1.6) * (0.18 + state.mid * 0.22)
-            var z3 = Math.cos(u + state.t * 1.1 + rPhase) * (0.45 + bVal * 0.42 + state.bass * 0.25)
+        var wingRings = []
+        for (var sh = 0; sh < shells; sh++) {
+            var uSh = (sh + 1) / shells
+            var bShell = state.smoothBands[((sh * 7 + wingIdx * 19) & 63)] || 0.15
+            var rMajor = (0.18 + uSh * 0.48) * (1.0 + bShell * 0.18)
+            var rMinor = rMajor * (0.76 + 0.14 * Math.sin(state.t * 0.9 + sh))
+            var ringPts = []
 
-            // 3D rotation & perspective projection
-            var x1 = x3 * cosY - z3 * sinY
-            var z1 = x3 * sinY + z3 * cosY
-            var y2 = y3 * cosX - z1 * sinX
-            var z2 = y3 * sinX + z1 * cosX
-            var persp = 1.68 / (2.25 - clamp(z2, -1.25, 1.25))
+            for (var s = 0; s <= segs; s++) {
+                var u = (s / segs) * Math.PI * 2.0
+                var bPt = state.smoothBands[((s * 2 + sh * 5 + wingIdx * 13) & 63)] || 0.12
+                // Harmonic homoclinic saddle stretch towards the central Lorenz origin (0, 0, 0)
+                var phaseA = u + wSign * state.t * (1.25 - uSh * 0.22)
+                var lx = Math.cos(phaseA) * rMajor * (1.0 + 0.18 * Math.cos(u * 2.0 + state.t))
+                var ly = Math.sin(phaseA) * rMinor * (1.0 + bPt * 0.22)
+                var lz = Math.sin(phaseA * 2.0 + sh * 0.6) * (0.14 + uSh * 0.18 + state.bassSmooth * 0.10)
 
-            var sx = x1 * scale * persp
-            var sy = y2 * scale * persp
-            var halfW = (3.2 + bVal * 10.5 + state.bass * 5.5) * persp * (isEcho ? 0.65 : 1.0)
-            corePts.push({ x: sx, y: sy, w: halfW, band: bVal, p: persp })
-        }
-
-        for (var k = 0; k <= steps; k++) {
-            var pPrev = corePts[k > 0 ? k - 1 : 0]
-            var pNext = corePts[k < steps ? k + 1 : steps]
-            var dx = pNext.x - pPrev.x
-            var dy = pNext.y - pPrev.y
-            var len = Math.sqrt(dx * dx + dy * dy) || 1.0
-            var nx = -dy / len
-            var ny = dx / len
-            var hw = corePts[k].w
-            leftPts.push({ x: corePts[k].x + nx * hw, y: corePts[k].y + ny * hw })
-            rightPts.push({ x: corePts[k].x - nx * hw, y: corePts[k].y - ny * hw })
-        }
-
-        var palShift = Math.floor((state.hueShift || 0) / 45)
-        var ribFillCol = palette[(ribbon * 3 + palShift) % palette.length]
-        var ribStrokeCol = palette[(ribbon * 3 + 1 + palShift) % palette.length]
-
-        // 1. Segmented 3D phase-space manifold ribbon quads
-        if (!isEcho || (state.echoIndex || 0) < 3) {
-            var attrQuads11 = []
-            for (var fq11 = 0; fq11 < steps; fq11 += 2) {
-                var fn11 = Math.min(steps, fq11 + 2)
-                attrQuads11.push([leftPts[fq11], leftPts[fn11], rightPts[fn11], rightPts[fq11]])
+                // Rotate local wing plane into 3D Lorenz butterfly inclination and pull inner edge toward saddle origin
+                var wx = wingCenterX * (0.35 + 0.65 * uSh) + lx * cosWT - lz * sinWT
+                var wy = wingCenterY + ly
+                var wz = wingCenterZ + lx * sinWT + lz * cosWT
+                ringPts.push(project3DPoint(wx, wy, wz, rx, ry, rz, cx, cy, scale, fov))
             }
-            fillGeometrySegments(ctx, attrQuads11, cfg, ribbon * 3 + palShift, palette, (0.52 + state.energy * 0.28) * (isEcho ? 0.55 : 1.0))
+            wingRings.push(ringPts)
         }
 
-        // 2. Thick glowing trajectory rails (lineWidth = 2.2..4.2)
-        ctx.strokeStyle = colourWithAlpha(ribStrokeCol, 0.74 + state.energy * 0.26)
-        ctx.lineWidth = clamp(2.2 + state.bass * 1.8, 2.2, 4.2) * (isEcho ? 0.75 : 1.0)
-        ctx.beginPath()
-        for (var s0 = 0; s0 <= steps; s0++) {
-            if (s0 === 0) ctx.moveTo(corePts[s0].x, corePts[s0].y)
-            else ctx.lineTo(corePts[s0].x, corePts[s0].y)
+        // Build segmented 3D quad cells between concentric Lorenz orbital trajectories on this wing
+        var wingQuads = []
+        for (var rIdx = 0; rIdx < shells - 1; rIdx++) {
+            var rInner = wingRings[rIdx]
+            var rOuter = wingRings[rIdx + 1]
+            for (var sq = 0; sq < segs; sq += segStep) {
+                var sn = Math.min(segs, sq + segStep)
+                wingQuads.push([rInner[sq], rInner[sn], rOuter[sn], rOuter[sq]])
+            }
         }
-        ctx.stroke()
+        fillGeometrySegments(ctx, wingQuads, cfg, wingIdx * 3 + palShift, palette, (0.58 + state.bassSmooth * 0.26) * (isEcho ? 0.6 : 1.0))
 
-        // 3. Orbiting 3D phase-space energy packets pulsing & travelling along the attractor lobes
-        if (!isEcho) {
-            var flowIdx = Math.floor((state.t * 14.0 + ribbon * 5) % 6)
-            ctx.fillStyle = colourWithAlpha(palette[(ribbon * 3 + 2) % palette.length], 0.90)
+        // Stroke concentric 3D Lorenz orbital trajectories + radial phase-space cross-ribs
+        for (var rDraw = 0; rDraw < shells; rDraw++) {
+            var pts = wingRings[rDraw]
+            var bDraw = state.smoothBands[((rDraw * 9 + wingIdx * 11) & 63)] || 0.15
+            var colOrbit = palette[(rDraw * 2 + wingIdx * 3 + palShift) % palette.length]
+            ctx.strokeStyle = colourWithAlpha(colOrbit, (0.64 + (rDraw / shells) * 0.28 + bDraw * 0.18) * (isEcho ? 0.65 : 1.0))
+            ctx.lineWidth = (1.35 + (rDraw / shells) * 1.15 + bDraw * 1.1) * (isEcho ? 0.75 : 1.0)
             ctx.beginPath()
-            for (var np = flowIdx; np <= steps; np += 6) {
-                var cp = corePts[np]
-                var nr = (2.2 + cp.band * 3.8 + state.beatPulse * 1.4) * cp.p
-                ctx.rect(cp.x - nr, cp.y - nr, nr * 2.0, nr * 2.0)
+            for (var pIdx = 0; pIdx <= segs; pIdx++) {
+                if (pIdx === 0) ctx.moveTo(pts[pIdx].x, pts[pIdx].y)
+                else ctx.lineTo(pts[pIdx].x, pts[pIdx].y)
             }
-            ctx.fill()
+            ctx.closePath()
+            if (rDraw > 0) {
+                var prevPts = wingRings[rDraw - 1]
+                for (var rib = 0; rib < segs; rib += segStep * 2) {
+                    ctx.moveTo(prevPts[rib].x, prevPts[rib].y)
+                    ctx.lineTo(pts[rib].x, pts[rib].y)
+                }
+            }
+            ctx.stroke()
         }
     }
+
+    // 2. Central Figure-8 Homoclinic Saddle Crossover Ribbon weaving between Left & Right Attractor Wings
+    var bridgeSteps = isEcho ? 28 : 44
+    var bridgeRibbonA = []
+    var bridgeRibbonB = []
+    for (var bi = 0; bi <= bridgeSteps; bi++) {
+        var bu = (bi / bridgeSteps) * Math.PI * 2.0
+        var bBridge = state.smoothBands[(bi * 2) & 63] || 0.14
+        // Lemniscate of Gerono / Lorenz figure-8 crossover trajectory in 3D
+        var bx = Math.sin(bu + state.t * 0.95) * (0.96 + state.bassSmooth * 0.16)
+        var by = Math.sin(bu * 2.0 + state.t * 1.90) * (0.46 + state.midSmooth * 0.14)
+        var bz = Math.cos(bu + state.t * 0.95) * (0.42 + bBridge * 0.24)
+        var spreadZ = 0.085 + bBridge * 0.065
+        bridgeRibbonA.push(project3DPoint(bx, by + spreadZ * 0.5, bz - spreadZ, rx, ry, rz, cx, cy, scale, fov))
+        bridgeRibbonB.push(project3DPoint(bx, by - spreadZ * 0.5, bz + spreadZ, rx, ry, rz, cx, cy, scale, fov))
+    }
+
+    var bridgeQuads = []
+    for (var bq = 0; bq < bridgeSteps; bq += 2) {
+        var bn = Math.min(bridgeSteps, bq + 2)
+        bridgeQuads.push([bridgeRibbonA[bq], bridgeRibbonA[bn], bridgeRibbonB[bn], bridgeRibbonB[bq]])
+    }
+    fillGeometrySegments(ctx, bridgeQuads, cfg, palShift + 4, palette, (0.64 + state.bassSmooth * 0.26) * (isEcho ? 0.6 : 1.0))
+
+    var colBridge = palette[(4 + palShift) % palette.length]
+    ctx.strokeStyle = colourWithAlpha(colBridge, (0.86 + state.beatPulse * 0.14) * (isEcho ? 0.7 : 1.0))
+    ctx.lineWidth = (1.8 + state.bassSmooth * 1.4) * (isEcho ? 0.75 : 1.0)
+    ctx.beginPath()
+    for (var b0 = 0; b0 <= bridgeSteps; b0++) {
+        if (b0 === 0) ctx.moveTo(bridgeRibbonA[b0].x, bridgeRibbonA[b0].y)
+        else ctx.lineTo(bridgeRibbonA[b0].x, bridgeRibbonA[b0].y)
+    }
+    for (var b1 = 0; b1 <= bridgeSteps; b1++) {
+        if (b1 === 0) ctx.moveTo(bridgeRibbonB[b1].x, bridgeRibbonB[b1].y)
+        else ctx.lineTo(bridgeRibbonB[b1].x, bridgeRibbonB[b1].y)
+    }
+    for (var br = 0; br < bridgeSteps; br += 4) {
+        ctx.moveTo(bridgeRibbonA[br].x, bridgeRibbonA[br].y)
+        ctx.lineTo(bridgeRibbonB[br].x, bridgeRibbonB[br].y)
+    }
+    ctx.stroke()
+
     ctx.restore()
 }
 
