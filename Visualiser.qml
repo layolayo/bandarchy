@@ -203,13 +203,16 @@ FocusScope {
     property alias layer4Direction: root.backdropDirection
     property bool layer4AutoRandomise: false
 
-    // Layer #3 — 2 x 3 x 12 x 16 Matrix (Album Art | Song Words) x (Braille | Block | Crisp Text) x (12 Modes 0..11) x (16 Psychedelic/Techno/Futuristic Styles 0..15)
+    // Layer #3 — 2 x 3 x 12 x 21 Matrix (Album Art | Song Words) x (Braille | Block | Crisp Text) x (12 Modes 0..11) x (21 Styles) x (16 Genre Font Presets)
     readonly property var layer3ColourModes: Engine.LAYER3_COLOUR_MODES
     readonly property var shortL3ColourLabels: Engine.SHORT_LAYER3_COLOUR_MODES
+    readonly property var layer3FontPresets: Engine.LAYER3_FONT_PRESETS
+    readonly property var shortL3FontLabels: Engine.SHORT_LAYER3_FONT_PRESETS
     property bool layer3Enabled: true
     property bool layer3AutoRandomise: false
     property int layer3Mode: 0
-    property int layer3TextStyle: 0 // 0..15 in Engine.LAYER3_TEXT_STYLES
+    property int layer3TextStyle: 0 // 0..20 in Engine.LAYER3_TEXT_STYLES
+    property int layer3FontPreset: 0 // 0..15 in Engine.LAYER3_FONT_PRESETS (0 = Style Default)
     property int layer3ColourMode: 0 // 0 = Style Signature (default), 1 = Line Palette (Global), 2 = Duotone Contrast, 3 = Audio Spectrum, 4 = Prism Wave, 5 = Letter Alternate
     property int layer3CylinderDir: 0 // 0..5 in Engine.LAYER3_CYLINDER_DIRS
     property bool layer3ShowArtist: true
@@ -235,6 +238,9 @@ FocusScope {
     property int layer3Tracers: 3
     property real layer3Opacity: 1.0
     onLayer3OpacityChanged: { vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+    property real layer3TransitionPauseSec: 5.0
+    property alias layer3PauseSec: root.layer3TransitionPauseSec
+    onLayer3TransitionPauseSecChanged: { scheduleSaveVisualiserConfig() }
     property real turntableRpm: 33.3
     property int turntableStyle: 0
     onTurntableRpmChanged: stageTurntable.rpm = root.turntableRpm
@@ -279,29 +285,107 @@ FocusScope {
     ]
 
     property int currentSavedL3Index: 0
-    property var savedL3Configs: [
-        {
-            name: "Art · Braille · Shatter",
-            l3Mode: 0, l3TextStyle: 0, l3ShowArtist: true, l3ShowTrack: true, l3ShowAlbum: true,
-            useAlbumArt: true, asciiMode: "braille",
-            l3Dismantle: 1.15, l3Rebuild: 1.05, l3Evolution: 0.90, l3Scale: 1.00, l3Tracers: 3,
-            trackArcMode: 0, l3AutoRandomise: false
-        },
-        {
-            name: "Words · Crisp Text · Cyber Techno",
-            l3Mode: 6, l3TextStyle: 0, l3ShowArtist: true, l3ShowTrack: true, l3ShowAlbum: true,
-            useAlbumArt: false, asciiMode: "text",
-            l3Dismantle: 1.10, l3Rebuild: 1.10, l3Evolution: 1.05, l3Scale: 1.00, l3Tracers: 3,
-            trackArcMode: 0, l3AutoRandomise: false
-        },
-        {
-            name: "Words · Crisp Text · Psychedelic Liquid",
-            l3Mode: 7, l3TextStyle: 1, l3ShowArtist: true, l3ShowTrack: true, l3ShowAlbum: false,
-            useAlbumArt: false, asciiMode: "text",
-            l3Dismantle: 1.25, l3Rebuild: 1.00, l3Evolution: 0.95, l3Scale: 1.05, l3Tracers: 4,
-            trackArcMode: 0, l3AutoRandomise: false
-        }
-    ]
+    function defaultSavedL3Configs() {
+        return [
+            {
+                name: "Horror Slasher · Woodcut Slab",
+                l3Mode: 0, l3TextStyle: 18, l3FontPreset: 1, l3ColourMode: 2, l3CylinderDir: 0,
+                l3ShowArtist: true, l3ShowTrack: true, l3ShowAlbum: false, l3ShowStatements: false,
+                useAlbumArt: false, asciiMode: "text",
+                l3Dismantle: 1.45, l3Rebuild: 0.85, l3Evolution: 0.95, l3Scale: 1.25, l3Tracers: 4,
+                l3TransitionPauseSec: 6.0, trackArcMode: 0, l3AutoRandomise: false
+            },
+            {
+                name: "Noir Thriller · Typewriter Dossier",
+                l3Mode: 2, l3TextStyle: 19, l3FontPreset: 9, l3ColourMode: 2, l3CylinderDir: 0,
+                l3ShowArtist: true, l3ShowTrack: true, l3ShowAlbum: true, l3ShowStatements: false,
+                useAlbumArt: false, asciiMode: "text",
+                l3Dismantle: 0.75, l3Rebuild: 1.35, l3Evolution: 0.80, l3Scale: 1.05, l3Tracers: 2,
+                l3TransitionPauseSec: 8.0, trackArcMode: 0, l3AutoRandomise: false
+            },
+            {
+                name: "Gothic Occult · Chancery Grimoire",
+                l3Mode: 8, l3TextStyle: 16, l3FontPreset: 3, l3ColourMode: 1, l3CylinderDir: 3,
+                l3ShowArtist: true, l3ShowTrack: true, l3ShowAlbum: true, l3ShowStatements: false,
+                useAlbumArt: false, asciiMode: "text",
+                l3Dismantle: 0.95, l3Rebuild: 1.15, l3Evolution: 0.90, l3Scale: 1.20, l3Tracers: 5,
+                l3TransitionPauseSec: 7.5, trackArcMode: 0, l3AutoRandomise: false
+            },
+            {
+                name: "Gritty Drama · Literary Serif",
+                l3Mode: 9, l3TextStyle: 20, l3FontPreset: 12, l3ColourMode: 1, l3CylinderDir: 0,
+                l3ShowArtist: true, l3ShowTrack: true, l3ShowAlbum: true, l3ShowStatements: false,
+                useAlbumArt: false, asciiMode: "text",
+                l3Dismantle: 0.65, l3Rebuild: 1.40, l3Evolution: 0.75, l3Scale: 1.15, l3Tracers: 2,
+                l3TransitionPauseSec: 9.0, trackArcMode: 0, l3AutoRandomise: false
+            },
+            {
+                name: "Victorian Broadside · Heavy Slab",
+                l3Mode: 1, l3TextStyle: 17, l3FontPreset: 2, l3ColourMode: 2, l3CylinderDir: 1,
+                l3ShowArtist: true, l3ShowTrack: true, l3ShowAlbum: false, l3ShowStatements: false,
+                useAlbumArt: false, asciiMode: "text",
+                l3Dismantle: 1.10, l3Rebuild: 1.10, l3Evolution: 0.90, l3Scale: 1.20, l3Tracers: 3,
+                l3TransitionPauseSec: 6.5, trackArcMode: 0, l3AutoRandomise: false
+            },
+            {
+                name: "Venetian Renaissance · Old-Style",
+                l3Mode: 10, l3TextStyle: 16, l3FontPreset: 4, l3ColourMode: 1, l3CylinderDir: 2,
+                l3ShowArtist: true, l3ShowTrack: true, l3ShowAlbum: true, l3ShowStatements: false,
+                useAlbumArt: false, asciiMode: "text",
+                l3Dismantle: 0.80, l3Rebuild: 1.25, l3Evolution: 0.85, l3Scale: 1.15, l3Tracers: 3,
+                l3TransitionPauseSec: 7.0, trackArcMode: 0, l3AutoRandomise: false
+            },
+            {
+                name: "Bauhaus Avant-Garde · Geometric",
+                l3Mode: 11, l3TextStyle: 11, l3FontPreset: 7, l3ColourMode: 5, l3CylinderDir: 4,
+                l3ShowArtist: true, l3ShowTrack: true, l3ShowAlbum: false, l3ShowStatements: false,
+                useAlbumArt: false, asciiMode: "text",
+                l3Dismantle: 1.15, l3Rebuild: 1.15, l3Evolution: 1.00, l3Scale: 1.25, l3Tracers: 4,
+                l3TransitionPauseSec: 5.0, trackArcMode: 0, l3AutoRandomise: false
+            },
+            {
+                name: "Brutalist Poster · Condensed Sans",
+                l3Mode: 3, l3TextStyle: 6, l3FontPreset: 8, l3ColourMode: 2, l3CylinderDir: 0,
+                l3ShowArtist: true, l3ShowTrack: true, l3ShowAlbum: false, l3ShowStatements: true,
+                useAlbumArt: false, asciiMode: "text",
+                l3Dismantle: 1.35, l3Rebuild: 1.05, l3Evolution: 1.10, l3Scale: 1.40, l3Tracers: 3,
+                l3TransitionPauseSec: 4.5, trackArcMode: 0, l3AutoRandomise: false
+            },
+            {
+                name: "Cyber Techno · Broadcast Sans",
+                l3Mode: 6, l3TextStyle: 0, l3FontPreset: 14, l3ColourMode: 3, l3CylinderDir: 1,
+                l3ShowArtist: true, l3ShowTrack: true, l3ShowAlbum: true, l3ShowStatements: false,
+                useAlbumArt: false, asciiMode: "text",
+                l3Dismantle: 1.10, l3Rebuild: 1.10, l3Evolution: 1.05, l3Scale: 1.05, l3Tracers: 3,
+                l3TransitionPauseSec: 5.0, trackArcMode: 0, l3AutoRandomise: false
+            },
+            {
+                name: "Psychedelic Liquid · Century Serif",
+                l3Mode: 7, l3TextStyle: 1, l3FontPreset: 6, l3ColourMode: 4, l3CylinderDir: 2,
+                l3ShowArtist: true, l3ShowTrack: true, l3ShowAlbum: false, l3ShowStatements: false,
+                useAlbumArt: false, asciiMode: "text",
+                l3Dismantle: 1.25, l3Rebuild: 1.00, l3Evolution: 0.95, l3Scale: 1.15, l3Tracers: 4,
+                l3TransitionPauseSec: 5.5, trackArcMode: 0, l3AutoRandomise: false
+            },
+            {
+                name: "Terminal Matrix · Nerd Mono",
+                l3Mode: 5, l3TextStyle: 4, l3FontPreset: 15, l3ColourMode: 0, l3CylinderDir: 0,
+                l3ShowArtist: true, l3ShowTrack: true, l3ShowAlbum: false, l3ShowStatements: true,
+                useAlbumArt: false, asciiMode: "text",
+                l3Dismantle: 1.20, l3Rebuild: 1.05, l3Evolution: 1.00, l3Scale: 1.00, l3Tracers: 3,
+                l3TransitionPauseSec: 6.0, trackArcMode: 0, l3AutoRandomise: false
+            },
+            {
+                name: "Art · Braille · Shatter",
+                l3Mode: 0, l3TextStyle: 0, l3FontPreset: 0, l3ColourMode: 0, l3CylinderDir: 0,
+                l3ShowArtist: true, l3ShowTrack: true, l3ShowAlbum: true, l3ShowStatements: false,
+                useAlbumArt: true, asciiMode: "braille",
+                l3Dismantle: 1.15, l3Rebuild: 1.05, l3Evolution: 0.90, l3Scale: 1.00, l3Tracers: 3,
+                l3TransitionPauseSec: 5.0, trackArcMode: 0, l3AutoRandomise: false
+            }
+        ]
+    }
+    property var savedL3Configs: defaultSavedL3Configs()
 
     property int currentSavedL4Index: 0
     property var savedL4Configs: [
@@ -2033,6 +2117,7 @@ FocusScope {
             layer3AutoRandomise: root.layer3AutoRandomise,
             layer3Mode: root.layer3Mode,
             layer3TextStyle: root.layer3TextStyle,
+            layer3FontPreset: root.layer3FontPreset,
             layer3ColourMode: root.layer3ColourMode,
             layer3CylinderDir: root.layer3CylinderDir,
             layer3ShowArtist: root.layer3ShowArtist,
@@ -2048,6 +2133,7 @@ FocusScope {
             layer3Scale: root.layer3Scale,
             layer3Tracers: root.layer3Tracers,
             layer3Opacity: root.layer3Opacity,
+            layer3TransitionPauseSec: root.layer3TransitionPauseSec,
             turntableRpm: root.turntableRpm,
             turntableStyle: root.turntableStyle,
             savedL1Configs: root.savedL1Configs,
@@ -2198,6 +2284,7 @@ FocusScope {
         if (cfg.layer3AutoRandomise !== undefined) root.layer3AutoRandomise = Boolean(cfg.layer3AutoRandomise)
         if (cfg.layer3Mode !== undefined) root.layer3Mode = Number(cfg.layer3Mode) % Engine.LAYER3_MODES.length
         if (cfg.layer3TextStyle !== undefined) root.layer3TextStyle = Number(cfg.layer3TextStyle) % Engine.LAYER3_TEXT_STYLES.length
+        if (cfg.layer3FontPreset !== undefined) root.layer3FontPreset = Number(cfg.layer3FontPreset) % Engine.LAYER3_FONT_PRESETS.length
         if (cfg.layer3ColourMode !== undefined) root.layer3ColourMode = Number(cfg.layer3ColourMode) % Engine.LAYER3_COLOUR_MODES.length
         if (cfg.layer3CylinderDir !== undefined) root.layer3CylinderDir = Number(cfg.layer3CylinderDir) % Engine.LAYER3_CYLINDER_DIRS.length
         if (cfg.layer3ShowArtist !== undefined) root.layer3ShowArtist = Boolean(cfg.layer3ShowArtist)
@@ -2227,6 +2314,7 @@ FocusScope {
         if (cfg.layer3Scale !== undefined) root.layer3Scale = Number(cfg.layer3Scale)
         if (cfg.layer3Tracers !== undefined) root.layer3Tracers = Number(cfg.layer3Tracers)
         if (cfg.layer3Opacity !== undefined) root.layer3Opacity = Math.max(0.05, Math.min(1.00, Number(cfg.layer3Opacity)))
+        if (cfg.layer3TransitionPauseSec !== undefined) root.layer3TransitionPauseSec = Math.max(1.0, Math.min(45.0, Number(cfg.layer3TransitionPauseSec) || 5.0))
         if (cfg.turntableRpm !== undefined) {
             root.turntableRpm = Math.max(16.0, Math.min(78.0, Number(cfg.turntableRpm) || 33.3))
             stageTurntable.rpm = root.turntableRpm
@@ -2236,10 +2324,14 @@ FocusScope {
             stageTurntable.vinylStyle = root.turntableStyle
         }
 
-        if (Array.isArray(cfg.savedL1Configs)) root.savedL1Configs = cfg.savedL1Configs
-        if (Array.isArray(cfg.savedL2Configs)) root.savedL2Configs = cfg.savedL2Configs
-        if (Array.isArray(cfg.savedL3Configs)) root.savedL3Configs = cfg.savedL3Configs
-        if (Array.isArray(cfg.savedL4Configs)) root.savedL4Configs = cfg.savedL4Configs
+        if (Array.isArray(cfg.savedL1Configs) && cfg.savedL1Configs.length > 0) root.savedL1Configs = cfg.savedL1Configs
+        if (Array.isArray(cfg.savedL2Configs) && cfg.savedL2Configs.length > 0) root.savedL2Configs = cfg.savedL2Configs
+        if (Array.isArray(cfg.savedL3Configs) && cfg.savedL3Configs.length > 0) {
+            root.savedL3Configs = cfg.savedL3Configs
+        } else {
+            root.savedL3Configs = root.defaultSavedL3Configs()
+        }
+        if (Array.isArray(cfg.savedL4Configs) && cfg.savedL4Configs.length > 0) root.savedL4Configs = cfg.savedL4Configs
         if (Array.isArray(cfg.collectivePresets) && cfg.collectivePresets.length > 0) root.collectivePresets = cfg.collectivePresets
 
         root.syncPhotoStateFromRoot()
@@ -2592,11 +2684,15 @@ FocusScope {
         var styleLabel = root.useAlbumArt
             ? (root.shortL3ArtStyleLabels[root.layer3TextStyle % root.shortL3ArtStyleLabels.length] || "Braille")
             : (root.shortL3StyleLabels[root.layer3TextStyle % root.shortL3StyleLabels.length] || "Techno")
+        var fontLabel = (!root.useAlbumArt && root.layer3FontPreset > 0 && root.shortL3FontLabels)
+            ? (" · " + (root.shortL3FontLabels[root.layer3FontPreset % root.shortL3FontLabels.length] || "Font"))
+            : ""
         var modeLabel = (Engine.LAYER3_MODES[root.layer3Mode] || "Shatter").split(" ")[0]
         var item = {
-            name: srcLabel + " · " + styleLabel + " · " + modeLabel,
+            name: srcLabel + " · " + styleLabel + fontLabel + " · " + modeLabel,
             l3Mode: root.layer3Mode,
             l3TextStyle: root.layer3TextStyle,
+            l3FontPreset: root.layer3FontPreset,
             l3ColourMode: root.layer3ColourMode,
             l3CylinderDir: root.layer3CylinderDir,
             l3ShowArtist: root.layer3ShowArtist,
@@ -2611,6 +2707,7 @@ FocusScope {
             l3Scale: root.layer3Scale,
             l3Tracers: root.layer3Tracers,
             l3Opacity: root.layer3Opacity,
+            l3TransitionPauseSec: root.layer3TransitionPauseSec,
             trackArcMode: root.trackArcMode,
             l3AutoRandomise: root.layer3AutoRandomise
         }
@@ -2619,6 +2716,13 @@ FocusScope {
         root.currentSavedL3Index = copy.length - 1
         root.emitSaveVisualiserConfig()
         root.suppressActionFeedback("Saved L3 Setting: " + item.name)
+    }
+
+    function restoreDefaultL3Configs() {
+        root.savedL3Configs = root.defaultSavedL3Configs()
+        root.currentSavedL3Index = 0
+        root.emitSaveVisualiserConfig()
+        root.suppressActionFeedback("Restored 12 Genre Typography & Font Presets")
     }
 
     function applySavedL3Config(idx) {
@@ -2630,6 +2734,7 @@ FocusScope {
         root.layer3Enabled = true
         if (item.l3Mode !== undefined) root.layer3Mode = Number(item.l3Mode) % Engine.LAYER3_MODES.length
         if (item.l3TextStyle !== undefined) root.layer3TextStyle = Number(item.l3TextStyle) % Engine.LAYER3_TEXT_STYLES.length
+        if (item.l3FontPreset !== undefined) root.layer3FontPreset = Number(item.l3FontPreset) % Engine.LAYER3_FONT_PRESETS.length
         if (item.l3ColourMode !== undefined) root.layer3ColourMode = Number(item.l3ColourMode) % Engine.LAYER3_COLOUR_MODES.length
         if (item.l3CylinderDir !== undefined) root.layer3CylinderDir = Number(item.l3CylinderDir) % Engine.LAYER3_CYLINDER_DIRS.length
         if (item.l3ShowArtist !== undefined) root.layer3ShowArtist = Boolean(item.l3ShowArtist)
@@ -2648,6 +2753,7 @@ FocusScope {
         if (item.l3Scale !== undefined) root.layer3Scale = Number(item.l3Scale)
         if (item.l3Tracers !== undefined) root.layer3Tracers = Number(item.l3Tracers)
         if (item.l3Opacity !== undefined) root.layer3Opacity = Math.max(0.05, Math.min(1.00, Number(item.l3Opacity)))
+        if (item.l3TransitionPauseSec !== undefined) root.layer3TransitionPauseSec = Math.max(1.0, Math.min(45.0, Number(item.l3TransitionPauseSec) || 5.0))
         if (item.trackArcMode !== undefined) root.trackArcMode = Number(item.trackArcMode) % Engine.TRACK_ARC_MODES.length
         if (item.l3AutoRandomise !== undefined) root.layer3AutoRandomise = Boolean(item.l3AutoRandomise)
         if (root.layer3Mode === 5) {
@@ -3025,6 +3131,7 @@ FocusScope {
             layer3Enabled: root.layer3Enabled,
             layer3Mode: root.layer3Mode,
             layer3TextStyle: root.layer3TextStyle,
+            layer3FontPreset: root.layer3FontPreset,
             layer3ColourMode: root.layer3ColourMode,
             layer3CylinderDir: root.layer3CylinderDir,
             layer3ShowArtist: root.layer3ShowArtist,
@@ -3038,6 +3145,7 @@ FocusScope {
             layer3Scale: root.layer3Scale,
             layer3Tracers: root.layer3Tracers,
             layer3Opacity: root.layer3Opacity,
+            layer3TransitionPauseSec: root.layer3TransitionPauseSec,
             layer3AutoRandomise: root.layer3AutoRandomise,
             autoCycle: root.autoCycle,
             photoMotionRenderCallback: function(ctx, w, h, engState, palette, cfgObj) {
@@ -4185,6 +4293,7 @@ FocusScope {
         root.layer3Mode = nextM
         var totalStyles = root.useAlbumArt ? Engine.LAYER3_ART_STYLES.length : Engine.LAYER3_TEXT_STYLES.length
         root.layer3TextStyle = (root.layer3TextStyle + 1 + Math.floor(Math.random() * Math.max(1, totalStyles - 1))) % totalStyles
+        root.layer3FontPreset = Math.floor(Math.random() * Engine.LAYER3_FONT_PRESETS.length)
         root.layer3ColourMode = Math.floor(Math.random() * Engine.LAYER3_COLOUR_MODES.length)
         root.layer3CylinderDir = Math.floor(Math.random() * Engine.LAYER3_CYLINDER_DIRS.length)
         var l3TrChoices = [1, 2, 3, 4, 5, 6, 8]
@@ -4193,6 +4302,7 @@ FocusScope {
         root.layer3Rebuild = Math.round((0.40 + Math.random() * 1.60) * 100) / 100
         root.layer3Scale = Math.round((0.55 + Math.random() * 2.45) * 100) / 100
         root.layer3Opacity = Math.round((0.55 + Math.random() * 0.45) * 100) / 100
+        root.layer3TransitionPauseSec = Math.round((1.0 * Math.pow(45.0 / 1.0, Math.random())) * 100) / 100
         root.pickRandomStatement()
         if (root.engineState) {
             root.engineState.l3FormFactor = 0.25
@@ -5301,7 +5411,7 @@ FocusScope {
         }
     }
 
-    // Independent 6: Typography Statements Rotation Timer (with random 1–30s pause between iterations)
+    // Independent 6: Typography Statements Rotation Timer (with configurable 1–45s exponential pause between iterations)
     Timer {
         id: statementCycleTimer
         interval: 9000
@@ -5310,7 +5420,7 @@ FocusScope {
         onTriggered: {
             if (!root.layer3IterationPaused) {
                 root.layer3IterationPaused = true
-                interval = (1 + Math.floor(Math.random() * 30)) * 1000
+                interval = Math.max(1000, Math.min(45000, Math.round((Number(root.layer3TransitionPauseSec) || 5.0) * 1000)))
                 root.clearCanvasImmediate()
             } else {
                 root.layer3IterationPaused = false
@@ -5331,7 +5441,7 @@ FocusScope {
         }
     }
 
-    // Independent 6: Typography Auto-Randomise Timer (with random 1–30s pause between each text/art iteration)
+    // Independent 6: Typography Auto-Randomise Timer (with 1–45s exponential randomisable pause between each text/art iteration)
     Timer {
         id: l3RandomiseTimer
         interval: 9000
@@ -5340,7 +5450,9 @@ FocusScope {
         onTriggered: {
             if (!root.layer3IterationPaused) {
                 root.layer3IterationPaused = true
-                interval = (1 + Math.floor(Math.random() * 30)) * 1000
+                var randPauseSec = Math.round((1.0 * Math.pow(45.0 / 1.0, Math.random())) * 100) / 100
+                root.layer3TransitionPauseSec = randPauseSec
+                interval = Math.max(1000, Math.min(45000, Math.round(randPauseSec * 1000)))
                 root.clearCanvasImmediate()
             } else {
                 root.layer3IterationPaused = false
@@ -10360,14 +10472,14 @@ FocusScope {
                             border.width: 1
                             border.color: Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.28)
 
-                            RowLayout {
+                            Flow {
                                 id: savedL3Row
                                 anchors.fill: parent
                                 anchors.margins: 6
                                 spacing: 5
 
                                 Text {
-                                    text: "󰆓 Saved Typography:"
+                                    text: "󰆓 Saved Typography & Genre Presets:"
                                     textFormat: Text.PlainText
                                     font.family: "JetBrainsMono Nerd Font"
                                     font.pixelSize: 10
@@ -10380,6 +10492,13 @@ FocusScope {
                                     pillHeight: 22
                                     horizontalPad: 7
                                     onClicked: root.saveCurrentL3Config()
+                                }
+
+                                VizPillButton {
+                                    text: "󰑐 Restore Genre Presets"
+                                    pillHeight: 22
+                                    horizontalPad: 7
+                                    onClicked: root.restoreDefaultL3Configs()
                                 }
 
                                 VizPillButton {
@@ -10413,8 +10532,6 @@ FocusScope {
                                         }
                                     }
                                 }
-
-                                Item { Layout.fillWidth: true }
                             }
                         }
 
@@ -10955,6 +11072,38 @@ FocusScope {
                             }
                         }
 
+                        // Genre Font Family Presets (16 Typeface Families across Horror, Noir, Gothic, Slab, Editorial, Sci-Fi & Terminal)
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: 5
+                            visible: !root.useAlbumArt
+
+                            Text {
+                                text: "Genre Font Family Preset (16):"
+                                textFormat: Text.PlainText
+                                font.family: "JetBrainsMono Nerd Font"
+                                font.pixelSize: 10
+                                font.bold: true
+                                color: root.accentColour
+                            }
+
+                            Repeater {
+                                model: Engine.LAYER3_FONT_PRESETS.length
+                                delegate: VizPillButton {
+                                    required property int index
+                                    text: (index + 1) + ". " + Engine.LAYER3_FONT_PRESETS[index]
+                                    active: root.layer3FontPreset === index
+                                    horizontalPad: 7
+                                    pillHeight: 22
+                                    onClicked: {
+                                        root.layer3FontPreset = index
+                                        vizCanvas.requestPaint()
+                                        scheduleSaveVisualiserConfig()
+                                    }
+                                }
+                            }
+                        }
+
                         // Text Colour Mode Selector Row (T key)
                         RowLayout {
                             Layout.fillWidth: true
@@ -11159,6 +11308,16 @@ FocusScope {
                             }
 
                             LayerSlider {
+                                label: "Transition Pause (1–45s)"
+                                exponentialScale: true
+                                value: root.layer3TransitionPauseSec
+                                minValue: 1.0
+                                maxValue: 45.0
+                                unitSuffix: "s"
+                                onValueEdited: v => { root.layer3TransitionPauseSec = Math.max(1.0, Math.min(45.0, v)); scheduleSaveVisualiserConfig() }
+                            }
+
+                            LayerSlider {
                                 label: "Layer 6 Opacity"
                                 value: Math.round(root.layer3Opacity * 100)
                                 minValue: 5
@@ -11351,7 +11510,7 @@ FocusScope {
                                 spacing: 6
 
                                 Text {
-                                    text: "󰏘 30 Psychedelic & Nightclub Colour Palettes:"
+                                    text: "󰏘 42 Colour Palettes (30 Psychedelic & Club + 12 Dark Horror, Noir & Thriller):"
                                     textFormat: Text.PlainText
                                     font.family: "JetBrainsMono Nerd Font"
                                     font.pixelSize: 10

@@ -2698,13 +2698,25 @@ for (const dirVal of [1, -1, 0]) {
         layer2Enabled: false,
         layer3Enabled: false
     }, 0, []);
-    for (let f = 0; f < 8; f++) {
-        stepState(stPac, bands, true, cfgPac, 0.04);
+    let minMaxArc = Infinity, maxMaxArc = -Infinity;
+    for (let f = 0; f < 40; f++) {
+        stepState(stPac, bands, true, cfgPac, 0.35);
         const ctxPac = makeTrackCtx();
-        renderFrame(ctxPac, f % 2 === 0 ? 1920 : 320, f % 2 === 0 ? 1080 : 200, stPac, 0, theme, [], [], [], cfgPac, null);
-        if (ctxPac.strokeCount < 20 || ctxPac.fillCount < 8) {
+        let frameMaxArc = 0;
+        const origArc = ctxPac.arc.bind(ctxPac);
+        ctxPac.arc = function(x, y, r, a0, a1) {
+            origArc(x, y, r, a0, a1);
+            if (r > frameMaxArc) frameMaxArc = r;
+        };
+        renderFrame(ctxPac, 1280, 720, stPac, 0, theme, [], [], [], cfgPac, null);
+        if (ctxPac.strokeCount < 22 || ctxPac.fillCount < 8) {
             throw new Error(`World #25 (layer1Mode=24, dir=${dirVal}) rendered insufficient strokes/fills: ${ctxPac.strokeCount}/${ctxPac.fillCount}`);
         }
+        minMaxArc = Math.min(minMaxArc, frameMaxArc);
+        maxMaxArc = Math.max(maxMaxArc, frameMaxArc);
+    }
+    if (!(maxMaxArc > minMaxArc * 1.45)) {
+        throw new Error(`Expected World #25 (dir=${dirVal}) 3D camera zoom & board flip to vary character scale >=1.45x, got min=${minMaxArc}, max=${maxMaxArc}`);
     }
 }
 

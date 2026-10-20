@@ -250,6 +250,61 @@ var SHORT_LAYER3_COLOUR_MODES = [
     "Letter"
 ]
 
+var LAYER3_FONT_PRESETS = [
+    "Style Default",
+    "Woodcut Slab (ChunkFive Print)",
+    "Heavy Slab (ChunkFive)",
+    "Gothic Chancery (Z003 Italic)",
+    "Venetian Old-Style (P052 Palatino)",
+    "Classic Bookman (URW Bookman)",
+    "Century Editorial (C059 Serif)",
+    "Avant-Garde Geometric (URW Gothic)",
+    "Condensed Headline (Nimbus Narrow)",
+    "Noir Typewriter (Nimbus Mono PS)",
+    "Duospace Author (iA Writer Duo)",
+    "Editorial Mono (iA Writer Mono S)",
+    "Literary Drama (Liberation Serif)",
+    "Brutalist Sans (Liberation Sans)",
+    " Broadcast Ubuntu (Ubuntu Bold)",
+    "Terminal Nerd (JetBrainsMono)"
+]
+var SHORT_LAYER3_FONT_PRESETS = [
+    "Default",
+    "Woodcut Slab",
+    "Heavy Slab",
+    "Gothic Z003",
+    "Palatino Serif",
+    "Bookman",
+    "Century C059",
+    "Avant-Garde",
+    "Condensed",
+    "Typewriter",
+    "iA Duospace",
+    "iA Mono",
+    "Drama Serif",
+    "Brutalist Sans",
+    "Ubuntu Bold",
+    "Terminal Mono"
+]
+var LAYER3_FONT_PRESET_FAMILIES = [
+    "",
+    "'ChunkFive Print', 'ChunkFive', 'URW Bookman', serif",
+    "'ChunkFive', 'ChunkFive Print', 'Impact', serif",
+    "'Z003', 'P052', 'URW Bookman', 'Liberation Serif', serif",
+    "'P052', 'URW Palladio L', 'Palatino', 'Liberation Serif', serif",
+    "'URW Bookman', 'Bookman Old Style', 'C059', 'Liberation Serif', serif",
+    "'C059', 'Century Schoolbook L', 'Nimbus Roman', 'Liberation Serif', serif",
+    "'URW Gothic', 'ITC Avant Garde Gothic', 'Ubuntu', 'Liberation Sans', sans-serif",
+    "'Nimbus Sans Narrow', 'Arial Narrow', 'Liberation Sans', sans-serif",
+    "'Nimbus Mono PS', 'Courier New', 'Liberation Mono', monospace",
+    "'iA Writer Duospace', 'Nimbus Mono PS', 'JetBrainsMono Nerd Font', monospace",
+    "'iA Writer Mono S', 'Liberation Mono', 'JetBrainsMono Nerd Font', monospace",
+    "'Liberation Serif', 'Nimbus Roman', 'Times New Roman', serif",
+    "'Liberation Sans', 'Nimbus Sans', 'Adwaita Sans', sans-serif",
+    "'Ubuntu', 'Adwaita Sans', 'Liberation Sans', sans-serif",
+    "'JetBrainsMono Nerd Font', 'JetBrains Mono', 'Liberation Mono', monospace"
+]
+
 var LAYER4_MODES = [
     "Cyber Tunnel",
     "Spiral Vortex",
@@ -514,8 +569,22 @@ var PALETTE_NAMES = [
     "Starlight Quasar",
     "Crimson Velvet",
     "Oceanic Trench",
-    "Prismatic Kaleidoscope"
+    "Prismatic Kaleidoscope",
+    "Dark Horror",
+    "Gritty Drama",
+    "Noir Thriller",
+    "Slasher Giallo",
+    "Psychological Dread",
+    "Eldritch Abyss",
+    "Post-Apocalyptic Ash",
+    "Nordic Noir",
+    "Occult Ritual",
+    "Industrial Morgue",
+    "Cyber Thriller",
+    "Vampiric Catacombs"
 ]
+
+var DARK_PALETTE_START_INDEX = 30
 
 var PALETTES = [
     ["#ff007f", "#00f5d4", "#fee440", "#9b5de5", "#00bbf9", "#f15bb5"],
@@ -547,8 +616,25 @@ var PALETTES = [
     ["#38bdf8", "#f43f5e", "#fbbf24", "#a855f7", "#2dd4bf", "#ffffff"],
     ["#ff0054", "#ff5400", "#ffbd00", "#9e0059", "#390099", "#ff85a1"],
     ["#00e5ff", "#0077b6", "#48cae4", "#00f5d4", "#7209b7", "#90e0ef"],
-    ["#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#6a4c93", "#ff924c"]
+    ["#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#6a4c93", "#ff924c"],
+    ["#7f1d1d", "#991b1b", "#450a0a", "#78716c", "#b91c1c", "#292524"],
+    ["#475569", "#94a3b8", "#78350f", "#64748b", "#b45309", "#334155"],
+    ["#94a3b8", "#cbd5e1", "#991b1b", "#475569", "#64748b", "#1e293b"],
+    ["#b91c1c", "#dc2626", "#4c0519", "#a16207", "#1e1b4b", "#881337"],
+    ["#365314", "#4d7c0f", "#713f12", "#3f6212", "#52525b", "#1a2e05"],
+    ["#115e59", "#134e4a", "#3b0764", "#0f766e", "#4c1d95", "#042f2e"],
+    ["#7c2d12", "#9a3412", "#57534e", "#a8a29e", "#44403c", "#431407"],
+    ["#1e3a8a", "#334155", "#64748b", "#0f172a", "#475569", "#1e293b"],
+    ["#581c87", "#7f1d1d", "#854d0e", "#3b0764", "#a16207", "#450a0a"],
+    ["#0f766e", "#475569", "#64748b", "#115e59", "#334155", "#134e4a"],
+    ["#155e75", "#991b1b", "#334155", "#0e7490", "#7f1d1d", "#1e293b"],
+    ["#881337", "#4c0519", "#78716c", "#9f1239", "#57534e", "#27272a"]
 ]
+
+function isDarkMoodPalette(paletteIndex) {
+    var palIdx = ((Number(paletteIndex) || 0) % PALETTES.length + PALETTES.length) % PALETTES.length
+    return palIdx >= DARK_PALETTE_START_INDEX
+}
 
 var BRAILLE_MUTANTS = ["⣿", "⣷", "⣯", "⣟", "⡿", "⢿", "⣻", "⣽", "⣾", "⢕", "⢝", "⢕", "✦", "◈", "⟡", "░", "▒", "▓", "█"]
 var varBRAILLE_MUTANTS = BRAILLE_MUTANTS
@@ -706,6 +792,25 @@ function deriveDistinctTypographyTriad(pal, baseIdx, slotIdx, anchorIdx) {
     var hslAlt = rgbToHsl(rawAlt)
     var hslAcc = rgbToHsl(rawAcc)
 
+    // Detect dark/moody atmospheric palettes (Horror, Gritty Drama, Noir, Thriller, etc.)
+    // so we preserve their desaturated/low-key tonal mood instead of boosting to neon rainbow!
+    var isMoodyPal = (hslCh[2] < 0.46 && hslAlt[2] < 0.46)
+    if (isMoodyPal) {
+        var moodyLTargets = [0.64, 0.50, 0.56, 0.60]
+        var moodyLTarget = moodyLTargets[slotIdx % moodyLTargets.length]
+        var mSCh = clamp(hslCh[1] * 1.05, 0.08, 0.78)
+        var mLCh = clamp(hslCh[2] * 0.55 + moodyLTarget * 0.45, 0.36, 0.70)
+        var mSAlt = clamp(hslAlt[1] * 1.05, 0.08, 0.76)
+        var mLAlt = clamp(hslAlt[2] * 0.65 + 0.24 * 0.35, 0.18, 0.46)
+        var mSAcc = clamp(hslAcc[1] * 1.08, 0.10, 0.82)
+        var mLAcc = clamp(hslAcc[2] * 0.50 + 0.58 * 0.50, 0.38, 0.72)
+        return {
+            colCh: hslToHex(hslCh[0], mSCh, mLCh),
+            colAlt: hslToHex(hslAlt[0], mSAlt, mLAlt),
+            colAcc: hslToHex(hslAcc[0], mSAcc, mLAcc)
+        }
+    }
+
     var hCh = hslCh[0]
     var sCh = clamp(Math.max(hslCh[1], 0.88), 0.82, 1.0)
     var lTargets = [0.76, 0.62, 0.68, 0.72]
@@ -746,6 +851,32 @@ function buildPalette(theme, hueShift, paletteIndex) {
     var palIdx = ((Number(paletteIndex) || 0) % PALETTES.length + PALETTES.length) % PALETTES.length
     var preset = PALETTES[palIdx] || PALETTES[0]
     var h = Number(hueShift) || 0
+    if (palIdx >= DARK_PALETTE_START_INDEX) {
+        // Dark Horror, Gritty Drama, Noir & Thriller palettes:
+        // Derive all 16 slots directly from the 6 dark swatches with subtle atmospheric drift,
+        // avoiding bright neon rainbow HSL injection in slots 6..15.
+        var darkOut = [
+            preset[0],
+            preset[1],
+            preset[2],
+            preset[3],
+            preset[4],
+            preset[5]
+        ]
+        var driftDeg = Math.sin((h * Math.PI) / 180.0) * 12.0
+        for (var di = 6; di < 16; di++) {
+            var baseHex = preset[di % 6]
+            var dHsl = rgbToHsl(baseHex)
+            var lDelta = ((di % 3) - 1) * 0.06
+            var sScale = (di % 2 === 0) ? 0.92 : 1.06
+            darkOut.push(hslToHex(
+                dHsl[0] + driftDeg * ((di % 2 === 0) ? 1.0 : -0.7),
+                clamp(dHsl[1] * sScale, 0.06, 0.78),
+                clamp(dHsl[2] + lDelta, 0.12, 0.54)
+            ))
+        }
+        return darkOut
+    }
     return [
         preset[0],
         preset[1],
@@ -1369,6 +1500,7 @@ function stepState(state, rawBands, active, cfg, dt) {
 
     var rawL1Dir = cfg && cfg.layer1Direction !== undefined ? Number(cfg.layer1Direction) : 1
     var l1Dir = (rawL1Dir === 0) ? Math.sin((state.t || 0.0) * 0.45) : (rawL1Dir < 0 ? -1.0 : 1.0)
+    state.l1DirSign = l1Dir < 0.0 ? -1.0 : 1.0
 
     if ((kickRatio > 1.15 && state.kickFast > 0.10 || snareRatio > 1.20 && state.snareFast > 0.13) && state.beatCooldown <= 0.0) {
         var transientBoost = 0.92 + 0.32 * Math.max(0.0, Math.max(kickRatio - 1.0, snareRatio - 1.0))
@@ -4982,39 +5114,52 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ? (Math.sin((state.t || 0.0) * 0.45) < 0.0 ? -1.0 : 1.0)
                 : (l1Dir < 0 ? -1.0 : 1.0)
 
-            // Gentle 3D Plane Tilt & Slow Rotation for the entire free-roaming rave stage
-            var stageYaw = l1T * 0.16 + Math.sin(l1T * 0.23) * 0.28
-            var stagePitch = 0.36 + 0.16 * Math.sin(l1T * 0.27) + state.bassSmooth * 0.06
-            var stageRoll = 0.18 * Math.sin(l1T * 0.19)
-            var cosYaw = Math.cos(stageYaw), sinYaw = Math.sin(stageYaw)
-            var cosPitch = Math.cos(stagePitch), sinPitch = Math.sin(stagePitch)
-            var cosRoll = Math.cos(stageRoll), sinRoll = Math.sin(stageRoll)
-            var planeFov = minDim * 1.45
+            // Dynamic 3D Rave Table/Board Pose: wide varying 3D angles + smooth 180°/360° 3D table flips
+            var flipCycleDur = 8.5
+            var getFlipStep = function (k) {
+                var km = ((k % 4) + 4) % 4
+                if (km === 0) return { dp: Math.PI, dr: 0.0 }          // 180° pitch somersault inversion
+                if (km === 1) return { dp: 0.0, dr: Math.PI }          // 180° roll barrel-flip inversion
+                if (km === 2) return { dp: Math.PI, dr: Math.PI }      // 180° diagonal kickflip inversion
+                return { dp: TAU, dr: -Math.PI }                       // 360° full rave-table twist flip
+            }
+            var evalCumulativeFlip = function (kInt) {
+                var q = Math.floor(kInt / 4)
+                var rem = kInt - q * 4
+                var pitchAcc = q * (4.0 * Math.PI)
+                var rollAcc = q * Math.PI
+                for (var j = 0; j < rem; j++) {
+                    var stp = getFlipStep(j)
+                    pitchAcc += stp.dp
+                    rollAcc += stp.dr
+                }
+                return { pitch: pitchAcc, roll: rollAcc }
+            }
+            var evalBoardPose = function (tPlane) {
+                var cyc = tPlane / flipCycleDur
+                var kIdx = Math.floor(cyc)
+                var uPhase = cyc - kIdx
+                // Smooth C2 quintic flip window in the second half of each cycle; wide varying angles in the first half
+                var wFlip = clamp((uPhase - 0.42) / 0.50, 0.0, 1.0)
+                var sFlip = wFlip * wFlip * wFlip * (10.0 - 15.0 * wFlip + 6.0 * wFlip * wFlip)
+                var flipAct = 4.0 * wFlip * (1.0 - wFlip)
+                var baseFlip = evalCumulativeFlip(kIdx)
+                var curStep = getFlipStep(kIdx)
+                var flipPitch = baseFlip.pitch + sFlip * curStep.dp
+                var flipRoll = baseFlip.roll + sFlip * curStep.dr
 
-            // Projects a point (lx, ly) on the local rave plane (centred at 0,0) onto the tilted, rotating 3D screen plane at time tPlane
-            var projectRavePlaneAt = function (lx, ly, tPlane) {
-                var sYaw = tPlane * 0.16 + Math.sin(tPlane * 0.23) * 0.28
-                var sPitch = 0.36 + 0.16 * Math.sin(tPlane * 0.27) + state.bassSmooth * 0.06
-                var sRoll = 0.18 * Math.sin(tPlane * 0.19)
+                var sYaw = tPlane * 0.22 + Math.sin(tPlane * 0.31) * 0.62 + Math.cos(tPlane * 0.17) * 0.28
+                var sPitch = 0.46 + 0.54 * Math.sin(tPlane * 0.29) + 0.32 * Math.cos(tPlane * 0.43) + state.bassSmooth * 0.14 + flipPitch
+                var sRoll = 0.52 * Math.sin(tPlane * 0.23) + 0.34 * Math.cos(tPlane * 0.37) + (state.midSmooth || 0.0) * 0.08 + flipRoll
                 var cY = Math.cos(sYaw), sY = Math.sin(sYaw)
                 var cP = Math.cos(sPitch), sP = Math.sin(sPitch)
                 var cR = Math.cos(sRoll), sR = Math.sin(sRoll)
-                var x1 = lx * cY - ly * sY
-                var y1 = lx * sY + ly * cY
-                var y2 = y1 * cP
-                var z2 = y1 * sP
-                var x3 = x1 * cR + z2 * sR
-                var z3 = -x1 * sR + z2 * cR
-                var sc = planeFov / Math.max(planeFov * 0.35, planeFov + z3)
                 return {
-                    x: cx + x3 * sc,
-                    y: cy + y2 * sc,
-                    sc: sc,
-                    z: z3
+                    yaw: sYaw, pitch: sPitch, roll: sRoll,
+                    cY: cY, sY: sY, cP: cP, sP: sP, cR: cR, sR: sR,
+                    normalZ: cP * cR,
+                    flipActivity: flipAct
                 }
-            }
-            var projectRavePlane = function (lx, ly) {
-                return projectRavePlaneAt(lx, ly, l1T)
             }
 
             // Continuous, smooth Lissajous / Figure-8 / slalom trajectory in local stage coordinates
@@ -5028,19 +5173,114 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                     ly: Math.sin(uVal * 2.0) * roamRy * 0.72 + Math.sin(uVal * 3.0) * (h * 0.05)
                 }
             }
+
+            // 4 Classic Arcade Ghosts trajectories in local board coordinates
+            var ghostSpecs = [
+                { name: "BLINKY", col: "#FF1E38", rim: "#FF94A2", fx: 0.72, fy: 0.95, px: 0.4,  py: 1.1, rx: 0.34, ry: 0.28 },
+                { name: "PINKY",  col: "#FF82D8", rim: "#FBCFE8", fx: 0.88, fy: 0.64, px: 2.1,  py: 2.6, rx: 0.36, ry: 0.30 },
+                { name: "INKY",   col: "#00F5FF", rim: "#A5F3FC", fx: 0.63, fy: 1.12, px: 3.8,  py: 0.7, rx: 0.32, ry: 0.27 },
+                { name: "CLYDE",  col: "#FFB84D", rim: "#FED7AA", fx: 0.54, fy: 0.78, px: 5.1,  py: 4.2, rx: 0.38, ry: 0.32 }
+            ]
+            var ghostRate = 0.48 + l1Spd * 0.14
+            var evalLocalGhostPos = function (gi, tPlane) {
+                var gs = ghostSpecs[gi]
+                var gtVal = tPlane * ghostRate
+                return {
+                    lx: Math.cos(gtVal * gs.fx + gs.px) * (w * gs.rx),
+                    ly: Math.sin(gtVal * gs.fy + gs.py) * (h * gs.ry)
+                }
+            }
+
+            // Dynamic Camera Zoom & Panning: zooms right in to Pac-Man & ghosts at varying angles, and pulls back to show full 3D table flips
+            var evalCameraState = function (tPlane, pose) {
+                var zoomWave = clamp(0.5 - 0.5 * Math.cos(tPlane * 0.34) + 0.18 * Math.sin(tPlane * 0.71), 0.0, 1.0)
+                var zoomPullback = 1.0 - 0.26 * pose.flipActivity
+                var camZoom = (0.88 + zoomWave * 1.55 * zoomPullback) * (1.0 + state.bassSmooth * 0.12)
+                var panWeight = zoomWave * (0.66 - 0.24 * pose.flipActivity)
+
+                var pacAt = evalLocalPacCurve(tPlane * roamRate)
+                // Smoothly pan between Pac-Man and the roaming ghosts during close-ups
+                var ghostTour = tPlane * 0.24
+                var gIdx0 = ((Math.floor(ghostTour) % 4) + 4) % 4
+                var gIdx1 = (gIdx0 + 1) % 4
+                var gFrac = ghostTour - Math.floor(ghostTour)
+                var gSmooth = gFrac * gFrac * (3.0 - 2.0 * gFrac)
+                var gPos0 = evalLocalGhostPos(gIdx0, tPlane)
+                var gPos1 = evalLocalGhostPos(gIdx1, tPlane)
+                var ghostFocusLX = gPos0.lx + (gPos1.lx - gPos0.lx) * gSmooth
+                var ghostFocusLY = gPos0.ly + (gPos1.ly - gPos0.ly) * gSmooth
+                var ghostVisit = Math.pow(0.5 - 0.5 * Math.cos(tPlane * 0.27), 2.0) * 0.48
+
+                var targetLX = pacAt.lx * (1.0 - ghostVisit) + ghostFocusLX * ghostVisit
+                var targetLY = pacAt.ly * (1.0 - ghostVisit) + ghostFocusLY * ghostVisit
+                return {
+                    zoom: camZoom,
+                    focusLX: targetLX * panWeight,
+                    focusLY: targetLY * panWeight
+                }
+            }
+
+            var boardPose = evalBoardPose(l1T)
+            var camState = evalCameraState(l1T, boardPose)
+            var stageYaw = boardPose.yaw
+            var stagePitch = boardPose.pitch
+            var stageRoll = boardPose.roll
+            var planeFov = minDim * 1.45
+
+            // Rotate a 3D board point (lx, ly, lz) into 3D camera space around the board centre
+            var rotateBoardPoint = function (lx, ly, lz, pose) {
+                var zVal = lz || 0.0
+                var x1 = lx * pose.cY - ly * pose.sY
+                var y1 = lx * pose.sY + ly * pose.cY
+                var y2 = y1 * pose.cP - zVal * pose.sP
+                var z2 = y1 * pose.sP + zVal * pose.cP
+                var x3 = x1 * pose.cR + z2 * pose.sR
+                var z3 = -x1 * pose.sR + z2 * pose.cR
+                return { x: x3, y: y2, z: z3 }
+            }
+
+            // Projects a point (lx, ly, lz) on the 3D rave table onto the screen at time tPlane
+            var projectRavePlaneAt = function (lx, ly, tPlane, lz) {
+                var pose = (tPlane === l1T) ? boardPose : evalBoardPose(tPlane)
+                var cam = (tPlane === l1T) ? camState : evalCameraState(tPlane, pose)
+                var pt3 = rotateBoardPoint(lx, ly, lz || 0.0, pose)
+                var foc3 = rotateBoardPoint(cam.focusLX, cam.focusLY, 0.0, pose)
+                var rx = pt3.x - foc3.x
+                var ry = pt3.y - foc3.y
+                var rz = pt3.z - foc3.z
+                var sc = (planeFov * cam.zoom) / Math.max(planeFov * 0.28, planeFov + rz)
+                return {
+                    x: cx + rx * sc,
+                    y: cy + ry * sc,
+                    sc: sc,
+                    z: rz
+                }
+            }
+            var projectRavePlane = function (lx, ly, lz) {
+                return projectRavePlaneAt(lx, ly, l1T, lz || 0.0)
+            }
+
             var pacLocal = evalLocalPacCurve(roamT)
             var pacLX = pacLocal.lx
             var pacLY = pacLocal.ly
-            var dtL1 = 0.02 * dirSign
+            var dtL1 = 0.024 * dirSign
             var pacNextLocal = evalLocalPacCurve((l1T + dtL1) * roamRate)
 
-            var pacPrj = projectRavePlaneAt(pacLX, pacLY, l1T)
-            var pacNextPrj = projectRavePlaneAt(pacNextLocal.lx, pacNextLocal.ly, l1T + dtL1)
+            // Project Pac-Man and his immediate forward curve tangent on the current 3D tilted/flipped board
+            // so his mouth always aims directly along his visible travel path toward the next pill on screen
+            var pacPrj = projectRavePlane(pacLX, pacLY, 0.0)
+            var pacNextPrj = projectRavePlane(pacNextLocal.lx, pacNextLocal.ly, 0.0)
             var pacX = pacPrj.x
             var pacY = pacPrj.y
             var vx = pacNextPrj.x - pacPrj.x
             var vy = pacNextPrj.y - pacPrj.y
-            if (Math.hypot(vx, vy) < 1e-4) vx = dirSign
+            if (Math.hypot(vx, vy) < 1e-3) {
+                var dlx = pacNextLocal.lx - pacLX
+                var dly = pacNextLocal.ly - pacLY
+                vx = (dlx * boardPose.cY - dly * boardPose.sY) * (boardPose.cR >= 0.0 ? 1.0 : -1.0)
+                vy = (dlx * boardPose.sY + dly * boardPose.cY) * (boardPose.cP >= 0.0 ? 1.0 : -1.0)
+                if (Math.hypot(vx, vy) < 1e-4) vx = dirSign
+            }
             var mouthDir = Math.atan2(vy, vx)
 
             // 5x7 CRT Scanline Bitmap for 'E'
@@ -5257,22 +5497,76 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.restore()
             }
 
-            // 1. Gently Tilted & Rotating 3D CRT Stage Grid
-            var gridCol = palette[0] || "#22d3ee"
-            ctx.strokeStyle = colourWithAlpha(gridCol, clamp(0.14 * l1Opac, 0.04, 0.26))
-            ctx.lineWidth = 1.0
-            ctx.beginPath()
+            // 1. 3D Flipping Arcade Rave Table / Board (Dual-Deck Surface Grid + 3D Slab Side-Wall Rim & Bumpers)
+            var isBoardFlipped = boardPose.normalZ < 0.0
+            var topGridCol = palette[0] || "#22d3ee"
+            var botGridCol = palette[1 % palette.length] || "#f43f5e"
+            var rimNeonCol = palette[2 % palette.length] || "#a855f7"
+            var activeDeckCol = isBoardFlipped ? botGridCol : topGridCol
+            var backDeckCol = isBoardFlipped ? topGridCol : botGridCol
             var halfSpanX = w * 0.46
             var halfSpanY = h * 0.42
+            var boardThick = minDim * 0.044
+            var zFrontDeck = isBoardFlipped ? (boardThick * 0.5) : (-boardThick * 0.5)
+            var zBackDeck = -zFrontDeck
             var gridLines = 8
+
+            // 1a. Back/Opposite Deck Parallax Grid (visible through the translucent neon table as it tilts & flips)
+            ctx.strokeStyle = colourWithAlpha(backDeckCol, clamp(0.11 * l1Opac, 0.03, 0.22))
+            ctx.lineWidth = 1.0
+            ctx.beginPath()
+            for (var biLine = 0; biLine <= gridLines; biLine++) {
+                var bf = (biLine / gridLines) * 2.0 - 1.0
+                var bA = projectRavePlane(bf * halfSpanX, -halfSpanY, zBackDeck)
+                var bB = projectRavePlane(bf * halfSpanX,  halfSpanY, zBackDeck)
+                ctx.moveTo(bA.x, bA.y)
+                ctx.lineTo(bB.x, bB.y)
+                var bC = projectRavePlane(-halfSpanX, bf * halfSpanY, zBackDeck)
+                var bD = projectRavePlane( halfSpanX, bf * halfSpanY, zBackDeck)
+                ctx.moveTo(bC.x, bC.y)
+                ctx.lineTo(bD.x, bD.y)
+            }
+            ctx.stroke()
+
+            // 1b. 3D Table Slab Side-Wall Struts & Dual Perimeter Bezel (shows 3D board thickness during steep tilts & 180°/360° flips)
+            ctx.strokeStyle = colourWithAlpha(rimNeonCol, clamp((0.28 + 0.18 * boardPose.flipActivity) * l1Opac, 0.08, 0.52))
+            ctx.lineWidth = 1.5
+            ctx.beginPath()
+            for (var si = 0; si <= gridLines; si++) {
+                var sf = (si / gridLines) * 2.0 - 1.0
+                var sTopN = projectRavePlane(sf * halfSpanX, -halfSpanY, zFrontDeck)
+                var sBotN = projectRavePlane(sf * halfSpanX, -halfSpanY, zBackDeck)
+                ctx.moveTo(sTopN.x, sTopN.y)
+                ctx.lineTo(sBotN.x, sBotN.y)
+                var sTopS = projectRavePlane(sf * halfSpanX, halfSpanY, zFrontDeck)
+                var sBotS = projectRavePlane(sf * halfSpanX, halfSpanY, zBackDeck)
+                ctx.moveTo(sTopS.x, sTopS.y)
+                ctx.lineTo(sBotS.x, sBotS.y)
+                if (si > 0 && si < gridLines) {
+                    var sTopW = projectRavePlane(-halfSpanX, sf * halfSpanY, zFrontDeck)
+                    var sBotW = projectRavePlane(-halfSpanX, sf * halfSpanY, zBackDeck)
+                    ctx.moveTo(sTopW.x, sTopW.y)
+                    ctx.lineTo(sBotW.x, sBotW.y)
+                    var sTopE = projectRavePlane(halfSpanX, sf * halfSpanY, zFrontDeck)
+                    var sBotE = projectRavePlane(halfSpanX, sf * halfSpanY, zBackDeck)
+                    ctx.moveTo(sTopE.x, sTopE.y)
+                    ctx.lineTo(sBotE.x, sBotE.y)
+                }
+            }
+            ctx.stroke()
+
+            // 1c. Active Front Deck Grid + Highlighted Neon Table Rim
+            ctx.strokeStyle = colourWithAlpha(activeDeckCol, clamp((0.20 + 0.10 * boardPose.flipActivity) * l1Opac, 0.06, 0.38))
+            ctx.lineWidth = 1.25
+            ctx.beginPath()
             for (var giLine = 0; giLine <= gridLines; giLine++) {
                 var gf = (giLine / gridLines) * 2.0 - 1.0
-                var gA = projectRavePlane(gf * halfSpanX, -halfSpanY)
-                var gB = projectRavePlane(gf * halfSpanX,  halfSpanY)
+                var gA = projectRavePlane(gf * halfSpanX, -halfSpanY, zFrontDeck)
+                var gB = projectRavePlane(gf * halfSpanX,  halfSpanY, zFrontDeck)
                 ctx.moveTo(gA.x, gA.y)
                 ctx.lineTo(gB.x, gB.y)
-                var gC = projectRavePlane(-halfSpanX, gf * halfSpanY)
-                var gD = projectRavePlane( halfSpanX, gf * halfSpanY)
+                var gC = projectRavePlane(-halfSpanX, gf * halfSpanY, zFrontDeck)
+                var gD = projectRavePlane( halfSpanX, gf * halfSpanY, zFrontDeck)
                 ctx.moveTo(gC.x, gC.y)
                 ctx.lineTo(gD.x, gD.y)
             }
@@ -5291,14 +5585,15 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                     var seed = rIdx * 13 + cIdx * 7
                     var uCell = (colsCount > 1 ? cIdx / (colsCount - 1) : 0.5) - 0.5
                     var vCell = (rowsCount > 1 ? rIdx / (rowsCount - 1) : 0.5) - 0.5
-                    // Gentle organic float in local plane coordinates before 3D plane tilt & rotation
+                    // Gentle organic float in local plane coordinates before 3D plane tilt & flip
                     var plx = uCell * spanX + Math.sin(l1T * 1.15 + seed * 1.7) * (minDim * 0.025)
                     var ply = vCell * spanY + Math.cos(l1T * 1.35 + seed * 2.3) * (minDim * 0.025)
-                    var pillPrj = projectRavePlane(plx, ply)
+                    var pillPrj = projectRavePlane(plx, ply, 0.0)
                     var px = pillPrj.x
                     var py = pillPrj.y
+                    var pillSc = clamp(pillPrj.sc, 0.35, 2.65)
                     var isPower = ((rIdx === 0 || rIdx === rowsCount - 1) && (cIdx === 0 || cIdx === colsCount - 1)) || ((seed % 11) === 0)
-                    var pillR = basePillR * (isPower ? 1.55 : 1.0) * pillPrj.sc
+                    var pillR = basePillR * (isPower ? 1.55 : 1.0) * pillSc
                     var distToPac = Math.hypot(plx - pacLX, ply - pacLY)
                     var pillCol = isPower
                         ? (palette[1 % palette.length] || "#f43f5e")
@@ -5309,8 +5604,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                         var chompFrac = 1.0 - (distToPac / chompRadius)
                         drawPillStarburst(px, py, pillR, chompFrac, pillCol, l1Opac)
                     } else {
-                        var pillSpin = l1T * (2.8 + (isPower ? 1.4 : 0.0)) + seed * 0.9
-                        var pillTilt = stageRoll * 0.65 + Math.sin(pillSpin * 0.5) * 0.24
+                        var pillSpin = l1T * (2.8 + (isPower ? 1.4 : 0.0)) + seed * 0.9 + stagePitch * 0.5
+                        var pillTilt = Math.sin(stageRoll) * 0.55 + Math.sin(pillSpin * 0.5) * 0.24
                         drawSpinningEPill(
                             px,
                             py,
@@ -5334,10 +5629,11 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 var uStation = sk * trailStepU
                 var passedU = (roamT - uStation) * dirSign
                 var stLoc = evalLocalPacCurve(uStation)
-                var stPrj = projectRavePlane(stLoc.lx, stLoc.ly)
+                var stPrj = projectRavePlane(stLoc.lx, stLoc.ly, 0.0)
+                var stSc = clamp(stPrj.sc, 0.35, 2.65)
                 var isPowerSt = (((sk % 6) + 6) % 6) === 0
                 var stCol = palette[((sk % palette.length) + palette.length) % palette.length] || "#00F5FF"
-                var stR = basePillR * (isPowerSt ? 1.45 : 1.0) * stPrj.sc
+                var stR = basePillR * (isPowerSt ? 1.45 : 1.0) * stSc
                 if (passedU >= -0.025 && passedU <= 0.28) {
                     var burstP = (passedU + 0.025) / 0.305
                     drawPillStarburst(stPrj.x, stPrj.y, stR, burstP, stCol, l1Opac)
@@ -5347,8 +5643,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                         stPrj.x,
                         stPrj.y,
                         stR,
-                        state.t * 3.4 + sk * 0.85,
-                        stageRoll * 0.65 + Math.sin(state.t * 2.0 + sk) * 0.24,
+                        state.t * 3.4 + sk * 0.85 + stagePitch * 0.5,
+                        Math.sin(stageRoll) * 0.55 + Math.sin(state.t * 2.0 + sk) * 0.24,
                         stCol,
                         "#ffffff",
                         "#fef08a",
@@ -5358,24 +5654,17 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 }
             }
 
-            // 3. 4 Classic Arcade Ghosts Free-Roaming Upright Across the Tilting Pill Plane
-            var ghostSpecs = [
-                { name: "BLINKY", col: "#FF1E38", rim: "#FF94A2", fx: 0.72, fy: 0.95, px: 0.4,  py: 1.1, rx: 0.34, ry: 0.28 },
-                { name: "PINKY",  col: "#FF82D8", rim: "#FBCFE8", fx: 0.88, fy: 0.64, px: 2.1,  py: 2.6, rx: 0.36, ry: 0.30 },
-                { name: "INKY",   col: "#00F5FF", rim: "#A5F3FC", fx: 0.63, fy: 1.12, px: 3.8,  py: 0.7, rx: 0.32, ry: 0.27 },
-                { name: "CLYDE",  col: "#FFB84D", rim: "#FED7AA", fx: 0.54, fy: 0.78, px: 5.1,  py: 4.2, rx: 0.38, ry: 0.32 }
-            ]
+            // 3. 4 Classic Arcade Ghosts Free-Roaming Upright Across the Tilting & Flipping Pill Table
             var baseGhostR = minDim * 0.046 * (1.0 + state.bassSmooth * 0.14)
-            var gt = l1T * (0.48 + l1Spd * 0.14)
             for (var gi = 0; gi < 4; gi++) {
                 var gs = ghostSpecs[gi]
-                var glx = Math.cos(gt * gs.fx + gs.px) * (w * gs.rx)
-                var gly = Math.sin(gt * gs.fy + gs.py) * (h * gs.ry)
-                var gPrj = projectRavePlane(glx, gly)
+                var gLoc = evalLocalGhostPos(gi, l1T)
+                var gPrj = projectRavePlane(gLoc.lx, gLoc.ly, 0.0)
+                var gSc = clamp(gPrj.sc, 0.42, 2.65)
                 drawCrtGhost(
                     gPrj.x,
                     gPrj.y,
-                    baseGhostR * gPrj.sc,
+                    baseGhostR * gSc,
                     gs.col,
                     gs.rim,
                     pacX - gPrj.x,
@@ -5386,9 +5675,10 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             }
 
             // 4. Upright Yellow CRT Rave-Man Gliding Smoothly & Chomping Consistently Every Frame!
-            var pacR = minDim * 0.068 * pacPrj.sc * (1.0 + state.beatPulse * 0.14)
+            var pacSc = clamp(pacPrj.sc, 0.45, 2.70)
+            var pacR = minDim * 0.068 * pacSc * (1.0 + state.beatPulse * 0.14)
             var chompAngle = 0.06 + 0.72 * Math.abs(Math.sin(state.t * 10.0))
-            var pacScanRows = 17
+            var pacScanRows = Math.round(clamp(17 * Math.sqrt(pacSc * 0.85), 15, 23))
 
             ctx.save()
             ctx.translate(pacX, pacY)
@@ -11603,27 +11893,27 @@ var BRAILLE_DOT_DX = [-0.24, -0.24, -0.24,  0.24,  0.24,  0.24, -0.24,  0.24]
 var BRAILLE_DOT_DY = [-0.36, -0.12,  0.12, -0.36, -0.12,  0.12,  0.36,  0.36]
 
 var LAYER3_STYLE_FONTS = [
-    "'Orbitron', 'Rajdhani', 'Eurostile', 'JetBrainsMono Nerd Font', sans-serif",          // 0: Cyber Techno
-    "'Syne', 'Space Grotesk', 'JetBrainsMono Nerd Font', sans-serif",                      // 1: Psychedelic Liquid
-    "'Chakra Petch', 'Orbitron', 'JetBrainsMono Nerd Font', monospace",                    // 2: Rave Laser Stencil
-    "'Montserrat', 'Orbitron', 'JetBrainsMono Nerd Font', sans-serif",                     // 3: Dance Chrome
-    "'JetBrainsMono Nerd Font', 'JetBrains Mono', monospace",                              // 4: Club LED Wall
-    "'JetBrainsMono Nerd Font', 'JetBrains Mono', monospace",                              // 5: Acid Glitch IDM
-    "'Cinzel', 'Orbitron', 'JetBrainsMono Nerd Font', sans-serif",                         // 6: Psytrance UV Glow
-    "'Impact', 'Arial Black', 'JetBrainsMono Nerd Font', sans-serif",                      // 7: Berlin Brutalist
-    "'Rajdhani', 'Orbitron', 'JetBrainsMono Nerd Font', monospace",                        // 8: Holographic Sci-Fi HUD
-    "'Share Tech Mono', 'JetBrainsMono Nerd Font', monospace",                             // 9: Oscilloscope Vector Beam
-    "'Orbitron', 'Montserrat', 'JetBrainsMono Nerd Font', sans-serif",                     // 10: 3D Isometric Extrude
-    "'Chakra Petch', 'Orbitron', 'JetBrainsMono Nerd Font', sans-serif",                   // 11: Plasma Arc Tesla
-    "'Syne', 'Montserrat', 'JetBrainsMono Nerd Font', sans-serif",                         // 12: Y2K Iridescent Mercury
-    "'Press Start 2P', 'JetBrainsMono Nerd Font', monospace",                              // 13: Demoscene Copperbars
-    "'Space Grotesk', 'Syne', 'JetBrainsMono Nerd Font', sans-serif",                      // 14: Bioluminescent Mycelium
-    "'JetBrainsMono Nerd Font', 'Share Tech Mono', monospace",                             // 15: Quantum Matrix Datastream
-    "'JetBrainsMono Nerd Font', 'Share Tech Mono', 'JetBrains Mono', monospace",           // 16: ASCII Black Block / White Text
-    "'JetBrainsMono Nerd Font', 'Share Tech Mono', 'JetBrains Mono', monospace",           // 17: ASCII White Back / Black Text
-    "'JetBrainsMono Nerd Font', 'Share Tech Mono', 'JetBrains Mono', monospace",           // 18: ASCII Transparent Back / Text
-    "'JetBrainsMono Nerd Font', 'Share Tech Mono', 'JetBrains Mono', monospace",           // 19: ASCII Coloured Back / Transparent Text
-    "'JetBrainsMono Nerd Font', 'Share Tech Mono', 'JetBrains Mono', monospace"            // 20: ASCII Cell Matrix
+    "'Orbitron', 'URW Gothic', 'Rajdhani', 'Eurostile', 'JetBrainsMono Nerd Font', sans-serif",          // 0: Cyber Techno
+    "'Syne', 'Z003', 'P052', 'Space Grotesk', 'JetBrainsMono Nerd Font', serif",                         // 1: Psychedelic Liquid
+    "'Chakra Petch', 'Nimbus Sans Narrow', 'Orbitron', 'JetBrainsMono Nerd Font', sans-serif",           // 2: Rave Laser Stencil
+    "'Montserrat', 'URW Gothic', 'Ubuntu', 'Orbitron', 'JetBrainsMono Nerd Font', sans-serif",           // 3: Dance Chrome
+    "'JetBrainsMono Nerd Font', 'JetBrains Mono', monospace",                                            // 4: Club LED Wall
+    "'iA Writer Mono S', 'Nimbus Mono PS', 'JetBrainsMono Nerd Font', monospace",                        // 5: Acid Glitch IDM
+    "'Cinzel', 'P052', 'URW Bookman', 'Orbitron', 'JetBrainsMono Nerd Font', serif",                     // 6: Psytrance UV Glow
+    "'ChunkFive', 'Impact', 'Nimbus Sans Narrow', 'Liberation Sans', sans-serif",                        // 7: Berlin Brutalist
+    "'Rajdhani', 'URW Gothic', 'Nimbus Sans Narrow', 'JetBrainsMono Nerd Font', sans-serif",             // 8: Holographic Sci-Fi HUD
+    "'Share Tech Mono', 'Nimbus Mono PS', 'JetBrainsMono Nerd Font', monospace",                         // 9: Oscilloscope Vector Beam
+    "'ChunkFive Print', 'ChunkFive', 'Orbitron', 'URW Bookman', serif",                                  // 10: 3D Isometric Extrude
+    "'Chakra Petch', 'URW Gothic', 'Orbitron', 'JetBrainsMono Nerd Font', sans-serif",                   // 11: Plasma Arc Tesla
+    "'C059', 'URW Bookman', 'Syne', 'Liberation Serif', serif",                                          // 12: Y2K Iridescent Mercury
+    "'Press Start 2P', 'iA Writer Duospace', 'JetBrainsMono Nerd Font', monospace",                      // 13: Demoscene Copperbars
+    "'P052', 'Z003', 'Space Grotesk', 'Liberation Serif', serif",                                        // 14: Bioluminescent Mycelium
+    "'iA Writer Duospace', 'JetBrainsMono Nerd Font', 'Share Tech Mono', monospace",                     // 15: Quantum Matrix Datastream
+    "'JetBrainsMono Nerd Font', 'Share Tech Mono', 'JetBrains Mono', monospace",                         // 16: ASCII Black Block / White Text
+    "'JetBrainsMono Nerd Font', 'Share Tech Mono', 'JetBrains Mono', monospace",                         // 17: ASCII White Back / Black Text
+    "'JetBrainsMono Nerd Font', 'Share Tech Mono', 'JetBrains Mono', monospace",                         // 18: ASCII Transparent Back / Text
+    "'JetBrainsMono Nerd Font', 'Share Tech Mono', 'JetBrains Mono', monospace",                         // 19: ASCII Coloured Back / Transparent Text
+    "'JetBrainsMono Nerd Font', 'Share Tech Mono', 'JetBrains Mono', monospace"                          // 20: ASCII Cell Matrix
 ]
 var LAYER3_STYLE_PALETTES = [
     ["#00F5FF", "#FF1493", "#E2F9FF", "#7B2CBF", "#00FFB2", "#FFBE0B"], // 0: Cyber Techno
@@ -11929,10 +12219,17 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     var isAsciiStyle = (textStyle >= 16 && textStyle <= 20)
     var isLineAsciiBlockStyle = (textStyle === 16 || textStyle === 17 || textStyle === 19)
     var isPaletteShifted = (Number(cfg.palette !== undefined ? cfg.palette : 0) % PALETTES.length) !== 0
-    var activeStylePal = (colourMode === 0 && !(isAsciiStyle && isPaletteShifted))
-        ? (LAYER3_STYLE_PALETTES[textStyle] || palette)
-        : ((palette && palette.length > 0) ? palette : LAYER3_STYLE_PALETTES[textStyle])
-    var activeFontFamily = LAYER3_STYLE_FONTS[textStyle] || "'JetBrainsMono Nerd Font', sans-serif"
+    var hasCustomL3Pal = Array.isArray(cfg.layer3CustomPalette) && cfg.layer3CustomPalette.length >= 3
+    var isDarkGlobalPal = isDarkMoodPalette(cfg.palette)
+    var activeStylePal = hasCustomL3Pal
+        ? cfg.layer3CustomPalette
+        : ((colourMode === 0 && !isDarkGlobalPal && !(isAsciiStyle && isPaletteShifted))
+            ? (LAYER3_STYLE_PALETTES[textStyle] || palette)
+            : ((palette && palette.length > 0) ? palette : LAYER3_STYLE_PALETTES[textStyle]))
+    var fontPresetIdx = clamp(Math.round(Number(cfg.layer3FontPreset !== undefined ? cfg.layer3FontPreset : 0)), 0, LAYER3_FONT_PRESET_FAMILIES.length - 1)
+    var activeFontFamily = (fontPresetIdx > 0 && LAYER3_FONT_PRESET_FAMILIES[fontPresetIdx])
+        ? LAYER3_FONT_PRESET_FAMILIES[fontPresetIdx]
+        : (LAYER3_STYLE_FONTS[textStyle] || "'JetBrainsMono Nerd Font', sans-serif")
 
     // Select source lines early so if Art has no lines yet, Crisp Text still renders full-screen
     var effectiveLines = asciiLines
@@ -13759,10 +14056,15 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer2FillOpacity: c.layer2FillOpacity !== undefined ? clamp(Number(c.layer2FillOpacity), 0.05, 1.0) : 0.55,
         layer2Opacity: c.layer2Opacity !== undefined ? clamp(Number(c.layer2Opacity), 0.05, 1.0) : 1.0,
         layer3Enabled: c.layer3Enabled !== undefined ? Boolean(c.layer3Enabled) : true,
+        layer3IterationPaused: Boolean(c.layer3IterationPaused),
+        layer3TransitionPauseSec: c.layer3TransitionPauseSec !== undefined ? clamp(Number(c.layer3TransitionPauseSec), 1.0, 45.0) : (c.layer3PauseSec !== undefined ? clamp(Number(c.layer3PauseSec), 1.0, 45.0) : 5.0),
+        layer3PauseSec: c.layer3TransitionPauseSec !== undefined ? clamp(Number(c.layer3TransitionPauseSec), 1.0, 45.0) : (c.layer3PauseSec !== undefined ? clamp(Number(c.layer3PauseSec), 1.0, 45.0) : 5.0),
         layer3AutoRandomise: Boolean(c.layer3AutoRandomise),
         autoCycle: Boolean(c.autoCycle),
         layer3Mode: c.layer3Mode !== undefined ? clamp(Math.round(Number(c.layer3Mode)), 0, LAYER3_MODES.length - 1) : 0,
         layer3TextStyle: c.layer3TextStyle !== undefined ? clamp(Math.round(Number(c.layer3TextStyle)), 0, LAYER3_TEXT_STYLES.length - 1) : 0,
+        layer3FontPreset: c.layer3FontPreset !== undefined ? clamp(Math.round(Number(c.layer3FontPreset)), 0, LAYER3_FONT_PRESETS.length - 1) : 0,
+        layer3CustomPalette: Array.isArray(c.layer3CustomPalette) ? c.layer3CustomPalette : [],
         layer3ColourMode: c.layer3ColourMode !== undefined ? clamp(Math.round(Number(c.layer3ColourMode)), 0, LAYER3_COLOUR_MODES.length - 1) : 0,
         layer3CylinderDir: c.layer3CylinderDir !== undefined ? clamp(Math.round(Number(c.layer3CylinderDir)), 0, LAYER3_CYLINDER_DIRS.length - 1) : 0,
         layer3ShowArtist: c.layer3ShowArtist !== undefined ? Boolean(c.layer3ShowArtist) : true,
