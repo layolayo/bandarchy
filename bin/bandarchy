@@ -5012,14 +5012,21 @@ def get_playback_state() -> dict:
             entry = last
             q_pos = 0 if not stopped_mid else bounded_int(last.get("playlistPos", 0), 0)
 
-        title = bounded_text(entry.get("title") or last.get("title") or "")
-        artist = bounded_text(entry.get("artist") or last.get("artist") or "")
-        album = bounded_text(entry.get("album") or last.get("album") or "")
-        album_id = entry.get("albumId") or last.get("albumId") or ""
-        track_id = entry.get("id") or last.get("id") or ""
-        art_path = entry.get("artPath") or last.get("artPath") or ""
-        local_cand = str(entry.get("localPath") or entry.get("target") or last.get("localPath") or last.get("target") or "")
-        art_probed_idle = bool(entry.get("_artProbed") or (isinstance(last, dict) and last.get("_artProbed")))
+        entry_matches_last = bool(
+            isinstance(last, dict)
+            and (
+                (entry.get("id") and last.get("id") == entry.get("id"))
+                or (not entry.get("id") and entry.get("title") and last.get("title") == entry.get("title"))
+            )
+        )
+        title = bounded_text(entry.get("title") or (last.get("title") if entry_matches_last else "") or "")
+        artist = bounded_text(entry.get("artist") or (last.get("artist") if entry_matches_last else "") or "")
+        album = bounded_text(entry.get("album") or (last.get("album") if entry_matches_last else "") or "")
+        album_id = entry.get("albumId") or (last.get("albumId") if entry_matches_last else "") or ""
+        track_id = entry.get("id") or (last.get("id") if entry_matches_last else "") or ""
+        art_path = entry.get("artPath") or (last.get("artPath") if entry_matches_last else "") or ""
+        local_cand = str(entry.get("localPath") or entry.get("target") or (last.get("localPath") if entry_matches_last else "") or (last.get("target") if entry_matches_last else "") or "")
+        art_probed_idle = bool(entry.get("_artProbed") or (entry_matches_last and isinstance(last, dict) and last.get("_artProbed")))
         if local_cand and os.path.isfile(local_cand) and (
             not title
             or not artist
@@ -5040,11 +5047,9 @@ def get_playback_state() -> dict:
         if (title or artist) and (not art_path or not os.path.exists(art_path)):
             art_path = ensure_cover_svg(album_id or "now", artist or "Bandarchy", album or title or "Music")
 
-        l_pos = bounded_float(last.get("position", 0.0), 0.0) if isinstance(last, dict) else 0.0
+        l_pos = bounded_float(last.get("position", 0.0), 0.0) if (isinstance(last, dict) and entry_matches_last) else 0.0
         q_saved_pos = bounded_float(queue.get("savedPosition", queue.get("position", 0.0)), 0.0) if isinstance(queue, dict) else 0.0
-        saved_pos = 0.0 if not stopped_mid else (
-            l_pos if (track_id and last.get("id") == track_id and l_pos > 0) else (q_saved_pos if q_saved_pos > 0 else l_pos)
-        )
+        saved_pos = 0.0 if not stopped_mid else (q_saved_pos if q_saved_pos > 0 else l_pos)
         saved_dur = max(
             bounded_float(last.get("duration") if isinstance(last, dict) and last.get("id") == track_id else 0.0, 0.0),
             bounded_float(queue.get("duration") if (isinstance(queue, dict) and stopped_mid) else 0.0, 0.0),

@@ -96,9 +96,13 @@ vec2 mirrorUV(vec2 uv) {
     );
 }
 
-// Applies the 16 photo variant transformations (V00..V15) in hardware matching STAGE1_EFFECT_IDS
+// Applies the 17 photo variant transformations (V00..V16) in hardware matching STAGE1_EFFECT_IDS
 vec3 applyVariantStyle(vec3 rgb, vec2 uv, int vIdx) {
-    int vid = clamp(vIdx, 0, 15);
+    int vid = clamp(vIdx, 0, 16);
+    if (vid == 16) {
+        // 17_Original_Accessible_Compressed: Authentic original colour & tonal balance preserved intact
+        return clamp(rgb, 0.0, 1.0);
+    }
     float luma = clamp(dot(rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
     float pixSat = max(rgb.r, max(rgb.g, rgb.b)) - min(rgb.r, min(rgb.g, rgb.b));
     float snatchMask = smoothstep(0.08, 0.28, pixSat);
@@ -210,8 +214,9 @@ vec3 applyVariantStyle(vec3 rgb, vec2 uv, int vIdx) {
 }
 
 vec2 applyVariantUV(vec2 uv, int vIdx) {
-    int vid = clamp(vIdx, 0, 15);
+    int vid = clamp(vIdx, 0, 16);
     vec2 m = mirrorUV(uv);
+    if (vid == 16) return m;
     if (vid == 2) return vec2(abs(m.x - 0.5) * 2.0, m.y);
     if (vid == 3) {
         float inSlash = step(abs((m.x - m.y) - 0.08), 0.18);
@@ -284,8 +289,10 @@ vec4 sampleStageAt(vec2 rawUV, int variantOverride, float peerBlendOverride) {
     vec4 cPri = (uHasPrimary != 0)
         ? texture(texPrimary, uvPri)
         : ((uHasPrev != 0) ? texture(texPrev, uvPri) : vec4(uCol0.rgb * 0.25, 1.0));
+    float rawPreserve = smoothstep(0.35, 0.90, clamp(uColourSnatchOpacity, 0.0, 1.5));
     if (!(isPinned && vPri == uVariantIndex)) {
-        cPri.rgb = applyVariantStyle(cPri.rgb, uvPri, effPri);
+        vec3 styledPri = applyVariantStyle(cPri.rgb, uvPri, effPri);
+        cPri.rgb = mix(styledPri, cPri.rgb, rawPreserve * 0.82);
     }
 
     if (uVariantMix > 0.001) {
@@ -294,14 +301,16 @@ vec4 sampleStageAt(vec2 rawUV, int variantOverride, float peerBlendOverride) {
             vec2 uvSec = applyVariantUV(secUV, effSec);
             vec4 cSec = (uHasPrimary != 0) ? texture(texPrimary, uvSec) : cPri;
             if (!isPinned) {
-                cSec.rgb = applyVariantStyle(cSec.rgb, uvSec, effSec);
+                vec3 styledSec = applyVariantStyle(cSec.rgb, uvSec, effSec);
+                cSec.rgb = mix(styledSec, cSec.rgb, rawPreserve * 0.78);
             }
             cPri = mix(cPri, cSec, clamp(uVariantMix, 0.0, 1.0));
         } else {
             int effSecPool = (isPinned && uSecondaryVariantIndex == uVariantIndex) ? 0 : uSecondaryVariantIndex;
             vec4 cSec = texture(texSecondary, uvPri);
             if (!isPinned) {
-                cSec.rgb = applyVariantStyle(cSec.rgb, uvPri, effSecPool);
+                vec3 styledSecPool = applyVariantStyle(cSec.rgb, uvPri, effSecPool);
+                cSec.rgb = mix(styledSecPool, cSec.rgb, rawPreserve * 0.82);
             }
             cPri = mix(cPri, cSec, sin(clamp(uVariantMix, 0.0, 1.0) * PI) * 0.35 + clamp(uVariantMix, 0.0, 1.0) * 0.65);
         }
@@ -886,12 +895,17 @@ void main() {
     col.rgb = col.rgb * postScale + postAdd * 0.55;
 
     // =========================================================================
-    // PALETTE COLOUR-SNATCH BLOOM & 4-SECTOR TONAL OPACITY
-    // Keep stark monochrome sectors desaturated; only accent existing colour-snatch pixels
+    // CONTINUOUS 4-STAGE COLOUR GRADING & 4-SECTOR TONAL OPACITY
+    // uColourSnatchOpacity (0.00 .. 1.50):
+    //   0.00..0.25 (0%–25%   Stark B&W)        : Pure silver-gelatin darkroom B&W + subtle colour-snatch accents
+    //   0.30..0.65 (30%–65%  Cinema / Bleach)  : Half-desaturated bleach-bypass film look with pastel/analogue bleed
+    //   0.70..1.00 (70%–100% Natural Processed): True 1:1 faithful rendering of the processed PNG on disk
+    //   1.05..1.50 (105%–150% Lush Vivid/Hyper): Enhanced chroma saturation and luminous colour-snatch bloom
     // =========================================================================
+    float colGrade = clamp(uColourSnatchOpacity, 0.0, 1.50);
     float luma = clamp(dot(col.rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
     float pixChroma = max(col.r, max(col.g, col.b)) - min(col.r, min(col.g, col.b));
-    float chromaMask = smoothstep(0.06, 0.28, pixChroma);
+    float chromaMask = smoothstep(0.05, 0.26, pixChroma);
 
     float wBlack = clamp(1.0 - luma * 2.20, 0.0, 1.0);
     float wWhite = clamp((luma - 0.45) * 1.85, 0.0, 1.0); // Upper 50% highlight range
@@ -900,16 +914,37 @@ void main() {
     vec3 palTarget = (luma < 0.50)
         ? mix(uCol0.rgb, uCol1.rgb, luma / 0.50)
         : mix(uCol1.rgb, uCol2.rgb, (luma - 0.50) / 0.50);
-    float snatchAmt = clamp(uPaletteBloom * 0.26 * (0.08 + 0.92 * chromaMask) * (wMid + wWhite * 0.85) * clamp(uColourSnatchOpacity, 0.0, 1.4), 0.0, 0.38);
-    col.rgb = mix(col.rgb, mix(col.rgb, palTarget, 0.45) + palTarget * 0.10 * uBeatPulse * chromaMask, snatchAmt);
 
-    // Clamp overall photo saturation so stark darkroom photographs remain natural and crisp
+    // 1. Silver-gelatin S-curve monochrome base for Stark B&W and Bleach-Bypass Cinema blending
+    vec3 silverMono = vec3(smoothstep(0.06, 0.94, luma));
+    float starkToNatural = smoothstep(0.08, 0.82, colGrade);
+    // In Stark B&W (0.0..0.25), keep high-chroma snatch accents proportional to colGrade;
+    // in Cinema / Bleach-Bypass (0.30..0.65), blend silverMono with ~45%–75% of the processed RGB;
+    // in Natural Processed (0.70..1.00), reach 100% faithful processed RGB.
+    float baseChromaRetention = clamp(starkToNatural + chromaMask * clamp(colGrade * 0.85, 0.0, 0.45) * (1.0 - starkToNatural), 0.0, 1.0);
+    col.rgb = mix(silverMono, col.rgb, baseChromaRetention);
+
+    // 2. Palette Colour-Snatch & Cinema/Vivid Bloom across the continuous 0.0..1.50 range
+    float snatchAmt = clamp(
+        uPaletteBloom * (0.14 + 0.30 * smoothstep(0.35, 1.45, colGrade))
+        * (0.12 + 0.88 * max(chromaMask, smoothstep(0.95, 1.45, colGrade) * 0.55))
+        * (wMid + wWhite * 0.88)
+        * clamp(colGrade, 0.0, 1.50),
+        0.0, 0.52
+    );
+    col.rgb = mix(col.rgb, mix(col.rgb, palTarget, 0.48) + palTarget * 0.14 * uBeatPulse * max(chromaMask, 0.25), snatchAmt);
+
+    // 3. Continuous Saturation Expansion for Lush Vivid / Hyper-Chroma (1.00 .. 1.50)
     float postLuma = clamp(dot(col.rgb, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
-    col.rgb = mix(vec3(postLuma), col.rgb, 0.72);
+    float vividBoost = 1.0 + smoothstep(0.88, 1.50, colGrade) * 0.68;
+    col.rgb = clamp(mix(vec3(postLuma), col.rgb, vividBoost), 0.0, 1.0);
 
-    float tonalAlpha = wBlack * clamp(uBlackOpacity, 0.0, 1.5)
-                     + wMid   * clamp(uMidOpacity,   0.0, 1.5)
-                     + wWhite * clamp(uWhiteOpacity, 0.0, 1.5);
+    // 4. Tonal Opacity: allow stark darkroom cutout in low grades, while smoothly solidifying midtones/shadows in Cinema -> Natural -> Vivid
+    float rawTonalAlpha = wBlack * clamp(uBlackOpacity, 0.0, 1.5)
+                        + wMid   * clamp(uMidOpacity,   0.0, 1.5)
+                        + wWhite * clamp(uWhiteOpacity, 0.0, 1.5);
+    float solidFloor = smoothstep(0.35, 0.95, colGrade) * (0.86 + 0.12 * smoothstep(0.95, 1.45, colGrade));
+    float tonalAlpha = max(rawTonalAlpha, solidFloor);
     float finalAlpha = clamp(uPhotoOpacity * tonalAlpha * macroFade, 0.0, 1.0) * qt_Opacity;
 
     fragColor = vec4(col.rgb * finalAlpha, finalAlpha);

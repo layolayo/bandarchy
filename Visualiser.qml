@@ -133,7 +133,7 @@ FocusScope {
     property int layer1EqBandOrder: 0
     property real layer1EqScale: 1.0
     property real layer1EqSpin: 1.0
-    property real layer1EqGain: 1.25
+    property real layer1EqGain: 0.80
     property int layer1EqDamping: 0
     property real layer1EqOpacity: 1.0
     onLayer1EqOpacityChanged: { vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
@@ -146,6 +146,8 @@ FocusScope {
     property real layer1ShapeDensity: 1.0
     property real layer1ShapeLifespan: 1.0
     property real layer1ShapeFillRatio: 0.35
+    property real layer1ShapeFillOpacity: 0.55
+    onLayer1ShapeFillOpacityChanged: { vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
     property real layer1ShapesOpacity: 1.0
     onLayer1ShapesOpacityChanged: { vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
     property bool showBottomHud: true
@@ -243,14 +245,14 @@ FocusScope {
         {
             name: "Atari Battlezone & Skyline EQ",
             l1FieldEnabled: true, l1Mode: 4, l1Direction: 1, l1Persistence: 0.84, l1Speed: 1.00, l1Density: 1.00, l1Dim: 0.14,
-            l1EqEnabled: true, l1EqStyle: 0, l1EqLayout: 0, l1EqScale: 1.00, l1EqGain: 1.35, l1EqDamping: 0,
+            l1EqEnabled: true, l1EqStyle: 0, l1EqLayout: 0, l1EqScale: 1.00, l1EqGain: 0.85, l1EqDamping: 0,
             l1ShapesEnabled: true, l1ShapeStyle: 2, l1ShapeSpin: 1.00, l1ShapeSpeed: 1.05, l1ShapeScale: 1.00,
             l1AutoRandomise: false
         },
         {
             name: "Death Star Trench & X-Wings",
             l1FieldEnabled: true, l1Mode: 5, l1Direction: 1, l1Persistence: 0.84, l1Speed: 1.15, l1Density: 1.10, l1Dim: 0.14,
-            l1EqEnabled: false, l1EqStyle: 1, l1EqLayout: 1, l1EqScale: 1.00, l1EqGain: 1.25, l1EqDamping: 0,
+            l1EqEnabled: false, l1EqStyle: 1, l1EqLayout: 1, l1EqScale: 1.00, l1EqGain: 0.80, l1EqDamping: 0,
             l1ShapesEnabled: true, l1ShapeStyle: 1, l1ShapeSpin: 0.85, l1ShapeSpeed: 1.15, l1ShapeScale: 1.05,
             l1AutoRandomise: false
         }
@@ -341,7 +343,7 @@ FocusScope {
             musicDrive: true,
             tracerCount: 6, tracerSpeed: 1.20, tracerDrift: 1.05, tracerDirection: 1,
             l1Enabled: true, l1FieldEnabled: true, l1Mode: 4, l1Direction: 1, l1Persistence: 0.84, l1Speed: 1.00, l1Density: 1.05, l1Dim: 0.14,
-            l1EqEnabled: true, l1EqStyle: 0, l1EqLayout: 0, l1EqScale: 1.00, l1EqGain: 1.35, l1EqDamping: 0,
+            l1EqEnabled: true, l1EqStyle: 0, l1EqLayout: 0, l1EqScale: 1.00, l1EqGain: 0.85, l1EqDamping: 0,
             l1ShapesEnabled: true, l1ShapeStyle: 1, l1ShapeSpin: 1.10, l1ShapeSpeed: 1.05, l1ShapeScale: 1.00,
             l2Enabled: true, l2VizEnabled: true, l2Mode: 10, sensitivity: 1.45, l2Complexity: 1.15, l2Speed: 1.10, l2Zoom: 1.05,
             l3Enabled: false, l3Mode: 0, asciiMode: "braille", useAlbumArt: true,
@@ -354,7 +356,7 @@ FocusScope {
             musicDrive: true,
             tracerCount: 5, tracerSpeed: 1.30, tracerDrift: 1.15, tracerDirection: 1,
             l1Enabled: true, l1FieldEnabled: true, l1Mode: 0, l1Direction: 1, l1Persistence: 0.86, l1Speed: 1.15, l1Density: 1.10, l1Dim: 0.16,
-            l1EqEnabled: true, l1EqStyle: 4, l1EqLayout: 1, l1EqScale: 1.00, l1EqGain: 1.30, l1EqDamping: 0,
+            l1EqEnabled: true, l1EqStyle: 4, l1EqLayout: 1, l1EqScale: 1.00, l1EqGain: 0.82, l1EqDamping: 0,
             l1ShapesEnabled: true, l1ShapeStyle: 0, l1ShapeSpin: 0.90, l1ShapeSpeed: 1.15, l1ShapeScale: 1.05,
             l2Enabled: true, l2VizEnabled: true, l2Mode: 3, sensitivity: 1.55, l2Complexity: 1.20, l2Speed: 1.20, l2Zoom: 1.05,
             l3Enabled: false, l3Mode: 0, asciiMode: "braille", useAlbumArt: true,
@@ -367,7 +369,7 @@ FocusScope {
             musicDrive: true,
             tracerCount: 6, tracerSpeed: 1.40, tracerDrift: 1.20, tracerDirection: 1,
             l1Enabled: true, l1FieldEnabled: true, l1Mode: 4, l1Direction: 1, l1Persistence: 0.84, l1Speed: 1.05, l1Density: 1.15, l1Dim: 0.14,
-            l1EqEnabled: true, l1EqStyle: 3, l1EqLayout: 2, l1EqScale: 1.00, l1EqGain: 1.40, l1EqDamping: 0,
+            l1EqEnabled: true, l1EqStyle: 3, l1EqLayout: 2, l1EqScale: 1.00, l1EqGain: 0.88, l1EqDamping: 0,
             l1ShapesEnabled: true, l1ShapeStyle: 3, l1ShapeSpin: 1.45, l1ShapeSpeed: 1.25, l1ShapeScale: 1.10,
             l2Enabled: true, l2VizEnabled: true, l2Mode: 4, sensitivity: 1.60, l2Complexity: 1.25, l2Speed: 1.35, l2Zoom: 1.10,
             l3Enabled: false, l3Mode: 0, asciiMode: "braille", useAlbumArt: true,
@@ -380,7 +382,7 @@ FocusScope {
             musicDrive: true,
             tracerCount: 4, tracerSpeed: 1.15, tracerDrift: 0.95, tracerDirection: 1,
             l1Enabled: true, l1FieldEnabled: true, l1Mode: 1, l1Direction: 1, l1Persistence: 0.84, l1Speed: 1.05, l1Density: 1.15, l1Dim: 0.16,
-            l1EqEnabled: false, l1EqStyle: 2, l1EqLayout: 1, l1EqScale: 1.00, l1EqGain: 1.25, l1EqDamping: 1,
+            l1EqEnabled: false, l1EqStyle: 2, l1EqLayout: 1, l1EqScale: 1.00, l1EqGain: 0.80, l1EqDamping: 1,
             l1ShapesEnabled: true, l1ShapeStyle: 4, l1ShapeSpin: -1.10, l1ShapeSpeed: 0.95, l1ShapeScale: 1.00,
             l2Enabled: true, l2VizEnabled: true, l2Mode: 5, sensitivity: 1.45, l2Complexity: 1.25, l2Speed: 1.15, l2Zoom: 1.05,
             l3Enabled: false, l3Mode: 2, asciiMode: "braille", useAlbumArt: true,
@@ -393,7 +395,7 @@ FocusScope {
             musicDrive: true,
             tracerCount: 4, tracerSpeed: 1.10, tracerDrift: 1.00, tracerDirection: 1,
             l1Enabled: true, l1FieldEnabled: true, l1Mode: 0, l1Direction: 1, l1Persistence: 0.84, l1Speed: 1.00, l1Density: 1.00, l1Dim: 0.16,
-            l1EqEnabled: true, l1EqStyle: 0, l1EqLayout: 0, l1EqScale: 1.00, l1EqGain: 1.20, l1EqDamping: 0,
+            l1EqEnabled: true, l1EqStyle: 0, l1EqLayout: 0, l1EqScale: 1.00, l1EqGain: 0.78, l1EqDamping: 0,
             l1ShapesEnabled: true, l1ShapeStyle: 0, l1ShapeSpin: 1.00, l1ShapeSpeed: 1.00, l1ShapeScale: 1.00,
             l2Enabled: true, l2VizEnabled: true, l2Mode: 0, sensitivity: 1.35, l2Complexity: 1.05, l2Speed: 1.05, l2Zoom: 1.00,
             l3Enabled: true, l3Mode: 0, asciiMode: "braille", useAlbumArt: true,
@@ -406,7 +408,7 @@ FocusScope {
             musicDrive: true,
             tracerCount: 5, tracerSpeed: 1.20, tracerDrift: 1.10, tracerDirection: 0,
             l1Enabled: true, l1FieldEnabled: true, l1Mode: 3, l1Direction: 1, l1Persistence: 0.84, l1Speed: 1.15, l1Density: 1.10, l1Dim: 0.16,
-            l1EqEnabled: true, l1EqStyle: 5, l1EqLayout: 1, l1EqScale: 1.00, l1EqGain: 1.30, l1EqDamping: 1,
+            l1EqEnabled: true, l1EqStyle: 5, l1EqLayout: 1, l1EqScale: 1.00, l1EqGain: 0.82, l1EqDamping: 1,
             l1ShapesEnabled: true, l1ShapeStyle: 5, l1ShapeSpin: 0.85, l1ShapeSpeed: 1.00, l1ShapeScale: 1.10,
             l2Enabled: true, l2VizEnabled: true, l2Mode: 6, sensitivity: 1.40, l2Complexity: 1.15, l2Speed: 1.10, l2Zoom: 1.00,
             l3Enabled: true, l3Mode: 5, asciiMode: "braille", useAlbumArt: false,
@@ -419,7 +421,7 @@ FocusScope {
             musicDrive: true,
             tracerCount: 4, tracerSpeed: 1.10, tracerDrift: 0.90, tracerDirection: 1,
             l1Enabled: true, l1FieldEnabled: true, l1Mode: 4, l1Direction: 1, l1Persistence: 0.82, l1Speed: 1.00, l1Density: 1.20, l1Dim: 0.12,
-            l1EqEnabled: true, l1EqStyle: 1, l1EqLayout: 0, l1EqScale: 1.00, l1EqGain: 1.55, l1EqDamping: 2,
+            l1EqEnabled: true, l1EqStyle: 1, l1EqLayout: 0, l1EqScale: 1.00, l1EqGain: 0.92, l1EqDamping: 2,
             l1ShapesEnabled: true, l1ShapeStyle: 2, l1ShapeSpin: 1.20, l1ShapeSpeed: 1.15, l1ShapeScale: 1.05,
             l2Enabled: false, l2VizEnabled: true, l2Mode: 0, sensitivity: 1.35, l2Complexity: 1.00, l2Speed: 1.00, l2Zoom: 1.00,
             l3Enabled: false, l3Mode: 0, asciiMode: "braille", useAlbumArt: true,
@@ -432,7 +434,7 @@ FocusScope {
             musicDrive: true,
             tracerCount: 4, tracerSpeed: 1.20, tracerDrift: 1.00, tracerDirection: 1,
             l1Enabled: true, l1FieldEnabled: false, l1Mode: 0, l1Direction: 1, l1Persistence: 0.82, l1Speed: 1.00, l1Density: 1.00, l1Dim: 0.22,
-            l1EqEnabled: true, l1EqStyle: 1, l1EqLayout: 0, l1EqScale: 1.00, l1EqGain: 1.25, l1EqDamping: 0,
+            l1EqEnabled: true, l1EqStyle: 1, l1EqLayout: 0, l1EqScale: 1.00, l1EqGain: 0.80, l1EqDamping: 0,
             l1ShapesEnabled: false, l1ShapeStyle: 0, l1ShapeSpin: 1.00, l1ShapeSpeed: 1.00, l1ShapeScale: 1.00,
             l2Enabled: true, l2VizEnabled: true, l2Mode: 9, sensitivity: 1.45, l2Complexity: 1.20, l2Speed: 1.15, l2Zoom: 1.00,
             l3Enabled: false, l3Mode: 0, asciiMode: "braille", useAlbumArt: true,
@@ -982,7 +984,11 @@ FocusScope {
             "photoXyzTilt": root.photoXyzTilt,
             "photoZoomPunch": root.photoZoomPunch,
             "photoPaletteBloom": root.photoPaletteBloom,
-            "photoWarpIntensity": root.photoWarpIntensity
+            "photoWarpIntensity": root.photoWarpIntensity,
+            "photoColourSnatchOpacity": root.photoColourSnatchOpacity,
+            "photoBlackOpacity": root.photoBlackOpacity,
+            "photoMidOpacity": root.photoMidOpacity,
+            "photoWhiteOpacity": root.photoWhiteOpacity
         }
         root.userPhotoMotionSettings = snap
         if (root.photoState) {
@@ -1001,6 +1007,10 @@ FocusScope {
         if (u.photoZoomPunch !== undefined) root.photoZoomPunch = Number(u.photoZoomPunch)
         if (u.photoPaletteBloom !== undefined) root.photoPaletteBloom = Number(u.photoPaletteBloom)
         if (u.photoWarpIntensity !== undefined) root.photoWarpIntensity = Number(u.photoWarpIntensity)
+        if (u.photoColourSnatchOpacity !== undefined) root.photoColourSnatchOpacity = Number(u.photoColourSnatchOpacity)
+        if (u.photoBlackOpacity !== undefined) root.photoBlackOpacity = Number(u.photoBlackOpacity)
+        if (u.photoMidOpacity !== undefined) root.photoMidOpacity = Number(u.photoMidOpacity)
+        if (u.photoWhiteOpacity !== undefined) root.photoWhiteOpacity = Number(u.photoWhiteOpacity)
         root._applyingRandomPhotoMotion = false
         if (root.photoState) {
             PhotoMotion.restoreUserPhotoMotionSettings(root.photoState)
@@ -1017,6 +1027,10 @@ FocusScope {
         if (st.photoZoomPunch !== undefined) root.photoZoomPunch = Number(st.photoZoomPunch)
         if (st.photoPaletteBloom !== undefined) root.photoPaletteBloom = Number(st.photoPaletteBloom)
         if (st.photoWarpIntensity !== undefined) root.photoWarpIntensity = Number(st.photoWarpIntensity)
+        if (st.photoColourSnatchOpacity !== undefined) root.photoColourSnatchOpacity = Number(st.photoColourSnatchOpacity)
+        if (st.photoBlackOpacity !== undefined) root.photoBlackOpacity = Number(st.photoBlackOpacity)
+        if (st.photoMidOpacity !== undefined) root.photoMidOpacity = Number(st.photoMidOpacity)
+        if (st.photoWhiteOpacity !== undefined) root.photoWhiteOpacity = Number(st.photoWhiteOpacity)
         root._applyingRandomPhotoMotion = false
     }
 
@@ -1074,21 +1088,25 @@ FocusScope {
     }
     onPhotoBlackOpacityChanged: {
         if (root.photoState) root.photoState.photoBlackOpacity = root.photoBlackOpacity
+        root.recordUserPhotoMotionSetting("photoBlackOpacity", root.photoBlackOpacity)
         root.requestCpuCanvasPaint()
         scheduleSaveVisualiserConfig()
     }
     onPhotoMidOpacityChanged: {
         if (root.photoState) root.photoState.photoMidOpacity = root.photoMidOpacity
+        root.recordUserPhotoMotionSetting("photoMidOpacity", root.photoMidOpacity)
         root.requestCpuCanvasPaint()
         scheduleSaveVisualiserConfig()
     }
     onPhotoWhiteOpacityChanged: {
         if (root.photoState) root.photoState.photoWhiteOpacity = root.photoWhiteOpacity
+        root.recordUserPhotoMotionSetting("photoWhiteOpacity", root.photoWhiteOpacity)
         root.requestCpuCanvasPaint()
         scheduleSaveVisualiserConfig()
     }
     onPhotoColourSnatchOpacityChanged: {
         if (root.photoState) root.photoState.photoColourSnatchOpacity = root.photoColourSnatchOpacity
+        root.recordUserPhotoMotionSetting("photoColourSnatchOpacity", root.photoColourSnatchOpacity)
         root.requestCpuCanvasPaint()
         scheduleSaveVisualiserConfig()
     }
@@ -1216,10 +1234,15 @@ FocusScope {
         var activeVars = root.photoActiveVariants || ({})
         var prevVars = root.photoPreviousVariants || ({})
         var effIds = PhotoMotion.STAGE1_EFFECT_IDS
+        var st = root.photoState
+        var autoPrim = st && st.primaryVariantIndex !== undefined ? Math.abs(Math.floor(Number(st.primaryVariantIndex))) : 0
+        var autoSec = st && st.secondaryVariantIndex !== undefined ? Math.abs(Math.floor(Number(st.secondaryVariantIndex))) : ((autoPrim + 5) % effIds.length)
         var primIdx = (root.photoPinnedVariant >= 0 && root.photoPinnedVariant < effIds.length)
             ? root.photoPinnedVariant
-            : 0
-        var secIdx = (root.photoPinnedVariant >= 0 ? root.photoPinnedVariant : 5) % effIds.length
+            : (autoPrim % effIds.length)
+        var secIdx = (root.photoPinnedVariant >= 0)
+            ? (root.photoPinnedVariant % effIds.length)
+            : (autoSec % effIds.length)
         var primId = effIds[primIdx] || effIds[0]
         var secId = effIds[secIdx] || effIds[5] || effIds[1]
 
@@ -1306,7 +1329,7 @@ FocusScope {
             var prevPrimaryOnly = {}
             var prevVars = root.photoPreviousVariants || ({})
             var stPre = root.photoState
-            var curEffId = PhotoMotion.STAGE1_EFFECT_IDS[stPre ? ((stPre.primaryVariantIndex || 0) % 16) : 0]
+            var curEffId = PhotoMotion.STAGE1_EFFECT_IDS[stPre ? ((stPre.primaryVariantIndex || 0) % PhotoMotion.STAGE1_EFFECT_IDS.length) : 0]
             if (prevVars[curEffId]) {
                 prevPrimaryOnly[curEffId] = prevVars[curEffId]
             }
@@ -1493,6 +1516,11 @@ FocusScope {
         root.ensurePhotoLayerActive()
         var st = root.syncPhotoStateFromRoot()
         var res = PhotoMotion.triggerPhotoHoldOneMinute(st, true)
+        st.autoMotionElapsedSec = 0.0
+        st.autoMotionAccumulatedPhase = 0.0
+        if (typeof photoAutoMotionTimer !== "undefined" && photoAutoMotionTimer.running) {
+            photoAutoMotionTimer.restart()
+        }
         root.photoHoldActive = Boolean(st.holdActive)
         root.photoHoldRemainingSec = Number(st.holdRemainingSec) || 0.0
         vizCanvas.requestPaint()
@@ -1575,7 +1603,10 @@ FocusScope {
         var lockedCat = root.resolveCurrentPhotoCategory()
         root.photoActiveCategory = lockedCat
         st.activeCategory = lockedCat
-        root.photoPreviousVariants = root.photoActiveVariants || ({})
+        var isHeld = Boolean(root.photoHoldActive || (st.holdActive && st.holdRemainingSec > 0.0))
+        if (!isHeld) {
+            root.photoPreviousVariants = root.photoActiveVariants || ({})
+        }
         var asyncDispatched = false
         var res = PhotoMotion.triggerRandomPhotoMotionEvent(st, function(cat) {
             asyncDispatched = true
@@ -1587,7 +1618,7 @@ FocusScope {
                 variantPaths: root.photoActiveVariants || ({})
             }
         })
-        if (!asyncDispatched) {
+        if (!isHeld && !asyncDispatched) {
             root.requestPhotoPick(lockedCat, "")
         }
         st.autoMotionElapsedSec = 0.0
@@ -1597,8 +1628,7 @@ FocusScope {
         }
         root.photoMotionMode = st.motionMode
         root.applyRandomisedStateMotionToRoot(st)
-        root.photoHoldActive = false
-        root.photoHoldRemainingSec = 0.0
+        root.syncGpuPhotoTextures()
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
         if (res && res.message) {
@@ -1661,37 +1691,23 @@ FocusScope {
 
     function cyclePhotoMotionMode(delta) {
         root.ensurePhotoLayerActive()
-        if (root.photoAutoMotionEvents) {
-            root.triggerRandomPhotoMotionEvent()
-            return
-        }
         var st = root.syncPhotoStateFromRoot()
         var lockedCat = root.resolveCurrentPhotoCategory()
         root.photoActiveCategory = lockedCat
         st.activeCategory = lockedCat
         var step = (delta !== undefined && delta < 0) ? -1 : 1
-        var isHeld = Boolean(root.photoHoldActive || (st.holdActive && st.holdRemainingSec > 0.0))
-        if (!isHeld) {
-            root.photoPreviousVariants = root.photoActiveVariants || ({})
-        }
-        var asyncDispatched = false
-        var res = PhotoMotion.stepPhotoMotionMode(st, step, function(cat) {
-            asyncDispatched = true
-            root.requestPhotoPick(lockedCat, "")
-            return {
-                category: lockedCat,
-                sourceStem: "",
-                asyncPending: true,
-                variantPaths: root.photoActiveVariants || ({})
-            }
-        }, true)
-        if (!isHeld && !asyncDispatched) {
-            root.requestPhotoPick(lockedCat, "")
+        // Cycling effects with ' / # strictly changes the 3D effect (M01..M25) on the current image (never replaces the image!)
+        var res = PhotoMotion.stepPhotoMotionMode(st, step, null, true)
+        st.autoMotionElapsedSec = 0.0
+        st.autoMotionAccumulatedPhase = 0.0
+        if (typeof photoAutoMotionTimer !== "undefined" && photoAutoMotionTimer.running) {
+            photoAutoMotionTimer.restart()
         }
         root.photoMotionMode = st.motionMode
         if (root.photoRandomiseMotionControls) {
             root.applyRandomisedStateMotionToRoot(st)
         }
+        root.syncGpuPhotoTextures()
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
         if (res && res.message) {
@@ -1701,16 +1717,24 @@ FocusScope {
 
     function cyclePhotoVariantEffect(delta) {
         root.ensurePhotoLayerActive()
-        var total = PhotoMotion.STAGE1_EFFECT_IDS.length + 1 // -1 (Auto-Strobe All 16) + 0..15 (V01..V16)
+        var total = PhotoMotion.STAGE1_EFFECT_IDS.length + 1 // -1 (Auto-Strobe All 17) + 0..16 (V01..V17)
         var step = (delta !== undefined && delta < 0) ? -1 : 1
         var cur = (root.photoPinnedVariant < 0) ? 0 : (root.photoPinnedVariant + 1)
         var next = ((cur + step) % total + total) % total
         root.photoPinnedVariant = next - 1
-        if (root.photoState) root.photoState.pinnedStage1EffectIndex = root.photoPinnedVariant
+        if (root.photoState) {
+            root.photoState.pinnedStage1EffectIndex = root.photoPinnedVariant
+            root.photoState.autoMotionElapsedSec = 0.0
+            root.photoState.autoMotionAccumulatedPhase = 0.0
+        }
+        if (typeof photoAutoMotionTimer !== "undefined" && photoAutoMotionTimer.running) {
+            photoAutoMotionTimer.restart()
+        }
+        root.syncGpuPhotoTextures()
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
         var vLabel = (root.photoPinnedVariant < 0)
-            ? "Auto-Strobe All 16 Slots"
+            ? "Auto-Strobe All 17 Slots"
             : ("V" + (root.photoPinnedVariant < 9 ? ("0" + (root.photoPinnedVariant + 1)) : (root.photoPinnedVariant + 1)) + " · " + PhotoMotion.STAGE1_EFFECT_IDS[root.photoPinnedVariant])
         root.suppressActionFeedback("Stark Darkroom Variant: " + vLabel)
     }
@@ -1730,14 +1754,45 @@ FocusScope {
         root.photoFadeDuration = Math.round((0.20 + Math.random() * 1.30) * 100) / 100
         root.photoXyzTilt = Math.round((0.55 + Math.random() * 1.15) * 100) / 100
         root.photoZoomPunch = Math.round((0.75 + Math.random() * 0.95) * 100) / 100
-        root.photoPaletteBloom = Math.round((0.85 + Math.random() * 1.05) * 100) / 100
         root.photoWarpIntensity = Math.round((0.55 + Math.random() * 1.15) * 100) / 100
+        var gradeRoll = Math.random()
+        var subRoll = Math.random()
+        if (gradeRoll < 0.24) {
+            // Stark B&W Darkroom (12%–26%)
+            root.photoColourSnatchOpacity = Math.round((0.12 + subRoll * 0.14) * 100) / 100
+            root.photoBlackOpacity = Math.round((0.68 + subRoll * 0.24) * 100) / 100
+            root.photoMidOpacity = Math.round((0.76 + subRoll * 0.20) * 100) / 100
+            root.photoWhiteOpacity = Math.round((0.92 + subRoll * 0.16) * 100) / 100
+            root.photoPaletteBloom = Math.round((0.22 + subRoll * 0.26) * 100) / 100
+        } else if (gradeRoll < 0.50) {
+            // Bleach Bypass / Cinema Grade (32%–65%)
+            root.photoColourSnatchOpacity = Math.round((0.32 + subRoll * 0.33) * 100) / 100
+            root.photoBlackOpacity = Math.round((0.82 + subRoll * 0.18) * 100) / 100
+            root.photoMidOpacity = Math.round((0.88 + subRoll * 0.18) * 100) / 100
+            root.photoWhiteOpacity = Math.round((0.95 + subRoll * 0.18) * 100) / 100
+            root.photoPaletteBloom = Math.round((0.35 + subRoll * 0.34) * 100) / 100
+        } else if (gradeRoll < 0.76) {
+            // Natural Processed (72%–100%)
+            root.photoColourSnatchOpacity = Math.round((0.72 + subRoll * 0.28) * 100) / 100
+            root.photoBlackOpacity = Math.round((0.94 + subRoll * 0.12) * 100) / 100
+            root.photoMidOpacity = Math.round((0.96 + subRoll * 0.14) * 100) / 100
+            root.photoWhiteOpacity = Math.round((0.98 + subRoll * 0.16) * 100) / 100
+            root.photoPaletteBloom = Math.round((0.32 + subRoll * 0.34) * 100) / 100
+        } else {
+            // Lush Vivid / Hyper-Chroma (108%–148%)
+            root.photoColourSnatchOpacity = Math.round((1.08 + subRoll * 0.40) * 100) / 100
+            root.photoBlackOpacity = Math.round((0.96 + subRoll * 0.18) * 100) / 100
+            root.photoMidOpacity = Math.round((1.02 + subRoll * 0.22) * 100) / 100
+            root.photoWhiteOpacity = Math.round((1.04 + subRoll * 0.20) * 100) / 100
+            root.photoPaletteBloom = Math.round((0.55 + subRoll * 0.45) * 100) / 100
+        }
         root._applyingRandomPhotoMotion = false
         if (!root.photoHoldActive) {
             root.photoPreviousVariants = root.photoActiveVariants || ({})
             root.requestPhotoPick(lockedCat, "")
         }
         root.syncPhotoStateFromRoot()
+        root.syncGpuPhotoTextures()
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
@@ -1927,6 +1982,7 @@ FocusScope {
             layer1ShapeDensity: root.layer1ShapeDensity,
             layer1ShapeLifespan: root.layer1ShapeLifespan,
             layer1ShapeFillRatio: root.layer1ShapeFillRatio,
+            layer1ShapeFillOpacity: root.layer1ShapeFillOpacity,
             layer1ShapesOpacity: root.layer1ShapesOpacity,
             layer2Enabled: root.layer2Enabled,
             layer2AutoRandomise: root.layer2AutoRandomise,
@@ -2051,14 +2107,14 @@ FocusScope {
         if (cfg.photoAutoMotionEvents !== undefined) root.photoAutoMotionEvents = Boolean(cfg.photoAutoMotionEvents)
         if (cfg.photoRandomiseMotionControls !== undefined) root.photoRandomiseMotionControls = Boolean(cfg.photoRandomiseMotionControls)
         if (cfg.photoEffectChangeIntervalSec !== undefined) root.photoEffectChangeIntervalSec = Math.max(4.0, Math.min(60.0, Number(cfg.photoEffectChangeIntervalSec)))
-        if (cfg.photoPinnedVariant !== undefined) root.photoPinnedVariant = Math.max(-1, Math.min(15, Math.round(Number(cfg.photoPinnedVariant))))
+        if (cfg.photoPinnedVariant !== undefined) root.photoPinnedVariant = Math.max(-1, Math.min(PhotoMotion.STAGE1_EFFECT_IDS.length - 1, Math.round(Number(cfg.photoPinnedVariant))))
         if (cfg.photoOpacity !== undefined) root.photoOpacity = Math.max(0.05, Math.min(1.00, Number(cfg.photoOpacity)))
         if (cfg.photoFadeDuration !== undefined) root.photoFadeDuration = Math.max(0.00, Math.min(6.00, Number(cfg.photoFadeDuration)))
         if (cfg.photoStrobeSpeed !== undefined) root.photoStrobeSpeed = Math.max(0.10, Math.min(4.00, Number(cfg.photoStrobeSpeed)))
         if (cfg.photoBlackOpacity !== undefined) root.photoBlackOpacity = Math.max(0.00, Math.min(1.00, Number(cfg.photoBlackOpacity)))
         if (cfg.photoMidOpacity !== undefined) root.photoMidOpacity = Math.max(0.00, Math.min(1.00, Number(cfg.photoMidOpacity)))
         if (cfg.photoWhiteOpacity !== undefined) root.photoWhiteOpacity = Math.max(0.00, Math.min(1.00, Number(cfg.photoWhiteOpacity)))
-        if (cfg.photoColourSnatchOpacity !== undefined) root.photoColourSnatchOpacity = Math.max(0.00, Math.min(1.00, Number(cfg.photoColourSnatchOpacity)))
+        if (cfg.photoColourSnatchOpacity !== undefined) root.photoColourSnatchOpacity = Math.max(0.00, Math.min(1.50, Number(cfg.photoColourSnatchOpacity)))
         if (cfg.photoMotionActivity !== undefined) root.photoMotionActivity = Math.max(0.10, Math.min(3.00, Number(cfg.photoMotionActivity)))
         if (cfg.photoXyzTilt !== undefined) root.photoXyzTilt = Math.max(0.00, Math.min(2.50, Number(cfg.photoXyzTilt)))
         if (cfg.photoZoomPunch !== undefined) root.photoZoomPunch = Math.max(0.25, Math.min(2.50, Number(cfg.photoZoomPunch)))
@@ -2076,7 +2132,7 @@ FocusScope {
         if (cfg.layer1EqBandOrder !== undefined) root.layer1EqBandOrder = Number(cfg.layer1EqBandOrder) % Engine.LAYER1_EQ_BAND_ORDERS.length
         if (cfg.layer1EqScale !== undefined) root.layer1EqScale = Math.max(0.15, Math.min(2.25, Number(cfg.layer1EqScale) || 1.0))
         if (cfg.layer1EqSpin !== undefined) root.layer1EqSpin = Math.max(-2.50, Math.min(2.50, Number(cfg.layer1EqSpin)))
-        if (cfg.layer1EqGain !== undefined) root.layer1EqGain = Number(cfg.layer1EqGain)
+        if (cfg.layer1EqGain !== undefined) root.layer1EqGain = Math.max(0.20, Math.min(1.00, Number(cfg.layer1EqGain)))
         if (cfg.layer1EqDamping !== undefined) root.layer1EqDamping = Number(cfg.layer1EqDamping) % Engine.LAYER1_EQ_DAMPING.length
         if (cfg.layer1EqOpacity !== undefined) root.layer1EqOpacity = Math.max(0.05, Math.min(1.00, Number(cfg.layer1EqOpacity)))
         if (cfg.layer1ShapesEnabled !== undefined) root.layer1ShapesEnabled = Boolean(cfg.layer1ShapesEnabled)
@@ -2087,6 +2143,7 @@ FocusScope {
         if (cfg.layer1ShapeDensity !== undefined) root.layer1ShapeDensity = Number(cfg.layer1ShapeDensity)
         if (cfg.layer1ShapeLifespan !== undefined) root.layer1ShapeLifespan = Math.max(0.35, Math.min(3.00, Number(cfg.layer1ShapeLifespan)))
         if (cfg.layer1ShapeFillRatio !== undefined) root.layer1ShapeFillRatio = Math.max(0.00, Math.min(1.00, Number(cfg.layer1ShapeFillRatio)))
+        if (cfg.layer1ShapeFillOpacity !== undefined) root.layer1ShapeFillOpacity = Math.max(0.05, Math.min(1.00, Number(cfg.layer1ShapeFillOpacity)))
         if (cfg.layer1ShapesOpacity !== undefined) root.layer1ShapesOpacity = Math.max(0.05, Math.min(1.00, Number(cfg.layer1ShapesOpacity)))
 
         if (cfg.layer2Enabled !== undefined) root.layer2Enabled = Boolean(cfg.layer2Enabled)
@@ -2235,12 +2292,14 @@ FocusScope {
         root.layer1EqBandOrder = 0
         root.layer1EqScale = 1.0
         root.layer1EqSpin = 1.0
+        root.layer1EqGain = 0.80
         root.layer1EqOpacity = 1.00
         root.layer1ShapesEnabled = true
         root.layer1ShapeStyle = 0
         root.layer1ShapeDensity = 1.0
         root.layer1ShapeLifespan = 1.0
         root.layer1ShapeFillRatio = 0.35
+        root.layer1ShapeFillOpacity = 0.55
         root.layer1ShapesOpacity = 1.00
         root.layer2Enabled = true
         root.layer2VizEnabled = true
@@ -2325,6 +2384,7 @@ FocusScope {
             l1ShapeDensity: root.layer1ShapeDensity,
             l1ShapeLifespan: root.layer1ShapeLifespan,
             l1ShapeFillRatio: root.layer1ShapeFillRatio,
+            l1ShapeFillOpacity: root.layer1ShapeFillOpacity,
             l1ShapesOpacity: root.layer1ShapesOpacity,
             l1AutoRandomise: root.layer1AutoRandomise
         }
@@ -2356,14 +2416,14 @@ FocusScope {
         if (item.photoPlaneShear !== undefined) root.photoPlaneShear = Math.max(0.00, Math.min(2.00, Number(item.photoPlaneShear)))
         if (item.photoAutoMotionEvents !== undefined) root.photoAutoMotionEvents = Boolean(item.photoAutoMotionEvents)
         if (item.photoEffectChangeIntervalSec !== undefined) root.photoEffectChangeIntervalSec = Math.max(4.0, Math.min(60.0, Number(item.photoEffectChangeIntervalSec)))
-        if (item.photoPinnedVariant !== undefined) root.photoPinnedVariant = Math.max(-1, Math.min(15, Math.round(Number(item.photoPinnedVariant))))
+        if (item.photoPinnedVariant !== undefined) root.photoPinnedVariant = Math.max(-1, Math.min(PhotoMotion.STAGE1_EFFECT_IDS.length - 1, Math.round(Number(item.photoPinnedVariant))))
         if (item.photoOpacity !== undefined) root.photoOpacity = Math.max(0.05, Math.min(1.00, Number(item.photoOpacity)))
         if (item.photoFadeDuration !== undefined) root.photoFadeDuration = Math.max(0.00, Math.min(6.00, Number(item.photoFadeDuration)))
         if (item.photoStrobeSpeed !== undefined) root.photoStrobeSpeed = Math.max(0.10, Math.min(4.00, Number(item.photoStrobeSpeed)))
         if (item.photoBlackOpacity !== undefined) root.photoBlackOpacity = Math.max(0.00, Math.min(1.00, Number(item.photoBlackOpacity)))
         if (item.photoMidOpacity !== undefined) root.photoMidOpacity = Math.max(0.00, Math.min(1.00, Number(item.photoMidOpacity)))
         if (item.photoWhiteOpacity !== undefined) root.photoWhiteOpacity = Math.max(0.00, Math.min(1.00, Number(item.photoWhiteOpacity)))
-        if (item.photoColourSnatchOpacity !== undefined) root.photoColourSnatchOpacity = Math.max(0.00, Math.min(1.00, Number(item.photoColourSnatchOpacity)))
+        if (item.photoColourSnatchOpacity !== undefined) root.photoColourSnatchOpacity = Math.max(0.00, Math.min(1.50, Number(item.photoColourSnatchOpacity)))
         if (item.photoXyzTilt !== undefined) root.photoXyzTilt = Math.max(0.00, Math.min(2.50, Number(item.photoXyzTilt)))
         if (item.photoZoomPunch !== undefined) root.photoZoomPunch = Math.max(0.25, Math.min(2.50, Number(item.photoZoomPunch)))
         if (item.photoPaletteBloom !== undefined) root.photoPaletteBloom = Math.max(0.00, Math.min(2.50, Number(item.photoPaletteBloom)))
@@ -2374,7 +2434,7 @@ FocusScope {
         if (item.l1EqBandOrder !== undefined) root.layer1EqBandOrder = Number(item.l1EqBandOrder) % Engine.LAYER1_EQ_BAND_ORDERS.length
         if (item.l1EqScale !== undefined) root.layer1EqScale = Math.max(0.15, Math.min(2.25, Number(item.l1EqScale)))
         if (item.l1EqSpin !== undefined) root.layer1EqSpin = Math.max(-2.50, Math.min(2.50, Number(item.l1EqSpin)))
-        if (item.l1EqGain !== undefined) root.layer1EqGain = Number(item.l1EqGain)
+        if (item.l1EqGain !== undefined) root.layer1EqGain = Math.max(0.20, Math.min(1.00, Number(item.l1EqGain)))
         if (item.l1EqDamping !== undefined) root.layer1EqDamping = Number(item.l1EqDamping) % Engine.LAYER1_EQ_DAMPING.length
         if (item.l1EqOpacity !== undefined) root.layer1EqOpacity = Math.max(0.05, Math.min(1.00, Number(item.l1EqOpacity)))
         if (item.l1ShapesEnabled !== undefined) root.layer1ShapesEnabled = Boolean(item.l1ShapesEnabled)
@@ -2385,6 +2445,7 @@ FocusScope {
         if (item.l1ShapeDensity !== undefined) root.layer1ShapeDensity = Number(item.l1ShapeDensity)
         if (item.l1ShapeLifespan !== undefined) root.layer1ShapeLifespan = Math.max(0.35, Math.min(3.00, Number(item.l1ShapeLifespan)))
         if (item.l1ShapeFillRatio !== undefined) root.layer1ShapeFillRatio = Math.max(0.00, Math.min(1.00, Number(item.l1ShapeFillRatio)))
+        if (item.l1ShapeFillOpacity !== undefined) root.layer1ShapeFillOpacity = Math.max(0.05, Math.min(1.00, Number(item.l1ShapeFillOpacity)))
         if (item.l1ShapesOpacity !== undefined) root.layer1ShapesOpacity = Math.max(0.05, Math.min(1.00, Number(item.l1ShapesOpacity)))
         if (item.l1AutoRandomise !== undefined) root.layer1AutoRandomise = Boolean(item.l1AutoRandomise)
         clearCanvasImmediate()
@@ -2887,6 +2948,7 @@ FocusScope {
             layer1ShapeDensity: root.layer1ShapeDensity,
             layer1ShapeLifespan: root.layer1ShapeLifespan,
             layer1ShapeFillRatio: root.layer1ShapeFillRatio,
+            layer1ShapeFillOpacity: root.layer1ShapeFillOpacity,
             layer1ShapesOpacity: root.layer1ShapesOpacity,
             layer2Enabled: root.layer2Enabled,
             layer2VizEnabled: root.layer2VizEnabled,
@@ -3020,10 +3082,12 @@ FocusScope {
             var lockedAutoCat = root.resolveCurrentPhotoCategory()
             root.photoActiveCategory = lockedAutoCat
             st.activeCategory = lockedAutoCat
-            root.photoPreviousVariants = root.photoActiveVariants || ({})
             root.photoMotionMode = st.motionMode
             root.applyRandomisedStateMotionToRoot(st)
-            root.requestPhotoPick(lockedAutoCat, "")
+            if (!root.photoHoldActive && !st.holdActive) {
+                root.photoPreviousVariants = root.photoActiveVariants || ({})
+                root.requestPhotoPick(lockedAutoCat, "")
+            }
         } else if (st._lastStepInfo && st._lastStepInfo.motionControlsRandomisedOnTimer) {
             root.applyRandomisedStateMotionToRoot(st)
             if (!root.photoHoldActive) {
@@ -3123,13 +3187,14 @@ FocusScope {
             root.layer1Speed = Number(p.l1Speed !== undefined ? p.l1Speed : 1.0)
             root.layer1Density = Number(p.l1Density !== undefined ? p.l1Density : 1.0)
             root.layer1Dim = Number(p.l1Dim !== undefined ? p.l1Dim : 0.16)
-            root.layer1EqGain = Number(p.l1EqGain !== undefined ? p.l1EqGain : 1.25)
+            root.layer1EqGain = Math.max(0.20, Math.min(1.00, Number(p.l1EqGain !== undefined ? p.l1EqGain : 0.80)))
             root.layer1ShapeSpin = Number(p.l1ShapeSpin !== undefined ? p.l1ShapeSpin : 1.0)
             root.layer1ShapeSpeed = Number(p.l1ShapeSpeed !== undefined ? p.l1ShapeSpeed : 1.0)
             root.layer1ShapeScale = Number(p.l1ShapeScale !== undefined ? p.l1ShapeScale : 1.0)
             root.layer1ShapeDensity = Number(p.l1ShapeDensity !== undefined ? p.l1ShapeDensity : 1.0)
             root.layer1ShapeLifespan = Number(p.l1ShapeLifespan !== undefined ? p.l1ShapeLifespan : 1.0)
             root.layer1ShapeFillRatio = Number(p.l1ShapeFillRatio !== undefined ? p.l1ShapeFillRatio : 0.35)
+            root.layer1ShapeFillOpacity = Number(p.l1ShapeFillOpacity !== undefined ? p.l1ShapeFillOpacity : 0.55)
             root.sensitivity = Number(p.sensitivity !== undefined ? p.sensitivity : 1.35)
             root.layer2Complexity = Number(p.l2Complexity !== undefined ? p.l2Complexity : 1.0)
             root.layer2Speed = Number(p.l2Speed !== undefined ? p.l2Speed : 1.0)
@@ -3219,6 +3284,7 @@ FocusScope {
             l1ShapeDensity: root.layer1ShapeDensity,
             l1ShapeLifespan: root.layer1ShapeLifespan,
             l1ShapeFillRatio: root.layer1ShapeFillRatio,
+            l1ShapeFillOpacity: root.layer1ShapeFillOpacity,
             l2Enabled: root.layer2Enabled,
             l2VizEnabled: root.layer2VizEnabled,
             l2Mode: root.visualMode,
@@ -3704,7 +3770,7 @@ FocusScope {
             root.showLayerDrawer = false
             root.showTracerPopover = false
         }
-        root.suppressActionFeedback(root.showHud ? "HUD Menus Visible (H)" : "HUD Hidden — Clean Visualiser (Press H to restore)")
+        root.suppressActionFeedback(root.showHud ? "HUD Menus Visible (Shift+H)" : "HUD Hidden — Clean Visualiser (Press Shift+H to restore)")
     }
 
     function toggleZenFullscreen() {
@@ -3719,7 +3785,7 @@ FocusScope {
             if (!root.isFullscreen) {
                 root.requestToggleFullscreen()
             }
-            root.suppressActionFeedback("Zen Cinema Fullscreen (Press H or Esc for HUD)")
+            root.suppressActionFeedback("Zen Cinema Fullscreen (Press Shift+H or Esc for HUD)")
         }
     }
 
@@ -3740,16 +3806,76 @@ FocusScope {
         root.layer6PinnedByUser = false
     }
 
+    // Mathematical Multi-Layer Opacity Normaliser:
+    // Guarantees visual purity across any active combination of the 6 layers:
+    //   1. Solo Layer (N = 1): opacity in [0.85, 1.00]
+    //   2. Multi-Layer (N >= 2):
+    //      - Hero Anchor Invariant: max_i alpha_i >= 0.85 (at least one crisp foreground/hero layer)
+    //      - Total Visual Energy Budget: min(1.0 + 0.45*(N-1), 1.90) <= sum_i alpha_i <= min(1.0 + 0.60*(N-1), 3.30)
+    //      - Individual Active Floor: alpha_i >= 0.35
+    function rebalanceRandomLayerOpacities() {
+        var active = []
+        if (root.layer1Enabled && root.layer1FieldEnabled) {
+            active.push({ key: "layer1Opacity", val: Number(root.layer1Opacity) || 0.85 })
+        }
+        if (root.layer1Enabled && root.layer1EqEnabled) {
+            active.push({ key: "layer1EqOpacity", val: Number(root.layer1EqOpacity) || 0.85 })
+        }
+        if (root.layer1Enabled && root.layer1ShapesEnabled) {
+            active.push({ key: "layer1ShapesOpacity", val: Number(root.layer1ShapesOpacity) || 0.85 })
+        }
+        if (root.layer2Enabled && (root.layer2VizEnabled || root.layer2TracersEnabled)) {
+            active.push({ key: "layer2Opacity", val: Number(root.layer2Opacity) || 0.85 })
+        }
+        if (root.layer4Enabled) {
+            active.push({ key: "layer4Opacity", val: Number(root.layer4Opacity) || 0.85 })
+        }
+        if (root.layer3Enabled) {
+            active.push({ key: "layer3Opacity", val: Number(root.layer3Opacity) || 0.85 })
+        }
+        var n = active.length
+        if (n === 0) return
+        if (n === 1) {
+            root[active[0].key] = Math.round(Math.max(0.85, Math.min(1.00, active[0].val)) * 100) / 100
+            return
+        }
+        var heroIdx = 0
+        for (var i = 0; i < n; i++) {
+            active[i].val = Math.max(0.35, Math.min(1.00, active[i].val))
+            if (active[i].val > active[heroIdx].val) {
+                heroIdx = i
+            }
+        }
+        if (active[heroIdx].val < 0.88) {
+            active[heroIdx].val = Math.round((0.88 + Math.random() * 0.12) * 100) / 100
+        }
+        var minSum = Math.min(1.00 + 0.45 * (n - 1), 1.90)
+        var maxSum = Math.min(1.00 + 0.60 * (n - 1), 3.30)
+        var sum = 0.0
+        for (var j = 0; j < n; j++) {
+            sum += active[j].val
+        }
+        if (sum < minSum || sum > maxSum) {
+            var targetSum = (sum < minSum) ? minSum : maxSum
+            var heroVal = active[heroIdx].val
+            var restSum = Math.max(0.001, sum - heroVal)
+            var desiredRest = Math.max(0.35 * (n - 1), targetSum - heroVal)
+            var scale = desiredRest / restSum
+            for (var k = 0; k < n; k++) {
+                if (k === heroIdx) continue
+                active[k].val = Math.max(0.35, Math.min(0.95, active[k].val * scale))
+            }
+        }
+        for (var m = 0; m < n; m++) {
+            root[active[m].key] = Math.round(Math.max(0.35, Math.min(1.00, active[m].val)) * 100) / 100
+        }
+    }
+
     function randomiseLayer1() {
         if (root.layer1PinnedByUser && !root.layer1FieldEnabled) {
             return
         }
         var pSt = root.syncPhotoStateFromRoot()
-        if ((root.photoHoldActive || (pSt && pSt.holdActive) || root.photoAutoMotionEvents || root.photoRandomiseMotionControls)
-            && root.layer1FieldEnabled && root.layer1Mode === PhotoMotion.LAYER1_WORLD12_INDEX) {
-            root.randomisePhotoMotionSettings()
-            return
-        }
         var nowSec = root.engineState ? (Number(root.engineState.t) || 0.0) : 0.0
         var totalL1Modes = root.layer1Modes.length
         var nonPhotoCount = Math.max(1, totalL1Modes - 1)
@@ -3765,6 +3891,7 @@ FocusScope {
             root.layer1Density = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
             root.layer1Speed = Math.round((0.60 + Math.random() * 1.25) * 100) / 100
             root.layer1Direction = [1, -1, 0][Math.floor(Math.random() * 3)]
+            root.layer1Opacity = Math.round((0.45 + Math.random() * 0.55) * 100) / 100
         } else {
             var fRoll = Math.floor(Math.random() * (totalL1Modes + 1))
             root.layer1FieldEnabled = (fRoll < totalL1Modes)
@@ -3777,10 +3904,12 @@ FocusScope {
                 root.layer1Density = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
                 root.layer1Speed = Math.round((0.60 + Math.random() * 1.25) * 100) / 100
                 root.layer1Direction = [1, -1, 0][Math.floor(Math.random() * 3)]
+                root.layer1Opacity = Math.round((0.45 + Math.random() * 0.55) * 100) / 100
             }
             if (!root.layer1FieldEnabled && !root.layer1EqEnabled && !root.layer1ShapesEnabled && !root.hasOtherActiveLayer(1)) {
                 root.layer1FieldEnabled = true
                 root.layer1Mode = Math.floor(Math.random() * nonPhotoCount)
+                root.layer1Opacity = Math.round((0.85 + Math.random() * 0.15) * 100) / 100
             }
         }
         if (root.layer1FieldEnabled && root.layer1Mode === PhotoMotion.LAYER1_WORLD12_INDEX) {
@@ -3788,6 +3917,7 @@ FocusScope {
         }
         root.syncLayer1MasterFromSubs()
         root._internalLayerChange = false
+        root.rebalanceRandomLayerOpacities()
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
@@ -3805,7 +3935,8 @@ FocusScope {
             root.layer1EqScale = Math.round((0.25 + Math.random() * 1.15) * 100) / 100
             root.layer1EqSpin = Math.round(((Math.random() < 0.35 ? -1.0 : 1.0) * (0.45 + Math.random() * 1.40)) * 100) / 100
             root.layer1EqDamping = Math.floor(Math.random() * Engine.LAYER1_EQ_DAMPING.length)
-            root.layer1EqGain = Math.round((0.90 + Math.random() * 0.90) * 100) / 100
+            root.layer1EqGain = Math.round((0.45 + Math.random() * 0.50) * 100) / 100
+            root.layer1EqOpacity = Math.round((0.45 + Math.random() * 0.55) * 100) / 100
         } else {
             var eqRoll = Math.floor(Math.random() * (root.layer1EqStyles.length + 1))
             root.layer1EqEnabled = (eqRoll < root.layer1EqStyles.length)
@@ -3816,15 +3947,18 @@ FocusScope {
                 root.layer1EqScale = Math.round((0.25 + Math.random() * 1.15) * 100) / 100
                 root.layer1EqSpin = Math.round(((Math.random() < 0.35 ? -1.0 : 1.0) * (0.45 + Math.random() * 1.40)) * 100) / 100
                 root.layer1EqDamping = Math.floor(Math.random() * Engine.LAYER1_EQ_DAMPING.length)
-                root.layer1EqGain = Math.round((0.90 + Math.random() * 0.90) * 100) / 100
+                root.layer1EqGain = Math.round((0.45 + Math.random() * 0.50) * 100) / 100
+                root.layer1EqOpacity = Math.round((0.45 + Math.random() * 0.55) * 100) / 100
             }
             if (!root.layer1FieldEnabled && !root.layer1EqEnabled && !root.layer1ShapesEnabled && !root.hasOtherActiveLayer(1)) {
                 root.layer1EqEnabled = true
                 root.layer1EqStyle = Math.floor(Math.random() * root.layer1EqStyles.length)
+                root.layer1EqOpacity = Math.round((0.85 + Math.random() * 0.15) * 100) / 100
             }
         }
         root.syncLayer1MasterFromSubs()
         root._internalLayerChange = false
+        root.rebalanceRandomLayerOpacities()
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
@@ -3846,6 +3980,8 @@ FocusScope {
             root.layer1ShapeSpin = Math.round(((Math.random() * 2.8) - 1.4) * 100) / 100
             root.layer1ShapeLifespan = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
             root.layer1ShapeFillRatio = Math.round((0.15 + Math.random() * 0.70) * 20) / 20
+            root.layer1ShapeFillOpacity = Math.round((0.25 + Math.random() * 0.65) * 20) / 20
+            root.layer1ShapesOpacity = Math.round((0.45 + Math.random() * 0.55) * 100) / 100
         } else {
             var shRoll = Math.floor(Math.random() * (Engine.LAYER1_SHAPE_STYLES.length + 1))
             root.layer1ShapesEnabled = (shRoll < Engine.LAYER1_SHAPE_STYLES.length)
@@ -3857,14 +3993,18 @@ FocusScope {
                 root.layer1ShapeSpin = Math.round(((Math.random() * 2.8) - 1.4) * 100) / 100
                 root.layer1ShapeLifespan = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
                 root.layer1ShapeFillRatio = Math.round((0.15 + Math.random() * 0.70) * 20) / 20
+                root.layer1ShapeFillOpacity = Math.round((0.25 + Math.random() * 0.65) * 20) / 20
+                root.layer1ShapesOpacity = Math.round((0.45 + Math.random() * 0.55) * 100) / 100
             }
             if (!root.layer1FieldEnabled && !root.layer1EqEnabled && !root.layer1ShapesEnabled && !root.hasOtherActiveLayer(1)) {
                 root.layer1ShapesEnabled = true
                 root.layer1ShapeStyle = Math.floor(Math.random() * Engine.LAYER1_SHAPE_STYLES.length)
+                root.layer1ShapesOpacity = Math.round((0.85 + Math.random() * 0.15) * 100) / 100
             }
         }
         root.syncLayer1MasterFromSubs()
         root._internalLayerChange = false
+        root.rebalanceRandomLayerOpacities()
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
@@ -3881,6 +4021,7 @@ FocusScope {
             root.layer2TracersEnabled = false
             root.layer2Enabled = false
             root._internalLayerChange = false
+            root.rebalanceRandomLayerOpacities()
             clearCanvasImmediate()
             scheduleSaveVisualiserConfig()
             return
@@ -3891,6 +4032,7 @@ FocusScope {
         var nextM = roll2 < total ? roll2 : ((root.visualMode + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total)
         root.visualMode = nextM
         root.symmetryIndex = Math.floor(Math.random() * Engine.SYMMETRY_OPTIONS.length)
+        root.layer2Opacity = Math.round((0.45 + Math.random() * 0.55) * 100) / 100
         if (root.engineState) {
             root.engineState.avsTarget = {
                 m: 1 + Math.floor(Math.random() * 3),
@@ -3901,6 +4043,7 @@ FocusScope {
             }
             root.engineState.fractalPoiIndex = ((root.engineState.fractalPoiIndex || 0) + 1 + Math.floor(Math.random() * 4)) % 5
         }
+        root.rebalanceRandomLayerOpacities()
         vizCanvas.requestPaint()
         scheduleSaveVisualiserConfig()
     }
@@ -3915,6 +4058,7 @@ FocusScope {
         if (!root.layer6PinnedByUser && roll3 === total && root.hasOtherActiveLayer(3)) {
             root.layer3Enabled = false
             root._internalLayerChange = false
+            root.rebalanceRandomLayerOpacities()
             clearCanvasImmediate()
             scheduleSaveVisualiserConfig()
             return
@@ -3927,6 +4071,7 @@ FocusScope {
         root.layer3TextStyle = (root.layer3TextStyle + 1 + Math.floor(Math.random() * Math.max(1, totalStyles - 1))) % totalStyles
         root.layer3CylinderDir = Math.floor(Math.random() * Engine.LAYER3_CYLINDER_DIRS.length)
         root.layer3Scale = Math.round((0.55 + Math.random() * 1.15) * 100) / 100
+        root.layer3Opacity = Math.round((0.55 + Math.random() * 0.45) * 100) / 100
         root.pickRandomStatement()
         if (root.engineState) {
             root.engineState.l3FormFactor = 0.25
@@ -3935,6 +4080,7 @@ FocusScope {
         if (nextM === 5) {
             root.requestSelectTtfxEffect("random")
         }
+        root.rebalanceRandomLayerOpacities()
         vizCanvas.requestPaint()
         scheduleSaveVisualiserConfig()
     }
@@ -3949,6 +4095,7 @@ FocusScope {
         if (!root.layer5PinnedByUser && roll4 === total && root.hasOtherActiveLayer(4)) {
             root.layer4Enabled = false
             root._internalLayerChange = false
+            root.rebalanceRandomLayerOpacities()
             clearCanvasImmediate()
             scheduleSaveVisualiserConfig()
             return
@@ -3963,6 +4110,8 @@ FocusScope {
         root.layer4WallPattern = Math.floor(Math.random() * Engine.LAYER4_WALL_PATTERNS.length)
         root.layer4Twist = Math.round((0.65 + Math.random() * 1.45) * 100) / 100
         root.backdropDirection = [1, -1, 0][Math.floor(Math.random() * 3)]
+        root.layer4Opacity = Math.round((0.40 + Math.random() * 0.60) * 100) / 100
+        root.rebalanceRandomLayerOpacities()
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
@@ -3977,6 +4126,7 @@ FocusScope {
         root.randomiseLayer2()
         root.randomiseLayer3()
         root.randomiseLayer4()
+        root.rebalanceRandomLayerOpacities()
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
@@ -4406,10 +4556,10 @@ FocusScope {
                 event.accepted = true
             }
             else if (event.key === Qt.Key_H) {
-                if ((event.modifiers & Qt.ShiftModifier) || (root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11)) {
-                    root.triggerPhotoHoldByKey()
-                } else {
+                if (event.modifiers & Qt.ShiftModifier) {
                     root.toggleHudVisibility()
+                } else {
+                    root.triggerPhotoHoldByKey()
                 }
                 event.accepted = true
             }
@@ -4595,6 +4745,13 @@ FocusScope {
                     } else if (event.key === Qt.Key_At || event.key === Qt.Key_QuoteDbl || event.text === "@" || event.text === "\"") {
                         root.cyclePhotoVariantEffect(-1)
                         event.accepted = true
+                    } else if (event.key === Qt.Key_H) {
+                        if (event.modifiers & Qt.ShiftModifier) {
+                            root.toggleHudVisibility()
+                        } else {
+                            root.triggerPhotoHoldByKey()
+                        }
+                        event.accepted = true
                     }
                 } finally {
                     root._inKeybindingDispatch = false
@@ -4666,10 +4823,11 @@ FocusScope {
                 root.layer1Speed += (Number(tp.l1Speed || 1.0) - root.layer1Speed) * alpha
                 root.layer1Density += (Number(tp.l1Density || 1.0) - root.layer1Density) * alpha
                 root.layer1Dim += (Number(tp.l1Dim || 0.16) - root.layer1Dim) * alpha
-                root.layer1EqGain += (Number(tp.l1EqGain || 1.25) - root.layer1EqGain) * alpha
+                root.layer1EqGain += (Math.min(1.00, Number(tp.l1EqGain || 0.80)) - root.layer1EqGain) * alpha
                 root.layer1ShapeDensity += (Number(tp.l1ShapeDensity || 1.0) - root.layer1ShapeDensity) * alpha
                 root.layer1ShapeLifespan += (Number(tp.l1ShapeLifespan !== undefined ? tp.l1ShapeLifespan : 1.0) - root.layer1ShapeLifespan) * alpha
                 root.layer1ShapeFillRatio += (Number(tp.l1ShapeFillRatio !== undefined ? tp.l1ShapeFillRatio : 0.35) - root.layer1ShapeFillRatio) * alpha
+                root.layer1ShapeFillOpacity += (Number(tp.l1ShapeFillOpacity !== undefined ? tp.l1ShapeFillOpacity : 0.55) - root.layer1ShapeFillOpacity) * alpha
                 root.sensitivity += (Number(tp.sensitivity || 1.35) - root.sensitivity) * alpha
                 root.layer2Complexity += (Number(tp.l2Complexity || 1.0) - root.layer2Complexity) * alpha
                 root.layer2Speed += (Number(tp.l2Speed || 1.0) - root.layer2Speed) * alpha
@@ -4739,10 +4897,12 @@ FocusScope {
                         var lockedAutoCat = root.resolveCurrentPhotoCategory()
                         root.photoActiveCategory = lockedAutoCat
                         pSt.activeCategory = lockedAutoCat
-                        root.photoPreviousVariants = root.photoActiveVariants || ({})
                         root.photoMotionMode = pSt.motionMode
                         root.applyRandomisedStateMotionToRoot(pSt)
-                        root.requestPhotoPick(lockedAutoCat, "")
+                        if (!root.photoHoldActive && !pSt.holdActive) {
+                            root.photoPreviousVariants = root.photoActiveVariants || ({})
+                            root.requestPhotoPick(lockedAutoCat, "")
+                        }
                         if (photoAutoMotionTimer.running) photoAutoMotionTimer.restart()
                         var autoModeObj = PhotoMotion.PHOTO_MOTION_MODES[root.photoMotionMode]
                         if (autoModeObj) {
@@ -4847,7 +5007,7 @@ FocusScope {
     Timer {
         id: photoAutoMotionTimer
         interval: Math.max(3000, Math.round((Number(root.photoEffectChangeIntervalSec) || 10.0) * 1000))
-        running: root.visible && root.stageMode === "visualiser" && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11 && (root.photoAutoMotionEvents || root.photoRandomiseMotionControls) && !root.photoHoldActive
+        running: root.visible && root.stageMode === "visualiser" && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11 && (root.photoAutoMotionEvents || root.photoRandomiseMotionControls)
         repeat: true
         onTriggered: {
             root._inHudPillInteraction = true
@@ -5686,9 +5846,9 @@ FocusScope {
                     }
                 }
 
-                // Hide HUD toggle (H)
+                // Hide HUD toggle (Shift+H)
                 VizPillButton {
-                    text: "󰈈 HUD (H)"
+                    text: "󰈈 HUD (Shift+H)"
                     fontSize: 9
                     horizontalPad: 5
                     onClicked: root.toggleHudVisibility()
@@ -5892,6 +6052,40 @@ FocusScope {
                         root.photoPlaneShearEnabled = true
                         root.photoPlaneShear = Math.max(0.0, Math.min(2.0, Math.round((root.photoPlaneShear + (delta > 0 ? 0.10 : -0.10)) * 100) / 100))
                         if (root.photoPlaneShear <= 0.01) root.photoPlaneShearEnabled = false
+                    }
+                }
+
+                VizPillButton {
+                    visible: root.layer1Mode === 11
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 5
+                    text: {
+                        var c = root.photoColourSnatchOpacity
+                        var tag = c < 0.25 ? "Stark" : (c < 0.65 ? "Cinema" : (c < 1.05 ? "Natural" : (c < 1.32 ? "Vivid" : "Hyper")))
+                        return "Col:" + Math.round(c * 100) + "% (" + tag + ")"
+                    }
+                    active: root.photoColourSnatchOpacity >= 0.25
+                    onClicked: {
+                        var cSteps = [0.15, 0.45, 0.85, 1.18, 1.45]
+                        var nextC = 0.85
+                        for (var i = 0; i < cSteps.length; i++) {
+                            if (cSteps[i] > root.photoColourSnatchOpacity + 0.06) {
+                                nextC = cSteps[i]
+                                break
+                            }
+                            if (i === cSteps.length - 1) nextC = cSteps[0]
+                        }
+                        root.photoColourSnatchOpacity = nextC
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: {
+                        root.photoColourSnatchOpacity = 1.00
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => {
+                        root.photoColourSnatchOpacity = Math.max(0.0, Math.min(1.50, Math.round((root.photoColourSnatchOpacity + (delta > 0 ? 0.08 : -0.08)) * 100) / 100))
+                        scheduleSaveVisualiserConfig()
                     }
                 }
 
@@ -6123,13 +6317,13 @@ FocusScope {
                     pillHeight: 22
                     fontSize: 9
                     horizontalPad: 5
-                    text: "Gain:" + root.layer1EqGain.toFixed(1) + "x"
-                    active: root.layer1Enabled && root.layer1EqEnabled && Math.abs(root.layer1EqGain - 1.25) > 0.08
+                    text: "Gain:" + root.layer1EqGain.toFixed(2) + "x"
+                    active: root.layer1Enabled && root.layer1EqEnabled && Math.abs(root.layer1EqGain - 0.80) > 0.04
                     onClicked: {
-                        var gSteps = [0.6, 0.9, 1.25, 1.6, 2.0, 2.5]
-                        var nextG = 1.25
+                        var gSteps = [0.35, 0.50, 0.65, 0.80, 1.00]
+                        var nextG = 0.80
                         for (var i = 0; i < gSteps.length; i++) {
-                            if (gSteps[i] > root.layer1EqGain + 0.05) {
+                            if (gSteps[i] > root.layer1EqGain + 0.03) {
                                 nextG = gSteps[i]
                                 break
                             }
@@ -6139,7 +6333,11 @@ FocusScope {
                         vizCanvas.requestPaint()
                     }
                     onRightClicked: {
-                        root.layer1EqGain = 1.25
+                        root.layer1EqGain = 0.80
+                        vizCanvas.requestPaint()
+                    }
+                    onWheelScrolled: delta => {
+                        root.layer1EqGain = Math.max(0.20, Math.min(1.00, Math.round((root.layer1EqGain + (delta > 0 ? 0.05 : -0.05)) * 100) / 100))
                         vizCanvas.requestPaint()
                     }
                 }
@@ -6338,6 +6536,31 @@ FocusScope {
                     }
                     onWheelScrolled: delta => {
                         root.layer1ShapeFillRatio = Math.max(0.0, Math.min(1.0, Math.round((root.layer1ShapeFillRatio + (delta > 0 ? 0.10 : -0.10)) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "SegOp:" + Math.round(root.layer1ShapeFillOpacity * 100) + "%"
+                    active: root.layer1Enabled && root.layer1ShapesEnabled && Math.abs(root.layer1ShapeFillOpacity - 0.55) > 0.03
+                    onClicked: {
+                        var nextSo = root.layer1ShapeFillOpacity + 0.20
+                        if (nextSo > 1.05) nextSo = 0.15
+                        root.layer1ShapeFillOpacity = Math.round(Math.min(1.0, nextSo) * 100) / 100
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: {
+                        root.layer1ShapeFillOpacity = 0.55
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => {
+                        root.layer1ShapeFillOpacity = Math.max(0.05, Math.min(1.0, Math.round((root.layer1ShapeFillOpacity + (delta > 0 ? 0.05 : -0.05)) * 100) / 100))
                         vizCanvas.requestPaint()
                         scheduleSaveVisualiserConfig()
                     }
@@ -7890,7 +8113,7 @@ FocusScope {
                                     }
 
                                     VizPillButton {
-                                        text: "󰑐 Auto-Strobe All 16"
+                                        text: "󰑐 Auto-Strobe All 17"
                                         active: root.photoPinnedVariant < 0
                                         pillHeight: 21
                                         fontSize: 8
@@ -7987,10 +8210,10 @@ FocusScope {
                                     }
 
                                     LayerSlider {
-                                        label: "Colour Snatch Opacity"
+                                        label: "Colour Vividness (Stark→Vivid)"
                                         value: root.photoColourSnatchOpacity
                                         minValue: 0.00
-                                        maxValue: 1.00
+                                        maxValue: 1.50
                                         onValueEdited: v => { root.photoColourSnatchOpacity = v }
                                     }
 
@@ -8299,10 +8522,10 @@ FocusScope {
 
                                     LayerSlider {
                                         Layout.fillWidth: true
-                                        label: "Equaliser Gain"
+                                        label: "Equaliser Gain (0.20x–1.00x)"
                                         value: root.layer1EqGain
-                                        minValue: 0.40
-                                        maxValue: 2.50
+                                        minValue: 0.20
+                                        maxValue: 1.00
                                         unitSuffix: "x"
                                         onValueEdited: v => {
                                             root.layer1EqGain = v
@@ -8526,7 +8749,7 @@ FocusScope {
                                     }
 
                                     LayerSlider {
-                                        label: "Sides Filled (Opaque)"
+                                        label: "Segments Filled (%)"
                                         value: Math.round(root.layer1ShapeFillRatio * 100)
                                         minValue: 0
                                         maxValue: 100
@@ -8534,6 +8757,20 @@ FocusScope {
                                         unitSuffix: "%"
                                         onValueEdited: v => {
                                             root.layer1ShapeFillRatio = Math.max(0.0, Math.min(1.0, Math.round(v) / 100.0))
+                                            vizCanvas.requestPaint()
+                                            scheduleSaveVisualiserConfig()
+                                        }
+                                    }
+
+                                    LayerSlider {
+                                        label: "Segment Fill Opacity (%)"
+                                        value: Math.round(root.layer1ShapeFillOpacity * 100)
+                                        minValue: 5
+                                        maxValue: 100
+                                        integerSteps: true
+                                        unitSuffix: "%"
+                                        onValueEdited: v => {
+                                            root.layer1ShapeFillOpacity = Math.max(0.05, Math.min(1.0, Math.round(v) / 100.0))
                                             vizCanvas.requestPaint()
                                             scheduleSaveVisualiserConfig()
                                         }
@@ -10787,11 +11024,11 @@ FocusScope {
                                     title: "4. World 12: Stark Photo Realm Controls",
                                     items: [
                                         "' / #           : Previous / Next Photo-Motion FX (M01..M25)",
-                                        "Shift+' / Shift+#: Previous / Next Darkroom Variant (V00..V15)",
+                                        "Shift+' / Shift+#: Previous / Next Darkroom Variant (V00..V16)",
                                         "[ / ]           : Previous / Next Photo in History",
                                         "{ / }           : Previous / Next Photo Category Folder",
                                         "; / :           : Cycle Photo Pool Mode / Toggle 3D Shear",
-                                        "~ / Shift + H   : Toggle Auto ~FXRand / Hold Photo (30s)"
+                                        "~ / H           : Toggle Auto ~FXRand / Hold Photo (60s)"
                                     ]
                                 },
                                 {
@@ -10802,7 +11039,7 @@ FocusScope {
                                         "PgUp / PgDn     : Volume Up (+5%) / Volume Down (-5%)",
                                         "F / V           : Toggle Fullscreen Stage",
                                         "Z / Shift + F   : Toggle Zen Fullscreen (HUD Hidden)",
-                                        "H               : Toggle Top & Bottom HUD Bars",
+                                        "Shift + H       : Toggle Top & Bottom HUD Bars",
                                         "? / Esc         : Toggle Keybindings Sheet / Close Modal"
                                     ]
                                 }

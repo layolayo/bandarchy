@@ -1077,8 +1077,25 @@ def effect_16_prism_kaleidoscope_sector_Snatch(
 effect_16_prism_kaleidoscope_sector_snatch = effect_16_prism_kaleidoscope_sector_Snatch
 
 
+def effect_17_original_accessible_compressed(
+    img: Image.Image,
+    *,
+    palette_index: int = 0,
+    bass: float = 0.5,
+    mid: float = 0.5,
+    high: float = 0.5,
+) -> Image.Image:
+    """17_Original_Accessible_Compressed:
+    Produces an accessible, resolution-normalised, compressed RGB copy of the original
+    source photograph with its authentic colours, tonal balance, and contrast preserved
+    intact (matching the exact geometry and dimensions of Variants 01–16).
+    """
+    _ = (palette_index, bass, mid, high)
+    return img.convert("RGB").copy()
+
+
 # ---------------------------------------------------------------------------
-# Registry of Family 4 Effects (13–16)
+# Registry of Family 4 Effects (13–17)
 # ---------------------------------------------------------------------------
 
 EFFECTS_FAMILY_4: dict[str, Callable[..., Image.Image]] = {
@@ -1086,6 +1103,7 @@ EFFECTS_FAMILY_4: dict[str, Callable[..., Image.Image]] = {
     "14_Metallic_Relief_Sector_Snatch": effect_14_metallic_relief_sector_snatch,
     "15_Braille_Matrix_Sector_Snatch": effect_15_braille_matrix_sector_snatch,
     "16_Prism_Kaleidoscope_Sector_Snatch": effect_16_prism_kaleidoscope_sector_snatch,
+    "17_Original_Accessible_Compressed": effect_17_original_accessible_compressed,
 }
 
 

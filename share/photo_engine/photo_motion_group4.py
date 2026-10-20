@@ -78,7 +78,7 @@ MAX_IMAGE_PIXELS = 36_000_000
 Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
 
-# All 16 Stage-1 Stark & Sector Colour-Snatch Effect IDs
+# All 17 Stage-1 Stark, Sector Colour-Snatch & Accessible Original Effect IDs
 STAGE1_EFFECT_IDS: tuple[str, ...] = (
     "01_SinCity_Chroma_Snatch",
     "02_White_Sector_Colour_Snatch",
@@ -96,6 +96,7 @@ STAGE1_EFFECT_IDS: tuple[str, ...] = (
     "14_Metallic_Relief_Sector_Snatch",
     "15_Braille_Matrix_Sector_Snatch",
     "16_Prism_Kaleidoscope_Sector_Snatch",
+    "17_Original_Accessible_Compressed",
 )
 
 # All 30 Bandarchy Palettes from PsychedelicEngine.js (strictly synchronised)

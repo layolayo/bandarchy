@@ -67,7 +67,7 @@ function formatPhotoCategoryLabel(catSlug) {
     return out.length > 0 ? out.join(" ") : (s.charAt(0).toUpperCase() + s.slice(1))
 }
 
-// All 16 Stage-1 Stark & Sector Colour-Snatch Effect Prefixes
+// All 17 Stage-1 Stark, Sector Colour-Snatch & Accessible Original Effect Prefixes
 var STAGE1_EFFECT_IDS = [
     "01_SinCity_Chroma_Snatch",
     "02_White_Sector_Colour_Snatch",
@@ -84,7 +84,8 @@ var STAGE1_EFFECT_IDS = [
     "13_Obsidian_Neon_Edge_Snatch",
     "14_Metallic_Relief_Sector_Snatch",
     "15_Braille_Matrix_Sector_Snatch",
-    "16_Prism_Kaleidoscope_Sector_Snatch"
+    "16_Prism_Kaleidoscope_Sector_Snatch",
+    "17_Original_Accessible_Compressed"
 ]
 
 // All 25 Stage-2 Real-Time Photo Motion, 3D XYZ, Strobe, Mirror, Tiling, Separation & World-Bending Modes (M01–M25)
@@ -894,8 +895,12 @@ function captureUserPhotoMotionSettings(state) {
         photoFadeDuration: clamp(Number(state.photoFadeDuration !== undefined ? state.photoFadeDuration : 0.35), 0.00, 6.00),
         photoXyzTilt: clamp(Number(state.photoXyzTilt !== undefined ? state.photoXyzTilt : 1.00), 0.00, 2.50),
         photoZoomPunch: clamp(Number(state.photoZoomPunch !== undefined ? state.photoZoomPunch : 1.15), 0.25, 2.50),
-        photoPaletteBloom: clamp(Number(state.photoPaletteBloom !== undefined ? state.photoPaletteBloom : 1.20), 0.00, 2.50),
-        photoWarpIntensity: clamp(Number(state.photoWarpIntensity !== undefined ? state.photoWarpIntensity : 1.00), 0.00, 2.50)
+        photoPaletteBloom: clamp(Number(state.photoPaletteBloom !== undefined ? state.photoPaletteBloom : 0.65), 0.00, 2.50),
+        photoWarpIntensity: clamp(Number(state.photoWarpIntensity !== undefined ? state.photoWarpIntensity : 1.00), 0.00, 2.50),
+        photoColourSnatchOpacity: clamp(Number(state.photoColourSnatchOpacity !== undefined ? state.photoColourSnatchOpacity : 1.00), 0.00, 1.50),
+        photoBlackOpacity: clamp(Number(state.photoBlackOpacity !== undefined ? state.photoBlackOpacity : 1.00), 0.00, 1.50),
+        photoMidOpacity: clamp(Number(state.photoMidOpacity !== undefined ? state.photoMidOpacity : 1.00), 0.00, 1.50),
+        photoWhiteOpacity: clamp(Number(state.photoWhiteOpacity !== undefined ? state.photoWhiteOpacity : 1.00), 0.00, 1.50)
     }
     state.userMotionSettings = snap
     return snap
@@ -911,6 +916,10 @@ function restoreUserPhotoMotionSettings(state) {
     if (u.photoZoomPunch !== undefined) state.photoZoomPunch = clamp(Number(u.photoZoomPunch), 0.25, 2.50)
     if (u.photoPaletteBloom !== undefined) state.photoPaletteBloom = clamp(Number(u.photoPaletteBloom), 0.00, 2.50)
     if (u.photoWarpIntensity !== undefined) state.photoWarpIntensity = clamp(Number(u.photoWarpIntensity), 0.00, 2.50)
+    if (u.photoColourSnatchOpacity !== undefined) state.photoColourSnatchOpacity = clamp(Number(u.photoColourSnatchOpacity), 0.00, 1.50)
+    if (u.photoBlackOpacity !== undefined) state.photoBlackOpacity = clamp(Number(u.photoBlackOpacity), 0.00, 1.50)
+    if (u.photoMidOpacity !== undefined) state.photoMidOpacity = clamp(Number(u.photoMidOpacity), 0.00, 1.50)
+    if (u.photoWhiteOpacity !== undefined) state.photoWhiteOpacity = clamp(Number(u.photoWhiteOpacity), 0.00, 1.50)
     return state.userMotionSettings
 }
 
@@ -926,8 +935,45 @@ function randomiseMotionControlsForEvent(state, randomFn) {
     state.photoFadeDuration = Math.round((0.20 + Math.abs(Number(rng())) * 1.30) * 100) / 100
     state.photoXyzTilt = Math.round((0.55 + Math.abs(Number(rng())) * 1.15) * 100) / 100
     state.photoZoomPunch = Math.round((0.75 + Math.abs(Number(rng())) * 0.95) * 100) / 100
-    state.photoPaletteBloom = Math.round((0.85 + Math.abs(Number(rng())) * 1.05) * 100) / 100
     state.photoWarpIntensity = Math.round((0.55 + Math.abs(Number(rng())) * 1.15) * 100) / 100
+
+    // Smoothly roll across all 4 colour grades in equal measure:
+    //   0.00..0.25: Stark B&W Darkroom
+    //   0.30..0.65: Bleach Bypass / Cinema Grade
+    //   0.70..1.00: Natural Processed (1:1 faithful PNG colour)
+    //   1.05..1.50: Lush Vivid / Hyper-Chroma
+    var gradeRoll = Math.abs(Number(rng()))
+    var subRoll = Math.abs(Number(rng()))
+    if (gradeRoll < 0.24) {
+        // Stark B&W Darkroom (12%–26%)
+        state.photoColourSnatchOpacity = Math.round((0.12 + subRoll * 0.14) * 100) / 100
+        state.photoBlackOpacity = Math.round((0.68 + subRoll * 0.24) * 100) / 100
+        state.photoMidOpacity = Math.round((0.76 + subRoll * 0.20) * 100) / 100
+        state.photoWhiteOpacity = Math.round((0.92 + subRoll * 0.16) * 100) / 100
+        state.photoPaletteBloom = Math.round((0.22 + subRoll * 0.26) * 100) / 100
+    } else if (gradeRoll < 0.50) {
+        // Bleach Bypass / Cinema Grade (32%–65%)
+        state.photoColourSnatchOpacity = Math.round((0.32 + subRoll * 0.33) * 100) / 100
+        state.photoBlackOpacity = Math.round((0.82 + subRoll * 0.18) * 100) / 100
+        state.photoMidOpacity = Math.round((0.88 + subRoll * 0.18) * 100) / 100
+        state.photoWhiteOpacity = Math.round((0.95 + subRoll * 0.18) * 100) / 100
+        state.photoPaletteBloom = Math.round((0.35 + subRoll * 0.34) * 100) / 100
+    } else if (gradeRoll < 0.76) {
+        // Natural Processed (72%–100%)
+        state.photoColourSnatchOpacity = Math.round((0.72 + subRoll * 0.28) * 100) / 100
+        state.photoBlackOpacity = Math.round((0.94 + subRoll * 0.12) * 100) / 100
+        state.photoMidOpacity = Math.round((0.96 + subRoll * 0.14) * 100) / 100
+        state.photoWhiteOpacity = Math.round((0.98 + subRoll * 0.16) * 100) / 100
+        state.photoPaletteBloom = Math.round((0.32 + subRoll * 0.34) * 100) / 100
+    } else {
+        // Lush Vivid / Hyper-Chroma (108%–148%)
+        state.photoColourSnatchOpacity = Math.round((1.08 + subRoll * 0.40) * 100) / 100
+        state.photoBlackOpacity = Math.round((0.96 + subRoll * 0.18) * 100) / 100
+        state.photoMidOpacity = Math.round((1.02 + subRoll * 0.22) * 100) / 100
+        state.photoWhiteOpacity = Math.round((1.04 + subRoll * 0.20) * 100) / 100
+        state.photoPaletteBloom = Math.round((0.55 + subRoll * 0.45) * 100) / 100
+    }
+
     return {
         photoMotionActivity: state.photoMotionActivity,
         photoStrobeSpeed: state.photoStrobeSpeed,
@@ -935,7 +981,11 @@ function randomiseMotionControlsForEvent(state, randomFn) {
         photoXyzTilt: state.photoXyzTilt,
         photoZoomPunch: state.photoZoomPunch,
         photoPaletteBloom: state.photoPaletteBloom,
-        photoWarpIntensity: state.photoWarpIntensity
+        photoWarpIntensity: state.photoWarpIntensity,
+        photoColourSnatchOpacity: state.photoColourSnatchOpacity,
+        photoBlackOpacity: state.photoBlackOpacity,
+        photoMidOpacity: state.photoMidOpacity,
+        photoWhiteOpacity: state.photoWhiteOpacity
     }
 }
 
@@ -1297,17 +1347,21 @@ function triggerPhotoHoldOneMinute(state, toggleIfAlreadyHeld) {
     if (toggleIfAlreadyHeld && state.holdActive && state.holdRemainingSec > 0.0) {
         state.holdActive = false
         state.holdRemainingSec = 0.0
+        state.autoMotionElapsedSec = 0.0
+        state.autoMotionAccumulatedPhase = 0.0
         return {
             held: false,
             holdActive: false,
             remainingSec: 0,
             holdRemainingSec: 0.0,
-            message: "Photo Hold Released — Resuming Auto-Cycle"
+            message: "Photo Hold Released — Retained Current Image"
         }
     }
     state.holdActive = true
     state.holdDurationSec = 60.0
     state.holdRemainingSec = 60.0
+    state.autoMotionElapsedSec = 0.0
+    state.autoMotionAccumulatedPhase = 0.0
     return {
         held: true,
         holdActive: true,
@@ -1472,14 +1526,18 @@ function triggerRandomPhotoMotionEvent(state, pickNewEntryCallback, randomFn) {
         state.activeCategory = lockedCat
         state.resolvedCategory = lockedCat
     }
-    if (Array.isArray(state.historyStack) && state.historyCursor >= 0 && state.historyCursor < state.historyStack.length - 1) {
-        state.historyStack = state.historyStack.slice(0, state.historyCursor + 1)
+    var isHeld = Boolean(state.holdActive && state.holdRemainingSec > 0.0)
+    var stepRes = null
+    if (!isHeld) {
+        if (Array.isArray(state.historyStack) && state.historyCursor >= 0 && state.historyCursor < state.historyStack.length - 1) {
+            state.historyStack = state.historyStack.slice(0, state.historyCursor + 1)
+        }
+        stepRes = stepPhotoImageHistory(state, 1, pickNewEntryCallback)
     }
-    var stepRes = stepPhotoImageHistory(state, 1, pickNewEntryCallback)
     var modeObj = PHOTO_MOTION_MODES[nextMode] || PHOTO_MOTION_MODES[0]
     var stemText = (stepRes && stepRes.entry && stepRes.entry.sourceStem)
         ? (" — " + stepRes.entry.sourceStem)
-        : ""
+        : (isHeld && state.currentSourceStem ? (" — Held: " + state.currentSourceStem) : "")
     return {
         action: "randomPhotoMotionEvent",
         motionMode: nextMode,
@@ -1550,20 +1608,21 @@ function stepPhotoMotionState(state, dt, audioTelemetry, pickNewEntryCallback) {
         }
     }
 
-    // Advance 16-variant strobe & cross-fade phase paced smoothly to the audio rhythm
+    // Advance 17-variant strobe & cross-fade phase paced smoothly to the audio rhythm
     var fadeDur = clamp(state.photoFadeDuration, 0.0, 6.0)
     var rateScale = effStrobeSpeed * (0.32 + 0.68 * (state.rhythmEnv * 0.75 + high * 0.25)) * (0.45 + 0.55 * effMotionActivity) / (1.0 + fadeDur * 0.65)
     var deltaPhase = safeDt * rateScale
-    state.variantStrobePhase = (state.variantStrobePhase + deltaPhase) % 16.0
+    var numStage1Variants = STAGE1_EFFECT_IDS.length
+    state.variantStrobePhase = (state.variantStrobePhase + deltaPhase) % numStage1Variants
     state.autoMotionElapsedSec = (Number(state.autoMotionElapsedSec) || 0.0) + safeDt
     state.autoMotionAccumulatedPhase = (Number(state.autoMotionAccumulatedPhase) || 0.0) + deltaPhase
 
     // Dedicated Auto Photo-Motion / Random Events (`~` keybinding + `photoEffectChangeIntervalSec` slider):
-    // Transitions to a new random photo-motion effect (M01..M25) AND iterates to a new category image
+    // Transitions to a new random photo-motion effect (M01..M25) AND iterates to a new category image (unless photo image hold is active)
     // once the configured interval has elapsed (and any explicit minimum variant pass requirement is met).
     var autoMotionEventTriggered = false
     var motionControlsRandomisedOnTimer = false
-    if ((state.autoMotionEvents || state.randomiseMotionControls) && !state.holdActive) {
+    if (state.autoMotionEvents || state.randomiseMotionControls) {
         var rawInterval = (state.photoEffectChangeIntervalSec !== undefined)
             ? Number(state.photoEffectChangeIntervalSec)
             : Number(state.autoMotionMinDwellSec !== undefined ? state.autoMotionMinDwellSec : 18.0)
@@ -1585,13 +1644,13 @@ function stepPhotoMotionState(state, dt, audioTelemetry, pickNewEntryCallback) {
         }
     }
 
-    if (state.pinnedStage1EffectIndex >= 0 && state.pinnedStage1EffectIndex < 16) {
+    if (state.pinnedStage1EffectIndex >= 0 && state.pinnedStage1EffectIndex < numStage1Variants) {
         state.primaryVariantIndex = state.pinnedStage1EffectIndex
         state.secondaryVariantIndex = state.pinnedStage1EffectIndex
         state.variantCrossfadeAlpha = 0.0
     } else {
-        var idx0 = Math.floor(state.variantStrobePhase) % 16
-        var idx1 = (idx0 + 1) % 16
+        var idx0 = Math.floor(state.variantStrobePhase) % numStage1Variants
+        var idx1 = (idx0 + 1) % numStage1Variants
         var frac = state.variantStrobePhase - Math.floor(state.variantStrobePhase)
         state.primaryVariantIndex = idx0
         state.secondaryVariantIndex = idx1
@@ -2120,7 +2179,7 @@ function render3DPhotoCube(ctx, cx, cy, halfSize, pitch, yaw, roll, fovDist, var
             pts: pVerts,
             avgZ: avgZ,
             frontFacing: crossZ > 0,
-            vIdx: (baseVariantIdx + fd.vOff) % 16,
+            vIdx: (baseVariantIdx + fd.vOff) % STAGE1_EFFECT_IDS.length,
             col: pal[fd.colIdx % pal.length]
         })
     }
@@ -2169,6 +2228,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
     var pal = PALETTES[pIdx]
     var c0 = pal[0], c1 = pal[1 % pal.length], c2 = pal[2 % pal.length], c3 = pal[3 % pal.length]
 
+    var numVariants = STAGE1_EFFECT_IDS.length
     var imgPrimary = getVariantImgByIndex(variantImagesMap, state.primaryVariantIndex, null)
     var imgSecondary = getVariantImgByIndex(variantImagesMap, state.secondaryVariantIndex, imgPrimary)
     if (!imgPrimary && variantImagesMap) {
@@ -2281,7 +2341,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
         var signedArea1 = (rawP1.x - rawP0.x) * (rawP3.y - rawP0.y) - (rawP1.y - rawP0.y) * (rawP3.x - rawP0.x)
         var backSide = signedArea1 < 0.0
         var activeCardImg = backSide
-            ? getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + 8) % 16, imgSecondary)
+            ? getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + 8) % numVariants, imgSecondary)
             : imgPrimary
         var p0 = backSide ? rawP1 : rawP0
         var p1 = backSide ? rawP0 : rawP1
@@ -2327,7 +2387,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
             ctx, cx, cy, innerHalf,
             pitchInner, yawInner, rollInner, fov2,
             variantImagesMap, imgSecondary,
-            (state.primaryVariantIndex + 6) % 16,
+            (state.primaryVariantIndex + 6) % numVariants,
             fgAlpha * 0.94, pal, neonAlpha, 0.0, "all"
         )
 
@@ -2364,7 +2424,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
             var tiltScaleY3 = 0.86 + 0.14 * Math.sin(rT * 0.48 * tiltMul - pIdx3 * 0.36)
             var pw = baseW * persp3 * 1.15
             var ph = baseH * persp3 * 1.15
-            var vIdx3 = (state.primaryVariantIndex + pIdx3 * 2) % 16
+            var vIdx3 = (state.primaryVariantIndex + pIdx3 * 2) % numVariants
             var pImg3 = getVariantImgByIndex(variantImagesMap, vIdx3, imgPrimary)
             var pAlpha3 = clamp(fgAlpha * (1.05 - relZ * 0.68), 0.14, 1.0)
             var sec3 = getVariantSectionOffset(vIdx3 + pIdx3, snapIdx)
@@ -2404,7 +2464,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
         for (var gh = 4; gh >= 1; gh--) {
             var ghAng = rT * 0.85 + gh * 1.57
             var ghDist = gh * (10.0 + rEnv * 16.0) * warpMul
-            var ghImg = getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + gh * 3) % 16, imgPrimary)
+            var ghImg = getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + gh * 3) % numVariants, imgPrimary)
             var ghSec = getVariantSectionOffset(shutterStep + gh, snapIdx)
             ctx.save()
             ctx.translate(cx + Math.cos(ghAng) * ghDist, cy + Math.sin(ghAng) * ghDist * 0.65)
@@ -2436,7 +2496,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
             var sy = -baseH * 0.5 + sb * bandH4
             var syCentre = sy + bandH4 * 0.5
             var isOpen = ((sb + shutterStep) % 2) === 0
-            var sbVar = isOpen ? state.primaryVariantIndex : ((state.primaryVariantIndex + 6) % 16)
+            var sbVar = isOpen ? state.primaryVariantIndex : ((state.primaryVariantIndex + 6) % numVariants)
             var sbImg = getVariantImgByIndex(variantImagesMap, sbVar, imgPrimary)
             var xJitter = (isOpen ? 1 : -1) * (8.0 + rEnv * 14.0) * Math.sin(rT * 1.4 + sb * 0.6) * warpMul
             var yJitter = Math.cos(rT * 1.1 + sb * 0.8) * bandH4 * 0.18 * warpMul
@@ -2483,7 +2543,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
             var gRoll5 = Math.sin(rT * (0.32 + gIdx * 0.08)) * 0.28 * ((gIdx < 2) ? 1 : -1)
             var gSlideX = Math.sin(rT * 0.62 + gIdx * 1.1) * baseW * 0.04 * gIdx * warpMul
             var gSlideY = Math.cos(rT * 0.54 - gIdx * 0.9) * baseH * 0.04 * gIdx * warpMul
-            var gVar5 = (state.primaryVariantIndex + gIdx * 4) % 16
+            var gVar5 = (state.primaryVariantIndex + gIdx * 4) % numVariants
             var gImg5 = getVariantImgByIndex(variantImagesMap, gVar5, imgPrimary)
 
             var q0 = project3DPoint(-gw, -gh5, 0, gPitch5, gYaw5, gRoll5, fov5, cx + gSlideX, cy + gSlideY)
@@ -2524,7 +2584,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
             var waveShiftY = Math.cos(rT * 0.90 - sl * 0.50) * (slitH * 0.28 * warpMul)
             var slitScaleX = 0.92 + 0.08 * Math.cos(rT * 0.75 * tiltMul - sl * 0.31)
             var slitScaleY = 0.92 + 0.08 * Math.sin(rT * 0.95 * tiltMul + sl * 0.42)
-            var slVar = (state.primaryVariantIndex + (sl % 4) * 2) % 16
+            var slVar = (state.primaryVariantIndex + (sl % 4) * 2) % numVariants
             var slImg = getVariantImgByIndex(variantImagesMap, slVar, imgPrimary)
             if (slImg) {
                 ctx.save()
@@ -2561,7 +2621,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
         var kalRadius = Math.max(baseW, baseH) * 0.64
         var kalSec = getVariantSectionOffset(state.primaryVariantIndex, snapIdx)
         for (var wIdx = 0; wIdx < numWedges; wIdx++) {
-            var wImg = getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + (wIdx % 2) * 4) % 16, imgPrimary)
+            var wImg = getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + (wIdx % 2) * 4) % numVariants, imgPrimary)
             var wedgeDriftR = Math.sin(rT * 0.85 + (wIdx % 2) * 0.8) * minDim * 0.025 * warpMul
             var wedgeBreath = 0.92 + 0.08 * Math.cos(rT * 0.65 * tiltMul + (wIdx % 2) * 0.7)
             ctx.save()
@@ -2608,7 +2668,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
         for (var r8 = 0; r8 < 4; r8++) {
             for (var c8 = 0; c8 < 4; c8++) {
                 var cellIdx = r8 * 4 + c8
-                var vIdx8 = (cellIdx + state.primaryVariantIndex) % 16
+                var vIdx8 = (cellIdx + state.primaryVariantIndex) % numVariants
                 var tileImg = getVariantImgByIndex(variantImagesMap, vIdx8, imgPrimary)
                 var tileSec = getVariantSectionOffset(vIdx8 + cellIdx * 3, snapIdx)
                 var binAmp = (spec && spec.length > cellIdx * 2) ? clamp(Number(spec[cellIdx * 2]) || 0.3, 0.0, 1.0) : (0.35 + 0.20 * Math.sin(rT * 1.1 + cellIdx))
@@ -2656,7 +2716,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
         for (var dLvl = 0; dLvl < dLevels; dLvl++) {
             var effLvl = dLvl - drosteFlow
             var dScale = Math.pow(0.70, Math.max(0.0, effLvl))
-            var dVarId = (state.primaryVariantIndex + dLvl * 2) % 16
+            var dVarId = (state.primaryVariantIndex + dLvl * 2) % numVariants
             var dImg = getVariantImgByIndex(variantImagesMap, dVarId, imgPrimary)
             var dPitch = Math.sin(rT * 0.52 + dLvl * 0.5) * 0.32 * tiltMul
             var dYaw = Math.cos(rT * 0.44 + dLvl * 0.45) * 0.32 * tiltMul
@@ -2692,7 +2752,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
             var stVertWave = Math.sin(rT * 0.85 + stIdx * 0.7) * stripH * 0.22 * warpMul
             var stScaleX = dir10 * (0.92 + 0.08 * Math.cos(rT * 0.58 * tiltMul - stIdx * 0.42))
             var stScaleY = 0.92 + 0.08 * Math.sin(rT * 0.72 * tiltMul + stIdx * 0.58)
-            var stImg = getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + (stIdx % 3) * 3) % 16, imgPrimary)
+            var stImg = getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + (stIdx % 3) * 3) % numVariants, imgPrimary)
             ctx.save()
             ctx.translate(0, stCentreY + stVertWave)
             if (typeof ctx.scale === "function") {
@@ -2737,7 +2797,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
             var rawHx = hexR * 1.62 * (hc.q + hc.r * 0.5) + localDriftX
             var rawHy = hexR * 1.40 * hc.r + localDriftY
             var projCentre = project3DPoint(rawHx, rawHy, localZ, arrayPitch, arrayYaw, arrayRoll, fov11, cx, cy)
-            var hImg = getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + (hIdx % 6) * 2) % 16, imgPrimary)
+            var hImg = getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + (hIdx % 6) * 2) % numVariants, imgPrimary)
             var hexSec = getVariantSectionOffset(state.primaryVariantIndex + hIdx * 3, snapIdx)
             var pulseH = hexR * projCentre.scale * (0.94 + 0.10 * Math.sin(rT * 1.1 + hIdx) + rEnv * 0.08)
             var cellScaleX = 0.92 + 0.08 * Math.cos(rT * 0.68 * tiltMul + hIdx * 0.52)
@@ -2817,7 +2877,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
             var ang13 = rT * 0.72 + vecIdx * (Math.PI * 2.0 / 3.0)
             var vx = Math.cos(ang13) * sepDist
             var vy = Math.sin(ang13) * sepDist * 0.78
-            var vImg13 = getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + vecIdx * 5) % 16, imgPrimary)
+            var vImg13 = getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + vecIdx * 5) % numVariants, imgPrimary)
             var vPitch = state.pitchRad * 0.85 + Math.sin(rT * 0.45 + vecIdx) * 0.28 * tiltMul
             var vYaw = state.yawRad * 0.85 + Math.cos(rT * 0.52 - vecIdx) * 0.32 * tiltMul
             var vRoll = state.rollRad * 0.75 + (vecIdx - 1) * 0.10 * rEnv
@@ -2853,8 +2913,8 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
             var ribScaleX = 0.92 + 0.08 * Math.cos(rT * 0.85 * tiltMul + rb * 0.38)
             var ribScaleY = 0.92 + 0.08 * Math.sin(rT * 0.65 * tiltMul - rb * 0.25)
             var ribVar = (bandEnergy > 0.65)
-                ? ((state.primaryVariantIndex + 8) % 16)
-                : ((state.primaryVariantIndex + (rb % 4) * 2) % 16)
+                ? ((state.primaryVariantIndex + 8) % numVariants)
+                : ((state.primaryVariantIndex + (rb % 4) * 2) % numVariants)
             var ribImg = getVariantImgByIndex(variantImagesMap, ribVar, imgPrimary)
 
             if (ribImg) {
@@ -2891,7 +2951,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
         var snapAngle = state.rollRad * 0.5 + Math.sin(rT * 1.2) * 0.12 * tiltMul
         var raveScaleX = ((ravePhase % 6 === 0) ? -1.0 : 1.0) * (0.92 + 0.08 * Math.cos(rT * 0.75 * tiltMul))
         var raveScaleY = 0.92 + 0.08 * Math.sin(rT * 0.65 * tiltMul)
-        var raveVar = (state.primaryVariantIndex + (ravePhase % 4) * 3) % 16
+        var raveVar = (state.primaryVariantIndex + (ravePhase % 4) * 3) % numVariants
         var raveImg = getVariantImgByIndex(variantImagesMap, raveVar, imgPrimary)
         var zoomRave = vpZoom * (1.02 + (rEnv * 0.14 + (isAccent ? 0.06 : 0.0)) * stepInfo.effectiveZoomPunch)
         var raveSec = getVariantSectionOffset(raveVar + (ravePhase % 5), snapIdx)
@@ -2937,7 +2997,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
             var ringShiftY = Math.cos(rT * 0.66 - rk * 0.75) * (numRings16 - rk + 1) * 6.0 * warpMul
             var effRingScaleX = 0.92 + 0.08 * Math.cos(rT * (0.52 + rk * 0.08) * tiltMul - rk * 0.45)
             var effRingScaleY = 0.92 + 0.08 * Math.sin(rT * (0.60 + (numRings16 - rk) * 0.08) * tiltMul + rk * 0.55)
-            var ringVar = (state.primaryVariantIndex + rk * 2) % 16
+            var ringVar = (state.primaryVariantIndex + rk * 2) % numVariants
             var ringImg = getVariantImgByIndex(variantImagesMap, ringVar, imgPrimary)
             var ringSec = getVariantSectionOffset(ringVar + rk, snapIdx)
 
@@ -2997,7 +3057,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
                 var shardScale = 0.96 + explodeAmt * 0.12 * Math.sin(rT * 1.1 + sIdx)
                 var effShardFlipX = (0.90 + 0.10 * Math.cos(rT * 0.65 * tiltMul - sIdx * 0.55)) * shardScale
                 var effShardFlipY = (0.90 + 0.10 * Math.sin(rT * 0.75 * tiltMul + sIdx * 0.75)) * shardScale
-                var shardImg = getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + (sIdx % 8) * 2) % 16, imgPrimary)
+                var shardImg = getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + (sIdx % 8) * 2) % numVariants, imgPrimary)
 
                 var jx = Math.sin(sIdx * 2.3) * sw * 0.14
                 var jy = Math.cos(sIdx * 3.1) * sh * 0.14
@@ -3056,7 +3116,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
             var sliverRot = Math.sin(rT * 0.72 + tb * 0.6) * (isTrackingTear ? 0.06 : 0.025) * tiltMul
             var effSliverScaleX = 0.94 + 0.06 * Math.cos(rT * 0.85 * tiltMul - tb * 0.42)
             var effSliverScaleY = 0.94 + 0.06 * Math.sin(rT * 0.95 * tiltMul + tb * 0.55)
-            var tearVar = isTrackingTear ? ((state.primaryVariantIndex + 8) % 16) : ((state.primaryVariantIndex + (tb % 4) * 2) % 16)
+            var tearVar = isTrackingTear ? ((state.primaryVariantIndex + 8) % numVariants) : ((state.primaryVariantIndex + (tb % 4) * 2) % numVariants)
             var tearImg = getVariantImgByIndex(variantImagesMap, tearVar, imgPrimary)
             if (tearImg) {
                 ctx.save()
@@ -3097,7 +3157,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
         // Harmonic bloom echo layers
         for (var bl = 1; bl <= 3; bl++) {
             var blScale = 1.0 + bl * 0.045 * stepInfo.effectivePaletteBloom
-            var bImg = getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + bl * 4) % 16, imgSecondary)
+            var bImg = getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + bl * 4) % numVariants, imgSecondary)
             var bp0 = project3DPoint(-baseW * 0.48 * blScale, -baseH * 0.48 * blScale, -bl * 18.0, state.pitchRad, state.yawRad, state.rollRad + bl * 0.03, fov19, cx, cy)
             var bp1 = project3DPoint( baseW * 0.48 * blScale, -baseH * 0.48 * blScale, -bl * 18.0, state.pitchRad, state.yawRad, state.rollRad + bl * 0.03, fov19, cx, cy)
             var bp2 = project3DPoint( baseW * 0.48 * blScale,  baseH * 0.48 * blScale, -bl * 18.0, state.pitchRad, state.yawRad, state.rollRad + bl * 0.03, fov19, cx, cy)
@@ -3143,7 +3203,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
                 var rL = lensR * (lr / 4.0) * (0.88 + 0.18 * Math.sin(rT * 0.9 - lr * 0.45))
                 var lensScaleX = 0.88 + 0.16 * Math.cos(rT * 0.55 * tiltMul - lr * 0.4 + bh)
                 var lensScaleY = 0.88 + 0.16 * Math.sin(rT * 0.65 * tiltMul + lr * 0.5 + bh)
-                var lVar = (state.primaryVariantIndex + bh * 5 + lr * 2) % 16
+                var lVar = (state.primaryVariantIndex + bh * 5 + lr * 2) % numVariants
                 var lImg = getVariantImgByIndex(variantImagesMap, lVar, imgPrimary)
                 var lSec = getVariantSectionOffset(lVar + bh * 3 + lr, snapIdx)
                 ctx.save()
@@ -3200,7 +3260,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
             var mp1 = project3DPoint( rw, -rh, 0, rPitch, rYaw, mobiusTwist * 0.25, minDim * 1.4, centreCurveX, centreCurveY)
             var mp2 = project3DPoint( rw,  rh, 0, rPitch, rYaw, mobiusTwist * 0.25, minDim * 1.4, centreCurveX, centreCurveY)
             var mp3 = project3DPoint(-rw,  rh, 0, rPitch, rYaw, mobiusTwist * 0.25, minDim * 1.4, centreCurveX, centreCurveY)
-            var mImg = getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + tr * 2) % 16, imgPrimary)
+            var mImg = getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + tr * 2) % numVariants, imgPrimary)
             drawTextured3DQuad(
                 ctx, mImg, mp0, mp1, mp2, mp3,
                 clamp(fgAlpha * (0.96 - relD * 0.50), 0.18, 1.0),
@@ -3225,7 +3285,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
             var curlStretch = 1.0 + 0.10 * Math.sin(normY * 4.0 - rT * 1.2) * warpMul
             var meltScaleX = 0.92 + 0.08 * Math.cos(rT * 0.58 * tiltMul - mb * 0.28)
             var meltScaleY = 0.92 + 0.08 * Math.sin(rT * 0.72 * tiltMul + mb * 0.36)
-            var mVar = (state.primaryVariantIndex + Math.floor(Math.abs(Math.sin(normY * 2.0 + rT * 0.45)) * 4)) % 16
+            var mVar = (state.primaryVariantIndex + Math.floor(Math.abs(Math.sin(normY * 2.0 + rT * 0.45)) * 4)) % numVariants
             var meltImg = getVariantImgByIndex(variantImagesMap, mVar, imgPrimary)
             if (meltImg) {
                 ctx.save()
@@ -3302,7 +3362,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
                 var cp1 = project3DPoint(x0 + cw24, y0, -zWave, state.pitchRad * 0.75, state.yawRad * 0.75, state.rollRad * 0.55, fov24, cx, cy)
                 var cp2 = project3DPoint(x0 + cw24, y0 + ch24, zWave, state.pitchRad * 0.75, state.yawRad * 0.75, state.rollRad * 0.55, fov24, cx, cy)
                 var cp3 = project3DPoint(x0, y0 + ch24, -zWave, state.pitchRad * 0.75, state.yawRad * 0.75, state.rollRad * 0.55, fov24, cx, cy)
-                var chImg = getVariantImgByIndex(variantImagesMap, (chladni >= 0) ? state.primaryVariantIndex : ((state.primaryVariantIndex + 7) % 16), imgPrimary)
+                var chImg = getVariantImgByIndex(variantImagesMap, (chladni >= 0) ? state.primaryVariantIndex : ((state.primaryVariantIndex + 7) % numVariants), imgPrimary)
                 ctx.save()
                 drawSafePolygonPath(ctx, [cp0, cp1, cp2, cp3])
                 if (typeof ctx.clip === "function") ctx.clip()
@@ -3346,7 +3406,7 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
             var ep1 = project3DPoint( ew, -eh, ez, exPitch, exYaw, exRoll, fov25, cx + exOffX, cy + exOffY)
             var ep2 = project3DPoint( ew,  eh, ez, exPitch, exYaw, exRoll, fov25, cx + exOffX, cy + exOffY)
             var ep3 = project3DPoint(-ew,  eh, ez, exPitch, exYaw, exRoll, fov25, cx + exOffX, cy + exOffY)
-            var exImg = getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + (numExtrude - 1 - ex) * 2) % 16, imgPrimary)
+            var exImg = getVariantImgByIndex(variantImagesMap, (state.primaryVariantIndex + (numExtrude - 1 - ex) * 2) % numVariants, imgPrimary)
             var exAlpha = (ex === numExtrude - 1) ? (fgAlpha * 0.95) : (fgAlpha * (0.22 + fracEx * 0.32))
             drawTextured3DQuad(
                 ctx, exImg, ep0, ep1, ep2, ep3,

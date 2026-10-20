@@ -109,6 +109,7 @@ def _ensure_effect_modules() -> None:
 os.umask(0o077)
 
 MAX_ART_BYTES = 15 * 1024 * 1024  # 15 MiB ceiling matching bin/bandarchy
+MAX_PROCESSED_PNG_BYTES = 500 * 1024  # 500 KiB ceiling for processed output PNGs (strictly below 1 MiB)
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".jxl", ".avif", ".bmp", ".tiff", ".tif")
 CATEGORY_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,48}$")
 
@@ -138,13 +139,16 @@ ALL_16_EFFECTS: tuple[str, ...] = (
     "10_Pulsar_Ridgeline_Colour_Snatch",
     "11_Glitch_Sector_Chromatic_Shear",
     "12_CRT_Phosphor_Sector_Snatch",
-    # Family 4: Neon Edge Contours, Metallic Relief, Braille & Prism (13–16)
+    # Family 4: Neon Edge Contours, Metallic Relief, Braille, Prism & Original (13–17)
     "13_Obsidian_Neon_Edge_Snatch",
     "14_Metallic_Relief_Sector_Snatch",
     "15_Braille_Matrix_Sector_Snatch",
     "16_Prism_Kaleidoscope_Sector_Snatch",
+    "17_Original_Accessible_Compressed",
 )
+ALL_17_EFFECTS: tuple[str, ...] = ALL_16_EFFECTS
 ALL_16_EFFECTS_SET: frozenset[str] = frozenset(ALL_16_EFFECTS)
+ALL_17_EFFECTS_SET: frozenset[str] = ALL_16_EFFECTS_SET
 
 # Default category mapping for the 12 reference source images in ~/Pictures/bandarchy/sources/
 DEFAULT_SOURCE_CATEGORY_MAP: dict[str, str] = {
@@ -369,15 +373,32 @@ def atomic_write_json(payload: dict[str, Any], dest_path: str) -> str:
     return abs_dest
 
 
-def atomic_save_png(im: Any, dest_path: str) -> str:
-    """Atomically save a `PIL.Image.Image` as a PNG with `0o644` permissions."""
+def atomic_save_png(
+    im: Any,
+    dest_path: str,
+    *,
+    optimize: bool = False,
+    max_bytes: int = MAX_PROCESSED_PNG_BYTES,
+) -> str:
+    """Atomically save a `PIL.Image.Image` as a PNG with `0o644` permissions and size cap enforcement."""
     abs_dest = os.path.abspath(dest_path)
     parent = os.path.dirname(abs_dest)
     os.makedirs(parent, mode=0o755, exist_ok=True)
+    if im.width > 480 or im.height > 360:
+        from PIL import Image as _PilImage, ImageOps as _ImageOps
+
+        im = _ImageOps.fit(im.convert("RGB"), (480, 360), method=_PilImage.Resampling.LANCZOS)
     fd, tmp_path = tempfile.mkstemp(dir=parent, prefix=".stark_", suffix=".png")
     os.close(fd)
     try:
-        im.save(tmp_path, format="PNG", optimize=False)
+        im.save(tmp_path, format="PNG", optimize=optimize, compress_level=9 if optimize else 6)
+        if max_bytes > 0 and os.path.getsize(tmp_path) > max_bytes and not optimize:
+            im.save(tmp_path, format="PNG", optimize=True, compress_level=9)
+        if max_bytes > 0 and os.path.getsize(tmp_path) > max_bytes:
+            from PIL import Image as _PilImage
+
+            quant_im = im.convert("RGB").quantize(colors=256, method=_PilImage.Quantize.FASTOCTREE)
+            quant_im.save(tmp_path, format="PNG", optimize=True, compress_level=9)
         os.chmod(tmp_path, 0o644)
         os.replace(tmp_path, abs_dest)
     except Exception:
@@ -652,7 +673,7 @@ def translate_single_image_all_effects(
                         os.unlink(tmp_png)
                     except OSError:
                         pass
-        if max_dim <= 480 and im_base.size != (480, 360):
+        if max_dim >= 480 and im_base.size != (480, 360):
             from PIL import ImageOps as _ImageOps
             im_base = _ImageOps.fit(im_base, (480, 360), method=Image.Resampling.BILINEAR)
     except Exception as exc:
@@ -710,7 +731,11 @@ def translate_single_image_all_effects(
             raise PhotoImportError(f"Unhandled effect {effect_name!r}")
 
         out_filename = f"{effect_name}__{stem}.png"
-        out_path = atomic_save_png(out_im, os.path.join(processed_category_dir, out_filename))
+        out_path = atomic_save_png(
+            out_im,
+            os.path.join(processed_category_dir, out_filename),
+            optimize=(effect_name == "17_Original_Accessible_Compressed"),
+        )
         generated.append(
             {
                 "effect": effect_name,
@@ -812,17 +837,26 @@ def _import_worker(task: dict[str, Any]) -> dict[str, Any]:
             }
             for eff in effects
         ]
+        dedup_src = dest_imported_path if os.path.isfile(dest_imported_path) else abs_src
+        try:
+            is_bw_dedup = bool(
+                f1.compute_luminance_and_sectors(
+                    f1.load_image_non_destructive(dedup_src, max_dim=128)
+                )["is_bw"]
+            )
+        except Exception:
+            is_bw_dedup = "_bw" in stem.lower() or stem.lower().endswith("bw")
         return {
             "status": "deduplicated",
             "category": category,
             "source_filename": filename,
             "source_stem": stem,
             "sha256": src_sha256,
-            "imported_path": dest_imported_path if os.path.isfile(dest_imported_path) else abs_src,
+            "imported_path": dedup_src,
             "processed_dir": processed_dir,
             "width": w,
             "height": h,
-            "is_bw_source": False,
+            "is_bw_source": is_bw_dedup,
             "effects_count": len(outputs),
             "outputs": outputs,
             "elapsed_ms": 0.0,
@@ -839,9 +873,11 @@ def _import_worker(task: dict[str, Any]) -> dict[str, Any]:
 
     # Archive or move the raw source file into imported/<category>/<filename>
     os.makedirs(imported_dir, mode=0o755, exist_ok=True)
+    imported_root_abs = os.path.abspath(os.path.dirname(imported_dir))
+    src_already_in_imported = os.path.abspath(os.path.dirname(abs_src)).startswith(imported_root_abs + os.sep)
     if not keep_source and os.path.abspath(abs_src) != os.path.abspath(dest_imported_path):
         os.replace(abs_src, dest_imported_path)
-    elif keep_source and os.path.abspath(abs_src) != os.path.abspath(dest_imported_path):
+    elif keep_source and not src_already_in_imported and os.path.abspath(abs_src) != os.path.abspath(dest_imported_path):
         shutil.copy2(abs_src, dest_imported_path)
 
     return {
@@ -850,7 +886,7 @@ def _import_worker(task: dict[str, Any]) -> dict[str, Any]:
         "source_filename": filename,
         "source_stem": stem,
         "sha256": translation["sha256"],
-        "imported_path": dest_imported_path,
+        "imported_path": dest_imported_path if os.path.isfile(dest_imported_path) else abs_src,
         "processed_dir": processed_dir,
         "width": translation["width"],
         "height": translation["height"],
@@ -859,6 +895,74 @@ def _import_worker(task: dict[str, Any]) -> dict[str, Any]:
         "outputs": translation["outputs"],
         "elapsed_ms": translation["elapsed_ms"],
     }
+
+
+def _normalise_oversized_png_worker(args: tuple[str, int]) -> bool:
+    """Resize and re-compress a processed PNG exceeding `(480, 360)` or `max_bytes`."""
+    png_path, max_bytes = args
+    from PIL import Image as _PilImage, ImageOps as _ImageOps
+
+    with _PilImage.open(png_path) as im_in:
+        im_rgb = im_in.convert("RGB")
+        if im_rgb.size != (480, 360):
+            im_rgb = _ImageOps.fit(im_rgb, (480, 360), method=_PilImage.Resampling.LANCZOS)
+    is_eff17 = os.path.basename(png_path).startswith("17_Original_Accessible_Compressed__")
+    atomic_save_png(im_rgb, png_path, optimize=is_eff17, max_bytes=max_bytes)
+    return True
+
+
+def enforce_processed_size_limits(
+    base_dir: str | None = None,
+    *,
+    max_bytes: int = MAX_PROCESSED_PNG_BYTES,
+    max_workers: int | None = None,
+) -> int:
+    """Ensure all PNGs in `processed/<category>/` fit within `(480, 360)` and `max_bytes`."""
+    root = resolve_pictures_bandarchy_dir(base_dir)
+    processed_root = os.path.join(root, "processed")
+    if not os.path.isdir(processed_root) or os.path.islink(processed_root):
+        return 0
+
+    oversized_tasks: list[tuple[str, int]] = []
+    for cat in discover_processed_categories(root):
+        cat_dir = os.path.join(processed_root, cat)
+        if not os.path.isdir(cat_dir) or os.path.islink(cat_dir):
+            continue
+        try:
+            with os.scandir(cat_dir) as it:
+                for de in it:
+                    if de.name.startswith(".") or not de.name.lower().endswith(".png"):
+                        continue
+                    if not de.is_file(follow_symlinks=False):
+                        continue
+                    try:
+                        fsize = de.stat(follow_symlinks=False).st_size
+                    except OSError:
+                        continue
+                    w, h = _probe_image_dimensions(de.path)
+                    if (max_bytes > 0 and fsize > max_bytes) or w > 480 or h > 360:
+                        oversized_tasks.append((de.path, max_bytes))
+        except OSError:
+            pass
+
+    if not oversized_tasks:
+        return 0
+
+    workers = max_workers or min(len(oversized_tasks), max(1, (os.cpu_count() or 4)))
+    normalised_count = 0
+    if workers <= 1 or len(oversized_tasks) == 1:
+        for t in oversized_tasks:
+            try:
+                if _normalise_oversized_png_worker(t):
+                    normalised_count += 1
+            except Exception:
+                pass
+    else:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as pool:
+            for ok in pool.map(_normalise_oversized_png_worker, oversized_tasks, chunksize=16):
+                if ok:
+                    normalised_count += 1
+    return normalised_count
 
 
 def rebuild_manifests(base_dir: str | None = None) -> dict[str, Any]:
@@ -1049,19 +1153,44 @@ def import_new_photos(
         else:
             target_categories = sorted(layout["categories"].keys())
 
-        # Collect all stems already present anywhere in `processed/<any_cat>/` so that
-        # if a user moved processed variants from e.g. `processed/custom/` into `processed/hitler/`,
-        # scanning `imported/custom/` will not re-create them in `processed/custom/`.
+        # Collect all stems already present anywhere in `processed/<any_cat>/`, plus a global lookup
+        # of raw imported source files across `imported/<any_cat>/`, so that if a user moved processed
+        # variants from e.g. `processed/custom/` into `processed/hitler/`:
+        #   1. scanning `imported/custom/` will not re-create them in `processed/custom/`, AND
+        #   2. running an incremental effect pass (e.g. `--effects 17_Original_Accessible_Compressed`)
+        #      generates the missing variant directly inside `processed/hitler/`.
         all_processed_stems: set[str] = set()
-        for any_dirs in layout["categories"].values():
+        stems_by_proc_cat: dict[str, set[str]] = {}
+        global_imported_by_stem: dict[str, str] = {}
+        for any_slug, any_dirs in layout["categories"].items():
             any_proc = any_dirs["processed"]
+            cat_stems: set[str] = set()
             if os.path.isdir(any_proc) and not os.path.islink(any_proc):
                 try:
                     with os.scandir(any_proc) as it_p:
                         for de in it_p:
                             if not de.name.startswith(".") and de.name.lower().endswith(".png") and "__" in de.name:
                                 _, st_ext = de.name.split("__", 1)
-                                all_processed_stems.add(os.path.splitext(st_ext)[0])
+                                st_name = os.path.splitext(st_ext)[0]
+                                all_processed_stems.add(st_name)
+                                cat_stems.add(st_name)
+                except OSError:
+                    pass
+            stems_by_proc_cat[any_slug] = cat_stems
+
+            any_imp = any_dirs["imported"]
+            if os.path.isdir(any_imp) and not os.path.islink(any_imp):
+                try:
+                    with os.scandir(any_imp) as it_i:
+                        for de in sorted(it_i, key=lambda d: d.name):
+                            if (
+                                not de.name.startswith(".")
+                                and not is_generated_artifact_filename(de.name)
+                                and os.path.splitext(de.name)[1].lower() in IMAGE_EXTENSIONS
+                                and de.is_file(follow_symlinks=False)
+                            ):
+                                st_imp = os.path.splitext(de.name)[0]
+                                global_imported_by_stem.setdefault(st_imp, os.path.abspath(de.path))
                 except OSError:
                     pass
 
@@ -1074,9 +1203,11 @@ def import_new_photos(
             src_dirs = list(dirs.get("source_dirs") or [drop_dir])
             proc_dir = dirs["processed"]
             imp_dir = dirs["imported"]
+            proc_cat_stems = stems_by_proc_cat.get(slug, set())
 
             # Collect candidate source files from all source folders for this category (`categories/<slug>`, `raw/<slug>`, `<root>/<slug>`),
-            # AND also check `imported/<slug>` for any source image whose 16 processed variants do not exist in ANY processed folder (or when `force=True`).
+            # AND also check `imported/<slug>` (plus moved stems in `processed/<slug>`) for any source image whose requested variants
+            # do not yet exist in `processed/<slug>` (or when `force=True`).
             candidate_sources: list[tuple[str, bool]] = []
             seen_Source_paths: set[str] = set()
 
@@ -1103,10 +1234,7 @@ def import_new_photos(
                         continue
                     full_imp = os.path.abspath(os.path.join(imp_dir, e))
                     stem_imp = os.path.splitext(e)[0]
-                    in_this_proc = any(
-                        os.path.isfile(os.path.join(proc_dir, f"{eff}__{stem_imp}.png"))
-                        for eff in selected_effects
-                    )
+                    in_this_proc = stem_imp in proc_cat_stems
                     missing_any_variant = any(
                         not os.path.isfile(os.path.join(proc_dir, f"{eff}__{stem_imp}.png"))
                         for eff in selected_effects
@@ -1118,6 +1246,19 @@ def import_new_photos(
                     if should_reprocess_imp and full_imp not in seen_Source_paths:
                         seen_Source_paths.add(full_imp)
                         candidate_sources.append((full_imp, True))
+
+            # Also check if `processed/<slug>` has stems whose raw source file lives in another `imported/<other_cat>/` folder
+            for stem_proc in sorted(proc_cat_stems):
+                ext_src_path = global_imported_by_stem.get(stem_proc)
+                if not ext_src_path or ext_src_path in seen_Source_paths:
+                    continue
+                missing_any_variant = any(
+                    not os.path.isfile(os.path.join(proc_dir, f"{eff}__{stem_proc}.png"))
+                    for eff in selected_effects
+                )
+                if force or missing_any_variant:
+                    seen_Source_paths.add(ext_src_path)
+                    candidate_sources.append((ext_src_path, True))
 
             # Count stems within this category's batch so same-stem different-extension files
             # (e.g. brutalist_01.jpg and brutalist_01.png) are disambiguated rather than colliding
@@ -1199,6 +1340,14 @@ def import_new_photos(
         imported_records.sort(key=lambda r: (r["category"], r["source_filename"]))
         deduplicated_records.sort(key=lambda r: (r["category"], r["source_filename"]))
 
+        normalised_oversized_count = 0
+        if max_dim >= 480:
+            normalised_oversized_count = enforce_processed_size_limits(
+                base_dir,
+                max_bytes=MAX_PROCESSED_PNG_BYTES,
+                max_workers=max_workers,
+            )
+
         manifest_state = rebuild_manifests(base_dir)
         elapsed_ms = round((time.monotonic() - t0) * 1000.0, 2)
 
@@ -1213,6 +1362,7 @@ def import_new_photos(
             "imported_sources_count": len(imported_records),
             "deduplicated_sources_count": len(deduplicated_records),
             "generated_outputs_count": generated_png_count,
+            "normalised_oversized_count": normalised_oversized_count,
             "errors_count": len(errors),
             "elapsed_ms": elapsed_ms,
             "manifest_path": manifest_state["manifest_path"],

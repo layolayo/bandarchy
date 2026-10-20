@@ -719,7 +719,7 @@ class BandarchyTestSuite(unittest.TestCase):
 
         # 4. PsychedelicEngine.js stepState normalises cfg at entry and blends bassAtt/midAtt/trebAtt
         step_idx = engine_src.index("function stepState(")
-        step_body = engine_src[step_idx : step_idx + 3600]
+        step_body = engine_src[step_idx : step_idx + 4000]
         self.assertIn("cfg = normaliseConfig(cfg)", step_body)
         self.assertIn("state.bassAtt", step_body)
         self.assertIn("0.42 * state.bassAtt", step_body)
@@ -1269,7 +1269,7 @@ console.log('OK');
         self.assertIn('text: root.layer3AutoRandomise ? "󰒟 Rand L3 (Auto: ON)" : "󰒟 Rand L3"', viz_src)
         self.assertNotIn("L2 Tracers: ", app_src)
         self.assertIn("function syncVisualiserActive()", panel_src)
-        self.assertIn("running: (root.activelyPlaying && root.topBarLedEnabled) || root.visualiserActive || root.fullscreenVisualiserOpen", svc_src)
+        self.assertIn("running: root.activelyPlaying || root.visualiserActive || root.fullscreenVisualiserOpen", svc_src)
         self.assertIn('"Sun Rays"', engine_src)
         self.assertIn('"3D Sonic Orb"', engine_src)
         self.assertIn('"3D Torus Reactor"', engine_src)
@@ -1824,15 +1824,17 @@ console.log('OK');
 
         imp_res = self.run_cli("photo-import", custom_src_dir, "--max-size", "96")
         self.assertTrue(imp_res["ok"])
-        self.assertGreaterEqual(imp_res["totalProcessed"], 32)
-        self.assertEqual(len(imp_res["activeVariants"]), 16)
+        self.assertGreaterEqual(imp_res["totalProcessed"], 34)
+        self.assertEqual(len(imp_res["activeVariants"]), 17)
+        self.assertIn("17_Original_Accessible_Compressed", imp_res["activeVariants"])
         self.assertIn("my_new_set", imp_res["discoveredCategories"])
         self.assertEqual(imp_res["categoryLabels"].get("my_new_set"), "My New Set")
 
         pick_res = self.run_cli("photo-pick", "--category", "custom")
         self.assertTrue(pick_res["ok"])
         self.assertEqual(pick_res["category"], "custom")
-        self.assertEqual(len(pick_res["variants"]), 16)
+        self.assertEqual(len(pick_res["variants"]), 17)
+        self.assertIn("17_Original_Accessible_Compressed", pick_res["variants"])
         self.assertIn("sameEffectPeers", pick_res)
         self.assertIn("sameEffectByVariant", pick_res)
         self.assertIn("randomPoolPeers", pick_res)
@@ -1841,7 +1843,7 @@ console.log('OK');
         self.assertTrue(pick_dyn["ok"])
         self.assertEqual(pick_dyn["category"], "my_new_set")
         self.assertEqual(pick_dyn["sourceStem"], "dynamic_set_sample")
-        self.assertEqual(len(pick_dyn["variants"]), 16)
+        self.assertEqual(len(pick_dyn["variants"]), 17)
 
         # Verify moving processed PNG variants from processed/custom/ into a newly created processed/hitler/
         # subfolder discovers 'hitler' ("Hitler") and does NOT re-create them in processed/custom/ on re-import
@@ -1943,8 +1945,8 @@ const PhotoMotion = (new Function(photoCode + '; return { DEFAULT_PHOTO_CATEGORI
 if (PhotoMotion.PHOTO_MOTION_MODES.length !== 25) {
     throw new Error('Expected 25 PHOTO_MOTION_MODES, got ' + PhotoMotion.PHOTO_MOTION_MODES.length);
 }
-if (PhotoMotion.STAGE1_EFFECT_IDS.length !== 16) {
-    throw new Error('Expected 16 STAGE1_EFFECT_IDS, got ' + PhotoMotion.STAGE1_EFFECT_IDS.length);
+if (PhotoMotion.STAGE1_EFFECT_IDS.length !== 17) {
+    throw new Error('Expected 17 STAGE1_EFFECT_IDS, got ' + PhotoMotion.STAGE1_EFFECT_IDS.length);
 }
 if (!PhotoMotion.DEFAULT_PHOTO_CATEGORIES.includes('characters') || PhotoMotion.PHOTO_CATEGORY_LABELS.characters !== 'Characters') {
     throw new Error('Expected characters category in DEFAULT_PHOTO_CATEGORIES and PHOTO_CATEGORY_LABELS');
@@ -3100,6 +3102,9 @@ console.log('OK');
             "signal requestSetVolume(int vol)",
             "signal requestAdjustVolume(int delta)",
             "signal requestToggleMute()",
+            "function rebalanceRandomLayerOpacities()",
+            "property real layer1ShapeFillOpacity: 0.55",
+            "property real layer1EqGain: 0.80",
         ):
             self.assertIn(prop, viz_src, f"Visualiser.qml missing {prop}")
 
@@ -3112,6 +3117,7 @@ console.log('OK');
             self.assertIn("onRequestToggleMute:", src, f"{qml_name} missing onRequestToggleMute")
             self.assertIn("Qt.Key_PageUp", src, f"{qml_name} missing PgUp volume keybinding")
             self.assertIn("Qt.Key_PageDown", src, f"{qml_name} missing PgDn volume keybinding")
+            self.assertIn("function selectPlayingAlbumInCatalog()", src, f"{qml_name} missing selectPlayingAlbumInCatalog")
 
         # 4. Verify CLI `bandarchy volume` and `bandarchy cmd volume/mute` + boundary clamping
         vol_set = self.run_cli("volume", "65")

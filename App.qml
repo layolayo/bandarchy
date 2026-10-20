@@ -104,6 +104,49 @@ ShellRoot {
             }
         }
 
+        function selectPlayingAlbumInCatalog() {
+            var albums = service.albums || []
+            if (albums.length === 0) return
+            var targetId = String(service.currentAlbumId || "")
+            var targetTitle = String(service.trackAlbum || "").trim().toLowerCase()
+            var targetArtist = String(service.trackArtist || "").trim().toLowerCase()
+            var matchIdx = -1
+            for (var i = 0; i < albums.length; i++) {
+                var a = albums[i]
+                if (!a) continue
+                if (targetId !== "" && String(a.id || "") === targetId) {
+                    matchIdx = i
+                    break
+                }
+                if (targetTitle !== "" && String(a.title || "").trim().toLowerCase() === targetTitle) {
+                    if (targetArtist === "" || String(a.artist || "").trim().toLowerCase() === targetArtist) {
+                        matchIdx = i
+                        break
+                    }
+                    if (matchIdx < 0) matchIdx = i
+                }
+            }
+            if (matchIdx >= 0) {
+                var matched = albums[matchIdx]
+                win.leftTab = 0
+                win.focusedAlbumIndex = matchIdx
+                win.selectedAlbumId = String(matched.id || "")
+                win.focusedTrackIndex = Math.max(0, Number(service.playlistPos) || 0)
+                service.ensureAlbumTracks(win.selectedAlbumId)
+                Qt.callLater(function() {
+                    if (typeof appAlbumList !== "undefined" && appAlbumList) {
+                        appAlbumList.positionViewAtIndex(matchIdx, ListView.Center)
+                    }
+                })
+            }
+        }
+
+        onVisualiserMaximisedChanged: {
+            if (!win.visualiserMaximised) {
+                win.selectPlayingAlbumInCatalog()
+            }
+        }
+
         // Reusable tactile button with high-contrast hover/click flash & scale response
         component ActionPill: Rectangle {
             id: pill
@@ -405,7 +448,7 @@ ShellRoot {
                         appAlbumList.positionViewAtIndex(curIdx, ListView.Contain)
                     }
                     event.accepted = true
-                } else if (event.key === Qt.Key_Left || event.key === Qt.Key_H || event.key === Qt.Key_Backspace) {
+                } else if (event.key === Qt.Key_Left || event.key === Qt.Key_Backspace) {
                     if (isExpanded) {
                         if (win.focusedTrackIndex >= 0) {
                             win.focusedTrackIndex = -1
@@ -586,10 +629,10 @@ ShellRoot {
                 else if (event.key === Qt.Key_AsciiTilde || event.text === "~") { appVisualiser.togglePhotoAutoMotionByKey(); event.accepted = true }
                 else if (event.key === Qt.Key_L) { appVisualiser.showLayerDrawer = !appVisualiser.showLayerDrawer; event.accepted = true }
                 else if (event.key === Qt.Key_H) {
-                    if ((event.modifiers & Qt.ShiftModifier) || (appVisualiser.layer1Enabled && appVisualiser.layer1FieldEnabled && appVisualiser.layer1Mode === 11)) {
-                        appVisualiser.triggerPhotoHoldByKey()
-                    } else {
+                    if (event.modifiers & Qt.ShiftModifier) {
                         appVisualiser.toggleHudVisibility()
+                    } else {
+                        appVisualiser.triggerPhotoHoldByKey()
                     }
                     event.accepted = true
                 }

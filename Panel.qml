@@ -367,21 +367,23 @@ Item {
             else if (event.key === Qt.Key_B) { if (root.service) root.service.toggleAsciiMode(); event.accepted = true }
             else if (event.key === Qt.Key_D) { panelVisualiser.toggleInCanvasTte(); event.accepted = true }
             else if (event.key === Qt.Key_H) {
-                if ((event.modifiers & Qt.ShiftModifier) || (panelVisualiser.layer1Enabled && panelVisualiser.layer1FieldEnabled && panelVisualiser.layer1Mode === 11)) {
-                    panelVisualiser.triggerPhotoHoldByKey()
-                } else {
+                if (event.modifiers & Qt.ShiftModifier) {
                     panelVisualiser.toggleHudVisibility()
+                } else {
+                    panelVisualiser.triggerPhotoHoldByKey()
                 }
                 event.accepted = true
             }
             else if (event.key === Qt.Key_Z) {
                 panelVisualiser.showHud = false
                 if (root.service) root.service.fullscreenVisualiserOpen = !root.service.fullscreenVisualiserOpen
+                if (root.service && !root.service.fullscreenVisualiserOpen) root.selectPlayingAlbumInCatalog()
                 event.accepted = true
             }
             else if (event.key === Qt.Key_F || event.key === Qt.Key_V) {
                 if (event.modifiers & Qt.ShiftModifier) panelVisualiser.showHud = false
                 if (root.service) root.service.fullscreenVisualiserOpen = !root.service.fullscreenVisualiserOpen
+                if (root.service && !root.service.fullscreenVisualiserOpen) root.selectPlayingAlbumInCatalog()
                 event.accepted = true
             }
             else if (event.key === Qt.Key_Question || event.key === Qt.Key_Slash || event.text === "?" || event.text === "/") {
@@ -593,6 +595,44 @@ Item {
         if (!root.service) return
         var stageOn = (panelVisualiser.stageMode === "visualiser" || panelVisualiser.stageMode === "turntable")
         root.service.visualiserActive = Boolean((root.opened || root.standaloneMode) && root.visible && root.activeTab === 2 && stageOn)
+    }
+
+    function selectPlayingAlbumInCatalog() {
+        if (!root.service) return
+        var albums = root.service.albums || []
+        if (albums.length === 0) return
+        var targetId = String(root.service.currentAlbumId || "")
+        var targetTitle = String(root.service.trackAlbum || "").trim().toLowerCase()
+        var targetArtist = String(root.service.trackArtist || "").trim().toLowerCase()
+        var matchIdx = -1
+        for (var i = 0; i < albums.length; i++) {
+            var a = albums[i]
+            if (!a) continue
+            if (targetId !== "" && String(a.id || "") === targetId) {
+                matchIdx = i
+                break
+            }
+            if (targetTitle !== "" && String(a.title || "").trim().toLowerCase() === targetTitle) {
+                if (targetArtist === "" || String(a.artist || "").trim().toLowerCase() === targetArtist) {
+                    matchIdx = i
+                    break
+                }
+                if (matchIdx < 0) matchIdx = i
+            }
+        }
+        if (matchIdx >= 0) {
+            var matched = albums[matchIdx]
+            root.activeTab = 0
+            root.focusedAlbumIndex = matchIdx
+            root.selectedAlbumId = String(matched.id || "")
+            root.focusedTrackIndex = Math.max(0, Number(root.service.playlistPos) || 0)
+            root.service.ensureAlbumTracks(root.selectedAlbumId)
+            Qt.callLater(function() {
+                if (typeof albumList !== "undefined" && albumList) {
+                    albumList.positionViewAtIndex(matchIdx, ListView.Center)
+                }
+            })
+        }
     }
 
     function open(payloadJson) {

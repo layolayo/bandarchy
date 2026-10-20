@@ -230,17 +230,30 @@ vec3 evalLayer4Mode(int m, vec2 cPos, float sym, float bIntensity, float dir, fl
         vsCol += uCol2.rgb * radarRing * (0.65 + 0.45 * uBeat);
         col = mix(col, vsCol, clamp((0.64 + 0.32 * uBass) * bIntensity, 0.0, 0.94));
     } else if (m == 8) {
-        // Mode 8: VSXu Fluid Ribbons (3D Twisting Silk Ribbon Streams Inside a Cylindrical Tunnel)
-        float zDepth8 = 0.85 / max(0.05, r);
+        // Mode 8: VSXu Fluid Ribbons & Rotating 3D Circles (Twisting Silk Ribbon Streams + Counter-Rotating Segmented 3D Rings Travelling Towards the Viewer)
+        float zDepth8 = 0.85 / max(0.04, r);
         vec2 rp8 = rot2D(zDepth8 * 0.28 * twist - uTime * 0.45 * dir) * cPos;
         float a8 = atan(rp8.y, rp8.x);
         float aFold8 = abs(mod(a8 + halfSector, sector) - halfSector) / halfSector;
         float ribWave = sin(aFold8 * PI * 3.0 + sin(zDepth8 * 1.4 - uZoomTime * 3.2 * dir) * (1.2 + uBass));
         float silk = smoothstep(0.45, 0.96, abs(ribWave)) * smoothstep(0.04, 0.20, r);
         float coreEdge = smoothstep(0.86, 0.99, abs(ribWave)) * smoothstep(0.05, 0.24, r);
+        // Rotating & counter-rotating segmented 3D circles travelling towards the viewer along zDepth8
+        float ringStream = zDepth8 * 1.35 - uZoomTime * 2.85 * dir;
+        float ringIdx8 = floor(ringStream);
+        float ringLocal8 = abs(fract(ringStream) - 0.5) * 2.0;
+        float ringBand8 = smoothstep(0.32, 0.03, ringLocal8) * smoothstep(0.035, 0.18, r);
+        float ringSpinDir8 = (mod(ringIdx8, 2.0) < 0.5) ? 1.0 : -1.0;
+        float rawAng8 = atan(cPos.y, cPos.x) + uTime * (1.45 + 0.45 * uBass) * ringSpinDir8 * twist + ringIdx8 * 0.7854;
+        float segArc8 = smoothstep(-0.15, 0.55, cos(rawAng8 * max(4.0, fSym))) * ringBand8;
+        float ringRim8 = smoothstep(0.11, 0.0, ringLocal8) * smoothstep(0.05, 0.65, cos(rawAng8 * max(4.0, fSym))) * smoothstep(0.04, 0.20, r);
         vec3 silkCol = mix(uCol0.rgb, uCol1.rgb, 0.5 + 0.5 * sin(zDepth8 * 0.6 - uTime));
         silkCol = mix(silkCol, uCol2.rgb, aFold8);
-        col = mix(col, silkCol * silk + vec3(0.95, 0.98, 1.0) * coreEdge * 0.55, clamp((0.64 + 0.34 * uBass) * bIntensity, 0.0, 0.94));
+        vec3 ringCol8 = mix(uCol2.rgb, uCol0.rgb, 0.5 + 0.5 * sin(ringIdx8 * 1.3 + uTime * 1.6));
+        vec3 vsxuTotal = silkCol * silk * 0.85
+                       + ringCol8 * segArc8 * (0.95 + 0.48 * uBass + 0.35 * uBeat)
+                       + vec3(0.96, 0.99, 1.0) * (coreEdge * 0.48 + ringRim8 * (0.78 + 0.45 * uBeat));
+        col = mix(col, vsxuTotal, clamp((0.68 + 0.32 * uBass) * bIntensity, 0.0, 0.95));
     } else if (m == 9) {
         // Mode 9: TouchDesigner Curl Fluid (Domain-Warped Advection Streams & Filaments)
         vec2 p9 = cPos * 2.2;

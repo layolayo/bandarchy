@@ -33,7 +33,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 # Safety ceilings matching bin/bandarchy
 MAX_ART_BYTES = 15 * 1024 * 1024  # 15 MiB
-IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".jxl", ".avif", ".bmp", ".tiff", ".tif")
 
 # Bandarchy palettes from PsychedelicEngine.js + Omarchy signature colours
 BANDARCHY_PALETTES: dict[str, list[str]] = {

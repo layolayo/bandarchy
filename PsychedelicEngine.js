@@ -1056,76 +1056,85 @@ function stepState(state, rawBands, active, cfg, dt) {
             norm = clamp((sub + harm) * reactivity * 0.72, 0.03, 1.0)
         } else if (n > 0) {
             var raw = Number(rawBands[i % n]) || 0.0
-            norm = clamp(Math.pow(clamp(raw / denom, 0.0, 1.25), 0.75) * reactivity, 0.0, 1.0)
+            norm = clamp(Math.pow(clamp(raw / denom, 0.0, 1.35), 0.72) * reactivity, 0.0, 1.0)
         } else {
             norm = 0.03 + 0.02 * Math.sin(state.t * 1.1 + i * 0.2)
         }
         var prev = state.smoothBands[i] || 0.0
-        var attack = norm > prev ? clamp(dt * 9.0 * smoothSpeedMul, 0.03, 0.28) : clamp(dt * 4.5 * smoothSpeedMul, 0.015, 0.16)
+        var attack = norm > prev
+            ? clamp(dt * 24.0 * smoothSpeedMul, 0.14, 0.65)
+            : clamp(dt * 8.5 * smoothSpeedMul, 0.04, 0.28)
         var s = prev + (norm - prev) * attack
         state.smoothBands[i] = s
 
         if (s >= (state.peakBands[i] || 0.0)) {
             state.peakBands[i] = s
         } else {
-            state.peakBands[i] = Math.max(s, (state.peakBands[i] || 0.0) - dt * 0.38)
+            state.peakBands[i] = Math.max(s, (state.peakBands[i] || 0.0) - dt * 0.42)
         }
 
-        if (i < 10) bassSum += s * (i < 5 ? 1.35 : 0.85)
+        if (i < 10) bassSum += s * (i < 5 ? 1.38 : 0.88)
         else if (i < 34) midSum += s
         else highSum += s
     }
 
-    var bassRaw = clamp(bassSum / 11.0, 0.0, 1.0)
-    var midRaw = clamp(midSum / 24.0, 0.0, 1.0)
-    var highRaw = clamp(highSum / 30.0, 0.0, 1.0)
+    var bassRaw = clamp(bassSum / 10.5, 0.0, 1.0)
+    var midRaw = clamp(midSum / 22.0, 0.0, 1.0)
+    var highRaw = clamp(highSum / 28.0, 0.0, 1.0)
 
     // MilkDrop relative audio attenuation (`bass_att`, `mid_att`, `treb_att`)
-    state.bassFast = 0.82 * (state.bassFast || bassRaw) + 0.18 * bassRaw
-    state.bassSlow = 0.988 * (state.bassSlow || bassRaw) + 0.012 * bassRaw
-    state.midFast = 0.82 * (state.midFast || midRaw) + 0.18 * midRaw
-    state.midSlow = 0.988 * (state.midSlow || midRaw) + 0.012 * midRaw
-    state.trebFast = 0.82 * (state.trebFast || highRaw) + 0.18 * highRaw
-    state.trebSlow = 0.988 * (state.trebSlow || highRaw) + 0.012 * highRaw
+    state.bassFast = 0.72 * (state.bassFast || bassRaw) + 0.28 * bassRaw
+    state.bassSlow = 0.985 * (state.bassSlow || bassRaw) + 0.015 * bassRaw
+    state.midFast = 0.72 * (state.midFast || midRaw) + 0.28 * midRaw
+    state.midSlow = 0.985 * (state.midSlow || midRaw) + 0.015 * midRaw
+    state.trebFast = 0.72 * (state.trebFast || highRaw) + 0.28 * highRaw
+    state.trebSlow = 0.985 * (state.trebSlow || highRaw) + 0.015 * highRaw
 
-    state.bassAtt = clamp(state.bassFast / Math.max(0.04, state.bassSlow), 0.35, 2.4)
-    state.midAtt = clamp(state.midFast / Math.max(0.04, state.midSlow), 0.35, 2.4)
-    state.trebAtt = clamp(state.trebFast / Math.max(0.04, state.trebSlow), 0.35, 2.4)
+    state.bassAtt = clamp(state.bassFast / Math.max(0.035, state.bassSlow), 0.35, 2.6)
+    state.midAtt = clamp(state.midFast / Math.max(0.035, state.midSlow), 0.35, 2.6)
+    state.trebAtt = clamp(state.trebFast / Math.max(0.035, state.trebSlow), 0.35, 2.6)
 
-    var bass = clamp(bassRaw * (0.58 + 0.42 * state.bassAtt), 0.0, 1.2)
-    var mid = clamp(midRaw * (0.58 + 0.42 * state.midAtt), 0.0, 1.2)
-    var high = clamp(highRaw * (0.58 + 0.42 * state.trebAtt), 0.0, 1.2)
+    var bass = clamp(bassRaw * (0.58 + 0.42 * state.bassAtt), 0.0, 1.35)
+    var mid = clamp(midRaw * (0.58 + 0.42 * state.midAtt), 0.0, 1.35)
+    var high = clamp(highRaw * (0.58 + 0.42 * state.trebAtt), 0.0, 1.35)
 
-    state.energy = clamp(bass * 0.50 + mid * 0.32 + high * 0.18, 0.0, 1.0)
+    state.energy = clamp(bass * 0.50 + mid * 0.32 + high * 0.18, 0.0, 1.15)
 
-    // Silky-smooth macro envelopes so geometry breathes organically without twitching
-    var envRate = clamp(dt * 5.5 * smoothSpeedMul, 0.02, 0.22)
-    state.bassSmooth = lerp(state.bassSmooth || 0.0, bassRaw, envRate)
-    state.midSmooth = lerp(state.midSmooth || 0.0, midRaw, envRate)
-    state.highSmooth = lerp(state.highSmooth || 0.0, highRaw, envRate)
-    state.energySmooth = lerp(state.energySmooth || 0.0, state.energy, envRate)
+    // Asymmetric fast-attack / organic-release macro envelopes driven by relative-attenuated bass/mid/high
+    var envAttack = clamp(dt * 18.0 * smoothSpeedMul, 0.12, 0.52)
+    var envRelease = clamp(dt * 6.5 * smoothSpeedMul, 0.03, 0.22)
+    var prevBassSm = state.bassSmooth || 0.0
+    var prevMidSm = state.midSmooth || 0.0
+    var prevHighSm = state.highSmooth || 0.0
+    var prevEnergySm = state.energySmooth || 0.0
+    state.bassSmooth = lerp(prevBassSm, bass, bass > prevBassSm ? envAttack : envRelease)
+    state.midSmooth = lerp(prevMidSm, mid, mid > prevMidSm ? envAttack : envRelease)
+    state.highSmooth = lerp(prevHighSm, high, high > prevHighSm ? envAttack : envRelease)
+    state.energySmooth = lerp(prevEnergySm, state.energy, state.energy > prevEnergySm ? envAttack : envRelease)
 
     state.bass = state.bassSmooth
     state.mid = state.midSmooth
     state.high = state.highSmooth
 
-    // Dual-envelope onset / beat detector
-    state.kickFast = lerp(state.kickFast || bass, bass, clamp(dt * 18.0, 0.08, 0.55))
-    state.kickSlow = lerp(state.kickSlow || bass, bass, clamp(dt * 3.2, 0.02, 0.18))
-    state.snareFast = lerp(state.snareFast || mid, (mid + high) * 0.5, clamp(dt * 16.0, 0.08, 0.55))
-    state.snareSlow = lerp(state.snareSlow || mid, (mid + high) * 0.5, clamp(dt * 3.5, 0.02, 0.18))
+    // Dual-envelope onset / beat detector driven directly by un-lagged bassRaw / midRaw transients
+    var snareInput = (midRaw * 0.65 + highRaw * 0.35)
+    state.kickFast = lerp(state.kickFast || bassRaw, bassRaw, clamp(dt * 26.0, 0.16, 0.70))
+    state.kickSlow = lerp(state.kickSlow || bassRaw, bassRaw, clamp(dt * 3.4, 0.02, 0.16))
+    state.snareFast = lerp(state.snareFast || snareInput, snareInput, clamp(dt * 24.0, 0.16, 0.68))
+    state.snareSlow = lerp(state.snareSlow || snareInput, snareInput, clamp(dt * 3.6, 0.02, 0.16))
 
     state.beatCooldown = Math.max(0.0, (state.beatCooldown || 0.0) - dt)
-    var kickRatio = state.kickSlow > 0.04 ? (state.kickFast / state.kickSlow) : 1.0
-    var snareRatio = state.snareSlow > 0.04 ? (state.snareFast / state.snareSlow) : 1.0
+    var kickRatio = state.kickSlow > 0.03 ? (state.kickFast / state.kickSlow) : 1.0
+    var snareRatio = state.snareSlow > 0.03 ? (state.snareFast / state.snareSlow) : 1.0
 
     var rawL1Dir = cfg && cfg.layer1Direction !== undefined ? Number(cfg.layer1Direction) : 1
     var l1Dir = (rawL1Dir === 0) ? Math.sin((state.t || 0.0) * 0.45) : (rawL1Dir < 0 ? -1.0 : 1.0)
 
-    if ((kickRatio > 1.22 && state.kickFast > 0.16 || snareRatio > 1.28 && state.snareFast > 0.20) && state.beatCooldown <= 0.0) {
-        state.beatPulse = clamp(beatPunch, 0.25, 2.0)
-        state.beatFlash = clamp(beatPunch, 0.25, 2.0)
-        state.beatCooldown = 0.28
+    if ((kickRatio > 1.15 && state.kickFast > 0.10 || snareRatio > 1.20 && state.snareFast > 0.13) && state.beatCooldown <= 0.0) {
+        var transientBoost = 0.92 + 0.32 * Math.max(0.0, Math.max(kickRatio - 1.0, snareRatio - 1.0))
+        state.beatEnv = clamp(beatPunch * transientBoost, 0.35, 2.0)
+        state.beatFlash = clamp(beatPunch * transientBoost, 0.35, 2.0)
+        state.beatCooldown = 0.19
         state.beatCount = (state.beatCount || 0) + 1
         // Update target harmonics on every 8th beat (low, clean ratios so AVS Scope is never noisy!)
         if (state.beatCount % 8 === 0) {
@@ -1162,13 +1171,18 @@ function stepState(state, rawBands, active, cfg, dt) {
             })
         }
     } else {
-        state.beatPulse = Math.max(0.0, state.beatPulse - dt * 2.6)
+        state.beatEnv = Math.max(0.0, (state.beatEnv !== undefined ? state.beatEnv : (state.beatPulse || 0.0)) - dt * 2.8)
         state.beatFlash = Math.max(0.0, state.beatFlash - dt * 4.0)
     }
 
-    state.beatSmooth = lerp(state.beatSmooth || 0.0, state.beatPulse, clamp(dt * 6.0 * smoothSpeedMul, 0.03, 0.22))
-    // Keep beatPulse smooth for downstream visual modes so nothing snaps abruptly on beat frames
-    state.beatPulse = state.beatSmooth
+    var beatTarget = state.beatEnv !== undefined ? state.beatEnv : 0.0
+    var prevBeatSm = state.beatSmooth || 0.0
+    var beatRate = beatTarget > prevBeatSm
+        ? clamp(dt * 28.0 * smoothSpeedMul, 0.28, 0.82)
+        : clamp(dt * 8.0 * smoothSpeedMul, 0.06, 0.28)
+    state.beatSmooth = lerp(prevBeatSm, beatTarget, beatRate)
+    // Preserve punchy beat amplitude while keeping envelopes free of 1-frame discontinuities
+    state.beatPulse = Math.max(beatTarget * 0.85, state.beatSmooth)
 
     // Smoothly interpolate AVS harmonics toward avsTarget instead of snapping integers
     if (!state.avsHarmonics) state.avsHarmonics = { m: 1, n: 2, k: 1, twist: 0.9, style: 0 }
@@ -1826,10 +1840,16 @@ function project3DPoint(vx, vy, vz, rx, ry, rz, cx, cy, scale, fovDist) {
 }
 
 // Deterministically fills a configurable fraction (`fillRatio` 0.0..1.0 = 0%..100%) of a 3D craft's polygonal facets
-// with rich opaque/shaded hull colours before stroking the glowing wireframe edges.
-function fillCraftFaces(ctx, faces, fillRatio, seedIdx, baseHue, sAlpha, palette) {
+// with configurable per-segment opacity (`_activeShapeFillOpacity` 0.05..1.00 = 5%..100%) before stroking the glowing wireframe edges.
+var _activeShapeFillOpacity = 0.55
+function fillCraftFaces(ctx, faces, fillRatio, seedIdx, baseHue, sAlpha, palette, fillOpacityOverride) {
     var ratio = clamp(Number(fillRatio) || 0.0, 0.0, 1.0)
     if (!faces || faces.length === 0 || ratio <= 0.01) return
+    var segOpac = clamp(
+        fillOpacityOverride !== undefined ? Number(fillOpacityOverride) : _activeShapeFillOpacity,
+        0.05,
+        1.0
+    )
     var total = faces.length
     var targetCount = (ratio >= 0.99) ? total : Math.max(1, Math.min(total, Math.round(total * ratio)))
     var coprimeStep = (total % 3 !== 0) ? 3 : ((total % 5 !== 0) ? 5 : 1)
@@ -1839,7 +1859,7 @@ function fillCraftFaces(ctx, faces, fillRatio, seedIdx, baseHue, sAlpha, palette
         var poly = faces[fIdx]
         if (!poly || poly.length < 3) continue
         var shade = 0.34 + ((fIdx * 3 + (seedIdx || 0)) % 4) * 0.08
-        var fAlpha = clamp(sAlpha * (0.76 + 0.18 * ((fIdx & 1) ? 1.0 : 0.6)), 0.20, 0.95)
+        var fAlpha = clamp((sAlpha || 0.85) * segOpac * (0.84 + 0.16 * ((fIdx & 1) ? 1.0 : 0.68)), 0.03, 0.98)
         var fHue = ((baseHue || 180) + fIdx * 22) % 360
         ctx.fillStyle = (palette && palette.length > 0 && (fIdx & 1) === 0)
             ? colourWithAlpha(palette[(fIdx + (seedIdx || 0)) % palette.length], fAlpha)
@@ -2394,6 +2414,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
 
     // Non-linear density curve (`minimal -> many`) so 0.25x..0.5x is genuinely minimal and 1.5x..2.0x is a dense swarm
     var denCurve = Math.pow(density, 1.55)
+    _activeShapeFillOpacity = cfg && cfg.layer1ShapeFillOpacity !== undefined ? clamp(Number(cfg.layer1ShapeFillOpacity), 0.05, 1.0) : 0.55
 
     // =========================================================================
     // SUB-SYSTEM 1: L1 FIELD (11 Volumetric Background Fields 0..10 + Photo-Motion 11)
@@ -2405,29 +2426,37 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
         ctx.globalAlpha = l1Opac
         try {
         if (l1Mode === 0) {
-            // Mode 0: MilkDrop / Geiss 3D Expanding Logarithmic Warp Tunnel Web & Volumetric Curtains
-            // Rings expand all the way past diagR so every ring moves towards the user and passes OFF the screen!
+            // Mode 0: MilkDrop / Geiss 3D Expanding Logarithmic Warp Tunnel Web, Volumetric Curtains & Rotating 3D Segmented Circles
+            // Rings and rotating segmented circles expand all the way past diagR so every ring moves towards the user and passes OFF the screen!
             ctx.save()
             ctx.globalCompositeOperation = "source-over"
             var ringCount = Math.max(2, Math.min(14, Math.round(6 * denCurve)))
             var segs = 24
             var ringsPts = []
             var fract0 = (((l1T * 0.28) % 1.0) + 1.0) % 1.0
+            var worldRing0 = Math.floor(l1T * 0.28)
             for (var rIdx = 0; rIdx < ringCount; rIdx++) {
                 var rProg = (rIdx + fract0) / ringCount
                 var baseR = Math.pow(rProg, 1.85) * diagR * 1.18
                 var ringCX = cx + endPt.dx * 0.65 * Math.pow(1.0 - rProg, 1.25)
                 var ringCY = cy + endPt.dy * 0.65 * Math.pow(1.0 - rProg, 1.25)
-                var rot = state.phase * (rIdx % 2 === 0 ? 0.30 : -0.30)
+                var wR0 = worldRing0 - rIdx
+                var spinSign0 = (wR0 & 1) ? -1.0 : 1.0
+                var rot = state.phase * 0.65 * spinSign0 + l1T * 0.85 * spinSign0 + wR0 * 0.35
                 var bFade0 = smoothstep(0.0, 0.22, rProg)
                 var pts = []
                 for (var s = 0; s <= segs; s++) {
                     var ang = (s / segs) * Math.PI * 2 + rot
                     var bVal = state.smoothBands[(s * 2 + rIdx * 7) & 63]
-                    var rr = baseR * (1.0 + Math.sin(ang * 4.0 + l1T * 1.1) * 0.07 + bVal * 0.14)
+                    var rr = baseR * (1.0 + Math.sin(ang * 4.0 + l1T * 1.1) * 0.06 + bVal * 0.14)
                     pts.push({
                         x: ringCX + Math.cos(ang) * rr,
                         y: ringCY + Math.sin(ang) * rr,
+                        cx: ringCX,
+                        cy: ringCY,
+                        r: baseR * (1.0 + state.bassSmooth * 0.10),
+                        rot: rot,
+                        spinSign: spinSign0,
                         prog: rProg,
                         fade: bFade0
                     })
@@ -2454,13 +2483,13 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.fill()
             }
 
-            // Radial warp struts + glowing logarithmic tunnel rings
+            // Radial warp struts + glowing logarithmic tunnel rings + counter-rotating segmented 3D circle arcs travelling towards the viewer
             for (var rIdx2 = 0; rIdx2 < ringCount; rIdx2++) {
                 var rPts = ringsPts[rIdx2]
                 var rFade2 = rPts[0].fade
                 if (rFade2 < 0.02) continue
                 var rb = rIdx2 % 3
-                ctx.strokeStyle = colourWithAlpha(palette[(rb * 2 + 1) % palette.length], (0.26 + state.bass * 0.34) * rFade2 * (1.0 - dim))
+                ctx.strokeStyle = colourWithAlpha(palette[(rb * 2 + 1) % palette.length], (0.30 + state.bass * 0.36) * rFade2 * (1.0 - dim))
                 ctx.lineWidth = (1.5 + rb * 0.5 + state.bass * 1.4) * rFade2
                 ctx.beginPath()
                 for (var s2 = 0; s2 <= segs; s2++) {
@@ -2473,6 +2502,19 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                         ctx.moveTo(prevPts[sr].x, prevPts[sr].y)
                         ctx.lineTo(rPts[sr].x, rPts[sr].y)
                     }
+                }
+                ctx.stroke()
+
+                // Rotating & counter-rotating segmented 3D circular arcs rushing towards the viewer
+                var arcCount0 = 6
+                var cMeta = rPts[0]
+                ctx.strokeStyle = colourWithAlpha(palette[(rb * 2 + 2) % palette.length], (0.48 + state.beatPulse * 0.32 + state.bass * 0.20) * rFade2 * (1.0 - dim))
+                ctx.lineWidth = (2.2 + cMeta.prog * 2.4 + state.bass * 1.6) * rFade2
+                ctx.beginPath()
+                for (var ac0 = 0; ac0 < arcCount0; ac0++) {
+                    var aStart0 = cMeta.rot * 1.35 + (ac0 / arcCount0) * Math.PI * 2.0
+                    var aEnd0 = aStart0 + (Math.PI * 2.0 / arcCount0) * 0.58
+                    ctx.arc(cMeta.cx, cMeta.cy, cMeta.r * 0.92, aStart0, aEnd0)
                 }
                 ctx.stroke()
             }
@@ -4234,9 +4276,35 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.lineTo(cx + c8 * (w * 0.14), h)
             }
             ctx.stroke()
+
+            // 4. Rotating & Counter-Rotating 3D Segmented Circles Coming Towards the Viewer Over the Outrun Canyon
+            var circleCount8 = Math.max(3, Math.min(8, Math.round(5 * denCurve)))
+            var worldBase8 = Math.floor(l1T * 0.45)
+            for (var rc8 = 0; rc8 < circleCount8; rc8++) {
+                var uCirc8 = (rc8 + scrollFract8) / circleCount8
+                var cFade8 = smoothstep(0.0, 0.18, uCirc8)
+                if (cFade8 < 0.02) continue
+                var cIdx8 = worldBase8 - rc8
+                var spinDir8 = (cIdx8 & 1) ? -1.0 : 1.0
+                var rotAng8 = l1T * (1.35 + state.bassSmooth * 0.45) * spinDir8 + cIdx8 * 0.65
+                var radCirc8 = Math.pow(uCirc8, 1.85) * diagR * 1.05 * (1.0 + state.bassSmooth * 0.12)
+                var cCX8 = lerp(vanishX, cx, Math.min(1.0, uCirc8 * 1.15))
+                var cCY8 = lerp(horizonY - outrunSunR * 0.25, cy, Math.min(1.0, uCirc8 * 1.15))
+                var colCirc8 = palette[((cIdx8 * 2 + 2) % palette.length + palette.length) % palette.length]
+                ctx.strokeStyle = colourWithAlpha(colCirc8, (0.42 + uCirc8 * 0.48) * cFade8 * (1.0 - dim))
+                ctx.lineWidth = (1.6 + uCirc8 * 2.4 + state.beatPulse * 1.2) * cFade8
+                ctx.beginPath()
+                var segArcs8 = 6
+                for (var sa8 = 0; sa8 < segArcs8; sa8++) {
+                    var a0_8 = rotAng8 + (sa8 / segArcs8) * Math.PI * 2.0
+                    var a1_8 = a0_8 + (Math.PI * 2.0 / segArcs8) * 0.62
+                    ctx.arc(cCX8, cCY8, radCirc8, a0_8, a1_8)
+                }
+                ctx.stroke()
+            }
             ctx.restore()
         } else if (l1Mode === 9) {
-            // Mode 9: Demoscene Polygon Tunnel — Expanding 3D Multi-Ring Geometric Polygon Tunnel & Struts
+            // Mode 9: Demoscene Polygon & Rotating Circle Tunnel — Expanding 3D Multi-Ring Geometric Polygon Tunnel, Struts & Counter-Rotating 3D Circles
             ctx.save()
             ctx.globalCompositeOperation = "source-over"
             var polyRings = Math.max(3, Math.min(16, Math.round(8 * denCurve)))
@@ -4253,7 +4321,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 var ringCX9 = lerp(cx + endPt.dx * 0.58, cx, Math.min(1.0, uP * 1.15))
                 var ringCY9 = lerp(cy + endPt.dy * 0.58, cy, Math.min(1.0, uP * 1.15))
                 var wRingIdx = polyWorldBase - pr
-                var rotP = wRingIdx * 0.22 + l1T * 0.25 * (wRingIdx & 1 ? 1.0 : -1.0)
+                var spinSign9 = (wRingIdx & 1) ? 1.0 : -1.0
+                var rotP = wRingIdx * 0.22 + l1T * 0.48 * spinSign9
                 var curPolyPts = []
                 for (var ps = 0; ps <= polySides; ps++) {
                     var pAng = (ps / polySides) * Math.PI * 2.0 + rotP
@@ -4279,6 +4348,22 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                     }
                 }
                 ctx.stroke()
+
+                // Counter-rotating segmented 3D circle inside each polygon ring rushing towards the viewer
+                var colCirc9 = palette[((wRingIdx * 2 + 1) % palette.length + palette.length) % palette.length]
+                ctx.strokeStyle = colourWithAlpha(colCirc9, (0.45 + uP * 0.50 + state.beatPulse * 0.22) * pFade * (1.0 - dim))
+                ctx.lineWidth = (1.6 + uP * 2.4 + state.bassSmooth * 1.4) * pFade
+                ctx.beginPath()
+                var arcSegs9 = 6
+                var circRot9 = -rotP * 1.45 + state.phase * 0.5 * spinSign9
+                var circRad9 = radP * (0.86 + state.bassSmooth * 0.08)
+                for (var a9 = 0; a9 < arcSegs9; a9++) {
+                    var aStart9 = circRot9 + (a9 / arcSegs9) * Math.PI * 2.0
+                    var aEnd9 = aStart9 + (Math.PI * 2.0 / arcSegs9) * 0.64
+                    ctx.arc(ringCX9, ringCY9, circRad9, aStart9, aEnd9)
+                }
+                ctx.stroke()
+
                 prevPolyPts = curPolyPts
             }
             ctx.restore()
@@ -4591,7 +4676,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
         var eqStyle = cfg && cfg.layer1EqStyle !== undefined ? ((Number(cfg.layer1EqStyle) || 0) % ALL_LAYER1_EQ_STYLES.length) : 0
         var eqLayout = cfg && cfg.layer1EqLayout !== undefined ? clamp(Math.round(Number(cfg.layer1EqLayout)), 0, 3) : 0
         var eqBandOrder = cfg && cfg.layer1EqBandOrder !== undefined ? clamp(Math.round(Number(cfg.layer1EqBandOrder)), 0, 2) : 0
-        var eqGain = cfg && cfg.layer1EqGain !== undefined ? clamp(Number(cfg.layer1EqGain), 0.2, 3.0) : 1.25
+        var eqGain = cfg && cfg.layer1EqGain !== undefined ? clamp(Number(cfg.layer1EqGain), 0.20, 1.00) : 0.80
         var eqScale = cfg && cfg.layer1EqScale !== undefined ? clamp(Number(cfg.layer1EqScale), 0.15, 2.25) : 1.0
         var eqSpin = cfg && cfg.layer1EqSpin !== undefined ? clamp(Number(cfg.layer1EqSpin), -2.5, 2.5) : 1.0
         var eqSpinT = state.eqSpinTime !== undefined ? state.eqSpinTime : (l1T * eqSpin)
@@ -4997,29 +5082,14 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.stroke()
             }
         } else if (eqStyle === 6) {
-            // Style 6: Ground-Mounted Horizon Searchlights Sweeping the Night Sky & Actively Spotting Airborne Objects
+            // Style 6: Architectural Ground-Mounted Sky-Tracker Searchlights (Full-Extent Volumetric Beams & Solid Pivoting Projector Units — Zero Airborne Objects)
             var spotCount = 8
             var effSpotScale6 = clamp(eqScale, 0.45, 1.65)
-            var maxReach = Math.max(horizonY * 1.05, h * 0.78) * effSpotScale6
+            // Project beams all the way past the display extents so they never terminate inside the viewport
+            var fullExtentReach = Math.hypot(w, h) * 1.35 * effSpotScale6
             var palShiftSpot = Math.floor((state.hueShift || 0) / 45)
             var hasGrad = typeof ctx.createLinearGradient === "function"
             var activeBeams6 = []
-
-            // Precompute airborne objects so ground searchlights can actively sweep & lock onto nearby targets overhead!
-            var skyObjCount = 5
-            var skyObjs6 = []
-            for (var soPre = 0; soPre < skyObjCount; soPre++) {
-                var soSpd = (0.045 + (soPre % 3) * 0.018) * (soPre % 2 === 0 ? 1.0 : -1.0)
-                var soUPre = (((eqSpinT * soSpd + soPre * 0.21) % 1.0) + 1.0) % 1.0
-                var oXPre = lerp(w * 0.10, w * 0.90, soUPre)
-                var oYPre = horizonY - maxReach * (0.36 + 0.38 * (0.5 + 0.5 * Math.sin(soPre * 2.1 + eqSpinT * 0.35)))
-                skyObjs6.push({
-                    x: oXPre,
-                    y: oYPre,
-                    speed: soSpd,
-                    scale: minDim * (0.028 + (soPre % 2) * 0.009) * clamp(effSpotScale6, 0.75, 1.35)
-                })
-            }
 
             for (var sp = 0; sp < spotCount; sp++) {
                 var uSp = (sp + 0.5) / spotCount
@@ -5032,188 +5102,214 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 var spotCol = palette[(sp * 2 + palShiftSpot) % palette.length]
                 var coreCol = palette[(sp * 2 + 2 + palShiftSpot) % palette.length]
 
-                // Ground-station sky-scanner choreography blended with active target-tracking lock toward overhead airborne craft
-                var sweepPhase = eqSpinT * (0.58 + (sp % 3) * 0.15) + sp * 1.12
-                var crossBias = -wingSign * (0.12 + wingU * 0.26) * Math.cos(eqSpinT * 0.42)
-                var freeTilt = crossBias
-                             + Math.sin(sweepPhase) * 0.42
-                             + Math.cos(eqSpinT * 0.88 - sp * 1.7) * 0.15 * (0.5 + state.bassSmooth * 0.5)
-                var targetObj6 = skyObjs6[sp % skyObjCount]
-                var targetTilt = clamp(Math.atan2(targetObj6.x - baseX, Math.max(40.0, baseY - targetObj6.y)), -0.78, 0.78)
-                var trackWeight = 0.52 + 0.38 * (0.5 + 0.5 * Math.sin(eqSpinT * 0.95 + sp * 1.4))
-                var tilt = lerp(freeTilt, targetTilt, trackWeight)
+                // Coordinated sky-scanning choreography: sweeping, crossing, and tracking across the open sky
+                var sweepPhase = eqSpinT * (0.62 + (sp % 3) * 0.16) + sp * 1.15
+                var crossBias = -wingSign * (0.16 + wingU * 0.30) * Math.cos(eqSpinT * 0.46)
+                var trackerSweep = Math.sin(sweepPhase) * 0.48
+                                 + Math.cos(eqSpinT * 0.92 - sp * 1.65) * 0.18 * (0.55 + state.bassSmooth * 0.45)
+                                 + Math.sin(eqSpinT * 1.45 + sp * 0.85) * 0.08 * state.midSmooth
+                var tilt = clamp(crossBias + trackerSweep, -0.82, 0.82)
                 var dirX = Math.sin(tilt)
                 var dirY = -Math.cos(tilt)
                 var nx = Math.cos(tilt)
                 var ny = Math.sin(tilt)
 
-                var distToTarget6 = Math.sqrt((targetObj6.x - baseX) * (targetObj6.x - baseX) + (targetObj6.y - baseY) * (targetObj6.y - baseY))
-                var reach = Math.max(distToTarget6 * 1.08, maxReach * (0.64 + Math.min(1.15, v6) * 0.38 + state.beatPulse * 0.08))
-                var topX = baseX + dirX * reach
-                var topY = baseY + dirY * reach
-                var baseHalfW = Math.max(2.0, w * 0.0024)
-                var topHalfW = w * (0.011 + Math.min(1.3, v6) * 0.016)
+                var pedW6 = Math.max(9.0, w * 0.0125) * clamp(effSpotScale6, 0.75, 1.35)
+                var pedH6 = Math.max(7.5, h * 0.0155) * clamp(effSpotScale6, 0.75, 1.35)
+                var pivotX = baseX
+                var pivotY = baseY - pedH6 * 0.68
+                var barrelLen = pedH6 * 1.55
+                var lensX = pivotX + dirX * (barrelLen * 0.55)
+                var lensY = pivotY + dirY * (barrelLen * 0.55)
+
+                var reach = fullExtentReach * (0.95 + Math.min(1.3, v6) * 0.25 + state.beatPulse * 0.12)
+                var topX = lensX + dirX * reach
+                var topY = lensY + dirY * reach
+                var baseHalfW = Math.max(3.2, pedW6 * 0.44)
+                var topHalfW = w * (0.042 + Math.min(1.4, v6) * 0.048 + state.bassSmooth * 0.018)
 
                 activeBeams6.push({
-                    x0: baseX, y0: baseY, x1: topX, y1: topY,
+                    x0: lensX, y0: lensY, x1: topX, y1: topY,
+                    pivotX: pivotX, pivotY: pivotY, baseX: baseX, baseY: baseY,
+                    pedW: pedW6, pedH: pedH6, barrelLen: barrelLen,
                     dirX: dirX, dirY: dirY, nx: nx, ny: ny,
                     reach: reach, baseHalfW: baseHalfW, topHalfW: topHalfW,
-                    v: v6, col: spotCol, coreCol: coreCol
+                    v: v6, col: spotCol, coreCol: coreCol, sp: sp
                 })
 
-                // 1. Narrow Collimated Searchlight Beam Cone projecting from ground turret high into the sky
+                // 1A. Wide Outer Atmospheric Tyndall Scatter Cone extending past viewport extents
+                var outerTopW = topHalfW * 1.48
+                var outerBaseW = baseHalfW * 1.18
                 if (hasGrad) {
-                    var mainGrad = ctx.createLinearGradient(baseX, baseY, topX, topY)
-                    mainGrad.addColorStop(0.0, colourWithAlpha("#ffffff", clamp((0.58 + v6 * 0.30) * (1.0 - dim), 0.0, 0.95)))
-                    mainGrad.addColorStop(0.18, colourWithAlpha(spotCol, clamp((0.38 + v6 * 0.28) * (1.0 - dim), 0.0, 0.85)))
-                    mainGrad.addColorStop(0.72, colourWithAlpha(coreCol, clamp((0.16 + v6 * 0.16) * (1.0 - dim), 0.0, 0.55)))
-                    mainGrad.addColorStop(1.0, colourWithAlpha(spotCol, 0.0))
-                    ctx.fillStyle = mainGrad
+                    var outerGrad = ctx.createLinearGradient(lensX, lensY, topX, topY)
+                    outerGrad.addColorStop(0.0, colourWithAlpha(spotCol, clamp((0.24 + v6 * 0.20) * (1.0 - dim), 0.0, 0.55)))
+                    outerGrad.addColorStop(0.45, colourWithAlpha(coreCol, clamp((0.14 + v6 * 0.14) * (1.0 - dim), 0.0, 0.38)))
+                    outerGrad.addColorStop(1.0, colourWithAlpha(spotCol, 0.02 * (1.0 - dim)))
+                    ctx.fillStyle = outerGrad
                 } else {
-                    ctx.fillStyle = colourWithAlpha(spotCol, (0.26 + v6 * 0.20) * (1.0 - dim))
+                    ctx.fillStyle = colourWithAlpha(spotCol, (0.14 + v6 * 0.12) * (1.0 - dim))
                 }
                 ctx.beginPath()
-                ctx.moveTo(baseX - nx * baseHalfW, baseY - ny * baseHalfW)
+                ctx.moveTo(lensX - nx * outerBaseW, lensY - ny * outerBaseW)
+                ctx.lineTo(topX - nx * outerTopW, topY - ny * outerTopW)
+                ctx.lineTo(topX + nx * outerTopW, topY + ny * outerTopW)
+                ctx.lineTo(lensX + nx * outerBaseW, lensY + ny * outerBaseW)
+                ctx.closePath()
+                ctx.fill()
+
+                // 1B. Primary Collimated High-Intensity Searchlight Beam Cone reaching all the way to the viewport extents
+                if (hasGrad) {
+                    var mainGrad = ctx.createLinearGradient(lensX, lensY, topX, topY)
+                    mainGrad.addColorStop(0.0, colourWithAlpha("#ffffff", clamp((0.68 + v6 * 0.28) * (1.0 - dim), 0.0, 0.96)))
+                    mainGrad.addColorStop(0.16, colourWithAlpha(spotCol, clamp((0.46 + v6 * 0.30) * (1.0 - dim), 0.0, 0.88)))
+                    mainGrad.addColorStop(0.65, colourWithAlpha(coreCol, clamp((0.24 + v6 * 0.22) * (1.0 - dim), 0.0, 0.65)))
+                    mainGrad.addColorStop(1.0, colourWithAlpha(spotCol, clamp((0.10 + v6 * 0.12) * (1.0 - dim), 0.0, 0.35)))
+                    ctx.fillStyle = mainGrad
+                } else {
+                    ctx.fillStyle = colourWithAlpha(spotCol, (0.30 + v6 * 0.22) * (1.0 - dim))
+                }
+                ctx.beginPath()
+                ctx.moveTo(lensX - nx * baseHalfW, lensY - ny * baseHalfW)
                 ctx.lineTo(topX - nx * topHalfW, topY - ny * topHalfW)
                 ctx.lineTo(topX + nx * topHalfW, topY + ny * topHalfW)
-                ctx.lineTo(baseX + nx * baseHalfW, baseY + ny * baseHalfW)
+                ctx.lineTo(lensX + nx * baseHalfW, lensY + ny * baseHalfW)
                 ctx.closePath()
                 ctx.fill()
 
-                // Crisp lateral beam boundary edges + central collimated xenon core ray
-                ctx.strokeStyle = colourWithAlpha(spotCol, clamp((0.46 + v6 * 0.34) * (1.0 - dim), 0.12, 0.92))
-                ctx.lineWidth = 1.0 + v6 * 0.55
+                // 1C. Crisp Lateral Beam Boundary Rays + Internal Volumetric Shimmer Filaments + White-Hot Xenon Core Ray
+                ctx.strokeStyle = colourWithAlpha(spotCol, clamp((0.52 + v6 * 0.36) * (1.0 - dim), 0.14, 0.94))
+                ctx.lineWidth = 1.15 + v6 * 0.65
                 ctx.beginPath()
-                ctx.moveTo(baseX - nx * baseHalfW, baseY - ny * baseHalfW)
-                ctx.lineTo(topX - nx * topHalfW * 0.90, topY - ny * topHalfW * 0.90)
-                ctx.moveTo(baseX + nx * baseHalfW, baseY + ny * baseHalfW)
-                ctx.lineTo(topX + nx * topHalfW * 0.90, topY + ny * topHalfW * 0.90)
+                ctx.moveTo(lensX - nx * baseHalfW, lensY - ny * baseHalfW)
+                ctx.lineTo(topX - nx * topHalfW * 0.94, topY - ny * topHalfW * 0.94)
+                ctx.moveTo(lensX + nx * baseHalfW, lensY + ny * baseHalfW)
+                ctx.lineTo(topX + nx * topHalfW * 0.94, topY + ny * topHalfW * 0.94)
+                for (var fil = -1; fil <= 1; fil += 2) {
+                    var filBias = fil * 0.38 * Math.sin(eqSpinT * 2.1 + sp * 1.3 + fil)
+                    ctx.moveTo(lensX + nx * baseHalfW * filBias, lensY + ny * baseHalfW * filBias)
+                    ctx.lineTo(topX + nx * topHalfW * filBias, topY + ny * topHalfW * filBias)
+                }
                 ctx.stroke()
 
-                ctx.strokeStyle = colourWithAlpha("#ffffff", clamp((0.68 + v6 * 0.28) * (1.0 - dim), 0.15, 0.96))
-                ctx.lineWidth = 1.3 + v6 * 1.0
+                ctx.strokeStyle = colourWithAlpha("#ffffff", clamp((0.72 + v6 * 0.26) * (1.0 - dim), 0.18, 0.98))
+                ctx.lineWidth = 1.45 + v6 * 1.15 + state.beatPulse * 0.65
                 ctx.beginPath()
-                ctx.moveTo(baseX, baseY)
-                ctx.lineTo(baseX + dirX * reach * 0.92, baseY + dirY * reach * 0.92)
+                ctx.moveTo(lensX, lensY)
+                ctx.lineTo(topX, topY)
                 ctx.stroke()
-
-                // Cloud-deck elliptical projection disc where the collimated beam pierces the upper night sky
-                ctx.fillStyle = colourWithAlpha(coreCol, clamp((0.18 + v6 * 0.22) * (1.0 - dim), 0.06, 0.48))
-                ctx.beginPath()
-                ctx.arc(topX, topY, topHalfW * 0.85, 0, Math.PI * 2.0)
-                ctx.fill()
-
-                // 2. Ground-Mounted 3D Armoured Searchlight Pedestal, Gimbal Yoke & Parabolic Drum at baseY
-                var pedW6 = Math.max(6.5, w * 0.008)
-                var pedH6 = Math.max(5.5, h * 0.011)
-                ctx.fillStyle = "rgba(8, 12, 22, " + (0.88 * (1.0 - dim)).toFixed(3) + ")"
-                ctx.strokeStyle = colourWithAlpha(spotCol, 0.82 * (1.0 - dim))
-                ctx.lineWidth = 1.4
-                ctx.beginPath()
-                ctx.moveTo(baseX - pedW6 * 1.15, baseY + pedH6 * 0.45)
-                ctx.lineTo(baseX + pedW6 * 1.15, baseY + pedH6 * 0.45)
-                ctx.lineTo(baseX + pedW6 * 0.72, baseY - pedH6 * 0.55)
-                ctx.lineTo(baseX - pedW6 * 0.72, baseY - pedH6 * 0.55)
-                ctx.closePath()
-                ctx.fill()
-                ctx.stroke()
-
-                ctx.fillStyle = "#ffffff"
-                ctx.beginPath()
-                ctx.arc(baseX, baseY - pedH6 * 0.25, 2.2 + v6 * 1.4, 0, Math.PI * 2.0)
-                ctx.fill()
             }
 
-            // 3. Airborne Night-Sky Objects (Stealth Delta Craft, 3D Flying Saucers & Orbital Satellites)
-            //    They cruise across the upper sky and flare up brightly with illuminated 3D wireframe geometry,
-            //    specular glints, and target-lock rings when a searchlight beam hits them!
-            for (var so = 0; so < skyObjCount; so++) {
-                var skyObj = skyObjs6[so]
-                var soSpeed = skyObj.speed
-                var objX = skyObj.x
-                var objY = skyObj.y
-                var objScale = skyObj.scale
-
-                // Check illumination from all sweeping searchlight beams
-                var illum = 0.0
-                var hitCol = palette[(so * 2 + palShiftSpot) % palette.length]
-                for (var bChk = 0; bChk < activeBeams6.length; bChk++) {
-                    var bm = activeBeams6[bChk]
-                    var dxB = objX - bm.x0
-                    var dyB = objY - bm.y0
-                    var along = dxB * bm.dirX + dyB * bm.dirY
-                    if (along > 20.0 && along < bm.reach * 1.08) {
-                        var perp = Math.abs(dxB * bm.nx + dyB * bm.ny)
-                        var coneHalfW = lerp(bm.baseHalfW, bm.topHalfW, clamp(along / bm.reach, 0.0, 1.0)) * 2.15
-                        if (perp < coneHalfW) {
-                            var hitStrength = Math.pow(1.0 - perp / coneHalfW, 0.68) * clamp(0.72 + bm.v * 0.58, 0.55, 1.45)
-                            if (hitStrength > illum) {
-                                illum = hitStrength
-                                hitCol = bm.coreCol
-                            }
+            // 2. Volumetric Mid-Air Cross-Beam Intersection Bloom (pure light-on-air atmospheric scatter where two beams cross)
+            for (var bA = 0; bA < activeBeams6.length; bA++) {
+                var bmA = activeBeams6[bA]
+                for (var bB = bA + 1; bB < activeBeams6.length; bB++) {
+                    var bmB = activeBeams6[bB]
+                    var denomCross = bmA.dirX * bmB.dirY - bmA.dirY * bmB.dirX
+                    if (Math.abs(denomCross) < 0.08) continue
+                    var dxAB = bmB.x0 - bmA.x0
+                    var dyAB = bmB.y0 - bmA.y0
+                    var tA = (dxAB * bmB.dirY - dyAB * bmB.dirX) / denomCross
+                    var tB = (dxAB * bmA.dirY - dyAB * bmA.dirX) / denomCross
+                    if (tA > minDim * 0.08 && tB > minDim * 0.08 && tA < bmA.reach * 0.85 && tB < bmB.reach * 0.85) {
+                        var ix = bmA.x0 + bmA.dirX * tA
+                        var iy = bmA.y0 + bmA.dirY * tA
+                        if (ix >= -w * 0.1 && ix <= w * 1.1 && iy >= -h * 0.1 && iy <= h * 1.1) {
+                            var crossEnergy = clamp((bmA.v + bmB.v) * 0.5, 0.1, 1.4)
+                            var crossW = lerp(bmA.baseHalfW, bmA.topHalfW, clamp(tA / bmA.reach, 0.0, 1.0)) * 0.85
+                            ctx.fillStyle = colourWithAlpha("#ffffff", clamp((0.08 + crossEnergy * 0.10) * (1.0 - dim), 0.03, 0.26))
+                            ctx.beginPath()
+                            ctx.moveTo(ix, iy - crossW * 1.35)
+                            ctx.lineTo(ix + crossW * 0.95, iy)
+                            ctx.lineTo(ix, iy + crossW * 1.35)
+                            ctx.lineTo(ix - crossW * 0.95, iy)
+                            ctx.closePath()
+                            ctx.fill()
                         }
                     }
                 }
-                illum = clamp(illum, 0.0, 1.25)
+            }
 
-                // When spotted by a searchlight beam, draw an illuminated atmospheric scatter halo & radar lock ring
-                if (illum > 0.08) {
-                    var lockR = objScale * (1.55 + (1.0 - Math.min(1.0, illum)) * 0.45)
-                    ctx.fillStyle = colourWithAlpha(hitCol, clamp(illum * 0.34 * (1.0 - dim), 0.04, 0.52))
-                    ctx.strokeStyle = colourWithAlpha("#ffffff", clamp(illum * 0.90 * (1.0 - dim), 0.12, 0.96))
-                    ctx.lineWidth = 1.2 + illum * 1.1
-                    ctx.beginPath()
-                    ctx.arc(objX, objY, lockR, 0, Math.PI * 2.0)
-                    ctx.fill()
-                    ctx.stroke()
-                }
+            // 3. Solid Architectural Ground-Mounted Searchlight Projector Units at the Bottom (Armoured Base, U-Frame Yoke & Pivoting Drum Barrel)
+            for (var spU = 0; spU < activeBeams6.length; spU++) {
+                var bmU = activeBeams6[spU]
+                var bxU = bmU.baseX, byU = bmU.baseY
+                var pWU = bmU.pedW, pHU = bmU.pedH
+                var pvX = bmU.pivotX, pvY = bmU.pivotY
+                var dXU = bmU.dirX, dYU = bmU.dirY
+                var nXU = bmU.nx, nYU = bmU.ny
+                var bLenU = bmU.barrelLen
+                var drumHalfW = pWU * 0.52
 
-                // Draw the airborne 3D craft (dim stealth outline in the dark; blazing white/neon wireframe when illuminated by a beam!)
-                var hullAlpha = clamp((0.22 + illum * 0.78) * (1.0 - dim), 0.14, 1.0)
-                ctx.strokeStyle = illum > 0.25
-                    ? colourWithAlpha("#ffffff", hullAlpha)
-                    : colourWithAlpha(hitCol, hullAlpha)
-                ctx.fillStyle = colourWithAlpha(illum > 0.25 ? hitCol : "#070b14", clamp((0.35 + illum * 0.45) * (1.0 - dim), 0.18, 0.88))
-                ctx.lineWidth = 1.1 + illum * 1.5
-                var bankA = Math.sin(eqSpinT * 1.4 + so * 1.7) * 0.22
-                var cosBk = Math.cos(bankA), sinBk = Math.sin(bankA)
+                // 3A. Pivoting Cylindrical Searchlight Drum Housing aligned dynamically with beam direction (dirX, dirY)
+                var rearX = pvX - dXU * (bLenU * 0.45)
+                var rearY = pvY - dYU * (bLenU * 0.45)
+                var frontX = bmU.x0
+                var frontY = bmU.y0
+                ctx.fillStyle = "rgba(10, 15, 28, " + (0.96 * (1.0 - dim * 0.5)).toFixed(3) + ")"
+                ctx.strokeStyle = colourWithAlpha(bmU.col, (0.90 + bmU.v * 0.10) * (1.0 - dim))
+                ctx.lineWidth = 1.65
                 ctx.beginPath()
-                if (so % 3 === 0) {
-                    // Stealth Delta Recon Craft
-                    var dirSign = soSpeed >= 0 ? 1.0 : -1.0
-                    var noseX = objX + dirSign * objScale * 1.25 * cosBk
-                    var noseY = objY + dirSign * objScale * 1.25 * sinBk
-                    var wingLX = objX - dirSign * objScale * 0.85 * cosBk - objScale * 0.78 * sinBk
-                    var wingLY = objY - dirSign * objScale * 0.85 * sinBk + objScale * 0.78 * cosBk
-                    var wingRX = objX - dirSign * objScale * 0.85 * cosBk + objScale * 0.78 * sinBk
-                    var wingRY = objY - dirSign * objScale * 0.85 * sinBk - objScale * 0.78 * cosBk
-                    var tailX = objX - dirSign * objScale * 0.45 * cosBk
-                    var tailY = objY - dirSign * objScale * 0.45 * sinBk
-                    ctx.moveTo(noseX, noseY)
-                    ctx.lineTo(wingLX, wingLY)
-                    ctx.lineTo(tailX, tailY)
-                    ctx.lineTo(wingRX, wingRY)
-                    ctx.closePath()
-                    ctx.moveTo(noseX, noseY); ctx.lineTo(tailX, tailY)
-                } else if (so % 3 === 1) {
-                    // 3D Ringed Flying Saucer Disc
-                    for (var scS = 0; scS <= 12; scS++) {
-                        var saS = (scS / 12.0) * Math.PI * 2.0
-                        var sxS = objX + Math.cos(saS) * objScale * 1.20
-                        var syS = objY + Math.sin(saS) * objScale * 0.42
-                        if (scS === 0) ctx.moveTo(sxS, syS)
-                        else ctx.lineTo(sxS, syS)
-                    }
-                    ctx.closePath()
-                    ctx.arc(objX, objY - objScale * 0.16, objScale * 0.52, Math.PI, Math.PI * 2.0)
-                } else {
-                    // Orbital Geodesic Satellite with Solar Array Wings
-                    ctx.rect(objX - objScale * 0.32, objY - objScale * 0.32, objScale * 0.64, objScale * 0.64)
-                    ctx.rect(objX - objScale * 1.35, objY - objScale * 0.20, objScale * 0.82, objScale * 0.40)
-                    ctx.rect(objX + objScale * 0.53, objY - objScale * 0.20, objScale * 0.82, objScale * 0.40)
-                }
+                ctx.moveTo(rearX - nXU * drumHalfW * 0.82, rearY - nYU * drumHalfW * 0.82)
+                ctx.lineTo(frontX - nXU * drumHalfW * 1.08, frontY - nYU * drumHalfW * 1.08)
+                ctx.lineTo(frontX + nXU * drumHalfW * 1.08, frontY + nYU * drumHalfW * 1.08)
+                ctx.lineTo(rearX + nXU * drumHalfW * 0.82, rearY + nYU * drumHalfW * 0.82)
+                ctx.closePath()
                 ctx.fill()
                 ctx.stroke()
+
+                // Cooling fins across the searchlight drum barrel
+                ctx.strokeStyle = colourWithAlpha(bmU.coreCol, 0.58 * (1.0 - dim))
+                ctx.lineWidth = 1.1
+                ctx.beginPath()
+                for (var fn = 1; fn <= 2; fn++) {
+                    var fu = fn / 3.0
+                    var fxC = lerp(rearX, frontX, fu)
+                    var fyC = lerp(rearY, frontY, fu)
+                    var fwC = drumHalfW * lerp(0.84, 1.04, fu)
+                    ctx.moveTo(fxC - nXU * fwC, fyC - nYU * fwC)
+                    ctx.lineTo(fxC + nXU * fwC, fyC + nYU * fwC)
+                }
+                ctx.stroke()
+
+                // Glowing parabolic xenon aperture lens rim at the front of the pivoting drum
+                ctx.fillStyle = "#ffffff"
+                ctx.strokeStyle = colourWithAlpha(bmU.coreCol, 0.95 * (1.0 - dim))
+                ctx.lineWidth = 1.8
+                ctx.beginPath()
+                ctx.moveTo(frontX - nXU * drumHalfW * 1.06, frontY - nYU * drumHalfW * 1.06)
+                ctx.lineTo(frontX + nXU * drumHalfW * 1.06, frontY + nYU * drumHalfW * 1.06)
+                ctx.stroke()
+                ctx.beginPath()
+                ctx.arc(frontX, frontY, Math.max(2.4, drumHalfW * 0.42 + bmU.v * 1.4), 0, Math.PI * 2.0)
+                ctx.fill()
+
+                // 3B. Heavy-Duty U-Frame Gimbal Trunnion Yoke Arms cradling the drum pivot
+                ctx.strokeStyle = colourWithAlpha(bmU.col, 0.88 * (1.0 - dim))
+                ctx.lineWidth = 2.0
+                ctx.beginPath()
+                ctx.moveTo(bxU - pWU * 0.68, byU - pHU * 0.18)
+                ctx.lineTo(bxU - pWU * 0.68, pvY)
+                ctx.lineTo(pvX, pvY)
+                ctx.lineTo(bxU + pWU * 0.68, pvY)
+                ctx.lineTo(bxU + pWU * 0.68, byU - pHU * 0.18)
+                ctx.stroke()
+
+                // 3C. Solid Bevelled Architectural Concrete/Steel Anchor Plinth at baseY
+                ctx.fillStyle = "rgba(7, 10, 20, " + (0.96 * (1.0 - dim * 0.5)).toFixed(3) + ")"
+                ctx.strokeStyle = colourWithAlpha(bmU.col, 0.92 * (1.0 - dim))
+                ctx.lineWidth = 1.6
+                ctx.beginPath()
+                ctx.moveTo(bxU - pWU * 1.25, byU + pHU * 0.52)
+                ctx.lineTo(bxU + pWU * 1.25, byU + pHU * 0.52)
+                ctx.lineTo(bxU + pWU * 0.86, byU - pHU * 0.22)
+                ctx.lineTo(bxU - pWU * 0.86, byU - pHU * 0.22)
+                ctx.closePath()
+                ctx.fill()
+                ctx.stroke()
+
+                // Illuminated power indicator bar on the base plinth
+                ctx.fillStyle = colourWithAlpha(bmU.coreCol, clamp((0.65 + bmU.v * 0.35) * (1.0 - dim), 0.2, 1.0))
+                ctx.fillRect(bxU - pWU * 0.55, byU + pHU * 0.08, pWU * 1.10, Math.max(2.0, pHU * 0.20))
             }
         } else if (eqStyle === 7) {
             // Style 7: 3D Sonic Orb — Slowly Revolving 3-Axis 3D Sphere Wrapped in 16×8 Extruded Segmented Hardware LED Level Tiles
@@ -6542,6 +6638,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
         var shapeScale = cfg && cfg.layer1ShapeScale !== undefined ? clamp(Number(cfg.layer1ShapeScale), 0.3, 2.5) : 1.0
         var shapeDensityDraw = cfg && cfg.layer1ShapeDensity !== undefined ? clamp(Number(cfg.layer1ShapeDensity), 0.25, 2.5) : 1.0
         var shapeFillRatio = cfg && cfg.layer1ShapeFillRatio !== undefined ? clamp(Number(cfg.layer1ShapeFillRatio), 0.0, 1.0) : 0.35
+        var shapeFillOpacity = cfg && cfg.layer1ShapeFillOpacity !== undefined ? clamp(Number(cfg.layer1ShapeFillOpacity), 0.05, 1.0) : 0.55
+        _activeShapeFillOpacity = shapeFillOpacity
         var shapesOpac = cfg && cfg.layer1ShapesOpacity !== undefined ? clamp(Number(cfg.layer1ShapesOpacity), 0.05, 1.0) : 1.0
         var drawTargetCount = shapeDensityDraw <= 1.5
             ? Math.round(1.0 + Math.pow((shapeDensityDraw - 0.25) / 1.25, 1.15) * 4.0)
@@ -8374,148 +8472,171 @@ function drawMode7SpacetimeQuasar(ctx, w, h, state, palette, cfg) {
     ctx.restore()
 }
 
-// Mode 8: 3D Bioluminescent Deep-Sea Jellyfish & Volumetric Mycelial Canopy
+// Mode 8: 3D Bioluminescent Deep-Sea Jellyfish & Volumetric Mycelial Canopy (Free-Swimming Across the Entire Stage)
 function drawMode8AlienMycelium(ctx, w, h, state, palette, cfg) {
     var cx = w * 0.5
     var cy = h * 0.5
-    var minDim = Math.min(w, h) * 0.34 * (cfg.layer2Zoom || 1.0)
+    var baseMinDim = Math.min(w, h) * 0.34 * (cfg.layer2Zoom || 1.0)
     var isEcho = Boolean(state.isTracerEcho)
     var lod = state.echoLod || 1.0
     var comp = clamp(cfg.layer2Complexity || 1.0, 0.4, 2.0) * lod
-    var tendrils = isEcho ? 8 : 12
-    var segs = isEcho ? 8 : Math.max(10, Math.min(16, Math.round(12 * comp)))
     var hist = state.waveHistory || []
-
-    // 3D pulsing jellyfish propulsion cycle driven by bass & phase
-    var pulseContract = Math.sin(state.t * 3.2 + state.bass * 2.0)
-    var swayAngle = Math.sin(state.t * 0.55) * 0.18
-    var bellCentreY = -minDim * (0.10 + pulseContract * 0.04)
-
-    ctx.save()
-    ctx.translate(cx, cy)
-    ctx.rotate(swayAngle)
-    ctx.globalCompositeOperation = "source-over"
-
-    // 1. 3D Translucent Bioluminescent Jellyfish Bell / Mycelial Canopy Dome (3 layered umbrella bells)
-    var bellLayers = isEcho ? 2 : 4
-    var bellSteps = isEcho ? 20 : 32
     var palShift = Math.floor((state.hueShift || 0) / 45)
-    for (var bl = bellLayers - 1; bl >= 0; bl--) {
-        var bFrac = (bl + 1) / bellLayers
-        var bellW = minDim * (0.14 + bFrac * 0.22) * (1.0 - pulseContract * 0.14 + state.bass * 0.18)
-        var bellH = minDim * (0.09 + bFrac * 0.14) * (1.0 + pulseContract * 0.18 + state.bass * 0.14)
-        var canopyCol = palette[(bl * 2 + palShift) % palette.length]
-        var rimCol = palette[(bl * 2 + 1 + palShift) % palette.length]
+    var swimT = (state.driftTime !== undefined ? state.driftTime : state.t) * (0.75 + 0.25 * (cfg.layer2Speed || 1.0))
+    var endPt = computeTracerEndpoint(w, h, swimT, cfg.tracerDrift !== undefined ? cfg.tracerDrift : 1.0, 1.0)
 
-        ctx.fillStyle = colourWithAlpha(canopyCol, (0.10 + (1.0 - bFrac) * 0.12 + state.bass * 0.08) * (isEcho ? 0.5 : 1.0))
-        ctx.strokeStyle = colourWithAlpha(rimCol, 0.55 + (1.0 - bFrac) * 0.40)
-        ctx.lineWidth = (1.2 + (1.0 - bFrac) * 1.5 + state.beatPulse * 0.9) * (isEcho ? 0.75 : 1.0)
+    function drawSingleSwimmingJellyfish(jIdx, jellyX, jellyY, headingAngle, scaleMul, phaseOff) {
+        var minDim = baseMinDim * scaleMul
+        var tendrils = isEcho ? 8 : (jIdx === 0 ? 12 : 9)
+        var segs = isEcho ? 8 : Math.max(9, Math.min(16, Math.round((jIdx === 0 ? 12 : 10) * comp)))
+        var pulseContract = Math.sin(state.t * 3.4 + phaseOff + state.bass * 2.4)
+        var bellCentreY = -minDim * (0.10 + pulseContract * 0.05)
 
-        ctx.beginPath()
-        // Upper 3D umbrella dome arch
-        for (var bs = 0; bs <= bellSteps; bs++) {
-            var u = bs / bellSteps
-            var a = Math.PI + u * Math.PI // upper semicircle
-            var bVal0 = state.smoothBands[(bs * 2 + bl * 7) & 63]
-            var scallop = Math.sin(u * Math.PI * 8 + state.t * 3.0) * minDim * 0.018 * (1.0 + bVal0)
-            var bx = Math.cos(a) * (bellW + scallop)
-            var by = bellCentreY + Math.sin(a) * bellH
-            if (bs === 0) ctx.moveTo(bx, by)
-            else ctx.lineTo(bx, by)
-        }
-        // Scalloped lower sub-umbrella margin closing the 3D bell
-        for (var bs2 = bellSteps; bs2 >= 0; bs2--) {
-            var u2 = bs2 / bellSteps
-            var sc = Math.sin(u2 * Math.PI * 10 + state.t * 4.2 + bl) * minDim * (0.018 + state.mid * 0.025)
-            var mx = Math.cos(u2 * Math.PI) * bellW
-            var my = bellCentreY + Math.sin(u2 * Math.PI) * (bellH * 0.28) + sc
-            ctx.lineTo(mx, my)
-        }
-        ctx.closePath()
-        ctx.fill()
-        ctx.stroke()
-    }
+        ctx.save()
+        ctx.translate(jellyX, jellyY)
+        ctx.rotate(headingAngle)
+        ctx.globalCompositeOperation = "source-over"
 
-    // 2. Extruded 3D Bioluminescent Ribbon Tentacles & Travelling Synaptic Spore Pods
-    var baseSpanW = minDim * 0.28 * (1.0 - pulseContract * 0.12)
-    var travelPulse = (state.t * 3.6) % segs
-    for (var bucket = 0; bucket < 3; bucket++) {
-        var tendrilFill = palette[(bucket * 3 + 1) % palette.length]
-        var tendrilStroke = palette[(bucket * 3) % palette.length]
-        ctx.fillStyle = colourWithAlpha(tendrilFill, (0.15 + state.mid * 0.16) * (isEcho ? 0.55 : 1.0))
-        ctx.strokeStyle = colourWithAlpha(tendrilStroke, 0.65 + state.bass * 0.32)
-        ctx.lineWidth = 1.4 + state.bass * 1.1
-        ctx.beginPath()
+        // 1. 3D Translucent Bioluminescent Jellyfish Bell / Mycelial Canopy Dome
+        var bellLayers = isEcho ? 2 : (jIdx === 0 ? 4 : 3)
+        var bellSteps = isEcho ? 18 : 28
+        for (var bl = bellLayers - 1; bl >= 0; bl--) {
+            var bFrac = (bl + 1) / bellLayers
+            var bellW = minDim * (0.14 + bFrac * 0.22) * (1.0 - pulseContract * 0.16 + state.bass * 0.20)
+            var bellH = minDim * (0.09 + bFrac * 0.14) * (1.0 + pulseContract * 0.20 + state.bass * 0.16)
+            var canopyCol = palette[(bl * 2 + jIdx * 3 + palShift) % palette.length]
+            var rimCol = palette[(bl * 2 + 1 + jIdx * 3 + palShift) % palette.length]
 
-        var nodeSpores = []
-        for (var td = bucket; td < tendrils; td += 3) {
-            var tNorm = (td / Math.max(1, tendrils - 1)) * 2.0 - 1.0 // -1 .. +1 across bell rim
-            var px = tNorm * baseSpanW
-            var py = bellCentreY + Math.sin((td / tendrils) * Math.PI) * minDim * 0.04
-            var stepLen = (minDim * (0.34 + state.bass * 0.14)) / segs
-            var leftX = [px - 2.2], leftY = [py]
-            var rightX = [px + 2.2], rightY = [py]
+            ctx.fillStyle = colourWithAlpha(canopyCol, (0.11 + (1.0 - bFrac) * 0.13 + state.bass * 0.09) * (isEcho ? 0.5 : 1.0))
+            ctx.strokeStyle = colourWithAlpha(rimCol, 0.58 + (1.0 - bFrac) * 0.38)
+            ctx.lineWidth = (1.2 + (1.0 - bFrac) * 1.5 + state.beatPulse * 1.0) * (isEcho ? 0.75 : 1.0)
 
-            for (var s = 1; s <= segs; s++) {
-                var frac = s / segs
-                var snap = (hist.length > s && hist[s] && hist[s].bands) ? hist[s].bands : state.smoothBands
-                var bVal = snap[(td * 2 + s) & 31] !== undefined ? snap[(td * 2 + s) & 31] : (state.smoothBands[(td * 3 + s) & 63] || 0.1)
-                var wave = Math.sin(state.t * 3.1 - s * 0.48 + td * 0.7) * (0.38 + state.mid * 0.55 + bVal * 0.45)
-                var curAng = Math.PI * 0.5 + tNorm * 0.28 * (1.0 - frac * 0.5) + wave * frac
-                px += Math.cos(curAng) * stepLen
-                py += Math.sin(curAng) * stepLen
-                var ribW = (2.6 * (1.0 - frac * 0.72) + bVal * 2.8) * (isEcho ? 0.65 : 1.0)
-                var nx = -Math.sin(curAng) * ribW
-                var ny = Math.cos(curAng) * ribW
-                leftX.push(px + nx)
-                leftY.push(py + ny)
-                rightX.push(px - nx)
-                rightY.push(py - ny)
-
-                var isTravelHead = Math.abs(((s - travelPulse + segs) % segs) - 1.0) < 1.2
-                if (!isEcho && (s % 4 === 0 || s === segs || isTravelHead)) {
-                    nodeSpores.push(px, py, (isTravelHead ? 2.2 : 1.4) + bVal * 2.6)
-                }
-            }
-
-            ctx.moveTo(leftX[0], leftY[0])
-            for (var k0 = 1; k0 <= segs; k0++) ctx.lineTo(leftX[k0], leftY[k0])
-            for (var k1 = segs; k1 >= 0; k1--) ctx.lineTo(rightX[k1], rightY[k1])
-            ctx.closePath()
-        }
-        ctx.fill()
-        ctx.stroke()
-
-        // Glowing synaptic bioluminescent pods along tentacles
-        if (nodeSpores.length > 0) {
-            ctx.fillStyle = colourWithAlpha(palette[(bucket * 3 + 2) % palette.length], 0.85)
             ctx.beginPath()
-            for (var sp = 0; sp < nodeSpores.length; sp += 3) {
-                var sx = nodeSpores[sp], sy = nodeSpores[sp + 1], sr = nodeSpores[sp + 2]
-                ctx.rect(sx - sr, sy - sr, sr * 2.0, sr * 2.0)
+            for (var bs = 0; bs <= bellSteps; bs++) {
+                var u = bs / bellSteps
+                var a = Math.PI + u * Math.PI
+                var bVal0 = state.smoothBands[(bs * 2 + bl * 7 + jIdx * 11) & 63]
+                var scallop = Math.sin(u * Math.PI * 8 + state.t * 3.2 + phaseOff) * minDim * 0.018 * (1.0 + bVal0)
+                var bx = Math.cos(a) * (bellW + scallop)
+                var by = bellCentreY + Math.sin(a) * bellH
+                if (bs === 0) ctx.moveTo(bx, by)
+                else ctx.lineTo(bx, by)
+            }
+            for (var bs2 = bellSteps; bs2 >= 0; bs2--) {
+                var u2 = bs2 / bellSteps
+                var sc = Math.sin(u2 * Math.PI * 10 + state.t * 4.4 + bl + phaseOff) * minDim * (0.018 + state.mid * 0.028)
+                var mx = Math.cos(u2 * Math.PI) * bellW
+                var my = bellCentreY + Math.sin(u2 * Math.PI) * (bellH * 0.28) + sc
+                ctx.lineTo(mx, my)
+            }
+            ctx.closePath()
+            ctx.fill()
+            ctx.stroke()
+        }
+
+        // 2. Extruded 3D Bioluminescent Ribbon Tentacles & Travelling Synaptic Spore Pods
+        var baseSpanW = minDim * 0.28 * (1.0 - pulseContract * 0.14)
+        var travelPulse = ((state.t * 3.8 + phaseOff) % segs)
+        for (var bucket = 0; bucket < 3; bucket++) {
+            var tendrilFill = palette[(bucket * 3 + 1 + jIdx * 2 + palShift) % palette.length]
+            var tendrilStroke = palette[(bucket * 3 + jIdx * 2 + palShift) % palette.length]
+            ctx.fillStyle = colourWithAlpha(tendrilFill, (0.16 + state.mid * 0.18) * (isEcho ? 0.55 : 1.0))
+            ctx.strokeStyle = colourWithAlpha(tendrilStroke, 0.68 + state.bass * 0.30)
+            ctx.lineWidth = 1.4 + state.bass * 1.15
+            ctx.beginPath()
+
+            var nodeSpores = []
+            for (var td = bucket; td < tendrils; td += 3) {
+                var tNorm = (td / Math.max(1, tendrils - 1)) * 2.0 - 1.0
+                var px = tNorm * baseSpanW
+                var py = bellCentreY + Math.sin((td / tendrils) * Math.PI) * minDim * 0.04
+                var stepLen = (minDim * (0.35 + state.bass * 0.16 + Math.max(0.0, -pulseContract) * 0.08)) / segs
+                var leftX = [px - 2.2], leftY = [py]
+                var rightX = [px + 2.2], rightY = [py]
+
+                for (var s = 1; s <= segs; s++) {
+                    var frac = s / segs
+                    var snap = (hist.length > s && hist[s] && hist[s].bands) ? hist[s].bands : state.smoothBands
+                    var bVal = snap[(td * 2 + s) & 31] !== undefined ? snap[(td * 2 + s) & 31] : (state.smoothBands[(td * 3 + s) & 63] || 0.1)
+                    var wave = Math.sin(state.t * 3.3 + phaseOff - s * 0.50 + td * 0.7) * (0.40 + state.mid * 0.58 + bVal * 0.48)
+                    var curAng = Math.PI * 0.5 + tNorm * 0.28 * (1.0 - frac * 0.5) + wave * frac
+                    px += Math.cos(curAng) * stepLen
+                    py += Math.sin(curAng) * stepLen
+                    var ribW = (2.6 * (1.0 - frac * 0.72) + bVal * 2.9) * (isEcho ? 0.65 : 1.0)
+                    var nx = -Math.sin(curAng) * ribW
+                    var ny = Math.cos(curAng) * ribW
+                    leftX.push(px + nx)
+                    leftY.push(py + ny)
+                    rightX.push(px - nx)
+                    rightY.push(py - ny)
+
+                    var isTravelHead = Math.abs(((s - travelPulse + segs) % segs) - 1.0) < 1.2
+                    if (!isEcho && (s % 4 === 0 || s === segs || isTravelHead)) {
+                        nodeSpores.push(px, py, (isTravelHead ? 2.2 : 1.4) + bVal * 2.6)
+                    }
+                }
+
+                ctx.moveTo(leftX[0], leftY[0])
+                for (var k0 = 1; k0 <= segs; k0++) ctx.lineTo(leftX[k0], leftY[k0])
+                for (var k1 = segs; k1 >= 0; k1--) ctx.lineTo(rightX[k1], rightY[k1])
+                ctx.closePath()
             }
             ctx.fill()
+            ctx.stroke()
+
+            if (nodeSpores.length > 0) {
+                ctx.fillStyle = colourWithAlpha(palette[(bucket * 3 + 2 + jIdx * 2 + palShift) % palette.length], 0.86)
+                ctx.beginPath()
+                for (var sp = 0; sp < nodeSpores.length; sp += 3) {
+                    var sx = nodeSpores[sp], sy = nodeSpores[sp + 1], sr = nodeSpores[sp + 2]
+                    ctx.rect(sx - sr, sy - sr, sr * 2.0, sr * 2.0)
+                }
+                ctx.fill()
+            }
         }
+        ctx.restore()
     }
 
-    // 3. Drifting 3D Bioluminescent Plankton & Mycelial Spore Cloud around the Canopy
+    // Primary free-swimming Mycelium Jellyfish roaming across the full stage with pulsing bell thrust & banking
+    var thrustSurge = Math.sin(state.t * 3.4 + state.bass * 2.0) * 0.035 * Math.min(w, h)
+    var roamX0 = cx + endPt.dx * 0.72 + Math.sin(swimT * 0.62) * (w * 0.28) + Math.cos(swimT * 1.15) * (w * 0.11)
+    var roamY0 = cy + endPt.dy * 0.65 + Math.cos(swimT * 0.48) * (h * 0.24) + Math.sin(swimT * 0.94) * (h * 0.09)
+    var vx0 = Math.cos(swimT * 0.62) * 0.62 * (w * 0.28) - Math.sin(swimT * 1.15) * 1.15 * (w * 0.11)
+    var vy0 = -Math.sin(swimT * 0.48) * 0.48 * (h * 0.24) + Math.cos(swimT * 0.94) * 0.94 * (h * 0.09)
+    var bankAngle0 = clamp((vx0 / Math.max(1.0, w * 0.25)) * 0.52, -0.68, 0.68) + Math.sin(state.t * 0.85) * 0.14
+    roamX0 += Math.sin(bankAngle0) * thrustSurge
+    roamY0 -= Math.cos(bankAngle0) * thrustSurge
+    var scaleBreath0 = (0.86 + 0.26 * (0.5 + 0.5 * Math.sin(swimT * 0.54)) + state.bassSmooth * 0.14)
+    drawSingleSwimmingJellyfish(0, roamX0, roamY0, bankAngle0, scaleBreath0, 0.0)
+
+    // Companion counter-swimming Mycelium Jellyfish in 3D depth parallax (when complexity >= 0.75)
+    if (!isEcho && comp >= 0.75) {
+        var roamX1 = cx - endPt.dx * 0.55 + Math.cos(swimT * 0.51 + 2.1) * (w * 0.31)
+        var roamY1 = cy - endPt.dy * 0.52 + Math.sin(swimT * 0.67 + 1.4) * (h * 0.25)
+        var vx1 = -Math.sin(swimT * 0.51 + 2.1) * 0.51 * (w * 0.31)
+        var bankAngle1 = clamp((vx1 / Math.max(1.0, w * 0.25)) * 0.55, -0.72, 0.72) + Math.cos(state.t * 0.92 + 1.7) * 0.16
+        var scaleBreath1 = 0.56 + 0.20 * (0.5 + 0.5 * Math.cos(swimT * 0.47 + 1.8)) + state.midSmooth * 0.10
+        drawSingleSwimmingJellyfish(1, roamX1, roamY1, bankAngle1, scaleBreath1, 2.35)
+    }
+
+    // 3. Drifting 3D Bioluminescent Plankton & Mycelial Spore Cloud across the stage
     if (!isEcho) {
         var sporeCount = Math.min(state.spores ? state.spores.length : 0, 24)
         if (sporeCount > 0) {
-            ctx.fillStyle = colourWithAlpha(palette[4 % palette.length], 0.68 + state.high * 0.28)
+            ctx.save()
+            ctx.fillStyle = colourWithAlpha(palette[(4 + palShift) % palette.length], 0.68 + state.high * 0.28)
             ctx.beginPath()
             for (var scIdx = 0; scIdx < sporeCount; scIdx++) {
                 var spObj = state.spores[scIdx]
-                var spX = (spObj.x - 0.5) * minDim * 0.92
-                var spY = (spObj.y - 0.5) * minDim * 0.92
+                var spX = roamX0 + (spObj.x - 0.5) * baseMinDim * 1.45
+                var spY = roamY0 + (spObj.y - 0.5) * baseMinDim * 1.45
                 var spR = 1.6 + (state.smoothBands[(scIdx * 3) & 63] || 0.1) * 3.0
                 ctx.rect(spX - spR, spY - spR, spR * 2.0, spR * 2.0)
             }
             ctx.fill()
+            ctx.restore()
         }
     }
-
-    ctx.restore()
 }
 
 // Mode 9: Classic Matrix Digital Rain Waterfall (Multi-Depth 3D Parallax Phosphor-Green Code Cascade)
@@ -9706,10 +9827,10 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
             var isEchoT = (te > 0)
             var uT = l3Tracers > 1 ? (te / (l3Tracers - 1)) : 0.0
             var zScaleT = (tracerDir >= 0)
-                ? (1.0 + uT * 0.18 * Math.min(tracerSpeed, 1.6))
-                : (1.0 / (1.0 + uT * 0.32 * Math.min(tracerSpeed, 1.6)))
-            var txT = endPt.dx * uT * 0.32 * (tracerDir >= 0 ? -1.0 : 1.0)
-            var tyT = endPt.dy * uT * 0.32 * (tracerDir >= 0 ? -1.0 : 1.0)
+                ? (1.0 + Math.pow(uT, 1.15) * 0.68 * Math.min(tracerSpeed, 1.8))
+                : (1.0 / (1.0 + Math.pow(uT, 1.10) * 0.95 * Math.min(tracerSpeed, 1.8)))
+            var txT = endPt.dx * uT * 0.38 * (tracerDir >= 0 ? -1.0 : 1.0)
+            var tyT = endPt.dy * uT * 0.38 * (tracerDir >= 0 ? -1.0 : 1.0)
             var passAlphaT = isEchoT ? (Math.pow(1.0 - uT * 0.78, 1.30) * (textStyle === 6 ? 0.54 : 0.42)) : 0.99
 
             ctx.save()
@@ -9742,7 +9863,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                 var rowSwayY = Math.cos(l3T * 1.95 * evoFreq + rowIdx * 1.85) * (rowFontPx * (0.26 + state.bassSmooth * 0.30) * Math.min(1.35, warpIntensity))
                 var baseRowY = cy + (rowIdx - (displayLines.length - 1) * 0.5) * lineSpanH + rowSwayY * 0.55
 
-                // Cohesive line-level offset for the line-level ASCII block styles (16, 17, 19)
+                // Cohesive line-level offset for the line-level ASCII block styles (16, 17, 19) when in flat row modes
                 var rowLineCenterX = cx + rowSwayX
                 var rowLineCenterY = baseRowY + rowSwayY * 0.45
                 var rowPalLen = Math.max(1, activeStylePal.length)
@@ -9764,11 +9885,10 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                     rowColAlt = hslToHex((rPrismHue + 90) % 360, 0.92, 0.55)
                 }
 
-                // Line-level ASCII block strips for Styles 16, 17, 19 (drawn across the whole line rather than per-character)
+                // Line-level ASCII block strips for Styles 16, 17, 19 (1 full-row backing plate per line)
                 var linePlateW = rowHalfW * 2.0 + rowFontPx * 1.36
                 var linePlateH = rowFontPx * 1.20
                 if (textStyle === 16) {
-                    // Style 16: ASCII Black Block / White Text — full line-level solid black/dark block strip
                     ctx.save()
                     ctx.fillStyle = isEchoT ? "rgba(4, 4, 8, 0.78)" : "rgba(4, 4, 8, 0.95)"
                     ctx.fillRect(rowLineCenterX - linePlateW * 0.5, rowLineCenterY - linePlateH * 0.5, linePlateW, linePlateH)
@@ -9779,7 +9899,6 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                     }
                     ctx.restore()
                 } else if (textStyle === 17) {
-                    // Style 17: ASCII White Back / Black Text — full line-level solid white/bright-palette block strip
                     ctx.save()
                     var whtStripCol = (colourMode === 0 && !isPaletteShifted) ? "#FFFFFF" : rowColCh
                     ctx.fillStyle = colourWithAlpha(whtStripCol, isEchoT ? 0.78 : 0.95)
@@ -9791,7 +9910,6 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                     }
                     ctx.restore()
                 } else if (textStyle === 19) {
-                    // Style 19: ASCII Coloured Back / Transparent Text — full line-level solid palette-coloured block strip (letters knocked out below)
                     ctx.save()
                     ctx.fillStyle = colourWithAlpha(rowColCh, isEchoT ? 0.74 : 0.94)
                     ctx.fillRect(rowLineCenterX - linePlateW * 0.5, rowLineCenterY - linePlateH * 0.5, linePlateW, linePlateH)
@@ -9935,8 +10053,9 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                 var fontSlope = (textStyle === 1 || textStyle === 3 || textStyle === 12) ? "900 italic " : "900 "
                 ctx.font = fontSlope + rowFontPx + "px " + activeFontFamily
 
-                // In 3D Cylinder mode (l3Mode === 7), sort characters back-to-front by 3D cylinder Z depth
-                // so characters orbiting across the back hemisphere are cleanly occluded by the front hemisphere!
+                // Sort characters back-to-front by 3D Z depth so letters swooping close to the viewer cleanly overlap distant letters!
+                var zDirPol = (tracerDir === 0) ? Math.sin(l3T * 0.55) : (tracerDir < 0 ? -1.0 : 1.0)
+                var zSurgeGlobal = Math.sin(l3T * 1.25 * evoFreq * zDirPol + rowIdx * 0.75) * (0.42 + state.bassSmooth * 0.26) * warpIntensity
                 var charIndices = []
                 for (var ciInit = 0; ciInit < nCh; ciInit++) {
                     var hxInit = (nCh <= 1) ? 0.0 : ((ciInit / (nCh - 1)) * 2.0 - 1.0)
@@ -9946,10 +10065,15 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                         var sAng = ((cylDir === 2 || cylDir === 3) ? (hyNorm * Math.PI * 0.82 + hxInit * 0.22) : (hxInit * Math.PI * 0.90))
                                  + sSign * l3T * 1.55 * evoFreq + rowIdx * 0.36
                         sortZ = Math.cos(sAng)
+                    } else if (l3Mode === 4 || l3Mode === 9 || l3Mode === 0 || l3Mode === 2 || l3Mode === 3 || l3Mode === 5 || l3Mode === 6 || l3Mode === 10) {
+                        var yawEst = (l3Mode === 9)
+                            ? (l3T * 1.28 * evoFreq * ((cylDir === 1 || cylDir === 3 || cylDir === 5) ? -1.0 : 1.0))
+                            : Math.cos(l3T * 0.78 * evoFreq + rowIdx * 1.1) * 0.95
+                        sortZ = -hxInit * Math.sin(yawEst)
                     }
                     charIndices.push({ ci: ciInit, z: sortZ })
                 }
-                if (l3Mode === 7) {
+                if (l3Mode === 7 || l3Mode === 4 || l3Mode === 9 || l3Mode === 0 || l3Mode === 2 || l3Mode === 3 || l3Mode === 5 || l3Mode === 6 || l3Mode === 10) {
                     charIndices.sort(function(a, b) { return a.z - b.z })
                 }
 
@@ -9963,125 +10087,154 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                     // Cohesive architectural baseline: zero childish per-letter bouncing; whole words lock and glide together
                     var cpx = rowLineCenterX + (ci - (nCh - 1) * 0.5) * charStep
                     var cpy = rowLineCenterY
-                    var beatPop = 1.0 + state.beatPulse * 0.12 + state.bassSmooth * 0.08
+                    var beatPop = 1.0 + state.beatPulse * 0.14 + state.bassSmooth * 0.10
                     var sx = beatPop
                     var sy = beatPop
                     var rot = 0.0
                     var cylDepthAlpha = 1.0
 
                     if (l3Mode === 0) {
-                        // Mode 0: 3D Tectonic Monolith Split & Lock — whole-word architectural fault-plane glide & 3D perspective lockup
+                        // Mode 0: 3D Tectonic Monolith Split & Lock — magnified 3D perspective swoop & depth travel
                         var splitPhase = Math.sin(l3T * 1.45 * evoFreq + rowIdx * 1.35)
-                        var splitDeadzone = Math.max(0.0, Math.abs(splitPhase) - 0.32) * (splitPhase >= 0.0 ? 1.0 : -1.0)
+                        var splitDeadzone = Math.max(0.0, Math.abs(splitPhase) - 0.25) * (splitPhase >= 0.0 ? 1.0 : -1.0)
                         var faultShiftX = splitDeadzone * rowHalfW * 0.42 * warpIntensity
-                        var monolithPitch = Math.sin(l3T * 0.82 * evoFreq) * 0.24 * warpIntensity
-                        var monolithYaw = splitDeadzone * 0.38 * warpIntensity
+                        var monolithPitch = Math.sin(l3T * 0.82 * evoFreq) * 0.34 * warpIntensity
+                        var monolithYaw = Math.sin(l3T * 0.72 * evoFreq + rowIdx * 0.9) * 0.82 * warpIntensity
+                        var zMonolith = zSurgeGlobal * 0.85 + (rowIdx - (displayLines.length - 1) * 0.5) * 0.24 * state.bassSmooth
                         var projM0 = project3DPoint(
-                            hxNorm * 0.92 + (faultShiftX / Math.max(1.0, rowHalfW)) * 0.35,
+                            hxNorm * 0.96 + (faultShiftX / Math.max(1.0, rowHalfW)) * 0.32,
                             hyNorm * 0.58,
-                            (rowIdx - (displayLines.length - 1) * 0.5) * 0.18 * state.bassSmooth,
+                            zMonolith,
                             monolithPitch, monolithYaw, 0.0,
-                            cx, cy, Math.max(w * 0.34, rowHalfW), 3.4
+                            cx, cy, Math.max(w * 0.34, rowHalfW), 1.75
                         )
+                        var projM0L = project3DPoint(-0.5, hyNorm * 0.58, zMonolith, monolithPitch, monolithYaw, 0.0, cx, cy, Math.max(w * 0.34, rowHalfW), 1.75)
+                        var projM0R = project3DPoint( 0.5, hyNorm * 0.58, zMonolith, monolithPitch, monolithYaw, 0.0, cx, cy, Math.max(w * 0.34, rowHalfW), 1.75)
                         cpx = projM0.x
                         cpy = projM0.y
-                        sx = clamp(projM0.persp * 1.12 * beatPop, 0.62, 1.68)
+                        rot = Math.atan2(projM0R.y - projM0L.y, projM0R.x - projM0L.x)
+                        sx = clamp(projM0.persp * 1.15 * beatPop, 0.28, 2.45)
                         sy = sx
+                        cylDepthAlpha = clamp(0.38 + 0.62 * clamp((projM0.z + 0.9) / 1.8, 0.0, 1.0), 0.32, 1.0)
                     } else if (l3Mode === 1) {
-                        // Mode 1: Industrial Step-Sequencer Matrix — quantized 16th-note architectural tracking & rigid row lockup
+                        // Mode 1: Industrial Step-Sequencer Matrix — quantized 16th-note architectural tracking + 3D Towards/Away depth surge
                         var stepQuant = Math.round(Math.sin(l3T * 2.2 * evoFreq + rowIdx * 1.57) * 2.0) * 0.5
-                        var seqTrack = 1.0 + (state.bassSmooth * 0.24 + state.beatPulse * 0.18) * warpIntensity
+                        var zStep1 = 1.0 + zSurgeGlobal * 0.65
+                        var seqTrack = (1.0 + (state.bassSmooth * 0.24 + state.beatPulse * 0.18) * warpIntensity) * zStep1
                         cpx = cx + stepQuant * rowFontPx * 0.85 * warpIntensity + (ci - (nCh - 1) * 0.5) * charStep * seqTrack
-                        cpy = baseRowY
-                        sx = clamp(beatPop + state.beatPulse * 0.14, 0.78, 1.55)
+                        cpy = cy + (baseRowY - cy) * zStep1
+                        sx = clamp(beatPop * zStep1 + state.beatPulse * 0.16, 0.38, 2.25)
                         sy = sx
                     } else if (l3Mode === 2) {
-                        // Mode 2: Relativistic 3D Orbital Halo — words mounted on a tilted 3D circular halo ring orbiting in 3D space
+                        // Mode 2: Relativistic 3D Orbital Halo — words mounted on a tilted 3D circular halo ring swooping towards/away from the viewer
                         var haloSign = (tracerDir >= 0 ? 1.0 : -1.0) * (rowIdx % 2 === 0 ? 1.0 : -1.0)
-                        var haloAng = hxNorm * (Math.PI * 0.72) + Math.sin(l3T * 0.95 * evoFreq + rowIdx) * 0.55 * haloSign
-                        var haloRad = 1.02 + state.bassSmooth * 0.16 * warpIntensity
-                        var haloPitch = 0.46 + Math.sin(l3T * 0.62) * 0.18
-                        var haloRoll = Math.cos(l3T * 0.54 * evoFreq) * 0.22 * haloSign
+                        var haloAng = hxNorm * (Math.PI * 0.78) + Math.sin(l3T * 0.95 * evoFreq + rowIdx) * 0.72 * haloSign
+                        var haloRad = 1.06 + state.bassSmooth * 0.20 * warpIntensity
+                        var haloPitch = 0.42 + Math.sin(l3T * 0.62) * 0.24
+                        var haloRoll = Math.cos(l3T * 0.54 * evoFreq) * 0.26 * haloSign
                         var projH2 = project3DPoint(
                             Math.sin(haloAng) * haloRad,
                             hyNorm * 0.62,
-                            Math.cos(haloAng) * haloRad * 0.85,
+                            Math.cos(haloAng) * haloRad * 0.96 + zSurgeGlobal * 0.45,
                             haloPitch, 0.0, haloRoll,
-                            cx, cy, Math.max(w * 0.34, rowHalfW), 3.2
+                            cx, cy, Math.max(w * 0.34, rowHalfW), 1.72
                         )
                         var projH2Next = project3DPoint(
                             Math.sin(haloAng + 0.06) * haloRad,
                             hyNorm * 0.62,
-                            Math.cos(haloAng + 0.06) * haloRad * 0.85,
+                            Math.cos(haloAng + 0.06) * haloRad * 0.96 + zSurgeGlobal * 0.45,
                             haloPitch, 0.0, haloRoll,
-                            cx, cy, Math.max(w * 0.34, rowHalfW), 3.2
+                            cx, cy, Math.max(w * 0.34, rowHalfW), 1.72
                         )
                         cpx = projH2.x
                         cpy = projH2.y
                         rot = Math.atan2(projH2Next.y - projH2.y, projH2Next.x - projH2.x)
-                        sx = clamp(projH2.persp * 1.15 * beatPop, 0.58, 1.68)
+                        sx = clamp(projH2.persp * 1.18 * beatPop, 0.26, 2.55)
                         sy = sx
-                        cylDepthAlpha = clamp(0.45 + 0.55 * Math.cos(haloAng * 0.7), 0.35, 1.0)
+                        cylDepthAlpha = clamp(0.35 + 0.65 * Math.cos(haloAng * 0.75), 0.28, 1.0)
                     } else if (l3Mode === 3) {
-                        // Mode 3: Opposing Counter-Shear Monoliths — whole rows glide in opposing horizontal lanes with precision speed-track
+                        // Mode 3: Opposing Counter-Shear 3D Monoliths — rows glide & yaw in opposing 3D planes so one side swoops close
                         var shearDir3 = (rowIdx & 1) ? -1.0 : 1.0
-                        var laneGlide = shearDir3 * Math.sin(l3T * 1.75 * evoFreq + rowIdx * 1.4) * (rowHalfW * 0.36 * warpIntensity)
-                        var track3 = 1.0 + state.bassSmooth * 0.18 * warpIntensity
-                        cpx = cx + laneGlide + (ci - (nCh - 1) * 0.5) * charStep * track3
-                        cpy = baseRowY
-                        sx = clamp(beatPop * (1.0 + state.midSmooth * 0.12), 0.78, 1.58)
-                        sy = clamp(beatPop, 0.78, 1.52)
+                        var shearPhase3 = Math.sin(l3T * 1.45 * evoFreq + rowIdx * 1.4)
+                        var shearYaw3 = shearDir3 * shearPhase3 * 0.78 * warpIntensity
+                        var zShear3 = zSurgeGlobal * 0.72 * shearDir3
+                        var scale3 = Math.max(w * 0.35, rowHalfW)
+                        var projS3 = project3DPoint(hxNorm * 0.95 + shearDir3 * shearPhase3 * 0.22, hyNorm * 0.60, zShear3, 0.16 * shearPhase3, shearYaw3, 0.0, cx, cy, scale3, 1.75)
+                        var projS3L = project3DPoint(-0.5, hyNorm * 0.60, zShear3, 0.16 * shearPhase3, shearYaw3, 0.0, cx, cy, scale3, 1.75)
+                        var projS3R = project3DPoint( 0.5, hyNorm * 0.60, zShear3, 0.16 * shearPhase3, shearYaw3, 0.0, cx, cy, scale3, 1.75)
+                        cpx = projS3.x
+                        cpy = projS3.y
+                        rot = Math.atan2(projS3R.y - projS3L.y, projS3R.x - projS3L.x)
+                        sx = clamp(projS3.persp * 1.15 * beatPop, 0.28, 2.45)
+                        sy = sx
+                        cylDepthAlpha = clamp(0.38 + 0.62 * clamp((projS3.z + 0.9) / 1.8, 0.0, 1.0), 0.32, 1.0)
                     } else if (l3Mode === 4) {
-                        // Mode 4: 3D Gimbal Gyroscope Lockup — each word row is a rigid 3D architectural beam pitching & yawing in 3D space
-                        var gimRx = Math.sin(l3T * 0.88 * evoFreq + rowIdx * 0.9) * 0.42 * warpIntensity
-                        var gimRy = Math.cos(l3T * 0.74 * evoFreq + rowIdx * 1.1) * 0.54 * warpIntensity
-                        var gimRz = Math.sin(l3T * 0.52 * evoFreq + rowIdx * 0.7) * 0.18 * warpIntensity
-                        var gimScale = Math.max(w * 0.35, rowHalfW)
-                        var projG4 = project3DPoint(hxNorm * 0.94, hyNorm * 0.62, 0.0, gimRx, gimRy, gimRz, cx, cy, gimScale, 3.2)
-                        var projG4L = project3DPoint(-0.5, hyNorm * 0.62, 0.0, gimRx, gimRy, gimRz, cx, cy, gimScale, 3.2)
-                        var projG4R = project3DPoint( 0.5, hyNorm * 0.62, 0.0, gimRx, gimRy, gimRz, cx, cy, gimScale, 3.2)
+                        // Mode 4 (UI #5: 3D Gimbal Gyro): Wide-angle 3D perspective swoop — one side of the text swoops huge towards the viewer while the other stretches far into the distance!
+                        var gimRx = Math.sin(l3T * 0.88 * evoFreq + rowIdx * 0.9) * 0.48 * warpIntensity
+                        var gimSweep = Math.cos(l3T * 0.74 * evoFreq + rowIdx * 1.1)
+                        var gimSign = gimSweep >= 0.0 ? 1.0 : -1.0
+                        // Ensure strong non-zero 3D yaw angle so one wing always swoops close to the camera while the opposite wing stretches into deep Z
+                        var gimRy = gimSign * (0.42 + 0.62 * Math.abs(gimSweep)) * clamp(warpIntensity, 0.55, 1.65)
+                        var gimRz = Math.sin(l3T * 0.52 * evoFreq + rowIdx * 0.7) * 0.22 * warpIntensity
+                        var zGim4 = zSurgeGlobal * 0.58 - hxNorm * Math.sin(gimRy) * 0.28
+                        var gimScale = Math.max(w * 0.36, rowHalfW)
+                        var gimFov = 1.58
+                        var projG4 = project3DPoint(hxNorm * 0.98, hyNorm * 0.62, zGim4, gimRx, gimRy, gimRz, cx, cy, gimScale, gimFov)
+                        var projG4L = project3DPoint(-0.5, hyNorm * 0.62, zGim4, gimRx, gimRy, gimRz, cx, cy, gimScale, gimFov)
+                        var projG4R = project3DPoint( 0.5, hyNorm * 0.62, zGim4, gimRx, gimRy, gimRz, cx, cy, gimScale, gimFov)
                         cpx = projG4.x
                         cpy = projG4.y
                         rot = Math.atan2(projG4R.y - projG4L.y, projG4R.x - projG4L.x)
-                        sx = clamp(projG4.persp * 1.14 * beatPop, 0.58, 1.68)
+                        sx = clamp(projG4.persp * 1.24 * beatPop, 0.24, 2.75)
                         sy = sx
+                        cylDepthAlpha = clamp(0.32 + 0.68 * clamp((projG4.z + 1.0) / 1.9, 0.0, 1.0), 0.26, 1.0)
                     } else if (l3Mode === 5) {
-                        // Mode 5: Laser Scanner & Optical Tracking — smooth optical magnification wave sweeping horizontally across rigid row
-                        var scanPos = Math.sin(l3T * 1.85 * evoFreq + rowIdx * 0.8)
+                        // Mode 5 (UI #6 / index 5: Laser Scanner & 3D Swoop): Optical magnification wave + 3D perspective wing swoop towards the viewer
+                        var scanPos = Math.sin(l3T * 1.65 * evoFreq + rowIdx * 0.8)
                         var distScan = Math.abs(hxNorm - scanPos)
-                        var scanEnv = Math.exp(-distScan * distScan * 6.5) * warpIntensity
-                        var track5 = 1.0 + state.bassSmooth * 0.16 * warpIntensity
-                        cpx = rowLineCenterX + (ci - (nCh - 1) * 0.5) * charStep * track5 + (hxNorm - scanPos) * scanEnv * charStep * 0.45
-                        cpy = rowLineCenterY
-                        sx = clamp(beatPop + scanEnv * 0.42, 0.80, 1.72)
+                        var scanEnv = Math.exp(-distScan * distScan * 5.2) * warpIntensity
+                        var swoopYaw5 = (scanPos >= 0.0 ? 1.0 : -1.0) * (0.38 + 0.54 * Math.abs(scanPos)) * clamp(warpIntensity, 0.55, 1.60)
+                        var zSwoop5 = zSurgeGlobal * 0.52 + scanEnv * 0.34
+                        var scale5 = Math.max(w * 0.36, rowHalfW)
+                        var proj5 = project3DPoint(hxNorm * 0.96, hyNorm * 0.60, zSwoop5, Math.sin(l3T * 0.72) * 0.24, swoopYaw5, 0.0, cx, cy, scale5, 1.62)
+                        var proj5L = project3DPoint(-0.5, hyNorm * 0.60, zSwoop5, Math.sin(l3T * 0.72) * 0.24, swoopYaw5, 0.0, cx, cy, scale5, 1.62)
+                        var proj5R = project3DPoint( 0.5, hyNorm * 0.60, zSwoop5, Math.sin(l3T * 0.72) * 0.24, swoopYaw5, 0.0, cx, cy, scale5, 1.62)
+                        cpx = proj5.x
+                        cpy = proj5.y
+                        rot = Math.atan2(proj5R.y - proj5L.y, proj5R.x - proj5L.x)
+                        sx = clamp((proj5.persp * 1.18 + scanEnv * 0.42) * beatPop, 0.25, 2.70)
                         sy = sx
+                        cylDepthAlpha = clamp(0.34 + 0.66 * clamp((proj5.z + 1.0) / 1.9, 0.0, 1.0), 0.28, 1.0)
                     } else if (l3Mode === 6) {
-                        // Mode 6: 3D Architectural Torsion Ribbon — smooth 3D helical ribbon twist across the word in perspective
-                        var twistAng6 = hxNorm * 0.85 * warpIntensity + Math.sin(l3T * 1.4 * evoFreq + rowIdx) * 0.45
-                        var ribRad6 = 0.28 * warpIntensity
+                        // Mode 6: 3D Architectural Torsion Ribbon — deep 3D helical ribbon twist & perspective swoop
+                        var twistAng6 = hxNorm * 1.05 * warpIntensity + Math.sin(l3T * 1.4 * evoFreq + rowIdx) * 0.65
+                        var ribRad6 = 0.42 * warpIntensity
+                        var yaw6 = Math.sin(l3T * 0.65 + rowIdx * 0.8) * 0.68 * warpIntensity
                         var projR6 = project3DPoint(
-                            hxNorm * 0.94,
+                            hxNorm * 0.96,
                             hyNorm * 0.60 + Math.sin(twistAng6) * ribRad6,
-                            Math.cos(twistAng6) * ribRad6,
-                            0.24, Math.sin(l3T * 0.55) * 0.25, 0.0,
-                            cx, cy, Math.max(w * 0.35, rowHalfW), 3.2
+                            Math.cos(twistAng6) * ribRad6 + zSurgeGlobal * 0.48,
+                            0.28, yaw6, 0.0,
+                            cx, cy, Math.max(w * 0.35, rowHalfW), 1.68
                         )
                         var projR6Next = project3DPoint(
-                            (hxNorm + 0.08) * 0.94,
+                            (hxNorm + 0.08) * 0.96,
                             hyNorm * 0.60 + Math.sin(twistAng6 + 0.07) * ribRad6,
-                            Math.cos(twistAng6 + 0.07) * ribRad6,
-                            0.24, Math.sin(l3T * 0.55) * 0.25, 0.0,
-                            cx, cy, Math.max(w * 0.35, rowHalfW), 3.2
+                            Math.cos(twistAng6 + 0.07) * ribRad6 + zSurgeGlobal * 0.48,
+                            0.28, yaw6, 0.0,
+                            cx, cy, Math.max(w * 0.35, rowHalfW), 1.68
                         )
                         cpx = projR6.x
                         cpy = projR6.y
                         rot = Math.atan2(projR6Next.y - projR6.y, projR6Next.x - projR6.x)
-                        sx = clamp(projR6.persp * 1.14 * beatPop, 0.62, 1.72)
+                        sx = clamp(projR6.persp * 1.20 * beatPop, 0.26, 2.55)
                         sy = sx
+                        cylDepthAlpha = clamp(0.35 + 0.65 * clamp((projR6.z + 0.9) / 1.8, 0.0, 1.0), 0.28, 1.0)
                     } else if (l3Mode === 7) {
                         // Mode 7: True 360° Revolving 3D Cylinder Banner (0: L→R, 1: R→L, 2: U→D, 3: D→U, 4: 360° Spin CW, 5: 360° Spin CCW)
-                        var cylR = 1.08 + state.bassSmooth * 0.22 * warpIntensity
+                        var cylR = 1.12 + state.bassSmooth * 0.24 * warpIntensity
                         var cylProjScale = Math.max(w * 0.34, rowHalfW)
+                        var cylFov = 1.85
                         if (cylDir < 2) {
                             var hSign = (cylDir === 1) ? -1.0 : 1.0
                             var wordOrbitAngle = hSign * l3T * 1.68 * evoFreq + rowIdx * 0.38
@@ -10090,18 +10243,18 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                             var camPitch = -0.44 - Math.sin(l3T * 0.55) * 0.14
                             var cylRoll = Math.sin(l3T * 0.72 * evoFreq) * 0.22 * hSign
                             var yCyl = hyNorm * 0.58
-                            var projC = project3DPoint(sinA * cylR, yCyl, cosA * cylR * 0.92, camPitch, 0.0, cylRoll, cx, cy, cylProjScale, 3.0)
-                            var projPrev = project3DPoint(Math.sin(cylAng - 0.09) * cylR, yCyl, Math.cos(cylAng - 0.09) * cylR * 0.92, camPitch, 0.0, cylRoll, cx, cy, cylProjScale, 3.0)
-                            var projNext = project3DPoint(Math.sin(cylAng + 0.09) * cylR, yCyl, Math.cos(cylAng + 0.09) * cylR * 0.92, camPitch, 0.0, cylRoll, cx, cy, cylProjScale, 3.0)
+                            var projC = project3DPoint(sinA * cylR, yCyl, cosA * cylR * 0.95, camPitch, 0.0, cylRoll, cx, cy, cylProjScale, cylFov)
+                            var projPrev = project3DPoint(Math.sin(cylAng - 0.09) * cylR, yCyl, Math.cos(cylAng - 0.09) * cylR * 0.95, camPitch, 0.0, cylRoll, cx, cy, cylProjScale, cylFov)
+                            var projNext = project3DPoint(Math.sin(cylAng + 0.09) * cylR, yCyl, Math.cos(cylAng + 0.09) * cylR * 0.95, camPitch, 0.0, cylRoll, cx, cy, cylProjScale, cylFov)
                             cpx = projC.x
                             cpy = projC.y
                             var dX = projNext.x - projPrev.x
                             var dY = projNext.y - projPrev.y
                             rot = Math.atan2(dY, Math.abs(dX) + 0.001) * (cosA >= 0.0 ? 1.0 : -1.0)
-                            var magSX = clamp(Math.max(0.20, Math.abs(cosA)) * projC.persp * 1.24 * beatPop, 0.20, 1.82)
+                            var magSX = clamp(Math.max(0.20, Math.abs(cosA)) * projC.persp * 1.28 * beatPop, 0.20, 2.55)
                             sx = (cosA >= 0.0 ? 1.0 : -1.0) * magSX
-                            sy = clamp(projC.persp * 1.18 * beatPop, 0.52, 1.82)
-                            cylDepthAlpha = 0.26 + 0.74 * (0.5 + 0.5 * cosA)
+                            sy = clamp(projC.persp * 1.24 * beatPop, 0.28, 2.55)
+                            cylDepthAlpha = 0.24 + 0.76 * (0.5 + 0.5 * cosA)
                         } else if (cylDir < 4) {
                             var vSign = (cylDir === 3) ? -1.0 : 1.0
                             var drumOrbitAngle = vSign * l3T * 1.68 * evoFreq
@@ -10109,14 +10262,14 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                             var cosD = Math.cos(drumAng), sinD = Math.sin(drumAng)
                             var camYaw = 0.44 + Math.cos(l3T * 0.52) * 0.14
                             var drumRoll = Math.cos(l3T * 0.65 * evoFreq) * 0.20 * vSign
-                            var projD = project3DPoint(hxNorm * 0.94, sinD * cylR * 0.72, cosD * cylR * 0.92, 0.0, camYaw, drumRoll, cx, cy, cylProjScale, 3.0)
+                            var projD = project3DPoint(hxNorm * 0.94, sinD * cylR * 0.72, cosD * cylR * 0.95, 0.0, camYaw, drumRoll, cx, cy, cylProjScale, cylFov)
                             cpx = projD.x
                             cpy = projD.y
                             rot = drumRoll
-                            sx = clamp(projD.persp * 1.18 * beatPop, 0.52, 1.82)
-                            var magSY = clamp(Math.max(0.20, Math.abs(cosD)) * projD.persp * 1.24 * beatPop, 0.20, 1.82)
+                            sx = clamp(projD.persp * 1.24 * beatPop, 0.28, 2.55)
+                            var magSY = clamp(Math.max(0.20, Math.abs(cosD)) * projD.persp * 1.28 * beatPop, 0.20, 2.55)
                             sy = (cosD >= 0.0 ? 1.0 : -1.0) * magSY
-                            cylDepthAlpha = 0.26 + 0.74 * (0.5 + 0.5 * cosD)
+                            cylDepthAlpha = 0.24 + 0.76 * (0.5 + 0.5 * cosD)
                         } else {
                             var spinSign7 = (cylDir === 5) ? -1.0 : 1.0
                             var orbit7 = spinSign7 * l3T * 1.68 * evoFreq + rowIdx * 0.34
@@ -10125,90 +10278,98 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                             var fullSpin7 = l3T * 1.35 * evoFreq * spinSign7
                             var gyroYaw7 = l3T * 1.05 * evoFreq * spinSign7
                             var gyroPitch7 = -0.42 + Math.sin(l3T * 0.65 * evoFreq) * 0.42
-                            var projS7 = project3DPoint(sin7 * cylR, hyNorm * 0.58, cos7 * cylR * 0.92, gyroPitch7, gyroYaw7, fullSpin7, cx, cy, cylProjScale, 3.0)
-                            var projL7 = project3DPoint(Math.sin(cylAng7 - 0.08) * cylR, hyNorm * 0.58, Math.cos(cylAng7 - 0.08) * cylR * 0.92, gyroPitch7, gyroYaw7, fullSpin7, cx, cy, cylProjScale, 3.0)
-                            var projR7 = project3DPoint(Math.sin(cylAng7 + 0.08) * cylR, hyNorm * 0.58, Math.cos(cylAng7 + 0.08) * cylR * 0.92, gyroPitch7, gyroYaw7, fullSpin7, cx, cy, cylProjScale, 3.0)
+                            var projS7 = project3DPoint(sin7 * cylR, hyNorm * 0.58, cos7 * cylR * 0.95, gyroPitch7, gyroYaw7, fullSpin7, cx, cy, cylProjScale, cylFov)
+                            var projL7 = project3DPoint(Math.sin(cylAng7 - 0.08) * cylR, hyNorm * 0.58, Math.cos(cylAng7 - 0.08) * cylR * 0.95, gyroPitch7, gyroYaw7, fullSpin7, cx, cy, cylProjScale, cylFov)
+                            var projR7 = project3DPoint(Math.sin(cylAng7 + 0.08) * cylR, hyNorm * 0.58, Math.cos(cylAng7 + 0.08) * cylR * 0.95, gyroPitch7, gyroYaw7, fullSpin7, cx, cy, cylProjScale, cylFov)
                             cpx = projS7.x
                             cpy = projS7.y
                             rot = Math.atan2(projR7.y - projL7.y, projR7.x - projL7.x)
-                            sx = clamp(Math.max(0.24, Math.abs(cos7)) * projS7.persp * 1.22 * beatPop, 0.24, 1.82)
-                            sy = clamp(projS7.persp * 1.18 * beatPop, 0.50, 1.82)
-                            cylDepthAlpha = clamp(0.28 + 0.72 * ((projS7.z / Math.max(0.5, cylR)) * 0.5 + 0.5), 0.24, 1.0)
+                            sx = clamp(Math.max(0.22, Math.abs(cos7)) * projS7.persp * 1.26 * beatPop, 0.22, 2.55)
+                            sy = clamp(projS7.persp * 1.22 * beatPop, 0.28, 2.55)
+                            cylDepthAlpha = clamp(0.26 + 0.74 * ((projS7.z / Math.max(0.5, cylR)) * 0.5 + 0.5), 0.22, 1.0)
                         }
                     } else if (l3Mode === 8) {
-                        // Mode 8: Pneumatic Hydraulic Tracking Press — cohesive whole-word tracking expansion & compression
-                        var accB = Math.sin(l3T * 2.2 * evoFreq + rowIdx * 0.9) * (0.36 + state.bassSmooth * 0.48) * warpIntensity
-                        var track8 = clamp(1.0 + accB * 0.55, 0.58, 1.52)
-                        sx = clamp(beatPop * (1.0 + accB * 0.28), 0.62, 1.68)
-                        sy = clamp(beatPop * (1.0 - accB * 0.18), 0.68, 1.62)
+                        // Mode 8: Pneumatic Hydraulic 3D Tracking Press — cohesive whole-word tracking + Towards/Away depth surge
+                        var accB = Math.sin(l3T * 2.2 * evoFreq + rowIdx * 0.9) * (0.38 + state.bassSmooth * 0.52) * warpIntensity
+                        var zPress8 = clamp(1.0 + zSurgeGlobal * 0.72 + accB * 0.35, 0.42, 2.25)
+                        var track8 = clamp((1.0 + accB * 0.55) * zPress8, 0.45, 2.20)
+                        sx = clamp(beatPop * zPress8 * (1.0 + accB * 0.24), 0.35, 2.45)
+                        sy = clamp(beatPop * zPress8 * (1.0 - accB * 0.14), 0.35, 2.35)
                         cpx = rowLineCenterX + (ci - (nCh - 1) * 0.5) * charStep * track8
-                        cpy = rowLineCenterY
+                        cpy = cy + (rowLineCenterY - cy) * zPress8
                         rot = 0.0
                     } else if (l3Mode === 9) {
-                        // Mode 9: 3D Perspective Monolith Crawl & 360°+ Whole-Word Gyro Spin (flat rigid 3D architectural plane)
+                        // Mode 9 (UI #10: 3D Monolith Crawl): Dramatic wide-angle 3D perspective swoop — one side of the text swoops huge towards the viewer while the other stretches far out into the distance!
                         var dirSign9 = (cylDir === 1 || cylDir === 3 || cylDir === 5) ? -1.0 : 1.0
-                        var spinYaw9 = l3T * 1.28 * evoFreq * dirSign9
-                        var spinPitch9 = Math.sin(l3T * 0.72) * 0.52 + ((cylDir === 2 || cylDir === 3) ? l3T * 1.15 * evoFreq * dirSign9 : 0.0)
+                        var spinYaw9 = l3T * 1.28 * evoFreq * dirSign9 + rowIdx * 0.45
+                        var spinPitch9 = Math.sin(l3T * 0.72) * 0.55 + ((cylDir === 2 || cylDir === 3) ? l3T * 1.15 * evoFreq * dirSign9 : 0.0)
                         var spinRoll9 = l3T * 0.78 * evoFreq * dirSign9
-                        var scale9 = Math.max(w * 0.36, rowHalfW)
-                        var projP = project3DPoint(hxNorm * 0.96, hyNorm * 0.68, 0.0, spinPitch9, spinYaw9, spinRoll9, cx, cy, scale9, 2.8)
-                        var projL9 = project3DPoint(-0.5, hyNorm * 0.68, 0.0, spinPitch9, spinYaw9, spinRoll9, cx, cy, scale9, 2.8)
-                        var projR9 = project3DPoint(0.5, hyNorm * 0.68, 0.0, spinPitch9, spinYaw9, spinRoll9, cx, cy, scale9, 2.8)
+                        var zCrawl9 = zSurgeGlobal * 0.58 - hxNorm * Math.sin(spinYaw9) * 0.32
+                        var scale9 = Math.max(w * 0.38, rowHalfW)
+                        var fov9 = 1.55
+                        var projP = project3DPoint(hxNorm * 1.02, hyNorm * 0.68, zCrawl9, spinPitch9, spinYaw9, spinRoll9, cx, cy, scale9, fov9)
+                        var projL9 = project3DPoint(-0.5, hyNorm * 0.68, zCrawl9, spinPitch9, spinYaw9, spinRoll9, cx, cy, scale9, fov9)
+                        var projR9 = project3DPoint(0.5, hyNorm * 0.68, zCrawl9, spinPitch9, spinYaw9, spinRoll9, cx, cy, scale9, fov9)
                         var projectedWordAngle9 = Math.atan2(projR9.y - projL9.y, projR9.x - projL9.x)
                         cpx = projP.x
                         cpy = projP.y
                         rot = projectedWordAngle9
-                        sx = clamp(projP.persp * 1.16 * beatPop, 0.52, 1.82)
+                        sx = clamp(projP.persp * 1.26 * beatPop, 0.22, 2.80)
                         sy = sx
+                        cylDepthAlpha = clamp(0.30 + 0.70 * clamp((projP.z + 1.05) / 2.0, 0.0, 1.0), 0.24, 1.0)
                     } else if (l3Mode === 10) {
-                        // Mode 10: Anamorphic Chromatic Horizon & Mirror — rigid architectural lockup with RGB split & reflection below
+                        // Mode 10 (UI #11 / index 10: Anamorphic Chromatic Horizon & 3D Swoop): One side swoops towards the viewer while the other stretches out into the distance above its chromatic mirror
                         var chrOff = isEchoT ? ((te % 2 === 1 ? 1.0 : -1.0) * (7.0 + state.bassSmooth * 20.0 + state.beatPulse * 10.0) * warpIntensity) : 0.0
-                        cpx = rowLineCenterX + (ci - (nCh - 1) * 0.5) * charStep + chrOff
-                        cpy = cy - totalTextH * 0.22 + (rowIdx - (displayLines.length - 1) * 0.5) * lineSpanH * 0.88 + rowSwayY * 0.35
+                        var swoopWave10 = Math.sin(l3T * 0.84 * evoFreq + rowIdx * 0.9)
+                        var swoopYaw10 = (swoopWave10 >= 0.0 ? 1.0 : -1.0) * (0.36 + 0.58 * Math.abs(swoopWave10)) * clamp(warpIntensity, 0.55, 1.60)
+                        var zHoriz10 = zSurgeGlobal * 0.54
+                        var scale10 = Math.max(w * 0.36, rowHalfW)
+                        var proj10 = project3DPoint(hxNorm * 0.98, hyNorm * 0.55 - 0.16, zHoriz10, 0.18 * swoopWave10, swoopYaw10, 0.0, cx, cy, scale10, 1.60)
+                        var proj10L = project3DPoint(-0.5, hyNorm * 0.55 - 0.16, zHoriz10, 0.18 * swoopWave10, swoopYaw10, 0.0, cx, cy, scale10, 1.60)
+                        var proj10R = project3DPoint( 0.5, hyNorm * 0.55 - 0.16, zHoriz10, 0.18 * swoopWave10, swoopYaw10, 0.0, cx, cy, scale10, 1.60)
+                        cpx = proj10.x + chrOff
+                        cpy = proj10.y
+                        rot = Math.atan2(proj10R.y - proj10L.y, proj10R.x - proj10L.x)
+                        sx = clamp(proj10.persp * 1.22 * beatPop, 0.24, 2.70)
+                        sy = sx
+                        cylDepthAlpha = clamp(0.32 + 0.68 * clamp((proj10.z + 1.0) / 1.9, 0.0, 1.0), 0.26, 1.0)
                     } else if (l3Mode === 11) {
-                        // Mode 11: Optical Gravitational Lens — twin orbiting optical lenses magnifying the typographic lockup
-                        var wx = hxNorm, wy = hyNorm, mag = beatPop
+                        // Mode 11: Optical Gravitational Lens — twin orbiting optical lenses + 3D Towards/Away depth magnification
+                        var zLens11 = clamp(1.0 + zSurgeGlobal * 0.55, 0.52, 1.85)
+                        var wx = hxNorm, wy = hyNorm, mag = beatPop * zLens11
                         var dxA = wx - lens1X, dyA = (wy - lens1Y) * 0.75
                         var dA = Math.sqrt(dxA * dxA + dyA * dyA)
                         if (dA < lensRad && dA > 0.0001) {
                             var uA = 1.0 - dA / lensRad
-                            var bA = uA * uA * (0.50 + state.bassSmooth * 0.55) * warpIntensity
-                            wx += (dxA / dA) * bA * 0.26
-                            wy += (dyA / dA) * bA * 0.30
-                            mag += bA * 1.15
+                            var bA = uA * uA * (0.58 + state.bassSmooth * 0.62) * warpIntensity
+                            wx += (dxA / dA) * bA * 0.28
+                            wy += (dyA / dA) * bA * 0.32
+                            mag += bA * 1.35
                         }
                         var dxB = wx - lens2X, dyB = (wy - lens2Y) * 0.75
                         var dB = Math.sqrt(dxB * dxB + dyB * dyB)
                         if (dB < lensRad && dB > 0.0001) {
                             var uB = 1.0 - dB / lensRad
-                            var bB = uB * uB * (0.44 + state.midSmooth * 0.50) * warpIntensity
-                            wx += (dxB / dB) * bB * 0.22
-                            wy += (dyB / dB) * bB * 0.26
-                            mag += bB * 0.95
+                            var bB = uB * uB * (0.52 + state.midSmooth * 0.56) * warpIntensity
+                            wx += (dxB / dB) * bB * 0.24
+                            wy += (dyB / dB) * bB * 0.28
+                            mag += bB * 1.15
                         }
-                        cpx = rowLineCenterX + wx * rowHalfW
-                        cpy = cy + wy * totalTextH * 0.85 + rowSwayY * 0.35
-                        sx = clamp(mag, 0.85, 1.82)
+                        cpx = rowLineCenterX + wx * rowHalfW * zLens11
+                        cpy = cy + wy * totalTextH * 0.85 * zLens11 + rowSwayY * 0.35
+                        sx = clamp(mag, 0.45, 2.55)
                         sy = sx
                     }
 
-                    // Keep line-level ASCII block styles (16, 17, 19) and individual CRT cell matrix (20) locked to clean grid alignment
+                    // Keep each character strictly locked inside its own CRT cell block (0, 0) while allowing full 3D perspective swoop & scaling!
                     if (textStyle === 20) {
-                        if (l3Mode !== 7 && l3Mode !== 9) {
-                            cpx = rowLineCenterX + (ci - (nCh - 1) * 0.5) * charStep
-                            cpy = rowLineCenterY
-                            rot = 0.0
-                            sx = 1.0
-                            sy = 1.0
-                        } else {
-                            sx = (sx < 0 ? -1.0 : 1.0) * clamp(Math.abs(sx), 0.24, 1.0)
-                            sy = (sy < 0 ? -1.0 : 1.0) * clamp(Math.abs(sy), 0.24, 1.0)
-                        }
-                    } else if (isLineAsciiBlockStyle && l3Mode !== 7 && l3Mode !== 9) {
+                        sx = (sx < 0 ? -1.0 : 1.0) * clamp(Math.abs(sx), 0.22, 2.45)
+                        sy = (sy < 0 ? -1.0 : 1.0) * clamp(Math.abs(sy), 0.22, 2.45)
+                    } else if (isLineAsciiBlockStyle) {
                         cpx = rowLineCenterX + (ci - (nCh - 1) * 0.5) * charStep
                         cpy = rowLineCenterY
                         rot = 0.0
-                        sx = clamp(1.0 + state.beatPulse * 0.10, 0.88, 1.24)
+                        sx = clamp(1.0 + state.beatPulse * 0.14, 0.82, 1.45)
                         sy = sx
                     }
 
@@ -10245,26 +10406,26 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                         colAlt = hslToHex((prismHue + 90) % 360, 0.92, 0.55)
                         colAcc = hslToHex((prismHue + 180) % 360, 0.95, 0.66)
                     } else if (colourMode === 5) {
-                        // 5: Letter Alternate (Cohesive Duotone Word/Line Accent instead of rainbow confetti)
+                        // 5: Letter Alternate (Vivid per-character alternating palette triad across every letter & CRT cell)
                         var letAnchorIdx = (rowIdx * 2 + te + Math.floor(state.hueShift / 40)) % palLen
-                        var letIdx = (rowIdx * 2 + te + Math.floor(state.hueShift / 40)) % palLen
-                        var letTriad = deriveDistinctTypographyTriad(activeStylePal, letIdx, rowIdx % 4, letAnchorIdx)
+                        var letIdx = (ci + rowIdx * 2 + te + Math.floor(state.hueShift / 40)) % palLen
+                        var letTriad = deriveDistinctTypographyTriad(activeStylePal, letIdx, (ci + rowIdx) % 4, letAnchorIdx)
                         colCh = letTriad.colCh
                         colAlt = letTriad.colAlt
                         colAcc = letTriad.colAcc
                     } else {
-                        // 0: Style Signature (Cohesive per-line architectural lockup colour — zero per-letter rainbow cycling!)
-                        var palIdx = (rowIdx * 2 + te + Math.floor(state.hueShift / 40)) % palLen
+                        // 0: Style Signature (Cohesive per-line architectural lockup colour; multi-colour per-cell in ASCII styles 16..20)
+                        var palIdx = ((isAsciiStyle ? ci : 0) + rowIdx * 2 + te + Math.floor(state.hueShift / 40)) % palLen
                         colCh = activeStylePal[palIdx]
                         colAlt = activeStylePal[(palIdx + 2) % palLen]
                         colAcc = activeStylePal[(palIdx + 4) % palLen]
                     }
                     var useSigCols = (colourMode === 0)
 
-                    sx = (sx < 0 ? -1.0 : 1.0) * clamp(Math.abs(sx), 0.22, 1.82)
-                    sy = (sy < 0 ? -1.0 : 1.0) * clamp(Math.abs(sy), 0.22, 1.82)
-                    cpx = clamp(cpx, w * 0.05, w * 0.95)
-                    cpy = clamp(cpy, h * 0.06, h * 0.94)
+                    sx = (sx < 0 ? -1.0 : 1.0) * clamp(Math.abs(sx), 0.20, 2.85)
+                    sy = (sy < 0 ? -1.0 : 1.0) * clamp(Math.abs(sy), 0.20, 2.85)
+                    cpx = clamp(cpx, w * 0.03, w * 0.97)
+                    cpy = clamp(cpy, h * 0.04, h * 0.96)
                     ctx.save()
                     ctx.globalAlpha = clamp(passAlphaT * cylDepthAlpha, 0.06, 1.0)
                     ctx.translate(cpx, cpy)
@@ -10541,20 +10702,20 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                         ctx.fillStyle = (qGlyph !== ch) ? (useSigCols ? "#FFD166" : colAcc) : colCh
                         ctx.fillText(qGlyph, 0, 0)
                     } else if (textStyle === 16) {
-                        // 16: ASCII Black Block / White Text — line-level black block strip drawn per-row; crisp white/palette glyph here
-                        ctx.fillStyle = (useSigCols && !isPaletteShifted) ? "#FFFFFF" : colCh
+                        // 16: ASCII Black Block / Multi-Colour Text — line-level dark block strip + vivid multi-colour glyph locked inside
+                        ctx.fillStyle = ((useSigCols && !isPaletteShifted) || (colourMode === 2 && !isEchoT)) ? "#FFFFFF" : colCh
                         ctx.fillText(ch, 0, 0)
                     } else if (textStyle === 17) {
-                        // 17: ASCII White Back / Black Text — line-level white/palette block strip drawn per-row; crisp black glyph here
-                        ctx.fillStyle = "#050608"
+                        // 17: ASCII Vivid Back / Dark Text — line-level vivid block strip + crisp dark glyph locked inside
+                        ctx.fillStyle = (useSigCols && !isPaletteShifted) ? "#050608" : ((colourMode === 2 && !isEchoT) ? "#050608" : colAlt)
                         ctx.fillText(ch, 0, 0)
                     } else if (textStyle === 18) {
-                        // 18: ASCII Transparent Back / Text — strictly transparent background (zero fillRect calls) + stroked corner ticks & palette glyph
+                        // 18: ASCII Transparent Back / Multi-Colour Text — strictly transparent background (zero fillRect calls) + stroked corner ticks & multi-colour glyph
                         var asciiTrW = charStep * 0.92
                         var asciiTrH = rowFontPx * 1.06
                         if (!isEchoT) {
                             var tickLen = Math.max(2.0, rowFontPx * 0.12)
-                            ctx.strokeStyle = colourWithAlpha(colAlt, 0.72)
+                            ctx.strokeStyle = colourWithAlpha(colAlt, 0.78)
                             ctx.lineWidth = 1.3
                             ctx.beginPath()
                             ctx.moveTo(-asciiTrW * 0.5, -asciiTrH * 0.5 + tickLen)
@@ -10573,7 +10734,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                         ctx.fillStyle = colCh
                         ctx.fillText(ch, 0, 0)
                     } else if (textStyle === 19) {
-                        // 19: ASCII Coloured Back / Transparent Text — line-level coloured block strip drawn per-row; knockout transparent glyph here
+                        // 19: ASCII Coloured Back / Transparent Text — line-level coloured block strip + knockout transparent glyph locked inside
                         var prevComp19 = ctx.globalCompositeOperation || "source-over"
                         ctx.globalCompositeOperation = "destination-out"
                         ctx.fillStyle = "rgba(0, 0, 0, 1.0)"
@@ -10585,54 +10746,54 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                             ctx.strokeText(ch, 0, 0)
                         }
                     } else {
-                        // 20: ASCII Cell Matrix — Cool Retro Term old-school individual CRT character cell blocks
-                        // Each character lives strictly inside its own fixed CRT cell block (0, 0) and never moves outside its background.
+                        // 20: ASCII Cell Matrix — Multi-Colour Cool Retro Term individual CRT character cell blocks
+                        // Each character lives strictly inside its own fixed CRT cell block (0, 0) and never moves outside its background,
+                        // while cycling vivid multi-colour palette & CRT phosphor hues across every character cell!
                         var cellMixW = charStep * 0.90
                         var cellMixH = rowFontPx * 1.12
                         var crtInnerFontPx = Math.max(10, Math.floor(rowFontPx * 0.78))
                         ctx.font = "900 " + crtInnerFontPx + "px " + activeFontFamily
 
-                        // Select Cool Retro Term CRT Phosphor profile (P3 Amber, IBM 5151 Green, DEC VT100 White/Blue, IBM 3290 Plasma, C64, Apple II)
-                        var crtSchemeIdx = (colourMode === 0)
-                            ? (rowIdx % COOL_RETRO_TERM_PHOSPHORS.length)
-                            : ((colourMode + rowIdx) % COOL_RETRO_TERM_PHOSPHORS.length)
+                        // Select per-character multi-colour Cool Retro Term CRT Phosphor & active palette triad
+                        var crtSchemeIdx = (ci + rowIdx * 2 + Math.floor(state.hueShift / 30)) % COOL_RETRO_TERM_PHOSPHORS.length
                         var crtScheme = COOL_RETRO_TERM_PHOSPHORS[crtSchemeIdx] || COOL_RETRO_TERM_PHOSPHORS[0]
-                        var crtFg = isPaletteShifted ? colCh : crtScheme.fg
-                        var crtCore = isPaletteShifted ? colAlt : crtScheme.core
+                        var useVividCellTriad = (colourMode !== 2)
+                        var crtFg = useVividCellTriad ? (((ci + rowIdx) & 1) === 0 ? colCh : crtScheme.fg) : crtScheme.fg
+                        var crtCore = useVividCellTriad ? (((ci + rowIdx) % 3 === 0) ? colAlt : colAcc) : crtScheme.core
                         var crtBg = crtScheme.bg
-                        var crtBezel = isPaletteShifted ? colourWithAlpha(colCh, 0.55) : crtScheme.bezel
+                        var crtBezel = useVividCellTriad ? colourWithAlpha(colCh, 0.72) : crtScheme.bezel
 
                         var cellKind = (ci + rowIdx * 2 + Math.floor(l3T * 4.0)) & 3
                         if (cellKind === 0 || cellKind === 2) {
-                            // Standard Lit CRT Phosphor Cell: dark phosphor glass cell block + bezel + CRT phosphor halation & core glyph locked inside
+                            // Standard Lit CRT Phosphor Cell: dark phosphor glass cell block + multi-colour bezel + CRT phosphor halation & vivid core glyph locked inside
                             ctx.fillStyle = colourWithAlpha(crtBg, isEchoT ? 0.80 : 0.96)
                             ctx.fillRect(-cellMixW * 0.5, -cellMixH * 0.5, cellMixW, cellMixH)
                             if (!isEchoT && typeof ctx.strokeRect === "function") {
-                                ctx.lineWidth = 1.1
-                                ctx.strokeStyle = colourWithAlpha(crtBezel, cellKind === 0 ? 0.72 : 0.50)
+                                ctx.lineWidth = 1.2
+                                ctx.strokeStyle = colourWithAlpha(crtBezel, cellKind === 0 ? 0.82 : 0.62)
                                 ctx.strokeRect(-cellMixW * 0.5, -cellMixH * 0.5, cellMixW, cellMixH)
                             }
                             if (!isEchoT && hasStrokeText) {
                                 ctx.lineWidth = Math.max(2.2, crtInnerFontPx * 0.16)
-                                ctx.strokeStyle = colourWithAlpha(crtFg, 0.42 + state.bassSmooth * 0.25)
+                                ctx.strokeStyle = colourWithAlpha(crtFg, 0.48 + state.bassSmooth * 0.28)
                                 ctx.strokeText(ch, 0, 0)
                             }
                             ctx.fillStyle = (cellKind === 0) ? crtCore : crtFg
                             ctx.fillText(ch, 0, 0)
                         } else if (cellKind === 1) {
-                            // Reverse-Video CRT Terminal Cell: full lit phosphor cell block with dark CRT character locked inside
-                            ctx.fillStyle = colourWithAlpha(crtFg, isEchoT ? 0.80 : 0.95)
+                            // Reverse-Video Multi-Colour CRT Terminal Cell: full lit vivid cell block with dark CRT character locked inside
+                            ctx.fillStyle = colourWithAlpha(crtFg, isEchoT ? 0.82 : 0.95)
                             ctx.fillRect(-cellMixW * 0.5, -cellMixH * 0.5, cellMixW, cellMixH)
                             if (!isEchoT && typeof ctx.strokeRect === "function") {
-                                ctx.lineWidth = 1.1
-                                ctx.strokeStyle = colourWithAlpha(crtCore, 0.85)
+                                ctx.lineWidth = 1.2
+                                ctx.strokeStyle = colourWithAlpha(crtCore, 0.88)
                                 ctx.strokeRect(-cellMixW * 0.5, -cellMixH * 0.5, cellMixW, cellMixH)
                             }
                             ctx.fillStyle = crtBg
                             ctx.fillText(ch, 0, 0)
                         } else {
-                            // Reverse-Video Knockout CRT Cursor Cell: lit phosphor block with destination-out knockout glyph locked inside
-                            ctx.fillStyle = colourWithAlpha(crtCore, isEchoT ? 0.78 : 0.94)
+                            // Reverse-Video Knockout Multi-Colour CRT Cursor Cell: lit vivid block with destination-out knockout glyph locked inside
+                            ctx.fillStyle = colourWithAlpha(crtCore, isEchoT ? 0.80 : 0.94)
                             ctx.fillRect(-cellMixW * 0.5, -cellMixH * 0.5, cellMixW, cellMixH)
                             var prevComp20 = ctx.globalCompositeOperation || "source-over"
                             ctx.globalCompositeOperation = "destination-out"
@@ -10721,11 +10882,11 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
         var isEcho = (e > 0)
         var u = l3Tracers > 1 ? (e / (l3Tracers - 1)) : 0.0
         var zScale = (tracerDir >= 0)
-            ? (1.0 + u * 0.16 * Math.min(tracerSpeed, 1.5))
-            : (1.0 / (1.0 + u * 0.32 * Math.min(tracerSpeed, 1.5)))
-        var tx = endPt.dx * u * 0.28 * (tracerDir >= 0 ? -1.0 : 1.0)
-        var ty = endPt.dy * u * 0.28 * (tracerDir >= 0 ? -1.0 : 1.0)
-        var passAlpha = isEcho ? (Math.pow(1.0 - u * 0.82, 1.4) * 0.34) : (0.84 + state.bassSmooth * 0.16)
+            ? (1.0 + Math.pow(u, 1.12) * 1.48 * Math.min(tracerSpeed, 1.8))
+            : (1.0 / (1.0 + u * 0.96 * Math.min(tracerSpeed, 1.8)))
+        var tx = endPt.dx * u * 0.42 * (tracerDir >= 0 ? -1.0 : 1.0)
+        var ty = endPt.dy * u * 0.42 * (tracerDir >= 0 ? -1.0 : 1.0)
+        var passAlpha = isEcho ? (Math.pow(1.0 - u * 0.82, 1.4) * 0.36) : (0.84 + state.bassSmooth * 0.16)
         var cellStride = isEcho ? (e >= 2 ? numBuckets * 3 : numBuckets * 2) : numBuckets
 
         ctx.save()
@@ -10744,12 +10905,12 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
         var lensRad = 0.52 + state.bassSmooth * 0.22
 
         for (var b = 0; b < numBuckets; b++) {
+            var bHueStep = Math.floor(state.hueShift / 32)
             var bPalLen = Math.max(1, activeStylePal.length)
-            var bHueStep = Math.floor(state.hueShift / 50)
-            var col = activeStylePal[(b + e + bHueStep) % bPalLen]
-            if (colourMode === 1 || colourMode === 5) {
-                var bTriad = deriveDistinctTypographyTriad(activeStylePal, (b + e + bHueStep) % bPalLen, b % 4, (e + bHueStep) % bPalLen)
-                col = bTriad.colCh
+            var col = activeStylePal[(b * 2 + e + bHueStep) % bPalLen]
+            if (colourMode === 0 || colourMode === 1 || colourMode === 5) {
+                var bTriad = deriveDistinctTypographyTriad(activeStylePal, (b * 2 + e + bHueStep) % bPalLen, b % 4, (e + bHueStep) % bPalLen)
+                col = (b % 3 === 0) ? bTriad.colCh : ((b % 3 === 1) ? bTriad.colAlt : bTriad.colAcc)
             } else if (colourMode === 2) {
                 var bDuo = deriveDistinctTypographyTriad(activeStylePal, (b + e + bHueStep) % bPalLen, b % 4, (e + bHueStep) % bPalLen)
                 col = (b === 0 && !isEcho) ? "#F8FAFC" : bDuo.colCh
@@ -10775,18 +10936,52 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                 var py = cy + p.y * halfH
                 var scaleW = 1.0
                 var scaleH = 1.0
+                var dirSignCell = (tracerDir >= 0) ? 1.0 : -1.0
+                var zSurgeCell = Math.sin(l3T * 1.45 * evoFreq) * (0.44 + state.bassSmooth * 0.46) * dirSignCell
 
-                if (l3Mode === 6) {
+                if (l3Mode === 0 || l3Mode === 2 || l3Mode === 3 || l3Mode === 4 || l3Mode === 5) {
+                    var swoopYawCell = Math.sin(l3T * (l3Mode === 5 ? 0.92 : 0.72) * evoFreq) * (l3Mode === 5 ? 0.98 : 0.86)
+                    var swoopPitchCell = Math.cos(l3T * 0.56 * evoFreq) * 0.34
+                    var swoopRollCell = Math.sin(l3T * 0.42 * evoFreq) * 0.22
+                    var zArcCell = -Math.cos(hx * 1.25 - l3T * 1.1 * dirSignCell) * (0.36 + state.bassSmooth * 0.34) + zSurgeCell * 0.55
+                    var projCell5 = project3DPoint(
+                        p.x * 1.06,
+                        p.y * (halfH / Math.max(1.0, halfW)) * 0.96,
+                        zArcCell,
+                        swoopPitchCell, swoopYawCell, swoopRollCell,
+                        cx, cy, halfW * 1.02, 1.58
+                    )
+                    px = projCell5.x
+                    py = projCell5.y
+                    scaleW = clamp(projCell5.persp * 1.32, 0.24, 2.75)
+                    scaleH = clamp(projCell5.persp * 1.32, 0.24, 2.75)
+                    if (l3Mode === 5 && activeTtfxFrame && p.gy < activeTtfxFrame.length) {
+                        var tLine5 = activeTtfxFrame[p.gy] || ""
+                        var tCh5 = p.gx < tLine5.length ? tLine5.charAt(p.gx) : " "
+                        if (tCh5 === " " || tCh5 === "⠀") {
+                            px += Math.cos(p.phase + state.t * 2.4) * (14.0 + state.bassSmooth * 28.0)
+                            py += Math.sin(p.phase - state.t * 2.4) * (14.0 + state.bassSmooth * 28.0)
+                        }
+                    }
+                } else if (l3Mode === 6) {
                     var colBin = clamp(Math.floor(((hx + 1.0) * 0.5) * 63), 0, 63)
                     var colFFT = state.smoothBands[colBin] || 0.0
                     var stretchY6 = 1.0 + (colFFT * 0.78 + state.bassSmooth * 0.32) * warpIntensity * 0.52
                     var waveDX6 = Math.sin(hy * 3.8 * evoFreq + l3T * 2.2) * 0.11 * warpIntensity
                     var waveDY6 = Math.sin(hx * 4.2 * evoFreq - l3T * 2.6) * 0.16 * warpIntensity
                                 + Math.cos(hx * 8.4 + l3T * 3.4) * 0.06 * state.midSmooth
-                    px = cx + (hx + waveDX6) * halfW
-                    py = cy + (hy * stretchY6 + waveDY6) * halfH
-                    scaleW = 1.06
-                    scaleH = clamp(stretchY6, 0.85, 2.15)
+                    var zWave6 = Math.sin(hx * 2.2 - l3T * 1.6 * dirSignCell) * (0.48 + state.bassSmooth * 0.38) + zSurgeCell * 0.50
+                    var proj6 = project3DPoint(
+                        hx + waveDX6,
+                        (hy * stretchY6 + waveDY6) * (halfH / Math.max(1.0, halfW)),
+                        zWave6,
+                        Math.cos(l3T * 0.52) * 0.24, Math.sin(l3T * 0.68 * evoFreq) * 0.78, 0.0,
+                        cx, cy, halfW * 1.02, 1.62
+                    )
+                    px = proj6.x
+                    py = proj6.y
+                    scaleW = clamp(proj6.persp * 1.24, 0.26, 2.55)
+                    scaleH = clamp(stretchY6 * proj6.persp * 1.24, 0.30, 2.85)
                 } else if (l3Mode === 7) {
                     var cylRad7 = 1.08 + state.bassSmooth * 0.20 * warpIntensity
                     var yAspect7 = (halfH / Math.max(1.0, halfW))
@@ -10794,34 +10989,35 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                         var hSign7 = (cylDir === 1) ? -1.0 : 1.0
                         var cylAng7 = hx * (Math.PI * 0.90) + hSign7 * l3T * 1.55 * evoFreq
                         var cos7 = Math.cos(cylAng7), sin7 = Math.sin(cylAng7)
-                        var camPitch7B = -0.44 - Math.sin(l3T * 0.35) * 0.10
+                        var camPitch7B = -0.44 - Math.sin(l3T * 0.35) * 0.14
+                        var camYaw7B = Math.sin(l3T * 0.52 * evoFreq) * 0.52
                         var proj7 = project3DPoint(
                             sin7 * cylRad7,
                             hy * (0.72 + state.midSmooth * 0.20) * yAspect7,
-                            cos7 * cylRad7 * 0.92,
-                            camPitch7B, 0.0, Math.sin(l3T * 0.55 * evoFreq) * 0.18 * hSign7,
-                            cx, cy, halfW * 0.96, 3.0
+                            cos7 * cylRad7 * 0.96 + zSurgeCell * 0.42,
+                            camPitch7B, camYaw7B, Math.sin(l3T * 0.55 * evoFreq) * 0.22 * hSign7,
+                            cx, cy, halfW * 1.02, 1.68
                         )
                         px = proj7.x
                         py = proj7.y
-                        scaleW = clamp(Math.max(0.24, Math.abs(cos7)) * proj7.persp * 1.18, 0.24, 1.95)
-                        scaleH = clamp(proj7.persp * 1.14, 0.56, 1.92)
+                        scaleW = clamp(Math.max(0.22, Math.abs(cos7)) * proj7.persp * 1.38, 0.22, 2.65)
+                        scaleH = clamp(proj7.persp * 1.34, 0.32, 2.65)
                     } else if (cylDir < 4) {
                         var vSign7 = (cylDir === 3) ? -1.0 : 1.0
                         var drumAng7 = hy * (Math.PI * 0.84) + vSign7 * l3T * 1.55 * evoFreq + hx * 0.20 * warpIntensity
                         var cosD7 = Math.cos(drumAng7), sinD7 = Math.sin(drumAng7)
-                        var camYaw7B = 0.44 + Math.cos(l3T * 0.35) * 0.10
+                        var camYaw7D = 0.54 + Math.sin(l3T * 0.48) * 0.42
                         var projD7 = project3DPoint(
-                            hx * 0.94,
+                            hx * 0.98,
                             sinD7 * cylRad7 * yAspect7 * 0.82,
-                            cosD7 * cylRad7 * 0.92,
-                            0.0, camYaw7B, Math.cos(l3T * 0.52 * evoFreq) * 0.16 * vSign7,
-                            cx, cy, halfW * 0.96, 3.0
+                            cosD7 * cylRad7 * 0.96 + zSurgeCell * 0.42,
+                            0.0, camYaw7D, Math.cos(l3T * 0.52 * evoFreq) * 0.20 * vSign7,
+                            cx, cy, halfW * 1.02, 1.68
                         )
                         px = projD7.x
                         py = projD7.y
-                        scaleW = clamp(projD7.persp * 1.14, 0.56, 1.92)
-                        scaleH = clamp(Math.max(0.24, Math.abs(cosD7)) * projD7.persp * 1.18, 0.24, 1.95)
+                        scaleW = clamp(projD7.persp * 1.34, 0.32, 2.65)
+                        scaleH = clamp(Math.max(0.22, Math.abs(cosD7)) * projD7.persp * 1.38, 0.22, 2.65)
                     } else {
                         var spinSign7B = (cylDir === 5) ? -1.0 : 1.0
                         var cylAng7S = hx * (Math.PI * 0.88) + spinSign7B * l3T * 1.55 * evoFreq
@@ -10832,14 +11028,14 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                         var projS7B = project3DPoint(
                             sin7S * cylRad7,
                             hy * yAspect7 * 0.78,
-                            cos7S * cylRad7 * 0.92,
+                            cos7S * cylRad7 * 0.96 + zSurgeCell * 0.42,
                             gyroPitch7B, gyroYaw7B, fullSpin7B,
-                            cx, cy, halfW * 0.96, 3.0
+                            cx, cy, halfW * 1.02, 1.68
                         )
                         px = projS7B.x
                         py = projS7B.y
-                        scaleW = clamp(Math.max(0.26, Math.abs(cos7S)) * projS7B.persp * 1.16, 0.26, 1.95)
-                        scaleH = clamp(projS7B.persp * 1.14, 0.52, 1.92)
+                        scaleW = clamp(Math.max(0.22, Math.abs(cos7S)) * projS7B.persp * 1.38, 0.22, 2.65)
+                        scaleH = clamp(projS7B.persp * 1.34, 0.32, 2.65)
                     }
                 } else if (l3Mode === 8) {
                     var accBeat8 = Math.sin(l3T * 2.4) * (0.35 + state.bassSmooth * 0.55) * warpIntensity
@@ -10847,32 +11043,51 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                     var stretchY8 = clamp(1.0 - accBeat8 * 0.30 + (0.25 + state.midSmooth * 0.55) * Math.cos(hx * Math.PI * 1.5 - l3T * 2.1) * 0.35 * warpIntensity, 0.62, 1.88)
                     var concX8 = hx * stretchX8 + Math.sin(hx * Math.PI * 2.0 + l3T * 2.0) * 0.06 * warpIntensity
                     var concY8 = hy * stretchY8
-                    px = cx + concX8 * halfW
-                    py = cy + concY8 * halfH
-                    scaleW = stretchX8 * 1.08
-                    scaleH = stretchY8 * 1.08
+                    var proj8 = project3DPoint(
+                        concX8,
+                        concY8 * (halfH / Math.max(1.0, halfW)),
+                        Math.sin(hx * 2.0 + l3T * 1.5 * dirSignCell) * 0.42 + zSurgeCell * 0.48,
+                        Math.sin(l3T * 0.52) * 0.25, Math.sin(l3T * 0.74 * evoFreq) * 0.82, 0.0,
+                        cx, cy, halfW * 1.02, 1.62
+                    )
+                    px = proj8.x
+                    py = proj8.y
+                    scaleW = clamp(stretchX8 * proj8.persp * 1.25, 0.26, 2.65)
+                    scaleH = clamp(stretchY8 * proj8.persp * 1.25, 0.26, 2.65)
                 } else if (l3Mode === 9) {
                     var dirSign9B = (cylDir === 1 || cylDir === 3 || cylDir === 5) ? -1.0 : 1.0
                     var crawlRx9 = Math.sin(l3T * 0.55) * 0.45 + ((cylDir === 2 || cylDir === 3) ? l3T * 1.05 * evoFreq * dirSign9B : 0.0)
                     var crawlRy9 = l3T * 1.15 * evoFreq * dirSign9B
                     var crawlRz9 = l3T * 0.68 * evoFreq * dirSign9B
-                    var zWave9 = Math.sin(hx * 3.2 - l3T * 2.4) * (0.16 + state.bassSmooth * 0.22) * warpIntensity
+                    var zWave9 = Math.sin(hx * 3.2 - l3T * 2.4) * (0.28 + state.bassSmooth * 0.32) * warpIntensity + zSurgeCell * 0.52
                     var proj9 = project3DPoint(
-                        hx * 1.02,
+                        hx * 1.08,
                         hy * (halfH / Math.max(1.0, halfW)) * 0.96,
                         zWave9,
                         crawlRx9, crawlRy9, crawlRz9,
-                        cx, cy, halfW * 0.96, 2.8
+                        cx, cy, halfW * 1.02, 1.56
                     )
                     px = proj9.x
                     py = proj9.y
-                    scaleW = clamp(proj9.persp * 1.10, 0.55, 1.95)
+                    scaleW = clamp(proj9.persp * 1.36, 0.22, 2.75)
                     scaleH = scaleW
                 } else if (l3Mode === 10) {
-                    var breath10 = Math.sin(hx * 3.0 + l3T * 1.8) * 0.04 * warpIntensity
+                    var breath10 = Math.sin(hx * 3.0 + l3T * 1.8) * 0.06 * warpIntensity
                     var splitOff = (e > 0) ? ((e % 2 === 1 ? 1.0 : -1.0) * (6.0 + state.bassSmooth * 18.0 + state.beatPulse * 12.0) * warpIntensity) : 0.0
-                    px = cx + hx * halfW + splitOff
-                    py = cy - halfH * 0.16 + (hy + breath10) * halfH * 0.78
+                    var swoopYaw10 = Math.sin(l3T * 0.84 * evoFreq) * 0.96
+                    var swoopPitch10 = -0.18 + Math.cos(l3T * 0.58 * evoFreq) * 0.28
+                    var swoopZ10 = -Math.cos(hx * 1.35 + l3T * 1.25 * dirSignCell) * (0.38 + state.bassSmooth * 0.34) * warpIntensity + zSurgeCell * 0.55
+                    var proj10 = project3DPoint(
+                        hx * 1.08,
+                        (hy + breath10) * (halfH / Math.max(1.0, halfW)) * 0.82,
+                        swoopZ10,
+                        swoopPitch10, swoopYaw10, Math.sin(l3T * 0.46) * 0.18,
+                        cx + splitOff, cy - halfH * 0.10, halfW * 1.04, 1.55
+                    )
+                    px = proj10.x
+                    py = proj10.y
+                    scaleW = clamp(proj10.persp * 1.36, 0.24, 2.78)
+                    scaleH = scaleW
                 } else if (l3Mode === 11) {
                     var wx11 = hx
                     var wy11 = hy
@@ -10900,13 +11115,6 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                     py = cy + wy11 * halfH
                     scaleW = clamp(mag11, 0.85, 2.25)
                     scaleH = scaleW
-                } else if (activeTtfxFrame && p.gy < activeTtfxFrame.length) {
-                    var tLine = activeTtfxFrame[p.gy] || ""
-                    var tCh = p.gx < tLine.length ? tLine.charAt(p.gx) : " "
-                    if (tCh === " " || tCh === "⠀") {
-                        px += Math.cos(p.phase + state.t * 2.4) * (14.0 + state.bassSmooth * 28.0)
-                        py += Math.sin(p.phase - state.t * 2.4) * (14.0 + state.bassSmooth * 28.0)
-                    }
                 }
 
                 var pulseBoost = 0.82 + p.density * 0.18 + bVal * 0.22
@@ -11030,7 +11238,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer1EqStyle: c.layer1EqStyle !== undefined ? clamp(Math.round(Number(c.layer1EqStyle)), 0, ALL_LAYER1_EQ_STYLES.length - 1) : 0,
         layer1EqLayout: c.layer1EqLayout !== undefined ? clamp(Math.round(Number(c.layer1EqLayout)), 0, 3) : 0,
         layer1EqBandOrder: c.layer1EqBandOrder !== undefined ? clamp(Math.round(Number(c.layer1EqBandOrder)), 0, 2) : 0,
-        layer1EqGain: c.layer1EqGain !== undefined ? clamp(Number(c.layer1EqGain), 0.4, 2.5) : 1.25,
+        layer1EqGain: c.layer1EqGain !== undefined ? clamp(Number(c.layer1EqGain), 0.20, 1.00) : 0.80,
         layer1EqScale: c.layer1EqScale !== undefined ? clamp(Number(c.layer1EqScale), 0.15, 2.25) : 1.0,
         layer1EqSpin: c.layer1EqSpin !== undefined ? clamp(Number(c.layer1EqSpin), -2.5, 2.5) : 1.0,
         layer1EqDamping: c.layer1EqDamping !== undefined ? clamp(Math.round(Number(c.layer1EqDamping)), 0, 2) : 0,
@@ -11043,6 +11251,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer1ShapeDensity: c.layer1ShapeDensity !== undefined ? clamp(Number(c.layer1ShapeDensity), 0.25, 2.5) : 1.0,
         layer1ShapeLifespan: c.layer1ShapeLifespan !== undefined ? clamp(Number(c.layer1ShapeLifespan), 0.35, 3.0) : 1.0,
         layer1ShapeFillRatio: c.layer1ShapeFillRatio !== undefined ? clamp(Number(c.layer1ShapeFillRatio), 0.0, 1.0) : 0.35,
+        layer1ShapeFillOpacity: c.layer1ShapeFillOpacity !== undefined ? clamp(Number(c.layer1ShapeFillOpacity), 0.05, 1.0) : 0.55,
         layer1ShapesOpacity: c.layer1ShapesOpacity !== undefined ? clamp(Number(c.layer1ShapesOpacity), 0.05, 1.0) : 1.0,
         layer2Enabled: c.layer2Enabled !== undefined ? Boolean(c.layer2Enabled) : true,
         layer2VizEnabled: c.layer2VizEnabled !== undefined ? Boolean(c.layer2VizEnabled) : true,
