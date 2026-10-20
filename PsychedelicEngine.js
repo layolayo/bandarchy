@@ -1858,12 +1858,46 @@ function fillCraftFaces(ctx, faces, fillRatio, seedIdx, baseHue, sAlpha, palette
         var fIdx = (ratio >= 0.99) ? k : ((startIdx + k * coprimeStep) % total)
         var poly = faces[fIdx]
         if (!poly || poly.length < 3) continue
-        var shade = 0.34 + ((fIdx * 3 + (seedIdx || 0)) % 4) * 0.08
-        var fAlpha = clamp((sAlpha || 0.85) * segOpac * (0.84 + 0.16 * ((fIdx & 1) ? 1.0 : 0.68)), 0.03, 0.98)
+        var shade = 0.42 + ((fIdx * 3 + (seedIdx || 0)) % 4) * 0.07
+        var fAlpha = clamp(Math.max(0.48, sAlpha || 0.85) * segOpac * (0.86 + 0.14 * ((fIdx & 1) ? 1.0 : 0.72)), 0.03, 0.98)
         var fHue = ((baseHue || 180) + fIdx * 22) % 360
         ctx.fillStyle = (palette && palette.length > 0 && (fIdx & 1) === 0)
             ? colourWithAlpha(palette[(fIdx + (seedIdx || 0)) % palette.length], fAlpha)
-            : hslToHex(fHue, 0.88, shade, fAlpha)
+            : hslToHex(fHue, 0.90, shade, fAlpha)
+        ctx.beginPath()
+        ctx.moveTo(poly[0].x, poly[0].y)
+        for (var pi = 1; pi < poly.length; pi++) {
+            ctx.lineTo(poly[pi].x, poly[pi].y)
+        }
+        ctx.closePath()
+        ctx.fill()
+    }
+    ctx.beginPath()
+}
+
+// Deterministically fills a configurable fraction (`cfg.layer2FillRatio` 0.0..1.0 = 0%..100%) of Layer 4 Geometry
+// polygon segments/facets with configurable per-segment opacity (`cfg.layer2FillOpacity` 0.05..1.00 = 5%..100%).
+function fillGeometrySegments(ctx, polys, cfg, seedIdx, palette, baseAlpha) {
+    if (!polys || polys.length === 0) return
+    var ratio = cfg && cfg.layer2FillRatio !== undefined ? clamp(Number(cfg.layer2FillRatio), 0.0, 1.0) : 0.45
+    if (ratio <= 0.01) return
+    var segOpac = cfg && cfg.layer2FillOpacity !== undefined ? clamp(Number(cfg.layer2FillOpacity), 0.05, 1.0) : 0.55
+    var isEcho = Boolean(cfg && cfg._isEcho)
+    var echoMul = isEcho ? 0.55 : 1.0
+    var bAlpha = baseAlpha !== undefined ? Number(baseAlpha) : 0.85
+    var total = polys.length
+    var targetCount = (ratio >= 0.99) ? total : Math.max(1, Math.min(total, Math.round(total * ratio)))
+    var coprimeStep = (total % 3 !== 0) ? 3 : ((total % 5 !== 0) ? 5 : ((total % 7 !== 0) ? 7 : 1))
+    var startIdx = Math.abs((seedIdx || 0) * 7) % total
+    for (var k = 0; k < targetCount; k++) {
+        var fIdx = (ratio >= 0.99) ? k : ((startIdx + k * coprimeStep) % total)
+        var poly = polys[fIdx]
+        if (!poly || poly.length < 3) continue
+        var fAlpha = clamp(bAlpha * segOpac * echoMul * (0.82 + 0.18 * ((fIdx & 1) ? 1.0 : 0.72)), 0.03, 0.96)
+        var col = (palette && palette.length > 0)
+            ? palette[(fIdx + Math.abs(seedIdx || 0)) % palette.length]
+            : "#00e5ff"
+        ctx.fillStyle = colourWithAlpha(col, fAlpha)
         ctx.beginPath()
         ctx.moveTo(poly[0].x, poly[0].y)
         for (var pi = 1; pi < poly.length; pi++) {
@@ -7319,17 +7353,12 @@ function drawMode0MilkDrop(ctx, w, h, state, palette, cfg) {
         if (prevVaultRing && (!isEcho || (state.echoIndex || 0) < 2)) {
             var wallFade0 = Math.min(prevVaultFade, birthFade0)
             if (wallFade0 > 0.01) {
-                ctx.fillStyle = colourWithAlpha(vaultCol, (0.06 + (1.0 - zProg * 0.5) * 0.10 + state.bass * 0.06) * wallFade0 * (isEcho ? 0.5 : 1.0))
-                ctx.beginPath()
-                for (var q = 0; q < totalPts; q += 2) {
+                var vaultPolys0 = []
+                for (var q = 0; q < totalPts; q++) {
                     var qNext = (q + 1) % totalPts
-                    ctx.moveTo(prevVaultRing[q].x, prevVaultRing[q].y)
-                    ctx.lineTo(prevVaultRing[qNext].x, prevVaultRing[qNext].y)
-                    ctx.lineTo(curRing[qNext].x, curRing[qNext].y)
-                    ctx.lineTo(curRing[q].x, curRing[q].y)
-                    ctx.closePath()
+                    vaultPolys0.push([prevVaultRing[q], prevVaultRing[qNext], curRing[qNext], curRing[q]])
                 }
-                ctx.fill()
+                fillGeometrySegments(ctx, vaultPolys0, cfg, worldVault + palShift, palette, (0.35 + (1.0 - zProg * 0.5) * 0.45 + state.bass * 0.20) * wallFade0)
 
                 ctx.strokeStyle = colourWithAlpha(vaultCol, (0.24 + zProg * 0.38) * wallFade0)
                 ctx.lineWidth = (0.8 + zProg * 1.6) * wallFade0
@@ -7564,17 +7593,11 @@ function drawMode2GForceWaveShape(ctx, w, h, state, palette, cfg) {
         if (prevFunnelPts && (!isEcho || (state.echoIndex || 0) < 3)) {
             var wallFade2 = Math.min(prevFunnelFade, birthFade2)
             if (wallFade2 > 0.01) {
-                ctx.fillStyle = colourWithAlpha(curtainCol, (0.06 + zProg * 0.10 + state.bass * 0.06) * wallFade2 * (isEcho ? 0.5 : 1.0))
-                ctx.beginPath()
-                for (var k = 0; k <= steps; k++) {
-                    if (k === 0) ctx.moveTo(curPts[k].x, curPts[k].y)
-                    else ctx.lineTo(curPts[k].x, curPts[k].y)
+                var funnelPolys2 = []
+                for (var k = 0; k < steps; k++) {
+                    funnelPolys2.push([prevFunnelPts[k], prevFunnelPts[k + 1], curPts[k + 1], curPts[k]])
                 }
-                for (var kBack = steps; kBack >= 0; kBack--) {
-                    ctx.lineTo(prevFunnelPts[kBack].x, prevFunnelPts[kBack].y)
-                }
-                ctx.closePath()
-                ctx.fill()
+                fillGeometrySegments(ctx, funnelPolys2, cfg, worldRing + palShift, palette, (0.35 + zProg * 0.45 + state.bass * 0.20) * wallFade2)
 
                 ctx.strokeStyle = colourWithAlpha(curtainCol, (0.22 + zProg * 0.36) * wallFade2)
                 ctx.lineWidth = (0.8 + zProg * 1.5) * wallFade2
@@ -7820,49 +7843,19 @@ function drawMode4MinterVlm(ctx, w, h, state, palette, cfg) {
         ringPts.push(pts)
     }
 
-    // 1. Checkered Llamasoft VLM Tunnel Wall Panels rendered back-to-front
-    //    Inner bays (`ringFade[d0] < 0.99`) fade in smoothly by `ringFade[d0]` from 0.0 at d0=0 so zero joint pops in!
+    // 1. Llamasoft VLM Tunnel Wall Segments rendered back-to-front with configurable Fill % and Segment Opacity %
     if (!isEcho || (state.echoIndex || 0) < 3) {
-        var baseWallAlpha = isEcho ? 0.08 : (0.12 + state.bass * 0.10)
-        for (var pBucket = 0; pBucket < 2; pBucket++) {
-            var panelCol = palette[(pBucket * 4 + palShift) % palette.length]
-            for (var d0 = 0; d0 < depthRings; d0++) {
-                var bf0 = ringFade[d0]
-                if (bf0 < 0.01) continue
-                if (bf0 < 0.99) {
-                    ctx.fillStyle = colourWithAlpha(panelCol, baseWallAlpha * bf0)
-                    ctx.beginPath()
-                    var p0 = ringPts[d0]
-                    var p1 = ringPts[d0 + 1]
-                    var wZ = ringWorld[d0]
-                    for (var s0 = 0; s0 < facets; s0++) {
-                        if (((wZ + s0) & 1) !== pBucket) continue
-                        ctx.moveTo(p0[s0].x, p0[s0].y)
-                        ctx.lineTo(p0[s0 + 1].x, p0[s0 + 1].y)
-                        ctx.lineTo(p1[s0 + 1].x, p1[s0 + 1].y)
-                        ctx.lineTo(p1[s0].x, p1[s0].y)
-                        ctx.closePath()
-                    }
-                    ctx.fill()
-                }
+        for (var d0 = 0; d0 < depthRings; d0++) {
+            var bf0 = ringFade[d0]
+            if (bf0 < 0.01) continue
+            var p0 = ringPts[d0]
+            var p1 = ringPts[d0 + 1]
+            var wZ = ringWorld[d0]
+            var ringQuads4 = []
+            for (var s0 = 0; s0 < facets; s0++) {
+                ringQuads4.push([p0[s0], p0[s0 + 1], p1[s0 + 1], p1[s0]])
             }
-            ctx.fillStyle = colourWithAlpha(panelCol, baseWallAlpha)
-            ctx.beginPath()
-            for (var dOuter = 0; dOuter < depthRings; dOuter++) {
-                if (ringFade[dOuter] < 0.99) continue
-                var p0o = ringPts[dOuter]
-                var p1o = ringPts[dOuter + 1]
-                var wZo = ringWorld[dOuter]
-                for (var s0o = 0; s0o < facets; s0o++) {
-                    if (((wZo + s0o) & 1) !== pBucket) continue
-                    ctx.moveTo(p0o[s0o].x, p0o[s0o].y)
-                    ctx.lineTo(p0o[s0o + 1].x, p0o[s0o + 1].y)
-                    ctx.lineTo(p1o[s0o + 1].x, p1o[s0o + 1].y)
-                    ctx.lineTo(p1o[s0o].x, p1o[s0o].y)
-                    ctx.closePath()
-                }
-            }
-            ctx.fill()
+            fillGeometrySegments(ctx, ringQuads4, cfg, wZ + palShift, palette, (0.45 + state.bass * 0.35) * bf0)
         }
     }
 
@@ -8169,12 +8162,20 @@ function drawMode12SierpinskiFractal(ctx, w, h, state, palette, cfg) {
     ctx.save()
     ctx.globalCompositeOperation = "source-over"
 
-    // 1. Render depth-sorted 3D Sierpinski sub-tetrahedrons in colour buckets
+    // 1. Render depth-sorted 3D Sierpinski sub-tetrahedrons with configurable Fill % (`layer2FillRatio`) and Segment Opacity % (`layer2FillOpacity`)
+    var sierFaces12 = []
+    for (var sf = 0; sf < leafTetras.length; sf++) {
+        var tetF = leafTetras[sf]
+        sierFaces12.push(
+            [tetF.p0, tetF.p1, tetF.p3],
+            [tetF.p0, tetF.p3, tetF.p2]
+        )
+    }
+    fillGeometrySegments(ctx, sierFaces12, cfg, palShift, palette, 0.72 + state.bassSmooth * 0.24)
+
     var bucketCount = 4
     for (var bk = 0; bk < bucketCount; bk++) {
-        var faceCol = palette[(bk * 2 + palShift) % palette.length]
         var edgeCol = palette[(bk * 2 + 1 + palShift) % palette.length]
-        ctx.fillStyle = colourWithAlpha(faceCol, (0.14 + state.bassSmooth * 0.12) * (isEcho ? 0.55 : 1.0))
         ctx.strokeStyle = colourWithAlpha(edgeCol, (0.78 + state.beatPulse * 0.20) * (isEcho ? 0.65 : 1.0))
         ctx.lineWidth = (1.35 + state.bassSmooth * 1.1) * (isEcho ? 0.75 : 1.0)
         ctx.beginPath()
@@ -8184,13 +8185,11 @@ function drawMode12SierpinskiFractal(ctx, w, h, state, palette, cfg) {
             if ((tet.tag % bucketCount) !== bk) continue
             var a = tet.p0, b = tet.p1, c = tet.p2, d = tet.p3
 
-            // Front-Left & Front-Right triangular facets
+            // Front-Left & Front-Right triangular facets + base edge
             ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(d.x, d.y); ctx.closePath()
             ctx.moveTo(a.x, a.y); ctx.lineTo(d.x, d.y); ctx.lineTo(c.x, c.y); ctx.closePath()
-            // Remaining tetrahedral edges
             ctx.moveTo(b.x, b.y); ctx.lineTo(c.x, c.y)
         }
-        ctx.fill()
         ctx.stroke()
     }
 
@@ -8257,17 +8256,12 @@ function drawMode6DmtChrysanthemum(ctx, w, h, state, palette, cfg) {
 
         // Filled translucent jewelled lotus petals & harmonic flower wave cells between tiers
         if (prevDomeRing && (!isEcho || (state.echoIndex || 0) < 3)) {
-            ctx.fillStyle = colourWithAlpha(jewelCol, (0.09 + (1.0 - frac) * 0.14 + state.bass * 0.08) * (isEcho ? 0.5 : 1.0))
-            ctx.beginPath()
-            for (var k = 0; k <= steps; k++) {
-                if (k === 0) ctx.moveTo(curRing[k].x, curRing[k].y)
-                else ctx.lineTo(curRing[k].x, curRing[k].y)
+            var domeQuads6 = []
+            for (var k = 0; k < steps; k += 2) {
+                var kNext = Math.min(steps, k + 2)
+                domeQuads6.push([prevDomeRing[k], prevDomeRing[kNext], curRing[kNext], curRing[k]])
             }
-            for (var kBack = steps; kBack >= 0; kBack--) {
-                ctx.lineTo(prevDomeRing[kBack].x, prevDomeRing[kBack].y)
-            }
-            ctx.closePath()
-            ctx.fill()
+            fillGeometrySegments(ctx, domeQuads6, cfg, r + palShift, palette, 0.45 + (1.0 - frac) * 0.35 + state.bass * 0.18)
 
             // Radial jewelled lattice filaments connecting dome tiers
             ctx.strokeStyle = colourWithAlpha(jewelCol, 0.28 + (1.0 - frac) * 0.38)
@@ -8763,10 +8757,13 @@ function drawMode9CyberMatrix(ctx, w, h, state, palette, cfg) {
     ctx.restore()
 }
 
-// Precomputed 4D Tesseract cell quad faces for volumetric hyper-facet rendering
+// Precomputed 4D Tesseract 24 cell quad faces for volumetric hyper-facet rendering
 var TESSERACT_FACES = [
-    [0, 1, 3, 2], [4, 5, 7, 6], [8, 9, 11, 10], [12, 13, 15, 14],
-    [0, 1, 9, 8], [2, 3, 11, 10], [4, 5, 13, 12], [6, 7, 15, 14]
+    [0, 1, 3, 2], [4, 5, 7, 6], [0, 1, 5, 4], [2, 3, 7, 6], [0, 2, 6, 4], [1, 3, 7, 5],
+    [8, 9, 11, 10], [12, 13, 15, 14], [8, 9, 13, 12], [10, 11, 15, 14], [8, 10, 14, 12], [9, 11, 15, 13],
+    [0, 1, 9, 8], [2, 3, 11, 10], [4, 5, 13, 12], [6, 7, 15, 14],
+    [0, 2, 10, 8], [1, 3, 11, 9], [4, 6, 14, 12], [5, 7, 15, 13],
+    [0, 4, 12, 8], [1, 5, 13, 9], [2, 6, 14, 10], [3, 7, 15, 11]
 ]
 
 // Mode 10: Unlocked Pure 4D Hypercube (Tesseract rotating freely in all 6 4D/3D planes with Volumetric Hyper-Facets)
@@ -8825,19 +8822,14 @@ function drawMode10SacredPolytope(ctx, w, h, state, palette, cfg) {
         })
     }
 
-    // Translucent Volumetric 4D Hyper-Cell Faces
+    // Translucent Volumetric 4D Hyper-Cell Faces (selectable Fill % & Segment Opacity %)
     if (!state.isTracerEcho || (state.echoIndex || 0) < 3) {
+        var tessPolys10 = []
         for (var f = 0; f < TESSERACT_FACES.length; f++) {
             var face = TESSERACT_FACES[f]
-            ctx.fillStyle = colourWithAlpha(palette[(f * 2) % palette.length], state.isTracerEcho ? 0.05 : (0.09 + state.bass * 0.08))
-            ctx.beginPath()
-            ctx.moveTo(proj[face[0]].x, proj[face[0]].y)
-            ctx.lineTo(proj[face[1]].x, proj[face[1]].y)
-            ctx.lineTo(proj[face[2]].x, proj[face[2]].y)
-            ctx.lineTo(proj[face[3]].x, proj[face[3]].y)
-            ctx.closePath()
-            ctx.fill()
+            tessPolys10.push([proj[face[0]], proj[face[1]], proj[face[2]], proj[face[3]]])
         }
+        fillGeometrySegments(ctx, tessPolys10, cfg, Math.floor((state.hueShift || 0) / 45), palette, 0.68 + state.bass * 0.28)
     }
 
     // Group 0: Inner 3D cube cell (w = -1, vertices 0..7, 12 edges)
@@ -9034,31 +9026,55 @@ function drawMode13HopfFibrationTorus(ctx, w, h, state, palette, cfg) {
         var sinEta = Math.sin(eta)
         var colShell = palette[(sh * 3 + palShift) % palette.length]
         var colSub = palette[(sh * 3 + 1 + palShift) % palette.length]
+        var prevFibrePts13 = null
+        var shellQuads13 = []
 
         for (var fb = 0; fb < fibresPerShell; fb++) {
             var phi = (fb / fibresPerShell) * Math.PI * 2.0 + state.phase * (sh % 2 === 0 ? 0.35 : -0.35)
             var bVal = state.smoothBands[(fb * 3 + sh * 11) & 63] || 0.12
-            ctx.strokeStyle = colourWithAlpha(fb % 2 === 0 ? colShell : colSub, (0.58 + bVal * 0.38) * (isEcho ? 0.65 : 1.0))
-            ctx.lineWidth = (1.3 + bVal * 1.8) * (isEcho ? 0.75 : 1.0)
-            ctx.beginPath()
-
+            var curFibrePts13 = []
             for (var s = 0; s <= segs; s++) {
                 var psi = (s / segs) * Math.PI * 2.0
                 var a1 = (phi + psi) * 0.5
                 var a2 = (psi - phi) * 0.5
-                // Point on S³ in R⁴
                 var x4 = cosEta * Math.cos(a1)
                 var y4 = cosEta * Math.sin(a1)
                 var z4 = sinEta * Math.cos(a2)
                 var w4 = sinEta * Math.sin(a2)
-                // Stereographic projection S³ -> R³ damped to avoid infinity
                 var denom = 1.65 - w4 * (0.72 + bVal * 0.18)
                 var x3 = (x4 / denom) * 1.15
                 var y3 = (y4 / denom) * 1.15
                 var z3 = (z4 / denom) * 1.15
-                var pt = project3DPoint(x3, y3, z3, rx, ry, rz, cx, cy, scale, fov)
-                if (s === 0) ctx.moveTo(pt.x, pt.y)
-                else ctx.lineTo(pt.x, pt.y)
+                curFibrePts13.push(project3DPoint(x3, y3, z3, rx, ry, rz, cx, cy, scale, fov))
+            }
+            if (prevFibrePts13) {
+                for (var qs13 = 0; qs13 < segs; qs13 += 2) {
+                    var qn13 = Math.min(segs, qs13 + 2)
+                    shellQuads13.push([prevFibrePts13[qs13], prevFibrePts13[qn13], curFibrePts13[qn13], curFibrePts13[qs13]])
+                }
+            }
+            prevFibrePts13 = curFibrePts13
+        }
+        fillGeometrySegments(ctx, shellQuads13, cfg, sh + palShift, palette, 0.52 + state.bassSmooth * 0.24)
+
+        for (var fb2 = 0; fb2 < fibresPerShell; fb2++) {
+            var phi2 = (fb2 / fibresPerShell) * Math.PI * 2.0 + state.phase * (sh % 2 === 0 ? 0.35 : -0.35)
+            var bVal2 = state.smoothBands[(fb2 * 3 + sh * 11) & 63] || 0.12
+            ctx.strokeStyle = colourWithAlpha(fb2 % 2 === 0 ? colShell : colSub, (0.58 + bVal2 * 0.38) * (isEcho ? 0.65 : 1.0))
+            ctx.lineWidth = (1.3 + bVal2 * 1.8) * (isEcho ? 0.75 : 1.0)
+            ctx.beginPath()
+            for (var s2 = 0; s2 <= segs; s2++) {
+                var psi2 = (s2 / segs) * Math.PI * 2.0
+                var a1b = (phi2 + psi2) * 0.5
+                var a2b = (psi2 - phi2) * 0.5
+                var x4b = cosEta * Math.cos(a1b)
+                var y4b = cosEta * Math.sin(a1b)
+                var z4b = sinEta * Math.cos(a2b)
+                var w4b = sinEta * Math.sin(a2b)
+                var denomB = 1.65 - w4b * (0.72 + bVal2 * 0.18)
+                var pt2 = project3DPoint((x4b / denomB) * 1.15, (y4b / denomB) * 1.15, (z4b / denomB) * 1.15, rx, ry, rz, cx, cy, scale, fov)
+                if (s2 === 0) ctx.moveTo(pt2.x, pt2.y)
+                else ctx.lineTo(pt2.x, pt2.y)
             }
             ctx.closePath()
             ctx.stroke()
@@ -9090,13 +9106,11 @@ function drawMode14CalabiYauManifold(ctx, w, h, state, palette, cfg) {
 
     for (var k1 = 0; k1 < nOrder; k1++) {
         var phase1 = (k1 * 2.0 * Math.PI) / nOrder
-        var colSheet = palette[(k1 * 2 + palShift) % palette.length]
         var colEdge = palette[(k1 * 2 + 1 + palShift) % palette.length]
 
         for (var k2 = 0; k2 < 2; k2++) {
             var phase2 = ((k1 + k2 * 2) * 2.0 * Math.PI) / nOrder
             var bVal = state.smoothBands[(k1 * 9 + k2 * 17) & 63] || 0.14
-            ctx.fillStyle = colourWithAlpha(colSheet, (0.12 + bVal * 0.14) * (isEcho ? 0.5 : 1.0))
             ctx.strokeStyle = colourWithAlpha(colEdge, (0.72 + bVal * 0.26) * (isEcho ? 0.65 : 1.0))
             ctx.lineWidth = (1.35 + bVal * 1.5) * (isEcho ? 0.75 : 1.0)
 
@@ -9117,6 +9131,12 @@ function drawMode14CalabiYauManifold(ctx, w, h, state, palette, cfg) {
                 }
             }
 
+            var cyQuads14 = []
+            for (var sq14 = 0; sq14 < uSteps; sq14++) {
+                cyQuads14.push([ringA[sq14], ringA[sq14 + 1], ringB[sq14 + 1], ringB[sq14]])
+            }
+            fillGeometrySegments(ctx, cyQuads14, cfg, k1 * 2 + k2 + palShift, palette, 0.58 + bVal * 0.32)
+
             ctx.beginPath()
             for (var i = 0; i <= uSteps; i++) {
                 if (i === 0) ctx.moveTo(ringA[i].x, ringA[i].y)
@@ -9126,7 +9146,6 @@ function drawMode14CalabiYauManifold(ctx, w, h, state, palette, cfg) {
                 ctx.lineTo(ringB[j].x, ringB[j].y)
             }
             ctx.closePath()
-            ctx.fill()
             ctx.stroke()
         }
     }
@@ -9177,6 +9196,8 @@ function drawMode15GyroscopicMerkaba(ctx, w, h, state, palette, cfg) {
 
     // 2. Counter-Rotating Dual Interpenetrating 3D Tetrahedra (Star Tetrahedron / Merkaba)
     var tetScale = 0.88 + state.beatPulse * 0.10
+    var merkFaces15 = []
+    var merkPolyPts15 = []
     for (var polarity = -1; polarity <= 1; polarity += 2) {
         var polIdx = polarity < 0 ? 0 : 1
         var pRy = ry * polarity * 1.25
@@ -9190,21 +9211,29 @@ function drawMode15GyroscopicMerkaba(ctx, w, h, state, palette, cfg) {
             project3DPoint(v2[0], v2[1], v2[2], rx, pRy, rz, cx, cy, scale, fov),
             project3DPoint(v3[0], v3[1], v3[2], rx, pRy, rz, cx, cy, scale, fov)
         ]
-        var colFace = palette[(polIdx * 4 + 1 + palShift) % palette.length]
-        var colStroke = palette[(polIdx * 4 + 2 + palShift) % palette.length]
-        ctx.fillStyle = colourWithAlpha(colFace, (0.16 + state.bassSmooth * 0.14) * (isEcho ? 0.5 : 1.0))
-        ctx.strokeStyle = colourWithAlpha(colStroke, 0.92 * (isEcho ? 0.7 : 1.0))
-        ctx.lineWidth = (1.8 + state.beatPulse * 1.4) * (isEcho ? 0.75 : 1.0)
-        ctx.beginPath()
+        merkPolyPts15.push({ pts: pts, polIdx: polIdx })
         var faces = [[0, 1, 2], [0, 2, 3], [0, 3, 1], [1, 2, 3]]
         for (var f = 0; f < faces.length; f++) {
             var fc = faces[f]
-            ctx.moveTo(pts[fc[0]].x, pts[fc[0]].y)
-            ctx.lineTo(pts[fc[1]].x, pts[fc[1]].y)
-            ctx.lineTo(pts[fc[2]].x, pts[fc[2]].y)
+            merkFaces15.push([pts[fc[0]], pts[fc[1]], pts[fc[2]]])
+        }
+    }
+    fillGeometrySegments(ctx, merkFaces15, cfg, palShift, palette, 0.72 + state.bassSmooth * 0.24)
+    for (var mp15 = 0; mp15 < merkPolyPts15.length; mp15++) {
+        var mObj = merkPolyPts15[mp15]
+        var ptsM = mObj.pts
+        var colStroke = palette[(mObj.polIdx * 4 + 2 + palShift) % palette.length]
+        ctx.strokeStyle = colourWithAlpha(colStroke, 0.92 * (isEcho ? 0.7 : 1.0))
+        ctx.lineWidth = (1.8 + state.beatPulse * 1.4) * (isEcho ? 0.75 : 1.0)
+        ctx.beginPath()
+        var facesM = [[0, 1, 2], [0, 2, 3], [0, 3, 1], [1, 2, 3]]
+        for (var fm = 0; fm < facesM.length; fm++) {
+            var fcm = facesM[fm]
+            ctx.moveTo(ptsM[fcm[0]].x, ptsM[fcm[0]].y)
+            ctx.lineTo(ptsM[fcm[1]].x, ptsM[fcm[1]].y)
+            ctx.lineTo(ptsM[fcm[2]].x, ptsM[fcm[2]].y)
             ctx.closePath()
         }
-        ctx.fill()
         ctx.stroke()
     }
     ctx.restore()
@@ -9232,30 +9261,46 @@ function drawMode16HyperbolicPoincareWeb(ctx, w, h, state, palette, cfg) {
     // Boundary Poincaré Horizon Ring + Hyperbolic Geodesic Arcs on a 3D Hemisphere/Bowl
     var tiers = isEcho ? 3 : 4
     var arcSegs = isEcho ? 14 : 22
+    var pOrigin16 = project3DPoint(0.0, 0.0, 0.30, rx, ry, rz, cx, cy, scale, fov)
     for (var tr = 1; tr <= tiers; tr++) {
         var rHyp = Math.tanh(tr * 0.48 + ((state.t * 0.35) % 0.48))
         var zBowl = Math.sqrt(Math.max(0.0, 1.0 - rHyp * rHyp)) * 0.55 - 0.25
         var colTier = palette[(tr * 2 + palShift) % palette.length]
-        ctx.strokeStyle = colourWithAlpha(colTier, (0.65 + (1.0 - rHyp) * 0.32) * (isEcho ? 0.65 : 1.0))
-        ctx.lineWidth = (1.3 + (1.0 - rHyp) * 1.8 + state.bassSmooth * 0.9) * (isEcho ? 0.75 : 1.0)
-        ctx.beginPath()
+        var tierCells16 = []
+        var tierArcs16 = []
 
         for (var k = 0; k < symP; k++) {
             var a0 = (k / symP) * Math.PI * 2.0 + tr * 0.25
             var a1 = ((k + 1) / symP) * Math.PI * 2.0 + tr * 0.25
             var bVal = state.smoothBands[(k * 5 + tr * 9) & 63] || 0.12
             var rInnerBow = rHyp * (0.58 - bVal * 0.18)
+            var arcPts16 = []
 
             for (var s = 0; s <= arcSegs; s++) {
                 var u = s / arcSegs
                 var aCur = lerp(a0, a1, u)
-                // Hyperbolic geodesic bows inward toward the origin before curving back to the boundary
                 var archIn = Math.sin(u * Math.PI)
                 var rCur = lerp(rHyp, rInnerBow, archIn)
                 var zCur = zBowl - archIn * (0.18 + bVal * 0.16)
-                var pt = project3DPoint(Math.cos(aCur) * rCur, Math.sin(aCur) * rCur, zCur, rx, ry, rz, cx, cy, scale, fov)
-                if (s === 0) ctx.moveTo(pt.x, pt.y)
-                else ctx.lineTo(pt.x, pt.y)
+                arcPts16.push(project3DPoint(Math.cos(aCur) * rCur, Math.sin(aCur) * rCur, zCur, rx, ry, rz, cx, cy, scale, fov))
+            }
+            tierArcs16.push(arcPts16)
+            var cellPoly16 = [pOrigin16]
+            for (var cp16 = 0; cp16 < arcPts16.length; cp16 += 2) {
+                cellPoly16.push(arcPts16[cp16])
+            }
+            tierCells16.push(cellPoly16)
+        }
+        fillGeometrySegments(ctx, tierCells16, cfg, tr + palShift, palette, (0.45 + (1.0 - rHyp) * 0.35))
+
+        ctx.strokeStyle = colourWithAlpha(colTier, (0.65 + (1.0 - rHyp) * 0.32) * (isEcho ? 0.65 : 1.0))
+        ctx.lineWidth = (1.3 + (1.0 - rHyp) * 1.8 + state.bassSmooth * 0.9) * (isEcho ? 0.75 : 1.0)
+        ctx.beginPath()
+        for (var ka = 0; ka < tierArcs16.length; ka++) {
+            var aList = tierArcs16[ka]
+            for (var sa = 0; sa < aList.length; sa++) {
+                if (sa === 0) ctx.moveTo(aList[sa].x, aList[sa].y)
+                else ctx.lineTo(aList[sa].x, aList[sa].y)
             }
         }
         ctx.stroke()
@@ -9282,20 +9327,41 @@ function drawMode17QuantumBlochSphere(ctx, w, h, state, palette, cfg) {
     ctx.save()
     ctx.globalCompositeOperation = "source-over"
 
-    // 1. Orthogonal Hilbert-Space Great Circles (|0>, |1>, |+>, |->, |+i>, |-i>) + Latitude Rabi Precession Rings
+    // 1. Orthogonal Hilbert-Space Great Circles + Latitude Rabi Precession Rings & Filled Spherical Quads
+    var latRings17 = []
     for (var lat = -2; lat <= 2; lat++) {
         var zLat = lat * 0.38
         var rLat = Math.sqrt(Math.max(0.05, 1.0 - zLat * zLat))
         var bVal = state.smoothBands[((lat + 2) * 11) & 63] || 0.15
-        var colRing = palette[((lat + 2) * 2 + palShift) % palette.length]
-        ctx.strokeStyle = colourWithAlpha(colRing, (lat === 0 ? 0.88 : 0.54 + bVal * 0.32) * (isEcho ? 0.65 : 1.0))
-        ctx.lineWidth = (lat === 0 ? 2.2 : 1.3 + bVal * 1.1) * (isEcho ? 0.75 : 1.0)
-        ctx.beginPath()
+        var ringPts17 = []
         for (var s = 0; s <= segs; s++) {
             var a = (s / segs) * Math.PI * 2.0
             var rMod = rLat * (1.0 + Math.sin(a * 4.0 + state.t * 3.0 + lat) * bVal * 0.08)
-            var pt = project3DPoint(Math.cos(a) * rMod, zLat, Math.sin(a) * rMod, rx, ry, rz, cx, cy, scale, fov)
-            if (s === 0) ctx.moveTo(pt.x, pt.y)
+            ringPts17.push(project3DPoint(Math.cos(a) * rMod, zLat, Math.sin(a) * rMod, rx, ry, rz, cx, cy, scale, fov))
+        }
+        latRings17.push({ lat: lat, bVal: bVal, pts: ringPts17 })
+    }
+
+    var blochQuads17 = []
+    for (var lr = 0; lr < latRings17.length - 1; lr++) {
+        var rA17 = latRings17[lr].pts
+        var rB17 = latRings17[lr + 1].pts
+        for (var sq17 = 0; sq17 < segs; sq17 += 3) {
+            var sn17 = Math.min(segs, sq17 + 3)
+            blochQuads17.push([rA17[sq17], rA17[sn17], rB17[sn17], rB17[sq17]])
+        }
+    }
+    fillGeometrySegments(ctx, blochQuads17, cfg, palShift, palette, 0.58 + state.bassSmooth * 0.26)
+
+    for (var lr2 = 0; lr2 < latRings17.length; lr2++) {
+        var rObj17 = latRings17[lr2]
+        var colRing = palette[((rObj17.lat + 2) * 2 + palShift) % palette.length]
+        ctx.strokeStyle = colourWithAlpha(colRing, (rObj17.lat === 0 ? 0.88 : 0.54 + rObj17.bVal * 0.32) * (isEcho ? 0.65 : 1.0))
+        ctx.lineWidth = (rObj17.lat === 0 ? 2.2 : 1.3 + rObj17.bVal * 1.1) * (isEcho ? 0.75 : 1.0)
+        ctx.beginPath()
+        for (var sp17 = 0; sp17 <= segs; sp17++) {
+            var pt = rObj17.pts[sp17]
+            if (sp17 === 0) ctx.moveTo(pt.x, pt.y)
             else ctx.lineTo(pt.x, pt.y)
         }
         ctx.closePath()
@@ -9363,17 +9429,38 @@ function drawMode18KleinBottleImmersion(ctx, w, h, state, palette, cfg) {
     ctx.save()
     ctx.globalCompositeOperation = "source-over"
 
+    var kleinRings18 = []
     for (var ui = 0; ui < uRings; ui++) {
         var u = (ui / uRings) * Math.PI * 2.0
-        var bVal = state.smoothBands[(ui * 4) & 63] || 0.14
-        var colRib = palette[(ui + palShift) % palette.length]
+        var ring18 = []
+        for (var vi = 0; vi <= vSegs; vi++) {
+            var v = (vi / vSegs) * Math.PI * 2.0 + state.t * 0.65
+            ring18.push(evalKleinPoint(u, v))
+        }
+        kleinRings18.push(ring18)
+    }
+
+    var kleinQuads18 = []
+    for (var uk = 0; uk < uRings; uk++) {
+        var rCur18 = kleinRings18[uk]
+        var rNext18 = kleinRings18[(uk + 1) % uRings]
+        for (var vk = 0; vk < vSegs; vk += 2) {
+            var vn18 = Math.min(vSegs, vk + 2)
+            kleinQuads18.push([rCur18[vk], rCur18[vn18], rNext18[vn18], rNext18[vk]])
+        }
+    }
+    fillGeometrySegments(ctx, kleinQuads18, cfg, palShift, palette, 0.56 + state.bassSmooth * 0.26)
+
+    for (var ui2 = 0; ui2 < uRings; ui2++) {
+        var bVal = state.smoothBands[(ui2 * 4) & 63] || 0.14
+        var colRib = palette[(ui2 + palShift) % palette.length]
+        var pts18 = kleinRings18[ui2]
         ctx.strokeStyle = colourWithAlpha(colRib, (0.64 + bVal * 0.34) * (isEcho ? 0.65 : 1.0))
         ctx.lineWidth = (1.35 + bVal * 1.6) * (isEcho ? 0.75 : 1.0)
         ctx.beginPath()
-        for (var vi = 0; vi <= vSegs; vi++) {
-            var v = (vi / vSegs) * Math.PI * 2.0 + state.t * 0.65
-            var pt = evalKleinPoint(u, v)
-            if (vi === 0) ctx.moveTo(pt.x, pt.y)
+        for (var vi2 = 0; vi2 <= vSegs; vi2++) {
+            var pt = pts18[vi2]
+            if (vi2 === 0) ctx.moveTo(pt.x, pt.y)
             else ctx.lineTo(pt.x, pt.y)
         }
         ctx.closePath()
@@ -9408,14 +9495,9 @@ function drawMode19PenroseQuasicrystal(ctx, w, h, state, palette, cfg) {
     for (var sh = 0; sh < shells; sh++) {
         var rBase = 0.36 + sh * 0.30
         var zBase = (sh - 1.0) * (0.22 + state.bassSmooth * 0.08)
-        var colRhomb = palette[(sh * 3 + palShift) % palette.length]
         var colEdge = palette[(sh * 3 + 1 + palShift) % palette.length]
         var bVal = state.smoothBands[(sh * 13) & 63] || 0.16
-
-        ctx.fillStyle = colourWithAlpha(colRhomb, (0.14 + bVal * 0.14) * (isEcho ? 0.5 : 1.0))
-        ctx.strokeStyle = colourWithAlpha(colEdge, (0.78 + bVal * 0.22) * (isEcho ? 0.65 : 1.0))
-        ctx.lineWidth = (1.4 + bVal * 1.5) * (isEcho ? 0.75 : 1.0)
-        ctx.beginPath()
+        var rhombPolys19 = []
 
         for (var k = 0; k < fold10; k++) {
             var aMid = (k / fold10) * Math.PI * 2.0 + sh * (Math.PI / fold10)
@@ -9429,14 +9511,21 @@ function drawMode19PenroseQuasicrystal(ctx, w, h, state, palette, cfg) {
             var pL = project3DPoint(Math.cos(aMid - dAng) * rMid, Math.sin(aMid - dAng) * rMid, zCrown, rx, ry, rz, cx, cy, scale, fov)
             var pOut = project3DPoint(Math.cos(aMid) * rOut, Math.sin(aMid) * rOut, -zBase, rx, ry, rz, cx, cy, scale, fov)
             var pR = project3DPoint(Math.cos(aMid + dAng) * rMid, Math.sin(aMid + dAng) * rMid, zCrown, rx, ry, rz, cx, cy, scale, fov)
+            rhombPolys19.push([pIn, pL, pOut, pR])
+        }
+        fillGeometrySegments(ctx, rhombPolys19, cfg, sh + palShift, palette, 0.68 + bVal * 0.28)
 
-            ctx.moveTo(pIn.x, pIn.y)
-            ctx.lineTo(pL.x, pL.y)
-            ctx.lineTo(pOut.x, pOut.y)
-            ctx.lineTo(pR.x, pR.y)
+        ctx.strokeStyle = colourWithAlpha(colEdge, (0.78 + bVal * 0.22) * (isEcho ? 0.65 : 1.0))
+        ctx.lineWidth = (1.4 + bVal * 1.5) * (isEcho ? 0.75 : 1.0)
+        ctx.beginPath()
+        for (var kr = 0; kr < rhombPolys19.length; kr++) {
+            var rp = rhombPolys19[kr]
+            ctx.moveTo(rp[0].x, rp[0].y)
+            ctx.lineTo(rp[1].x, rp[1].y)
+            ctx.lineTo(rp[2].x, rp[2].y)
+            ctx.lineTo(rp[3].x, rp[3].y)
             ctx.closePath()
         }
-        ctx.fill()
         ctx.stroke()
     }
     ctx.restore()
@@ -11250,6 +11339,8 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer2Reactivity: Number(c.layer2Reactivity !== undefined ? c.layer2Reactivity : (c.sensitivity !== undefined ? c.sensitivity : 1.35)),
         layer2Zoom: Number(c.layer2Zoom !== undefined ? c.layer2Zoom : 1.0),
         layer2Chaos: Number(c.layer2Chaos !== undefined ? c.layer2Chaos : 0.45),
+        layer2FillRatio: c.layer2FillRatio !== undefined ? clamp(Number(c.layer2FillRatio), 0.0, 1.0) : 0.45,
+        layer2FillOpacity: c.layer2FillOpacity !== undefined ? clamp(Number(c.layer2FillOpacity), 0.05, 1.0) : 0.55,
         layer2Opacity: c.layer2Opacity !== undefined ? clamp(Number(c.layer2Opacity), 0.05, 1.0) : 1.0,
         layer3Enabled: c.layer3Enabled !== undefined ? Boolean(c.layer3Enabled) : true,
         layer3AutoRandomise: Boolean(c.layer3AutoRandomise),

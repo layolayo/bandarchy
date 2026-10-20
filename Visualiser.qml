@@ -170,6 +170,8 @@ FocusScope {
     property real layer2Speed: 1.0
     property real layer2Zoom: 1.0
     property real layer2Chaos: 0.50
+    property real layer2FillRatio: 0.45
+    property real layer2FillOpacity: 0.55
     property real layer2Opacity: 1.0
     onLayer2OpacityChanged: { vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
     property bool backdropEnabled: true
@@ -1031,6 +1033,10 @@ FocusScope {
         if (st.photoBlackOpacity !== undefined) root.photoBlackOpacity = Number(st.photoBlackOpacity)
         if (st.photoMidOpacity !== undefined) root.photoMidOpacity = Number(st.photoMidOpacity)
         if (st.photoWhiteOpacity !== undefined) root.photoWhiteOpacity = Number(st.photoWhiteOpacity)
+        if (!root.layer1AutoRandomise && root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11) {
+            root.layer1Opacity = Math.round((0.45 + Math.random() * 0.55) * 100) / 100
+            root.rebalanceRandomLayerOpacities()
+        }
         root._applyingRandomPhotoMotion = false
     }
 
@@ -1995,6 +2001,8 @@ FocusScope {
             layer2Speed: root.layer2Speed,
             layer2Zoom: root.layer2Zoom,
             layer2Chaos: root.layer2Chaos,
+            layer2FillRatio: root.layer2FillRatio,
+            layer2FillOpacity: root.layer2FillOpacity,
             layer2Opacity: root.layer2Opacity,
             layer3Enabled: root.layer3Enabled,
             layer3AutoRandomise: root.layer3AutoRandomise,
@@ -2157,6 +2165,8 @@ FocusScope {
         if (cfg.layer2Speed !== undefined) root.layer2Speed = Number(cfg.layer2Speed)
         if (cfg.layer2Zoom !== undefined) root.layer2Zoom = Number(cfg.layer2Zoom)
         if (cfg.layer2Chaos !== undefined) root.layer2Chaos = Number(cfg.layer2Chaos)
+        if (cfg.layer2FillRatio !== undefined) root.layer2FillRatio = Math.max(0.00, Math.min(1.00, Number(cfg.layer2FillRatio)))
+        if (cfg.layer2FillOpacity !== undefined) root.layer2FillOpacity = Math.max(0.05, Math.min(1.00, Number(cfg.layer2FillOpacity)))
         if (cfg.layer2Opacity !== undefined) root.layer2Opacity = Math.max(0.05, Math.min(1.00, Number(cfg.layer2Opacity)))
 
         if (cfg.layer3Enabled !== undefined) root.layer3Enabled = Boolean(cfg.layer3Enabled)
@@ -2486,6 +2496,8 @@ FocusScope {
             l2Speed: root.layer2Speed,
             l2Zoom: root.layer2Zoom,
             l2Chaos: root.layer2Chaos,
+            l2FillRatio: root.layer2FillRatio,
+            l2FillOpacity: root.layer2FillOpacity,
             l2Opacity: root.layer2Opacity,
             l2TracersEnabled: root.layer2TracersEnabled,
             tracerCount: root.tracerCount,
@@ -2517,6 +2529,8 @@ FocusScope {
         if (item.l2Speed !== undefined) root.layer2Speed = Number(item.l2Speed)
         if (item.l2Zoom !== undefined) root.layer2Zoom = Number(item.l2Zoom)
         if (item.l2Chaos !== undefined) root.layer2Chaos = Number(item.l2Chaos)
+        if (item.l2FillRatio !== undefined) root.layer2FillRatio = Math.max(0.00, Math.min(1.00, Number(item.l2FillRatio)))
+        if (item.l2FillOpacity !== undefined) root.layer2FillOpacity = Math.max(0.05, Math.min(1.00, Number(item.l2FillOpacity)))
         if (item.l2Opacity !== undefined) root.layer2Opacity = Math.max(0.05, Math.min(1.00, Number(item.l2Opacity)))
         if (item.l2TracersEnabled !== undefined) root.layer2TracersEnabled = Boolean(item.l2TracersEnabled)
         if (item.tracerCount !== undefined) root.tracerCount = Number(item.tracerCount)
@@ -2961,6 +2975,8 @@ FocusScope {
             layer2Speed: root.layer2Speed,
             layer2Zoom: root.layer2Zoom,
             layer2Chaos: root.layer2Chaos,
+            layer2FillRatio: root.layer2FillRatio,
+            layer2FillOpacity: root.layer2FillOpacity,
             layer2Opacity: root.layer2Opacity,
             layer3Enabled: root.layer3Enabled,
             layer3Mode: root.layer3Mode,
@@ -3818,7 +3834,10 @@ FocusScope {
     function rebalanceRandomLayerOpacities() {
         var active = []
         if (root.layer1Enabled && root.layer1FieldEnabled) {
-            active.push({ key: "layer1Opacity", val: Number(root.layer1Opacity) || 0.85 })
+            var l1OpVal = (!root.layer1AutoRandomise && root.layer1Mode === 11)
+                ? Math.round((0.45 + Math.random() * 0.55) * 100) / 100
+                : (Number(root.layer1Opacity) || 0.85)
+            active.push({ key: "layer1Opacity", val: l1OpVal })
         }
         if (root.layer1Enabled && root.layer1EqEnabled) {
             active.push({ key: "layer1EqOpacity", val: Number(root.layer1EqOpacity) || 0.85 })
@@ -4034,6 +4053,8 @@ FocusScope {
         var nextM = roll2 < total ? roll2 : ((root.visualMode + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total)
         root.visualMode = nextM
         root.symmetryIndex = Math.floor(Math.random() * Engine.SYMMETRY_OPTIONS.length)
+        root.layer2FillRatio = Math.round((0.15 + Math.random() * 0.75) * 20) / 20
+        root.layer2FillOpacity = Math.round((0.25 + Math.random() * 0.65) * 20) / 20
         root.layer2Opacity = Math.round((0.45 + Math.random() * 0.55) * 100) / 100
         if (root.engineState) {
             root.engineState.avsTarget = {
@@ -5100,14 +5121,20 @@ FocusScope {
         }
     }
 
-    // Independent 1: Worlds Auto-Randomise Timer (every 11s)
+    // Independent 1: Worlds Auto-Randomise Timer (every 11s; when Photo Realm #12 is locked with Rand:OFF, still randomises L1 opacity)
     Timer {
         id: l1RandomiseTimer
         interval: 11000
-        running: root.visible && root.stageMode === "visualiser" && root.layer1AutoRandomise
+        running: root.visible && root.stageMode === "visualiser" && (root.layer1AutoRandomise || (root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11))
         repeat: true
         onTriggered: {
-            root.randomiseLayer1()
+            if (root.layer1AutoRandomise) {
+                root.randomiseLayer1()
+            } else if (root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11) {
+                root.layer1Opacity = Math.round((0.45 + Math.random() * 0.55) * 100) / 100
+                root.rebalanceRandomLayerOpacities()
+                scheduleSaveVisualiserConfig()
+            }
         }
     }
 
@@ -7077,6 +7104,56 @@ FocusScope {
                     onRightClicked: { root.layer2Chaos = 0.50; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
                     onWheelScrolled: delta => {
                         root.layer2Chaos = Math.max(0.0, Math.min(1.50, Math.round((root.layer2Chaos + delta * 0.10) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "Fill:" + Math.round(root.layer2FillRatio * 100) + "%"
+                    active: root.layer2Enabled && root.layer2FillRatio > 0.02
+                    onClicked: {
+                        var nextFl2 = root.layer2FillRatio + 0.20
+                        if (nextFl2 > 1.05) nextFl2 = 0.0
+                        root.layer2FillRatio = Math.round(Math.min(1.0, nextFl2) * 100) / 100
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: {
+                        root.layer2FillRatio = 0.45
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => {
+                        root.layer2FillRatio = Math.max(0.0, Math.min(1.0, Math.round((root.layer2FillRatio + (delta > 0 ? 0.10 : -0.10)) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "SegOp:" + Math.round(root.layer2FillOpacity * 100) + "%"
+                    active: root.layer2Enabled && root.layer2FillRatio > 0.02
+                    onClicked: {
+                        var nextSo2 = root.layer2FillOpacity + 0.20
+                        if (nextSo2 > 1.05) nextSo2 = 0.15
+                        root.layer2FillOpacity = Math.round(Math.min(1.0, nextSo2) * 100) / 100
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: {
+                        root.layer2FillOpacity = 0.55
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => {
+                        root.layer2FillOpacity = Math.max(0.05, Math.min(1.0, Math.round((root.layer2FillOpacity + (delta > 0 ? 0.10 : -0.10)) * 100) / 100))
                         vizCanvas.requestPaint()
                         scheduleSaveVisualiserConfig()
                     }
@@ -9724,6 +9801,34 @@ FocusScope {
                                 maxValue: 2.00
                                 unitSuffix: "x"
                                 onValueEdited: v => { root.layer2Zoom = v; root.layer2Chaos = Math.min(1.5, v * 0.6); vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                            }
+
+                            LayerSlider {
+                                label: "Filled Segments (%)"
+                                value: Math.round(root.layer2FillRatio * 100)
+                                minValue: 0
+                                maxValue: 100
+                                integerSteps: true
+                                unitSuffix: "%"
+                                onValueEdited: v => {
+                                    root.layer2FillRatio = Math.max(0.0, Math.min(1.0, Math.round(v) / 100.0))
+                                    vizCanvas.requestPaint()
+                                    scheduleSaveVisualiserConfig()
+                                }
+                            }
+
+                            LayerSlider {
+                                label: "Segment Opacity (%)"
+                                value: Math.round(root.layer2FillOpacity * 100)
+                                minValue: 5
+                                maxValue: 100
+                                integerSteps: true
+                                unitSuffix: "%"
+                                onValueEdited: v => {
+                                    root.layer2FillOpacity = Math.max(0.05, Math.min(1.0, Math.round(v) / 100.0))
+                                    vizCanvas.requestPaint()
+                                    scheduleSaveVisualiserConfig()
+                                }
                             }
 
                             LayerSlider {
