@@ -4695,7 +4695,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
         //   1: Mid ▲ (Up)      — Keep anchor at horizonY, pointing UP (identity)
         //   2: Mid ▼ (Down)    — Flip vertically around horizonY to point DOWN
         //   3: Top ▼ (Down)    — Shift anchor to top edge (h * 0.06) and flip vertically to point DOWN
-        var isSculptural3D = (eqStyle >= 7 && eqStyle <= 12) || (eqStyle >= 18 && eqStyle <= 20)
+        var isSculptural3D = (eqStyle >= 7 && eqStyle <= 12) || eqStyle === 16 || (eqStyle >= 18 && eqStyle <= 20)
         if (isSculptural3D) {
             // Sculptural 3D EQs (7..12 and 18..20)
             // Anchor directly towards the vertical screen zone defined by `eqLayout` (0: Bottom, 1/2: Middle, 3: Top),
@@ -6106,141 +6106,128 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.stroke()
             }
         } else if (eqStyle === 16) {
-            // Style 16: 3D Tubes — Tilting, Rotating 3D Structured Cages with 3 Orthogonal Circle Circumferences (X, Y, Z Axes), Cylindrical Tube Collars & Longitudinal Struts
-            var cageCount16 = 7
+            // Style 16: 3D Tubes — 3 Orthogonal Axes (Bass = X, Mid = Y, Highs = Z) as Invisible Base Holding 3 Oscillating 3D Coloured Tubes Formed by Circular Circumferences (Zero Construction Lines)
+            var centerX16 = vanishX
+            var centerY16 = horizonY - minDim * 0.20
+            var baseScale16 = minDim * 0.34
             var circleSegs16 = 24
-            var centerY16 = horizonY - minDim * 0.22
-            var spanX16 = w * 0.80
+            var ringsPerTube16 = 18
+            var fov16 = 3.8
             ctx.lineCap = "round"
             ctx.lineJoin = "round"
 
-            for (var c16 = 0; c16 < cageCount16; c16++) {
-                var u16 = cageCount16 > 1 ? c16 / (cageCount16 - 1) : 0.5
-                var bIdx16 = mapEqBandIndex(c16, cageCount16, eqBandOrder)
-                var v16 = clamp(sampleEqBandValue(state, bIdx16, eqDamping, eqGain), 0.06, 1.38)
-                var pk16 = clamp((state.peakBands[bIdx16] || v16) * eqGain, v16, 1.45)
+            // Continuous 3-axis 3D tilt & rotation of the invisible orthogonal coordinate frame
+            var rx16 = 0.48 + Math.sin(eqSpinT * 0.44) * 0.36 + eqSpinT * 0.32 + state.bassSmooth * 0.18
+            var ry16 = eqSpinT * 0.58 + Math.cos(eqSpinT * 0.31) * 0.28 + state.midSmooth * 0.16
+            var rz16 = Math.sin(eqSpinT * 0.39) * 0.42 + eqSpinT * 0.21 + state.highSmooth * 0.14
 
-                // Arrange the 7 3D gyroscopic tube cages along a 3D perspective arc that tilts and breathes
-                var arcAng16 = (u16 - 0.5) * Math.PI * 0.86
-                var cageCX16 = vanishX + (u16 - 0.5) * spanX16
-                var cageCY16 = centerY16 - Math.cos(arcAng16) * minDim * 0.06 - v16 * minDim * 0.08
-                var cageScale16 = minDim * (0.105 + v16 * 0.068 + (1.0 - Math.abs(u16 - 0.5) * 0.5) * 0.028)
+            var hueOff16 = Math.floor((state.hueShift || 0) / 30)
+            var colBass16 = palette[(0 + hueOff16) % palette.length]
+            var colMid16  = palette[(2 + hueOff16) % palette.length]
+            var colHigh16 = palette[(4 + hueOff16) % palette.length]
+            var tubeCols16 = [colBass16, colMid16, colHigh16]
 
-                // Each 3D tubular cage tilts and rotates continuously around all 3 axes (X, Y, Z)
-                var rx16 = eqSpinT * (0.72 + c16 * 0.09) + c16 * 0.65 + state.bassSmooth * 0.35
-                var ry16 = eqSpinT * (0.94 - c16 * 0.07) + c16 * 0.85
-                var rz16 = Math.sin(eqSpinT * 0.58 + c16 * 0.9) * 0.62 + c16 * 0.42
-                var fov16 = 3.8
+            var bassDrive16 = clamp((state.bass * 0.62 + state.bassSmooth * 0.38) * eqGain, 0.05, 1.45)
+            var midDrive16  = clamp((state.mid  * 0.62 + state.midSmooth  * 0.38) * eqGain, 0.05, 1.45)
+            var highDrive16 = clamp((state.high * 0.62 + state.highSmooth * 0.38) * eqGain, 0.05, 1.45)
+            var axisDrives16 = [bassDrive16, midDrive16, highDrive16]
 
-                var colX16 = palette[(c16 * 2 + Math.floor((state.hueShift || 0) / 30)) % palette.length]
-                var colY16 = palette[(c16 * 2 + 2 + Math.floor((state.hueShift || 0) / 30)) % palette.length]
-                var colZ16 = palette[(c16 * 2 + 4 + Math.floor((state.hueShift || 0) / 30)) % palette.length]
-                var axisCols16 = [colX16, colY16, colZ16]
+            // Collect all 3D circular circumference slices across the 3 orthogonal tubes and depth-sort back-to-front
+            var tubeSlices16 = []
+            for (var axisIdx = 0; axisIdx < 3; axisIdx++) {
+                var drive16 = axisDrives16[axisIdx]
+                var tubeCol16 = tubeCols16[axisIdx]
+                // Band range per axis: 0 = Bass (0..20), 1 = Mid (21..42), 2 = Highs (43..63)
+                var bandStart16 = axisIdx === 0 ? 0 : (axisIdx === 1 ? 21 : 43)
+                var bandCount16 = axisIdx === 2 ? 21 : 21
 
-                // 1. Cylindrical Tube Cage Structure: 6 Longitudinal Generator Struts + Top/Bottom End-Cap Tube Rings
-                var cylHalfH16 = 0.62 + v16 * 0.58
-                var cylRad16 = 0.64 + v16 * 0.16
-                ctx.strokeStyle = colourWithAlpha(colY16, (0.52 + v16 * 0.32) * (1.0 - dim))
-                ctx.lineWidth = 1.2 + v16 * 0.95
-                ctx.beginPath()
-                for (var genIdx = 0; genIdx < 6; genIdx++) {
-                    var gAng16 = (genIdx / 6.0) * Math.PI * 2.0
-                    var gx16 = Math.cos(gAng16) * cylRad16
-                    var gz16 = Math.sin(gAng16) * cylRad16
-                    var pTop16 = project3DPoint(gx16, -cylHalfH16, gz16, rx16, ry16, rz16, cageCX16, cageCY16, cageScale16, fov16)
-                    var pBot16 = project3DPoint(gx16,  cylHalfH16, gz16, rx16, ry16, rz16, cageCX16, cageCY16, cageScale16, fov16)
-                    ctx.moveTo(pTop16.x, pTop16.y)
-                    ctx.lineTo(pBot16.x, pBot16.y)
-                }
-                for (var capSign = -1; capSign <= 1; capSign += 2) {
-                    var capY16 = capSign * cylHalfH16
-                    for (var cs16 = 0; cs16 <= 16; cs16++) {
-                        var caCap = (cs16 / 16.0) * Math.PI * 2.0
-                        var pCap = project3DPoint(Math.cos(caCap) * cylRad16, capY16, Math.sin(caCap) * cylRad16, rx16, ry16, rz16, cageCX16, cageCY16, cageScale16, fov16)
-                        if (cs16 === 0) ctx.moveTo(pCap.x, pCap.y)
-                        else ctx.lineTo(pCap.x, pCap.y)
-                    }
-                }
-                ctx.stroke()
+                // Tube length expands/contracts along its axis with its frequency band, plus axial oscillation slide
+                var halfSpan16 = 0.44 + drive16 * 0.64
+                var axisSlide16 = Math.sin(eqSpinT * (2.1 + axisIdx * 0.65) + axisIdx * 2.094) * (0.06 + drive16 * 0.22)
 
-                // 2. Inner 3D Tubular Axial Core Struts (X, Y, Z orthogonal axes pulsing with audio energy)
-                var coreR16 = 0.86 + v16 * 0.26
-                ctx.strokeStyle = colourWithAlpha("#ffffff", (0.42 + v16 * 0.38) * (1.0 - dim))
-                ctx.lineWidth = 1.3 + v16 * 0.95
-                ctx.beginPath()
-                for (var axLine = 0; axLine < 3; axLine++) {
-                    var pNeg = project3DPoint(
-                        axLine === 0 ? -coreR16 : 0.0,
-                        axLine === 1 ? -coreR16 : 0.0,
-                        axLine === 2 ? -coreR16 : 0.0,
-                        rx16, ry16, rz16, cageCX16, cageCY16, cageScale16, fov16
-                    )
-                    var pPos = project3DPoint(
-                        axLine === 0 ? coreR16 : 0.0,
-                        axLine === 1 ? coreR16 : 0.0,
-                        axLine === 2 ? coreR16 : 0.0,
-                        rx16, ry16, rz16, cageCX16, cageCY16, cageScale16, fov16
-                    )
-                    ctx.moveTo(pNeg.x, pNeg.y)
-                    ctx.lineTo(pPos.x, pPos.y)
-                }
-                ctx.stroke()
+                for (var rIdx = 0; rIdx < ringsPerTube16; rIdx++) {
+                    var uRing = ringsPerTube16 > 1 ? (rIdx / (ringsPerTube16 - 1)) : 0.5
+                    var signedU = (uRing - 0.5) * 2.0 // -1.0 .. +1.0 along the axis
+                    var subBandIdx = bandStart16 + Math.min(bandCount16 - 1, Math.floor(Math.abs(signedU) * bandCount16))
+                    var mappedBand = mapEqBandIndex(subBandIdx, 64, eqBandOrder)
+                    var bandVal16 = clamp(sampleEqBandValue(state, mappedBand, eqDamping, eqGain), 0.05, 1.42)
 
-                // 3. Three Orthogonal Circle Circumferences (one on each X, Y, Z axis) rendered as 3D tubular rings
-                for (var axisIdx = 0; axisIdx < 3; axisIdx++) {
-                    // axisIdx 0: X-axis normal (circle in YZ plane)
-                    // axisIdx 1: Y-axis normal (circle in XZ plane)
-                    // axisIdx 2: Z-axis normal (circle in XY plane)
-                    var ringRad16 = 0.88 + v16 * 0.28 + axisIdx * 0.06
-                    var ringCol16 = axisCols16[axisIdx]
+                    // Harmonic standing-wave compression & oscillation along the axis
+                    var axialWave = Math.sin(signedU * Math.PI * 2.0 - eqSpinT * (3.2 + axisIdx * 0.7) * eqSpinDir) * (0.04 + bandVal16 * 0.09)
+                    var axisPos = signedU * halfSpan16 + axisSlide16 + axialWave
 
-                    ctx.beginPath()
+                    // Tube radius: fuller in the body with organic peristaltic wave + frequency-band swell, rounded at ends
+                    var endProfile = Math.sqrt(Math.max(0.14, 1.0 - signedU * signedU * 0.72))
+                    var radialOsc = 1.0 + 0.24 * Math.cos(signedU * Math.PI * 2.5 - eqSpinT * 3.6 + axisIdx * 1.4) * drive16
+                    var ringRad16 = (0.13 + drive16 * 0.08 + bandVal16 * 0.11) * endProfile * radialOsc
+
+                    // Project ring centre on the invisible axis for accurate 3D Painter's depth sorting
+                    var cx3 = axisIdx === 0 ? axisPos : 0.0
+                    var cy3 = axisIdx === 1 ? axisPos : 0.0
+                    var cz3 = axisIdx === 2 ? axisPos : 0.0
+                    var centerPt = project3DPoint(cx3, cy3, cz3, rx16, ry16, rz16, centerX16, centerY16, baseScale16, fov16)
+
+                    var pts16 = []
                     for (var s16 = 0; s16 <= circleSegs16; s16++) {
                         var ang16 = (s16 / circleSegs16) * Math.PI * 2.0
-                        var ca16 = Math.cos(ang16) * ringRad16
-                        var sa16 = Math.sin(ang16) * ringRad16
-                        var tubeRipple = Math.sin(ang16 * 4.0 + eqSpinT * 3.2 + axisIdx) * v16 * 0.08
-                        var x3_16 = axisIdx === 0 ? tubeRipple : (axisIdx === 1 ? ca16 : ca16)
-                        var y3_16 = axisIdx === 0 ? ca16 : (axisIdx === 1 ? tubeRipple : sa16)
-                        var z3_16 = axisIdx === 0 ? sa16 : (axisIdx === 1 ? sa16 : tubeRipple)
-
-                        var pt16 = project3DPoint(x3_16, y3_16, z3_16, rx16, ry16, rz16, cageCX16, cageCY16, cageScale16, fov16)
-                        if (s16 === 0) ctx.moveTo(pt16.x, pt16.y)
-                        else ctx.lineTo(pt16.x, pt16.y)
+                        var c16 = Math.cos(ang16) * ringRad16
+                        var s16v = Math.sin(ang16) * ringRad16
+                        // Circle circumference lies perpendicular to its holding axis:
+                        //   axisIdx 0 (X / Bass): circle in YZ plane
+                        //   axisIdx 1 (Y / Mid):  circle in XZ plane
+                        //   axisIdx 2 (Z / High): circle in XY plane
+                        var px3 = axisIdx === 0 ? axisPos : c16
+                        var py3 = axisIdx === 0 ? c16     : (axisIdx === 1 ? axisPos : s16v)
+                        var pz3 = axisIdx === 2 ? axisPos : s16v
+                        pts16.push(project3DPoint(px3, py3, pz3, rx16, ry16, rz16, centerX16, centerY16, baseScale16, fov16))
                     }
-                    ctx.closePath()
 
-                    // 3-pass 3D tubular shading: dark casing shadow -> neon plasma tube -> specular core filament
-                    var lwTube16 = 2.0 + v16 * 2.2
-                    ctx.strokeStyle = "rgba(4, 8, 18, " + (0.68 * (1.0 - dim)).toFixed(3) + ")"
-                    ctx.lineWidth = lwTube16 * 2.0
-                    ctx.stroke()
-
-                    ctx.strokeStyle = colourWithAlpha(ringCol16, (0.82 + v16 * 0.18) * (1.0 - dim))
-                    ctx.lineWidth = lwTube16 * 1.15
-                    ctx.stroke()
-
-                    ctx.strokeStyle = "rgba(245, 252, 255, " + ((0.55 + v16 * 0.40) * (1.0 - dim)).toFixed(3) + ")"
-                    ctx.lineWidth = Math.max(0.85, lwTube16 * 0.36)
-                    ctx.stroke()
+                    tubeSlices16.push({
+                        z: centerPt.z,
+                        pts: pts16,
+                        col: tubeCol16,
+                        energy: clamp(drive16 * 0.55 + bandVal16 * 0.55, 0.08, 1.45),
+                        isTip: (rIdx === 0 || rIdx === ringsPerTube16 - 1)
+                    })
                 }
+            }
 
-                // 4. Outer Peak-Hold Gyroscopic Halo Circumference (tilted 45° diagonal 3D ring)
-                var pkRad16 = 1.05 + pk16 * 0.32
+            // Sort all circular tube cross-sections back-to-front (smallest z3 = farthest to largest z3 = nearest)
+            tubeSlices16.sort(function(a, b) {
+                return a.z - b.z
+            })
+
+            for (var tsIdx = 0; tsIdx < tubeSlices16.length; tsIdx++) {
+                var slice = tubeSlices16[tsIdx]
+                var sPts = slice.pts
                 ctx.beginPath()
-                for (var spk = 0; spk <= 20; spk++) {
-                    var apk = (spk / 20.0) * Math.PI * 2.0
-                    var px3 = Math.cos(apk) * pkRad16
-                    var py3 = Math.sin(apk) * pkRad16 * 0.7071
-                    var pz3 = Math.sin(apk) * pkRad16 * 0.7071
-                    var pkPt = project3DPoint(px3, py3, pz3, -rx16 * 0.8, ry16 * 1.1, -rz16, cageCX16, cageCY16, cageScale16, fov16)
-                    if (spk === 0) ctx.moveTo(pkPt.x, pkPt.y)
-                    else ctx.lineTo(pkPt.x, pkPt.y)
+                for (var pIdx = 0; pIdx < sPts.length; pIdx++) {
+                    if (pIdx === 0) ctx.moveTo(sPts[pIdx].x, sPts[pIdx].y)
+                    else ctx.lineTo(sPts[pIdx].x, sPts[pIdx].y)
                 }
                 ctx.closePath()
-                ctx.strokeStyle = colourWithAlpha("#ffffff", (0.42 + pk16 * 0.38) * (1.0 - dim))
-                ctx.lineWidth = 1.15
+
+                // 1. Volumetric dark tube body fill + subtle coloured plasma interior so each 3D tube has solid cylindrical depth
+                ctx.fillStyle = "rgba(4, 8, 18, " + (0.58 * (1.0 - dim)).toFixed(3) + ")"
+                ctx.fill()
+                ctx.fillStyle = colourWithAlpha(slice.col, (0.14 + slice.energy * 0.14) * (1.0 - dim))
+                ctx.fill()
+
+                // 2. Coloured 3D circular circumference ring (outer casing shadow -> vibrant neon circumference -> specular core)
+                var lwSlice = (slice.isTip ? 2.4 : 1.7) + slice.energy * 1.85
+                ctx.strokeStyle = "rgba(3, 6, 14, " + (0.72 * (1.0 - dim)).toFixed(3) + ")"
+                ctx.lineWidth = lwSlice * 1.75
                 ctx.stroke()
+
+                ctx.strokeStyle = colourWithAlpha(slice.col, clamp((0.72 + slice.energy * 0.26) * (1.0 - dim), 0.20, 1.0))
+                ctx.lineWidth = lwSlice
+                ctx.stroke()
+
+                if (slice.isTip || slice.energy > 0.52) {
+                    ctx.strokeStyle = "rgba(245, 252, 255, " + clamp((0.38 + slice.energy * 0.42) * (1.0 - dim), 0.15, 0.92).toFixed(3) + ")"
+                    ctx.lineWidth = Math.max(0.8, lwSlice * 0.34)
+                    ctx.stroke()
+                }
             }
         } else if (eqStyle === 17) {
             // Style 17: Hyper-Ribbon Spectrum Canyon — 3D Receding Multi-Layer Harmonic Ribbon Canyon with Tubular Crests
