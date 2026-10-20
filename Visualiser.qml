@@ -31,6 +31,20 @@ FocusScope {
     property string trackArtist: ""
     property string trackAlbum: ""
     property string artPath: ""
+    onTrackTitleChanged: {
+        if (root.useAlbumArt && root.engineState) {
+            root.engineState.artInterpretationSeed = ((root.engineState.artInterpretationSeed || 0) + 1)
+            root.engineState.artSourceKey = ""
+            var nModels = Engine.LAYER3_ART_STYLES.length
+            root.layer3TextStyle = (root.layer3TextStyle + 5 + Math.floor(Math.random() * Math.max(1, nModels - 5))) % nModels
+        }
+    }
+    onArtPathChanged: {
+        if (root.useAlbumArt && root.engineState) {
+            root.engineState.artInterpretationSeed = ((root.engineState.artInterpretationSeed || 0) + 1)
+            root.engineState.artSourceKey = ""
+        }
+    }
     property string playSource: "local"
     property real position: 0.0
     property real duration: 0.0
@@ -4130,7 +4144,7 @@ FocusScope {
         root._internalLayerChange = false
         var nextM = roll3 < total ? roll3 : ((root.layer3Mode + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total)
         root.layer3Mode = nextM
-        var totalStyles = Engine.LAYER3_TEXT_STYLES.length
+        var totalStyles = root.useAlbumArt ? Engine.LAYER3_ART_STYLES.length : Engine.LAYER3_TEXT_STYLES.length
         root.layer3TextStyle = (root.layer3TextStyle + 1 + Math.floor(Math.random() * Math.max(1, totalStyles - 1))) % totalStyles
         root.layer3CylinderDir = Math.floor(Math.random() * Engine.LAYER3_CYLINDER_DIRS.length)
         root.layer3Scale = Math.round((0.55 + Math.random() * 1.15) * 100) / 100
@@ -4138,6 +4152,8 @@ FocusScope {
         root.pickRandomStatement()
         if (root.engineState) {
             root.engineState.l3FormFactor = 0.25
+            root.engineState.artInterpretationSeed = ((root.engineState.artInterpretationSeed || 0) + 1)
+            root.engineState.artSourceKey = ""
         }
         Engine.shatterAlbumArt(root.engineState, 0.95)
         if (nextM === 5) {

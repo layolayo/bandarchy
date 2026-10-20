@@ -1771,6 +1771,359 @@ def transcode_image_to_ascii(
     return []
 
 
+def _resolve_best_art_image_for_analysis(image_path: str, seed_text: str = "") -> str:
+    """Return a full-colour raster image path for mathematical art analysis.
+    If `image_path` is missing or is a synthetic SVG placeholder (`cover_*.svg`),
+    select a deterministic or rotating original cover from `~/Pictures/bandarchy/imported/album-art/`
+    (or `~/.cache/bandarchy/art/`).
+    """
+    if image_path and os.path.isfile(image_path):
+        low = image_path.lower()
+        if low.endswith((".jpg", ".jpeg", ".png", ".webp")):
+            return os.path.abspath(image_path)
+
+    imported_art_dir = os.path.join(HOME, "Pictures", "bandarchy", "imported", "album-art")
+    candidates: list[str] = []
+    if os.path.isdir(imported_art_dir):
+        try:
+            for fn in sorted(os.listdir(imported_art_dir)):
+                if fn.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+                    fp = os.path.join(imported_art_dir, fn)
+                    if os.path.isfile(fp):
+                        candidates.append(fp)
+        except OSError:
+            pass
+    if not candidates and os.path.isdir(ART_DIR):
+        try:
+            for fn in sorted(os.listdir(ART_DIR)):
+                if fn.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+                    fp = os.path.join(ART_DIR, fn)
+                    if os.path.isfile(fp):
+                        candidates.append(fp)
+        except OSError:
+            pass
+    if not candidates:
+        return image_path if (image_path and os.path.isfile(image_path)) else ""
+    if seed_text:
+        idx = int(hashlib.sha256(seed_text.encode("utf-8")).hexdigest()[:8], 16) % len(candidates)
+        return candidates[idx]
+    return secrets.choice(candidates)
+
+
+def extract_mathematical_art_model(
+    image_path: str,
+    width: int = 48,
+    height: int = 28,
+) -> dict:
+    """Scan an original album cover image and compute a multi-model mathematical
+    feature representation:
+      1. True Chromatic RGB & HSV (Hue, Saturation, Luminance, Warm-Cool Thermal Axis)
+      2. Differential Geometry (Multi-channel Sobel Gradient Magnitude & Contour Tangent Angle)
+      3. Difference-of-Gaussians (DoG) Multi-Scale Woodcut/Etching Bandpass
+      4. 5-Cluster Chromatic K-Means Decomposition (ordered by chromatic salience)
+      5. Border-Contrast Spectral Salience (Figure/Ground Subject Isolation)
+      6. Monocular 3D Elevation Depth Map Z(x, y) & Surface Normals
+      7. Marching-Squares Topographical Iso-Contour Levels (0..7)
+      8. Recursive Colour-Variance Quadtree Decomposition
+      9. Edge-Weighted Poisson/Voronoi Stained-Glass Shards
+    """
+    ensure_private_dir(ASCII_DIR)
+    width = bounded_int(width, 48, 24, 72)
+    height = bounded_int(height, 28, 16, 44)
+
+    resolved_path = _resolve_best_art_image_for_analysis(image_path)
+    if not resolved_path or not os.path.isfile(resolved_path):
+        return {}
+    if not resolved_path.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+        return {}
+
+    abs_image = os.path.abspath(resolved_path)
+    try:
+        mtime = os.path.getmtime(abs_image)
+    except OSError:
+        return {}
+
+    stat_sig = f"artmodel_v2:{abs_image}:{mtime:.0f}:{width}:{height}"
+    cache_key = hashlib.sha256(stat_sig.encode("utf-8")).hexdigest()[:24]
+    cached_json = os.path.abspath(os.path.join(ASCII_DIR, f"artmodel_{cache_key}.json"))
+
+    cached_raw = safe_read_text(cached_json, max_bytes=2 * 1024 * 1024)
+    if cached_raw:
+        try:
+            parsed = json.loads(cached_raw)
+            if isinstance(parsed, dict) and parsed.get("version") == 2 and parsed.get("cells"):
+                return parsed
+        except Exception:
+            pass
+
+    try:
+        import numpy as np
+        from PIL import Image
+
+        with Image.open(abs_image) as im:
+            rgb_im = im.convert("RGB").resize((width, height), Image.Resampling.LANCZOS)
+            arr = np.asarray(rgb_im, dtype=np.float32) / 255.0
+
+        # Gentle percentile stretch per channel to rescue dark covers while preserving hue
+        p5 = np.percentile(arr, 4.0)
+        p95 = np.percentile(arr, 96.0)
+        span = max(0.18, float(p95 - p5))
+        arr_norm = np.clip((arr - p5) / span, 0.0, 1.0)
+
+        R = arr_norm[:, :, 0]
+        G = arr_norm[:, :, 1]
+        B = arr_norm[:, :, 2]
+
+        # Perceptual luminance & HSV
+        luma = 0.299 * R + 0.587 * G + 0.114 * B
+        cmax = np.maximum(np.maximum(R, G), B)
+        cmin = np.minimum(np.minimum(R, G), B)
+        delta = cmax - cmin
+        sat = np.where(cmax > 1e-4, delta / np.maximum(cmax, 1e-4), 0.0)
+
+        hue = np.zeros_like(luma)
+        mask_r = (cmax == R) & (delta > 1e-4)
+        mask_g = (cmax == G) & (delta > 1e-4)
+        mask_b = (cmax == B) & (delta > 1e-4)
+        hue[mask_r] = ((G[mask_r] - B[mask_r]) / delta[mask_r]) % 6.0
+        hue[mask_g] = ((B[mask_g] - R[mask_g]) / delta[mask_g]) + 2.0
+        hue[mask_b] = ((R[mask_b] - G[mask_b]) / delta[mask_b]) + 4.0
+        hue = (hue / 6.0) % 1.0
+
+        # Thermal warm-cool opponent axis (+1 warm red/gold, -1 cool blue/cyan)
+        thermal = np.clip((R - B) * (0.55 + 0.45 * sat), -1.0, 1.0)
+
+        # Multi-channel Sobel gradient vector field (Luma + RG/BY opponent channels)
+        pad_l = np.pad(luma, 1, mode="edge")
+        pad_rg = np.pad(R - G, 1, mode="edge")
+        pad_by = np.pad(B - 0.5 * (R + G), 1, mode="edge")
+
+        def _sobel(p):
+            gx = (
+                (p[:-2, 2:] + 2.0 * p[1:-1, 2:] + p[2:, 2:])
+                - (p[:-2, :-2] + 2.0 * p[1:-1, :-2] + p[2:, :-2])
+            )
+            gy = (
+                (p[2:, :-2] + 2.0 * p[2:, 1:-1] + p[2:, 2:])
+                - (p[:-2, :-2] + 2.0 * p[:-2, 1:-1] + p[:-2, 2:])
+            )
+            return gx, gy
+
+        gx_l, gy_l = _sobel(pad_l)
+        gx_rg, gy_rg = _sobel(pad_rg)
+        gx_by, gy_by = _sobel(pad_by)
+
+        gx = gx_l + 0.55 * gx_rg + 0.45 * gx_by
+        gy = gy_l + 0.55 * gy_rg + 0.45 * gy_by
+        edge_raw = np.hypot(gx, gy)
+        edge_p95 = max(0.12, float(np.percentile(edge_raw, 96.0)))
+        edge_mag = np.clip(edge_raw / edge_p95, 0.0, 1.0)
+        # Contour tangent angle (perpendicular to gradient vector) in degrees [-180, 180]
+        tangent_deg = np.degrees(np.arctan2(gy, gx) + (np.pi * 0.5))
+        tangent_deg = ((tangent_deg + 180.0) % 360.0) - 180.0
+
+        # Difference-of-Gaussians (DoG) 3x3 vs 7x7 box filters
+        def _box_blur(img2d, rad: int):
+            p = np.pad(img2d, rad, mode="edge")
+            k = 2 * rad + 1
+            out = np.zeros_like(img2d)
+            for dy in range(k):
+                for dx in range(k):
+                    out += p[dy : dy + height, dx : dx + width]
+            return out / float(k * k)
+
+        blur_small = _box_blur(luma, 1)
+        blur_large = _box_blur(luma, 3)
+        dog = np.clip((blur_small - blur_large) * 5.2, -1.0, 1.0)
+
+        # Border-contrast spectral salience (isolates foreground subject from border background)
+        border_pixels = np.concatenate([
+            arr_norm[0, :, :],
+            arr_norm[-1, :, :],
+            arr_norm[:, 0, :],
+            arr_norm[:, -1, :],
+        ], axis=0)
+        border_mean = np.median(border_pixels, axis=0)
+        border_dist = np.sqrt(np.sum((arr_norm - border_mean[None, None, :]) ** 2, axis=2)) / 1.732
+        yy, xx = np.mgrid[0:height, 0:width]
+        cx_norm = (xx - (width - 1) * 0.5) / max(1.0, width * 0.5)
+        cy_norm = (yy - (height - 1) * 0.5) / max(1.0, height * 0.5)
+        centre_prior = np.clip(1.08 - 0.38 * (cx_norm ** 2 + cy_norm ** 2), 0.45, 1.0)
+        sal_raw = (0.44 * border_dist + 0.30 * edge_mag + 0.26 * sat) * centre_prior
+        sal_p95 = max(0.15, float(np.percentile(sal_raw, 96.0)))
+        salience = np.clip(sal_raw / sal_p95, 0.0, 1.0)
+
+        # 5-Cluster Chromatic K-Means in (R, G, B, Sat*0.6, Salience*0.4)
+        feats = np.stack([R, G, B, sat * 0.6, salience * 0.4], axis=-1).reshape(-1, 5)
+        quantiles = [10, 30, 50, 70, 90]
+        order_idx = np.argsort(luma.reshape(-1) + 0.6 * sat.reshape(-1) + 0.5 * salience.reshape(-1))
+        n_pix = feats.shape[0]
+        centroids = np.array([
+            feats[order_idx[min(n_pix - 1, int(n_pix * q / 100.0))]]
+            for q in quantiles
+        ], dtype=np.float32)
+
+        labels = np.zeros(n_pix, dtype=np.int32)
+        for _ in range(8):
+            dists = np.sum((feats[:, None, :] - centroids[None, :, :]) ** 2, axis=2)
+            labels = np.argmin(dists, axis=1)
+            for k in range(5):
+                m = labels == k
+                if np.any(m):
+                    centroids[k] = feats[m].mean(axis=0)
+
+        # Sort clusters so Cluster 0 is highest salience/saturation and Cluster 4 is background
+        cluster_scores = []
+        for k in range(5):
+            m = labels == k
+            if np.any(m):
+                score = float(centroids[k, 3] * 0.55 + centroids[k, 4] * 0.65 + edge_mag.reshape(-1)[m].mean() * 0.3)
+            else:
+                score = -1.0
+            cluster_scores.append((score, k))
+        cluster_scores.sort(reverse=True)
+        remap = {old_k: new_k for new_k, (_, old_k) in enumerate(cluster_scores)}
+        cluster_map = np.vectorize(lambda v: remap.get(int(v), 0))(labels).reshape(height, width)
+        sorted_clusters = [
+            [
+                int(round(np.clip(centroids[old_k, 0], 0.0, 1.0) * 255)),
+                int(round(np.clip(centroids[old_k, 1], 0.0, 1.0) * 255)),
+                int(round(np.clip(centroids[old_k, 2], 0.0, 1.0) * 255)),
+            ]
+            for _, old_k in cluster_scores
+        ]
+
+        # Monocular 3D Depth Field Z(x, y) in [-1, 1]
+        z_depth = np.clip(
+            (salience - 0.38) * 0.95
+            + thermal * 0.42
+            + dog * 0.32
+            + (luma - 0.48) * 0.35,
+            -1.0,
+            1.0,
+        )
+
+        # Marching-Squares Topographical Iso-Contour Levels (0..7)
+        elev_smooth = _box_blur(0.55 * salience + 0.45 * luma, 1)
+        contour_lvl = np.clip((elev_smooth * 8.0).astype(np.int32), 0, 7)
+
+        # Recursive Variance Quadtree Decomposition
+        quadtree_blocks: list[list[int]] = []
+
+        def _subdivide_quad(x0: int, y0: int, bw: int, bh: int, depth: int) -> None:
+            if bw <= 0 or bh <= 0:
+                return
+            sub_rgb = arr_norm[y0 : y0 + bh, x0 : x0 + bw]
+            sub_edge = float(edge_mag[y0 : y0 + bh, x0 : x0 + bw].mean())
+            sub_sal = float(salience[y0 : y0 + bh, x0 : x0 + bw].mean())
+            rgb_var = float(np.std(sub_rgb))
+            if depth < 3 and (bw >= 3 and bh >= 3) and (rgb_var > 0.11 or sub_edge > 0.34):
+                hw = max(1, bw // 2)
+                hh = max(1, bh // 2)
+                _subdivide_quad(x0, y0, hw, hh, depth + 1)
+                _subdivide_quad(x0 + hw, y0, bw - hw, hh, depth + 1)
+                _subdivide_quad(x0, y0 + hh, hw, bh - hh, depth + 1)
+                _subdivide_quad(x0 + hw, y0 + hh, bw - hw, bh - hh, depth + 1)
+                return
+            mr = int(round(float(sub_rgb[:, :, 0].mean()) * 255))
+            mg = int(round(float(sub_rgb[:, :, 1].mean()) * 255))
+            mb = int(round(float(sub_rgb[:, :, 2].mean()) * 255))
+            mz = int(round(float(z_depth[y0 : y0 + bh, x0 : x0 + bw].mean()) * 100))
+            ms = int(round(sub_sal * 100))
+            mc = int(cluster_map[y0 + bh // 2, x0 + bw // 2])
+            quadtree_blocks.append([x0, y0, bw, bh, mr, mg, mb, mz, ms, mc])
+
+        step_x = 6
+        step_y = 4
+        for qy in range(0, height, step_y):
+            for qx in range(0, width, step_x):
+                _subdivide_quad(qx, qy, min(step_x, width - qx), min(step_y, height - qy), 0)
+
+        # Edge-Weighted Voronoi / Delaunay Stained-Glass Shards (~96 seeds)
+        importance = 0.45 * salience + 0.35 * edge_mag + 0.20 * sat
+        flat_order = np.argsort(importance.reshape(-1))[::-1]
+        shards: list[list[int]] = []
+        occupied = np.zeros((height, width), dtype=bool)
+        for idx_flat in flat_order:
+            if len(shards) >= 96:
+                break
+            sy, sx = divmod(int(idx_flat), width)
+            if occupied[sy, sx]:
+                continue
+            rad_cells = 1 if edge_mag[sy, sx] > 0.45 else (2 if salience[sy, sx] > 0.35 else 3)
+            y_lo, y_hi = max(0, sy - rad_cells), min(height, sy + rad_cells + 1)
+            x_lo, x_hi = max(0, sx - rad_cells), min(width, sx + rad_cells + 1)
+            occupied[y_lo:y_hi, x_lo:x_hi] = True
+            shards.append([
+                sx,
+                sy,
+                int(round(float(R[sy, sx]) * 255)),
+                int(round(float(G[sy, sx]) * 255)),
+                int(round(float(B[sy, sx]) * 255)),
+                int(round(float(z_depth[sy, sx]) * 100)),
+                int(round(float(salience[sy, sx]) * 100)),
+                int(cluster_map[sy, sx]),
+                rad_cells,
+                int(round(float(tangent_deg[sy, sx]))),
+            ])
+
+        # Pack up to 640 multi-modal cells ranked by visual importance
+        cell_candidates = []
+        for y in range(height):
+            for x in range(width):
+                imp = float(
+                    max(
+                        salience[y, x],
+                        edge_mag[y, x] * 0.95,
+                        sat[y, x] * 0.85,
+                        abs(dog[y, x]) * 0.80,
+                        luma[y, x] * 0.65,
+                    )
+                )
+                if imp < 0.14:
+                    continue
+                cell_candidates.append((
+                    imp,
+                    [
+                        x,
+                        y,
+                        int(round(float(R[y, x]) * 255)),
+                        int(round(float(G[y, x]) * 255)),
+                        int(round(float(B[y, x]) * 255)),
+                        int(round(float(salience[y, x]) * 100)),
+                        int(round(float(edge_mag[y, x]) * 100)),
+                        int(round(float(tangent_deg[y, x]))),
+                        int(round(float(z_depth[y, x]) * 100)),
+                        int(cluster_map[y, x]),
+                        int(contour_lvl[y, x]),
+                        int(round(float(dog[y, x]) * 100)),
+                    ],
+                ))
+
+        cell_candidates.sort(key=lambda item: item[0], reverse=True)
+        packed_cells = [item[1] for item in cell_candidates[:640]]
+
+        model_payload = {
+            "version": 2,
+            "imageName": os.path.basename(abs_image),
+            "cols": width,
+            "rows": height,
+            "clusters": sorted_clusters,
+            "cells": packed_cells,
+            "quadtree": quadtree_blocks[:180],
+            "shards": shards,
+        }
+        atomic_write(
+            cached_json,
+            json.dumps(model_payload, separators=(",", ":")).encode("utf-8"),
+            0o600,
+            fatal=False,
+        )
+        return model_payload
+    except Exception:
+        return {}
+
+
 def _compress_ascii_block(lines: list[str], max_width: int = 68) -> list[str]:
     """Horizontally compress an omarchy-ascii banner block so its width never exceeds
     `max_width`, preserving the first and last letters without left/right clipping.
@@ -5761,24 +6114,26 @@ def cmd_ascii_art(args) -> None:
 
     banner_lines = render_omarchy_ascii_banner(banner_text or "BANDARCHY", max_width=min(width, 68))
     art_lines: list[str] = []
-    if image_path and os.path.isfile(image_path):
+    resolved_art_image = _resolve_best_art_image_for_analysis(image_path, banner_text)
+    if resolved_art_image and os.path.isfile(resolved_art_image):
         img_mode = "block" if mode == "block" else "braille"
         art_lines = transcode_image_to_ascii(
-            image_path,
+            resolved_art_image,
             width=width,
             height=height,
             mode=img_mode,
             threshold=threshold,
             invert=bool(args.invert),
         )
+    art_model = extract_mathematical_art_model(resolved_art_image or image_path, width=48, height=28)
 
     lines: list[str] = []
     source_kind = "omarchy-ascii"
     if use_album_art and art_lines:
-        lines = art_lines
+        lines = list(art_lines)
         source_kind = "album-art"
     else:
-        lines = banner_lines
+        lines = list(banner_lines)
         source_kind = "omarchy-ascii"
 
     max_cols = max((len(l) for l in lines), default=0)
@@ -5793,19 +6148,28 @@ def cmd_ascii_art(args) -> None:
         max_frames=28,
     )
 
+    art_lines_out = list(art_lines)
+    lines_out = list(lines)
+    if art_model and art_model.get("cells"):
+        art_model_tag = "#ARTMODEL:" + json.dumps(art_model, separators=(",", ":"))
+        art_lines_out.append(art_model_tag)
+        if source_kind == "album-art":
+            lines_out.append(art_model_tag)
+
     emit({
         "source": source_kind,
         "useAlbumArt": use_album_art,
         "mode": mode,
         "bannerText": banner_text or "BANDARCHY",
-        "imagePath": image_path if os.path.isfile(str(image_path)) else "",
+        "imagePath": resolved_art_image if os.path.isfile(str(resolved_art_image)) else "",
         "rows": len(lines),
         "cols": max_cols,
         "lineCount": len(lines),
         "colCount": max_cols,
-        "lines": lines,
+        "lines": lines_out,
         "bannerLines": banner_lines,
-        "artLines": art_lines,
+        "artLines": art_lines_out,
+        "artModel": art_model,
         "ttfxEffect": effect,
         "ttfxFrameCount": len(ttfx_frames),
         "ttfxFrames": ttfx_frames,
