@@ -1812,15 +1812,15 @@ def _resolve_best_art_image_for_analysis(image_path: str, seed_text: str = "") -
 
 def extract_mathematical_art_model(
     image_path: str,
-    width: int = 48,
-    height: int = 28,
+    width: int = 44,
+    height: int = 44,
 ) -> dict:
-    """Scan an original album cover image and compute a multi-model mathematical
-    feature representation:
+    """Scan an original album cover image on a 1:1 square grid and compute a
+    multi-model mathematical feature representation:
       1. True Chromatic RGB & HSV (Hue, Saturation, Luminance, Warm-Cool Thermal Axis)
       2. Differential Geometry (Multi-channel Sobel Gradient Magnitude & Contour Tangent Angle)
       3. Difference-of-Gaussians (DoG) Multi-Scale Woodcut/Etching Bandpass
-      4. 5-Cluster Chromatic K-Means Decomposition (ordered by chromatic salience)
+      4. 8-Cluster Chromatic K-Means Decomposition (ordered by chromatic salience)
       5. Border-Contrast Spectral Salience (Figure/Ground Subject Isolation)
       6. Monocular 3D Elevation Depth Map Z(x, y) & Surface Normals
       7. Marching-Squares Topographical Iso-Contour Levels (0..7)
@@ -1828,8 +1828,8 @@ def extract_mathematical_art_model(
       9. Edge-Weighted Poisson/Voronoi Stained-Glass Shards
     """
     ensure_private_dir(ASCII_DIR)
-    width = bounded_int(width, 48, 24, 72)
-    height = bounded_int(height, 28, 16, 44)
+    width = bounded_int(width, 44, 24, 72)
+    height = bounded_int(height, 44, 24, 72)
 
     resolved_path = _resolve_best_art_image_for_analysis(image_path)
     if not resolved_path or not os.path.isfile(resolved_path):
@@ -1843,7 +1843,7 @@ def extract_mathematical_art_model(
     except OSError:
         return {}
 
-    stat_sig = f"artmodel_v2:{abs_image}:{mtime:.0f}:{width}:{height}"
+    stat_sig = f"artmodel_v3:{abs_image}:{mtime:.0f}:{width}:{height}"
     cache_key = hashlib.sha256(stat_sig.encode("utf-8")).hexdigest()[:24]
     cached_json = os.path.abspath(os.path.join(ASCII_DIR, f"artmodel_{cache_key}.json"))
 
@@ -1851,7 +1851,7 @@ def extract_mathematical_art_model(
     if cached_raw:
         try:
             parsed = json.loads(cached_raw)
-            if isinstance(parsed, dict) and parsed.get("version") == 2 and parsed.get("cells"):
+            if isinstance(parsed, dict) and parsed.get("version") == 3 and parsed.get("cells"):
                 return parsed
         except Exception:
             pass
@@ -1953,9 +1953,9 @@ def extract_mathematical_art_model(
         sal_p95 = max(0.15, float(np.percentile(sal_raw, 96.0)))
         salience = np.clip(sal_raw / sal_p95, 0.0, 1.0)
 
-        # 5-Cluster Chromatic K-Means in (R, G, B, Sat*0.6, Salience*0.4)
+        # 8-Cluster Chromatic K-Means in (R, G, B, Sat*0.6, Salience*0.4)
         feats = np.stack([R, G, B, sat * 0.6, salience * 0.4], axis=-1).reshape(-1, 5)
-        quantiles = [10, 30, 50, 70, 90]
+        quantiles = [6, 18, 30, 42, 55, 68, 81, 94]
         order_idx = np.argsort(luma.reshape(-1) + 0.6 * sat.reshape(-1) + 0.5 * salience.reshape(-1))
         n_pix = feats.shape[0]
         centroids = np.array([
@@ -1967,14 +1967,14 @@ def extract_mathematical_art_model(
         for _ in range(8):
             dists = np.sum((feats[:, None, :] - centroids[None, :, :]) ** 2, axis=2)
             labels = np.argmin(dists, axis=1)
-            for k in range(5):
+            for k in range(8):
                 m = labels == k
                 if np.any(m):
                     centroids[k] = feats[m].mean(axis=0)
 
-        # Sort clusters so Cluster 0 is highest salience/saturation and Cluster 4 is background
+        # Sort clusters so Cluster 0 is highest salience/saturation and Cluster 7 is background
         cluster_scores = []
-        for k in range(5):
+        for k in range(8):
             m = labels == k
             if np.any(m):
                 score = float(centroids[k, 3] * 0.55 + centroids[k, 4] * 0.65 + edge_mag.reshape(-1)[m].mean() * 0.3)
@@ -2017,7 +2017,7 @@ def extract_mathematical_art_model(
             sub_edge = float(edge_mag[y0 : y0 + bh, x0 : x0 + bw].mean())
             sub_sal = float(salience[y0 : y0 + bh, x0 : x0 + bw].mean())
             rgb_var = float(np.std(sub_rgb))
-            if depth < 3 and (bw >= 3 and bh >= 3) and (rgb_var > 0.11 or sub_edge > 0.34):
+            if depth < 3 and (bw >= 3 and bh >= 3) and (rgb_var > 0.10 or sub_edge > 0.32):
                 hw = max(1, bw // 2)
                 hh = max(1, bh // 2)
                 _subdivide_quad(x0, y0, hw, hh, depth + 1)
@@ -2034,23 +2034,23 @@ def extract_mathematical_art_model(
             quadtree_blocks.append([x0, y0, bw, bh, mr, mg, mb, mz, ms, mc])
 
         step_x = 6
-        step_y = 4
+        step_y = 6
         for qy in range(0, height, step_y):
             for qx in range(0, width, step_x):
                 _subdivide_quad(qx, qy, min(step_x, width - qx), min(step_y, height - qy), 0)
 
-        # Edge-Weighted Voronoi / Delaunay Stained-Glass Shards (~96 seeds)
+        # Edge-Weighted Voronoi / Delaunay Stained-Glass Shards (~135 seeds)
         importance = 0.45 * salience + 0.35 * edge_mag + 0.20 * sat
         flat_order = np.argsort(importance.reshape(-1))[::-1]
         shards: list[list[int]] = []
         occupied = np.zeros((height, width), dtype=bool)
         for idx_flat in flat_order:
-            if len(shards) >= 96:
+            if len(shards) >= 135:
                 break
             sy, sx = divmod(int(idx_flat), width)
             if occupied[sy, sx]:
                 continue
-            rad_cells = 1 if edge_mag[sy, sx] > 0.45 else (2 if salience[sy, sx] > 0.35 else 3)
+            rad_cells = 1 if edge_mag[sy, sx] > 0.42 else (2 if salience[sy, sx] > 0.32 else 3)
             y_lo, y_hi = max(0, sy - rad_cells), min(height, sy + rad_cells + 1)
             x_lo, x_hi = max(0, sx - rad_cells), min(width, sx + rad_cells + 1)
             occupied[y_lo:y_hi, x_lo:x_hi] = True
@@ -2067,7 +2067,7 @@ def extract_mathematical_art_model(
                 int(round(float(tangent_deg[sy, sx]))),
             ])
 
-        # Pack up to 640 multi-modal cells ranked by visual importance
+        # Pack up to 1,250 multi-modal cells ranked by visual importance so the 44x44 square cover is crisp and recognisable
         cell_candidates = []
         for y in range(height):
             for x in range(width):
@@ -2077,10 +2077,10 @@ def extract_mathematical_art_model(
                         edge_mag[y, x] * 0.95,
                         sat[y, x] * 0.85,
                         abs(dog[y, x]) * 0.80,
-                        luma[y, x] * 0.65,
+                        luma[y, x] * 0.72,
                     )
                 )
-                if imp < 0.14:
+                if imp < 0.10:
                     continue
                 cell_candidates.append((
                     imp,
@@ -2101,16 +2101,16 @@ def extract_mathematical_art_model(
                 ))
 
         cell_candidates.sort(key=lambda item: item[0], reverse=True)
-        packed_cells = [item[1] for item in cell_candidates[:640]]
+        packed_cells = [item[1] for item in cell_candidates[:1250]]
 
         model_payload = {
-            "version": 2,
+            "version": 3,
             "imageName": os.path.basename(abs_image),
             "cols": width,
             "rows": height,
             "clusters": sorted_clusters,
             "cells": packed_cells,
-            "quadtree": quadtree_blocks[:180],
+            "quadtree": quadtree_blocks[:220],
             "shards": shards,
         }
         atomic_write(
@@ -6125,7 +6125,7 @@ def cmd_ascii_art(args) -> None:
             threshold=threshold,
             invert=bool(args.invert),
         )
-    art_model = extract_mathematical_art_model(resolved_art_image or image_path, width=48, height=28)
+    art_model = extract_mathematical_art_model(resolved_art_image or image_path, width=44, height=44)
 
     lines: list[str] = []
     source_kind = "omarchy-ascii"

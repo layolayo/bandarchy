@@ -984,7 +984,7 @@ function rebuildArtCells(state, asciiLines, mode) {
         var variantShift = state.artInterpretationVariant || 0
         var zPolarity = (variantShift % 2 === 0) ? 1.0 : -1.0
         var rawCells = parsedModel.cells || []
-        var mCount = Math.min(540, rawCells.length)
+        var mCount = Math.min(1200, rawCells.length)
         var modelCells = []
 
         for (var mi = 0; mi < mCount; mi++) {
@@ -999,7 +999,7 @@ function rebuildArtCells(state, asciiLines, mode) {
             var edge = clamp((Number(mc[6]) || 30) / 100.0, 0.0, 1.0)
             var tangRad = ((Number(mc[7]) || 0) * Math.PI) / 180.0
             var zDep = clamp(((Number(mc[8]) || 0) / 100.0) * zPolarity, -1.0, 1.0)
-            var clusId = ((Number(mc[9]) || 0) + variantShift) % 5
+            var clusId = clamp(Number(mc[9]) || 0, 0, 7)
             var contLvl = ((Number(mc[10]) || 0) + variantShift) & 7
             var dogVal = clamp((Number(mc[11]) || 0) / 100.0, -1.0, 1.0)
 
@@ -1024,8 +1024,8 @@ function rebuildArtCells(state, asciiLines, mode) {
             var nyCoord = (gy / Math.max(1, mRows - 1)) * 2.0 - 1.0
             var distC = Math.sqrt(nxCoord * nxCoord + nyCoord * nyCoord)
             var angC = Math.atan2(nyCoord, nxCoord)
-            var evoXM = nxCoord + Math.cos(tangRad + distC * 3.5) * 0.09
-            var evoYM = nyCoord + Math.sin(tangRad - distC * 3.5) * 0.09
+            var evoXM = nxCoord + Math.cos(tangRad + distC * 3.5) * 0.024
+            var evoYM = nyCoord + Math.sin(tangRad - distC * 3.5) * 0.024
 
             var normX = -Math.sin(tangRad) * edge
             var normY = Math.cos(tangRad) * edge
@@ -1914,13 +1914,14 @@ function stepArtCells(state, cfg, dt) {
     }
     state.l3FormFactor = lerp(state.l3FormFactor !== undefined ? state.l3FormFactor : 0.65, rawForm, clamp(dt * 5.5, 0.04, 0.22))
     var formFactor = state.l3FormFactor
-    var dismantleGate = Math.max(0.22 * dismantle, Math.pow(1.0 - formFactor * 0.82, 1.08) * dismantle * (0.65 + audioExcite * 0.75))
+    var dismantleScale = isWordsSource ? 1.0 : 0.28
+    var dismantleGate = Math.max(0.12 * dismantle, Math.pow(1.0 - formFactor * 0.85, 1.15) * dismantle * (0.55 + audioExcite * 0.65)) * dismantleScale
 
-    // During Hold phase (formFactor -> 1), evoMix stays subtle so letters remain recognisable while dancing
-    var evoMix = isWordsSource ? clamp((1.0 - formFactor) * 0.18 * evoRate, 0.0, 0.25) : clamp((1.0 - formFactor * 0.7) * 0.42 * evoRate, 0.08, 0.52)
+    // During Hold phase (formFactor -> 1), evoMix stays subtle so letters and album art remain recognisable while dancing
+    var evoMix = isWordsSource ? clamp((1.0 - formFactor) * 0.18 * evoRate, 0.0, 0.25) : clamp((1.0 - formFactor * 0.85) * 0.14 * evoRate, 0.02, 0.16)
 
     // Responsive spring during Form phase; allows lively elastic bounce on beats
-    var springK = (5.0 + 16.0 * formFactor) * clamp(rebuild, 0.35, 3.0)
+    var springK = (isWordsSource ? (5.0 + 16.0 * formFactor) : (10.0 + 22.0 * formFactor)) * clamp(rebuild, 0.35, 3.0)
     var damping = Math.exp(-dt * (4.2 + formFactor * 4.8 + rebuild * 1.2))
 
     for (var i = 0; i < n; i++) {
@@ -1932,9 +1933,9 @@ function stepArtCells(state, cfg, dt) {
         var bandVal = state.smoothBands[bIdx] || 0.0
 
         // Continuous kinetic wave & frequency bounce even while formed so words and art visibly dance to the music
-        var liveWave = (0.032 + state.bassSmooth * 0.055 + state.beatSmooth * 0.045) * clamp(evoRate, 0.4, 2.2)
+        var liveWave = (isWordsSource ? 0.032 : 0.014) * (1.0 + state.bassSmooth * 1.2 + state.beatSmooth * 0.9) * clamp(evoRate, 0.4, 2.0)
         tx += Math.sin(p.homeY * 4.5 + state.t * 2.6 + p.phase * 0.3) * liveWave
-        ty += Math.cos(p.homeX * 4.2 - state.t * 2.9 + p.phase * 0.2) * liveWave * 1.35 + (bandVal - 0.25) * 0.065 * (0.5 + state.bassSmooth)
+        ty += Math.cos(p.homeX * 4.2 - state.t * 2.9 + p.phase * 0.2) * liveWave * 1.15 + (bandVal - 0.25) * (isWordsSource ? 0.065 : 0.024) * (0.5 + state.bassSmooth)
 
         if (l3Mode >= 6) {
             // Modes 6..11: Coherent readable musical warp & stretch modes (evaluated directly in drawLayer3AlbumArt + lively home ripple)
@@ -11357,7 +11358,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     var cols = Math.max(16, state.artCols || 60)
     var rows = Math.max(6, state.artRows || 20)
 
-    // Auto-compress/fit boxW and boxH so wide ASCII banners (like 'BASS COMMUNION') fit comfortably inside the viewport
+    // For Album Cover Art (!isWordsSource), preserve true 1:1 square album-cover proportions so faces, icons & prisms are immediately recognisable
     var effCellScale = Math.min(scale, 1.15)
     var maxBoxW = w * 0.74 * effCellScale
     var maxBoxH = h * 0.62 * effCellScale
@@ -11365,11 +11366,18 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     var cellH = Math.min(maxBoxH / rows, cellW * 1.65)
     var boxW = Math.min(maxBoxW, cellW * cols)
     var boxH = Math.min(maxBoxH, cellH * rows)
+    if (!isWordsSource) {
+        var sqSide = Math.min(w * 0.62, h * 0.70) * effCellScale
+        cellW = sqSide / cols
+        cellH = sqSide / rows
+        boxW = sqSide
+        boxH = sqSide
+    }
     var halfW = boxW * 0.5
     var halfH = boxH * 0.5
 
-    var tileW = Math.max(2.0, cellW * 0.88)
-    var tileH = Math.max(2.0, cellH * 0.88)
+    var tileW = Math.max(2.2, cellW * (!isWordsSource ? 0.96 : 0.88))
+    var tileH = Math.max(2.2, cellH * (!isWordsSource ? 0.96 : 0.88))
 
     // If Mode 5 (Omarchy TTE Keyframe Evolution) and ttfxFrames are available, modulate positions/visibility from current TTE frame
     var activeTtfxFrame = null
@@ -11379,7 +11387,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
         activeTtfxFrame = ttfxFrames[clamp(fIdx, 0, ttfxFrames.length - 1)]
     }
 
-    var numBuckets = 6
+    var numBuckets = isWordsSource ? 6 : 8
 
     for (var e = l3Tracers - 1; e >= 0; e--) {
         var isEcho = (e > 0)

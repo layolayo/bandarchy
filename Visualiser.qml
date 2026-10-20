@@ -31,20 +31,6 @@ FocusScope {
     property string trackArtist: ""
     property string trackAlbum: ""
     property string artPath: ""
-    onTrackTitleChanged: {
-        if (root.useAlbumArt && root.engineState) {
-            root.engineState.artInterpretationSeed = ((root.engineState.artInterpretationSeed || 0) + 1)
-            root.engineState.artSourceKey = ""
-            var nModels = Engine.LAYER3_ART_STYLES.length
-            root.layer3TextStyle = (root.layer3TextStyle + 5 + Math.floor(Math.random() * Math.max(1, nModels - 5))) % nModels
-        }
-    }
-    onArtPathChanged: {
-        if (root.useAlbumArt && root.engineState) {
-            root.engineState.artInterpretationSeed = ((root.engineState.artInterpretationSeed || 0) + 1)
-            root.engineState.artSourceKey = ""
-        }
-    }
     property string playSource: "local"
     property real position: 0.0
     property real duration: 0.0
@@ -2860,7 +2846,21 @@ FocusScope {
     onLayer3TracersChanged: scheduleSaveVisualiserConfig()
 
     onTrackTitleChanged: {
-        if (root.engineState) root.engineState.artSourceKey = ""
+        if (root.engineState) {
+            root.engineState.artInterpretationSeed = ((root.engineState.artInterpretationSeed || 0) + 1)
+            root.engineState.artSourceKey = ""
+        }
+        if (root.useAlbumArt) {
+            var nModels = Engine.LAYER3_ART_STYLES.length
+            root.layer3TextStyle = (root.layer3TextStyle + 5 + Math.floor(Math.random() * Math.max(1, nModels - 5))) % nModels
+        }
+        if (vizCanvas) vizCanvas.requestPaint()
+    }
+    onArtPathChanged: {
+        if (root.engineState) {
+            root.engineState.artInterpretationSeed = ((root.engineState.artInterpretationSeed || 0) + 1)
+            root.engineState.artSourceKey = ""
+        }
         if (vizCanvas) vizCanvas.requestPaint()
     }
     onTrackArtistChanged: {
