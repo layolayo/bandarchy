@@ -4316,7 +4316,6 @@ FocusScope {
         var totalStyles = root.useAlbumArt ? Engine.LAYER3_ART_STYLES.length : Engine.LAYER3_TEXT_STYLES.length
         root.layer3TextStyle = (root.layer3TextStyle + 1 + Math.floor(Math.random() * Math.max(1, totalStyles - 1))) % totalStyles
         root.layer3FontPreset = Math.floor(Math.random() * Engine.LAYER3_FONT_PRESETS.length)
-        root.layer3ColourMode = Math.floor(Math.random() * Engine.LAYER3_COLOUR_MODES.length)
         root.layer3CylinderDir = Math.floor(Math.random() * Engine.LAYER3_CYLINDER_DIRS.length)
         var l3TrChoices = [1, 2, 3, 4, 5, 6, 8]
         root.layer3Tracers = l3TrChoices[Math.floor(Math.random() * l3TrChoices.length)]
@@ -7957,6 +7956,7 @@ FocusScope {
                     horizontalPad: 3
                     text: "󰸌 Col:" + (root.shortL3ColourLabels[root.layer3ColourMode % root.shortL3ColourLabels.length] || "Style")
                     active: root.layer3ColourMode > 0
+                    notBoundToRand: true
                     onClicked: root.cycleLayer3ColourMode(1)
                     onRightClicked: root.cycleLayer3ColourMode(-1)
                     onWheelScrolled: delta => root.cycleLayer3ColourMode(delta > 0 ? 1 : -1)
@@ -11137,7 +11137,7 @@ FocusScope {
                                 font.family: "JetBrainsMono Nerd Font"
                                 font.pixelSize: 10
                                 font.bold: true
-                                color: root.accentColour
+                                color: "#ef4444"
                             }
 
                             Repeater {
@@ -11146,6 +11146,7 @@ FocusScope {
                                     required property int index
                                     text: (index + 1) + ". " + Engine.LAYER3_COLOUR_MODES[index]
                                     active: root.layer3ColourMode === index
+                                    notBoundToRand: true
                                     horizontalPad: 7
                                     onClicked: {
                                         root.layer3ColourMode = index
