@@ -4283,12 +4283,16 @@ FocusScope {
         property string text: ""
         property bool active: false
         property bool urgent: false
+        property bool notBoundToRand: false
         property int fontSize: 10
         property int horizontalPad: 10
         property int pillHeight: 24
         signal clicked()
         signal rightClicked()
         signal wheelScrolled(int delta)
+
+        readonly property color unboundRed: "#ef4444"
+        readonly property color unboundRedText: "#fca5a5"
 
         implicitHeight: pillHeight
         implicitWidth: pillLabel.implicitWidth + horizontalPad * 2
@@ -4299,8 +4303,14 @@ FocusScope {
         clip: true
         scale: pillArea.pressed ? 0.96 : 1.0
         color: {
-            if (flashTimer.running) return pill.urgent ? root.urgentColour : root.accentColour
-            if (pillArea.pressed) return Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.44)
+            if (flashTimer.running) return pill.notBoundToRand ? pill.unboundRed : (pill.urgent ? root.urgentColour : root.accentColour)
+            if (pillArea.pressed) return pill.notBoundToRand ? Qt.rgba(0.94, 0.27, 0.27, 0.48) : Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.44)
+            if (pill.notBoundToRand) {
+                if (pill.active) {
+                    return pillArea.containsMouse ? Qt.rgba(0.94, 0.27, 0.27, 0.42) : Qt.rgba(0.94, 0.27, 0.27, 0.30)
+                }
+                return pillArea.containsMouse ? Qt.rgba(0.94, 0.27, 0.27, 0.24) : Qt.rgba(0.94, 0.27, 0.27, 0.14)
+            }
             if (pill.urgent) {
                 return pillArea.containsMouse
                     ? Qt.rgba(root.urgentColour.r, root.urgentColour.g, root.urgentColour.b, 0.30)
@@ -4313,9 +4323,10 @@ FocusScope {
             }
             return pillArea.containsMouse ? Qt.rgba(1, 1, 1, 0.13) : Qt.rgba(1, 1, 1, 0.04)
         }
-        border.width: pill.active ? 1.5 : 1
+        border.width: (pill.active || pill.notBoundToRand) ? 1.5 : 1
         border.color: {
             if (flashTimer.running) return "#ffffff"
+            if (pill.notBoundToRand) return pill.active ? "#ff6b6b" : pill.unboundRed
             if (pill.urgent) return root.urgentColour
             if (pill.active) return root.accentColour
             if (pillArea.containsMouse) return Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.55)
@@ -4341,9 +4352,10 @@ FocusScope {
             textFormat: Text.PlainText
             font.family: "JetBrainsMono Nerd Font"
             font.pixelSize: pill.fontSize
-            font.bold: pill.active || pill.urgent || flashTimer.running
+            font.bold: pill.active || pill.urgent || pill.notBoundToRand || flashTimer.running
             color: {
                 if (flashTimer.running) return "#07090e"
+                if (pill.notBoundToRand) return pill.active ? "#ffffff" : pill.unboundRedText
                 if (pill.urgent) return root.urgentColour
                 if (pill.active) return root.accentColour
                 return Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.74)
@@ -4356,7 +4368,10 @@ FocusScope {
             hoverEnabled: true
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             cursorShape: Qt.PointingHandCursor
+            onPressed: root.resetHudAutoHideTimer()
+            onPositionChanged: root.resetHudAutoHideTimer()
             onClicked: mouse => {
+                root.resetHudAutoHideTimer()
                 if (!root.textInputFocused) {
                     root.forceActiveFocus()
                 }
@@ -4373,6 +4388,7 @@ FocusScope {
                 }
             }
             onWheel: wheel => {
+                root.resetHudAutoHideTimer()
                 if (wheel.angleDelta.y !== 0) {
                     root._inHudPillInteraction = true
                     try {
@@ -4394,7 +4410,10 @@ FocusScope {
         property real maxValue: 2.0
         property string unitSuffix: ""
         property bool integerSteps: false
+        property bool notBoundToRand: false
         signal valueEdited(real newVal)
+
+        readonly property color unboundRed: "#ef4444"
 
         Layout.fillWidth: true
         spacing: 6
@@ -4405,7 +4424,8 @@ FocusScope {
             textFormat: Text.PlainText
             font.family: "JetBrainsMono Nerd Font"
             font.pixelSize: 10
-            color: root.foregroundColour
+            font.bold: sliderRow.notBoundToRand
+            color: sliderRow.notBoundToRand ? sliderRow.unboundRed : root.foregroundColour
             elide: Text.ElideRight
         }
 
@@ -4414,9 +4434,9 @@ FocusScope {
             Layout.fillWidth: true
             Layout.preferredHeight: 8
             radius: 4
-            color: Qt.rgba(1, 1, 1, 0.12)
+            color: sliderRow.notBoundToRand ? Qt.rgba(0.94, 0.27, 0.27, 0.18) : Qt.rgba(1, 1, 1, 0.12)
             border.width: 1
-            border.color: Qt.rgba(1, 1, 1, 0.16)
+            border.color: sliderRow.notBoundToRand ? Qt.rgba(0.94, 0.27, 0.27, 0.65) : Qt.rgba(1, 1, 1, 0.16)
 
             readonly property real norm: Math.max(0, Math.min(1, (sliderRow.value - sliderRow.minValue) / Math.max(0.0001, sliderRow.maxValue - sliderRow.minValue)))
 
@@ -4424,7 +4444,7 @@ FocusScope {
                 width: parent.width * parent.norm
                 height: parent.height
                 radius: 4
-                color: root.accentColour
+                color: sliderRow.notBoundToRand ? sliderRow.unboundRed : root.accentColour
             }
 
             Rectangle {
@@ -4435,7 +4455,7 @@ FocusScope {
                 radius: 6
                 color: sliderMouse.pressed ? root.urgentColour : "#ffffff"
                 border.width: 2
-                border.color: root.accentColour
+                border.color: sliderRow.notBoundToRand ? sliderRow.unboundRed : root.accentColour
             }
 
             MouseArea {
@@ -4454,8 +4474,8 @@ FocusScope {
                         sliderRow.valueEdited(Math.round(v * 100) / 100)
                     }
                 }
-                onPressed: mouse => updateFromX(mouse.x)
-                onPositionChanged: mouse => { if (pressed) updateFromX(mouse.x) }
+                onPressed: mouse => { root.resetHudAutoHideTimer(); updateFromX(mouse.x) }
+                onPositionChanged: mouse => { root.resetHudAutoHideTimer(); if (pressed) updateFromX(mouse.x) }
             }
         }
 
@@ -4467,7 +4487,7 @@ FocusScope {
             font.family: "JetBrainsMono Nerd Font"
             font.pixelSize: 10
             font.bold: true
-            color: root.accentColour
+            color: sliderRow.notBoundToRand ? sliderRow.unboundRed : root.accentColour
         }
     }
 
@@ -4699,6 +4719,12 @@ FocusScope {
         repeat: false
         onTriggered: {
             root.keybindingToastOpacity = 0.0
+        }
+    }
+
+    function resetHudAutoHideTimer() {
+        if (root.isFullscreen && root.showHud) {
+            hudAutoHideTimer.restart()
         }
     }
 
@@ -5622,7 +5648,9 @@ FocusScope {
         property real lastX: -1
         property real lastY: -1
         acceptedButtons: Qt.LeftButton
+        onPressed: root.resetHudAutoHideTimer()
         onClicked: {
+            root.resetHudAutoHideTimer()
             root.forceActiveFocus()
             if (root.showTracerPopover) root.showTracerPopover = false
         }
@@ -5656,6 +5684,17 @@ FocusScope {
         border.width: 1
         border.color: Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.35)
         visible: root.showHud
+
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            onPressed: mouse => {
+                root.resetHudAutoHideTimer()
+                mouse.accepted = false
+            }
+            onPositionChanged: root.resetHudAutoHideTimer()
+        }
 
         ColumnLayout {
             anchors.fill: parent
@@ -8364,6 +8403,7 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "Trail Persistence"
+                                        notBoundToRand: true
                                         value: root.layer1Persistence
                                         minValue: 0.20
                                         maxValue: 0.96
@@ -8389,6 +8429,7 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "Backdrop Dim"
+                                        notBoundToRand: true
                                         value: root.layer1Dim
                                         minValue: 0.04
                                         maxValue: 0.65
@@ -8542,6 +8583,7 @@ FocusScope {
                                             ? ("󰔡 Plane Shear [:]: ON (" + Math.round(root.photoPlaneShear * 100) + "%)")
                                             : "󰔡 Plane Shear [:]: OFF (Clean)"
                                         active: root.photoPlaneShearEnabled
+                                        notBoundToRand: true
                                         pillHeight: 22
                                         horizontalPad: 8
                                         onClicked: root.togglePhotoPlaneShearByKey()
@@ -8601,7 +8643,7 @@ FocusScope {
                                         font.family: "JetBrainsMono Nerd Font"
                                         font.pixelSize: 9
                                         font.bold: true
-                                        color: root.accentColour
+                                        color: "#ef4444"
                                         height: 22
                                         verticalAlignment: Text.AlignVCenter
                                     }
@@ -8613,6 +8655,7 @@ FocusScope {
                                             readonly property var poolEntry: PhotoMotion.PHOTO_POOL_MODES[index]
                                             text: poolEntry ? poolEntry.name : ("Pool " + (index + 1))
                                             active: root.photoPoolMode === index
+                                            notBoundToRand: true
                                             pillHeight: 22
                                             fontSize: 9
                                             horizontalPad: 8
@@ -8710,11 +8753,12 @@ FocusScope {
                                             font.family: "JetBrainsMono Nerd Font"
                                             font.pixelSize: 9
                                             font.bold: true
-                                            color: root.foregroundColour
+                                            color: "#ef4444"
                                         }
 
                                         VizPillButton {
                                             text: "◀ {"
+                                            notBoundToRand: true
                                             pillHeight: 22
                                             fontSize: 9
                                             horizontalPad: 7
@@ -8723,6 +8767,7 @@ FocusScope {
 
                                         VizPillButton {
                                             id: photoCategoryDropdownButton
+                                            notBoundToRand: true
                                             readonly property var availableCats: (root.photoCategories && root.photoCategories.length > 0)
                                                 ? root.photoCategories
                                                 : PhotoMotion.DEFAULT_PHOTO_CATEGORIES
@@ -8746,6 +8791,7 @@ FocusScope {
 
                                         VizPillButton {
                                             text: "} ▶"
+                                            notBoundToRand: true
                                             pillHeight: 22
                                             fontSize: 9
                                             horizontalPad: 7
@@ -8906,7 +8952,7 @@ FocusScope {
                                         font.family: "JetBrainsMono Nerd Font"
                                         font.pixelSize: 9
                                         font.bold: true
-                                        color: root.foregroundColour
+                                        color: "#ef4444"
                                         height: 21
                                         verticalAlignment: Text.AlignVCenter
                                     }
@@ -8914,6 +8960,7 @@ FocusScope {
                                     VizPillButton {
                                         text: "󰑐 Auto-Strobe All 17"
                                         active: root.photoPinnedVariant < 0
+                                        notBoundToRand: true
                                         pillHeight: 21
                                         fontSize: 8
                                         horizontalPad: 6
@@ -8932,6 +8979,7 @@ FocusScope {
                                             readonly property string effId: PhotoMotion.STAGE1_EFFECT_IDS[index]
                                             text: "V" + (index < 9 ? ("0" + (index + 1)) : (index + 1))
                                             active: root.photoPinnedVariant === index
+                                            notBoundToRand: true
                                             pillHeight: 21
                                             fontSize: 8
                                             horizontalPad: 5
@@ -8963,6 +9011,7 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "Effect Change Interval (~)"
+                                        notBoundToRand: true
                                         value: root.photoEffectChangeIntervalSec
                                         minValue: 4.00
                                         maxValue: 60.00
@@ -8972,6 +9021,7 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "Controlled Plane Shear (:)"
+                                        notBoundToRand: true
                                         value: root.photoPlaneShear
                                         minValue: 0.00
                                         maxValue: 2.00
@@ -8984,6 +9034,7 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "Master Photo Opacity"
+                                        notBoundToRand: true
                                         value: root.photoOpacity
                                         minValue: 0.05
                                         maxValue: 1.00
@@ -9088,7 +9139,7 @@ FocusScope {
                                         font.family: "JetBrainsMono Nerd Font"
                                         font.pixelSize: 9
                                         font.bold: true
-                                        color: root.accentColour
+                                        color: "#ef4444"
                                         height: 21
                                         verticalAlignment: Text.AlignVCenter
                                     }
@@ -9104,6 +9155,7 @@ FocusScope {
                                             readonly property var srcNames: ["Off", "Energy", "Bass", "Mid", "High", "Beat", "Band", "Drop"]
                                             text: (linkDef ? linkDef.label : "") + ": " + (srcNames[Number(linkState.source) || 0] || "Off") + " (" + (linkState.method || "+") + ")"
                                             active: (Number(linkState.source) || 0) > 0
+                                            notBoundToRand: true
                                             pillHeight: 21
                                             fontSize: 8
                                             horizontalPad: 6
@@ -9749,6 +9801,7 @@ FocusScope {
                             VizPillButton {
                                 text: root.layer2TracersEnabled ? "󰄬 L2 3D Tracers: ON" : "󰅖 L2 3D Tracers: OFF"
                                 active: root.layer2TracersEnabled
+                                notBoundToRand: true
                                 horizontalPad: 7
                                 pillHeight: 22
                                 onClicked: {
@@ -9768,6 +9821,7 @@ FocusScope {
                                     required property int modelData
                                     text: modelData + "x"
                                     active: root.layer2TracersEnabled && root.tracerCount === modelData
+                                    notBoundToRand: true
                                     horizontalPad: 6
                                     pillHeight: 22
                                     onClicked: {
@@ -9782,6 +9836,7 @@ FocusScope {
                             VizPillButton {
                                 text: "3D Flow: " + (root.tracerDirection > 0 ? "Towards User" : (root.tracerDirection < 0 ? "To Endpoint" : "Breathe In/Out"))
                                 active: root.layer2TracersEnabled
+                                notBoundToRand: true
                                 pillHeight: 22
                                 onClicked: {
                                     root.tracerDirection = (root.tracerDirection === 1) ? -1 : ((root.tracerDirection === -1) ? 0 : 1)
@@ -9802,6 +9857,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "3D Tracers (1–16x)"
+                                notBoundToRand: true
                                 value: root.tracerCount
                                 minValue: 1
                                 maxValue: 16
@@ -9812,6 +9868,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Tracer Z-Speed"
+                                notBoundToRand: true
                                 value: root.tracerSpeed
                                 minValue: 0.20
                                 maxValue: 2.80
@@ -9821,6 +9878,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Endpoint Drift"
+                                notBoundToRand: true
                                 value: root.tracerDrift
                                 minValue: 0.00
                                 maxValue: 2.40
@@ -9830,6 +9888,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Audio Reactivity"
+                                notBoundToRand: true
                                 value: root.sensitivity
                                 minValue: 0.35
                                 maxValue: 2.80
@@ -9839,6 +9898,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Mode Complexity"
+                                notBoundToRand: true
                                 value: root.layer2Complexity
                                 minValue: 0.35
                                 maxValue: 2.00
@@ -9848,6 +9908,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Evolution Speed"
+                                notBoundToRand: true
                                 value: root.layer2Speed
                                 minValue: 0.20
                                 maxValue: 2.50
@@ -9857,6 +9918,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Scale / Zoom"
+                                notBoundToRand: true
                                 value: root.layer2Zoom
                                 minValue: 0.50
                                 maxValue: 2.00
@@ -10005,6 +10067,7 @@ FocusScope {
                             VizPillButton {
                                 text: root.layer4Direction === 0 ? "󰘁 Dir: Ping-Pong" : (root.layer4Direction < 0 ? "󰁍 Dir: Reverse" : "󰁔 Dir: Forward")
                                 active: root.layer4Direction !== 1
+                                notBoundToRand: true
                                 onClicked: {
                                     root.layer4Direction = (root.layer4Direction === 1 ? -1 : (root.layer4Direction === -1 ? 0 : 1))
                                     root.backdropDirection = root.layer4Direction
@@ -10148,6 +10211,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Vortex Speed"
+                                notBoundToRand: true
                                 value: root.layer4Speed
                                 minValue: 0.15
                                 maxValue: 3.00
@@ -10157,6 +10221,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Vortex Glow"
+                                notBoundToRand: true
                                 value: root.layer4Glow
                                 minValue: 0.15
                                 maxValue: 2.00
@@ -10175,6 +10240,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Symmetry Folds"
+                                notBoundToRand: true
                                 value: root.layer4Symmetry
                                 minValue: 2
                                 maxValue: 16
@@ -10185,6 +10251,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Dual 2x Mix"
+                                notBoundToRand: true
                                 value: root.layer4DualMix
                                 minValue: 0.10
                                 maxValue: 0.90
@@ -10295,12 +10362,14 @@ FocusScope {
                             VizPillButton {
                                 text: "󰀥 Album Cover Art"
                                 active: root.useAlbumArt && root.asciiMode !== "banner"
+                                notBoundToRand: true
                                 onClicked: root.selectL3SourceOrGlyph("art")
                             }
 
                             VizPillButton {
                                 text: "󰬴 Artist & Song Words"
                                 active: !root.useAlbumArt || root.asciiMode === "banner"
+                                notBoundToRand: true
                                 onClicked: root.selectL3SourceOrGlyph("words")
                             }
 
@@ -10344,12 +10413,13 @@ FocusScope {
                                 font.family: "JetBrainsMono Nerd Font"
                                 font.pixelSize: 10
                                 font.bold: true
-                                color: root.accentColour
+                                color: "#ef4444"
                             }
 
                             VizPillButton {
                                 text: root.layer3ShowArtist ? "󰄬 Artist (Q)" : "Artist (Q)"
                                 active: root.layer3ShowArtist
+                                notBoundToRand: true
                                 horizontalPad: 7
                                 onClicked: root.toggleLayer3TextField("artist")
                             }
@@ -10357,6 +10427,7 @@ FocusScope {
                             VizPillButton {
                                 text: root.layer3ShowTrack ? "󰄬 Track (W)" : "Track (W)"
                                 active: root.layer3ShowTrack
+                                notBoundToRand: true
                                 horizontalPad: 7
                                 onClicked: root.toggleLayer3TextField("track")
                             }
@@ -10364,6 +10435,7 @@ FocusScope {
                             VizPillButton {
                                 text: root.layer3ShowAlbum ? "󰄬 Album (E)" : "Album (E)"
                                 active: root.layer3ShowAlbum
+                                notBoundToRand: true
                                 horizontalPad: 7
                                 onClicked: root.toggleLayer3TextField("album")
                             }
@@ -10371,6 +10443,7 @@ FocusScope {
                             VizPillButton {
                                 text: root.layer3ShowStatements ? "󰄬 Statements (R) [" + (root.statementsList ? root.statementsList.length : 0) + "]" : "Statements (R) [" + (root.statementsList ? root.statementsList.length : 0) + "]"
                                 active: root.layer3ShowStatements
+                                notBoundToRand: true
                                 horizontalPad: 7
                                 onClicked: root.toggleLayer3TextField("statements")
                                 onRightClicked: {
@@ -10821,7 +10894,7 @@ FocusScope {
                                 font.family: "JetBrainsMono Nerd Font"
                                 font.pixelSize: 10
                                 font.bold: true
-                                color: root.accentColour
+                                color: "#ef4444"
                             }
 
                             Repeater {
@@ -10830,6 +10903,7 @@ FocusScope {
                                     required property int index
                                     text: (index + 1) + ". " + Engine.LAYER3_COLOUR_MODES[index]
                                     active: root.layer3ColourMode === index
+                                    notBoundToRand: true
                                     horizontalPad: 7
                                     onClicked: {
                                         root.layer3ColourMode = index
@@ -10885,7 +10959,7 @@ FocusScope {
                                 font.family: "JetBrainsMono Nerd Font"
                                 font.pixelSize: 10
                                 font.bold: true
-                                color: root.accentColour
+                                color: "#ef4444"
                             }
 
                             Repeater {
@@ -10894,6 +10968,7 @@ FocusScope {
                                     required property int index
                                     text: Engine.TRACK_ARC_MODES[index]
                                     active: root.trackArcMode === index
+                                    notBoundToRand: true
                                     horizontalPad: 7
                                     onClicked: {
                                         root.trackArcMode = index
@@ -10937,7 +11012,7 @@ FocusScope {
                                 font.family: "JetBrainsMono Nerd Font"
                                 font.pixelSize: 10
                                 font.bold: true
-                                color: root.accentColour
+                                color: "#ef4444"
                             }
 
                             Repeater {
@@ -10946,6 +11021,7 @@ FocusScope {
                                     required property int modelData
                                     text: modelData + "x"
                                     active: root.layer3Tracers === modelData
+                                    notBoundToRand: true
                                     horizontalPad: 6
                                     pillHeight: 22
                                     onClicked: {
@@ -10967,6 +11043,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Dismantle Force"
+                                notBoundToRand: true
                                 value: root.layer3Dismantle
                                 minValue: 0.10
                                 maxValue: 2.50
@@ -10976,6 +11053,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Rebuild Cohesion"
+                                notBoundToRand: true
                                 value: root.layer3Rebuild
                                 minValue: 0.10
                                 maxValue: 2.50
@@ -10985,6 +11063,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Song Evolution"
+                                notBoundToRand: true
                                 value: root.layer3Evolution
                                 minValue: 0.10
                                 maxValue: 2.50
@@ -11003,6 +11082,7 @@ FocusScope {
 
                             LayerSlider {
                                 label: "Ghost Tracer Echoes"
+                                notBoundToRand: true
                                 value: root.layer3Tracers
                                 minValue: 1
                                 maxValue: 8
@@ -11072,6 +11152,7 @@ FocusScope {
                                         delegate: VizPillButton {
                                             required property var modelData
                                             text: modelData.label
+                                            notBoundToRand: true
                                             active: root.renderQuality === modelData.q
                                             horizontalPad: 7
                                             onClicked: {
@@ -11089,6 +11170,7 @@ FocusScope {
                                         delegate: VizPillButton {
                                             required property int modelData
                                             text: modelData + " FPS"
+                                            notBoundToRand: true
                                             active: root.targetFps === modelData
                                             horizontalPad: 6
                                             onClicked: {
@@ -11100,6 +11182,7 @@ FocusScope {
 
                                     VizPillButton {
                                         text: root.gpuShaderEnabled ? "GPU HW: ON" : "GPU HW: OFF"
+                                        notBoundToRand: true
                                         active: root.gpuShaderEnabled
                                         horizontalPad: 7
                                         onClicked: {
@@ -11110,6 +11193,7 @@ FocusScope {
 
                                     VizPillButton {
                                         text: root.antialiasingEnabled ? "AA Smooth: ON" : "AA Smooth: OFF"
+                                        notBoundToRand: true
                                         active: root.antialiasingEnabled
                                         horizontalPad: 7
                                         onClicked: {
@@ -11121,6 +11205,7 @@ FocusScope {
 
                                     VizPillButton {
                                         text: root.disableScreensaverInFullscreenOrVj ? "󰒲 Inhibit Screensaver (FS/VJ): ON" : "󰒲 Inhibit Screensaver (FS/VJ): OFF"
+                                        notBoundToRand: true
                                         active: root.disableScreensaverInFullscreenOrVj
                                         horizontalPad: 7
                                         onClicked: {
@@ -11131,6 +11216,7 @@ FocusScope {
 
                                     VizPillButton {
                                         text: root.keybindingToastEnabled ? "⌨ Key Toast: ON" : "⌨ Key Toast: OFF"
+                                        notBoundToRand: true
                                         active: root.keybindingToastEnabled
                                         horizontalPad: 7
                                         onClicked: {
@@ -11152,6 +11238,7 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "Geometry Detail"
+                                        notBoundToRand: true
                                         value: root.geometryDetail
                                         minValue: 0.50
                                         maxValue: 2.00
@@ -11165,6 +11252,7 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "Canvas Resolution"
+                                        notBoundToRand: true
                                         value: root.renderResW
                                         minValue: 320
                                         maxValue: 1280
@@ -11251,6 +11339,7 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "Audio Sensitivity"
+                                        notBoundToRand: true
                                         value: root.audioSensitivity
                                         minValue: 0.35
                                         maxValue: 3.00
@@ -11264,6 +11353,7 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "Beat Punch"
+                                        notBoundToRand: true
                                         value: root.beatPunch
                                         minValue: 0.25
                                         maxValue: 2.50
@@ -11277,6 +11367,7 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "Audio Smoothing"
+                                        notBoundToRand: true
                                         value: root.audioSmoothing
                                         minValue: 0.10
                                         maxValue: 0.90
@@ -11289,6 +11380,7 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "Colour Cycle Spd"
+                                        notBoundToRand: true
                                         value: root.colourCycleSpeed
                                         minValue: 0.00
                                         maxValue: 2.50
@@ -11302,6 +11394,7 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "Master Brightness"
+                                        notBoundToRand: true
                                         value: root.masterBrightness
                                         minValue: 0.30
                                         maxValue: 1.60
@@ -11315,6 +11408,7 @@ FocusScope {
 
                                     LayerSlider {
                                         label: "Auto-Cycle Every"
+                                        notBoundToRand: true
                                         value: root.autoCycleIntervalSec
                                         minValue: 5
                                         maxValue: 60
@@ -11377,6 +11471,17 @@ FocusScope {
         border.width: 1
         border.color: Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.30)
         visible: root.showHud && root.showBottomHud
+
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            onPressed: mouse => {
+                root.resetHudAutoHideTimer()
+                mouse.accepted = false
+            }
+            onPositionChanged: root.resetHudAutoHideTimer()
+        }
 
         readonly property real trackRatio: root.duration > 0.5 ? Math.max(0.0, Math.min(1.0, root.position / root.duration)) : 0.0
         readonly property int trackPercent: Math.round(trackRatio * 100)
@@ -11462,8 +11567,8 @@ FocusScope {
                                 vizCanvas.requestPaint()
                             }
                         }
-                        onPressed: mouse => seekAtX(mouse.x)
-                        onPositionChanged: mouse => { if (pressed) seekAtX(mouse.x) }
+                        onPressed: mouse => { root.resetHudAutoHideTimer(); seekAtX(mouse.x) }
+                        onPositionChanged: mouse => { root.resetHudAutoHideTimer(); if (pressed) seekAtX(mouse.x) }
                     }
                 }
 
@@ -11717,9 +11822,10 @@ FocusScope {
                                     var ratio = Math.max(0.0, Math.min(1.0, mx / Math.max(1, hudVolSliderTrack.width)))
                                     root.requestSetVolume(Math.round(ratio * 100))
                                 }
-                                onPressed: mouse => setVolAtX(mouse.x)
-                                onPositionChanged: mouse => { if (pressed) setVolAtX(mouse.x) }
+                                onPressed: mouse => { root.resetHudAutoHideTimer(); setVolAtX(mouse.x) }
+                                onPositionChanged: mouse => { root.resetHudAutoHideTimer(); if (pressed) setVolAtX(mouse.x) }
                                 onWheel: wheel => {
+                                    root.resetHudAutoHideTimer()
                                     var delta = wheel.angleDelta.y > 0 ? 5 : -5
                                     root.requestAdjustVolume(delta)
                                 }
