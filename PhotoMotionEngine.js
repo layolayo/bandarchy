@@ -451,7 +451,7 @@ var AUDIO_RESPONDER_PHOTO_LINKS = [
         name: "Master Motion Activity & Speed",
         property: "photoMotionActivity",
         min: 0.10,
-        max: 3.00,
+        max: 2.00,
         defaultVal: 1.00,
         recommendedSource: 1, // Kick & Sub-Bass
         recommendedMethod: "+"
@@ -473,7 +473,7 @@ var AUDIO_RESPONDER_PHOTO_LINKS = [
         name: "16-Variant Strobe & Cross-Fade Speed",
         property: "photoStrobeSpeed",
         min: 0.10,
-        max: 4.00,
+        max: 2.00,
         defaultVal: 1.00,
         recommendedSource: 4, // Highs / Hi-Hats or 5: Beat Onset
         recommendedMethod: "+"
@@ -890,8 +890,8 @@ function getVariantSectionOffset(variantIdx, snapshotIndex) {
 function captureUserPhotoMotionSettings(state) {
     if (!state) return null
     var snap = {
-        photoMotionActivity: clamp(Number(state.photoMotionActivity !== undefined ? state.photoMotionActivity : 1.00), 0.10, 3.00),
-        photoStrobeSpeed: clamp(Number(state.photoStrobeSpeed !== undefined ? state.photoStrobeSpeed : 1.00), 0.10, 4.00),
+        photoMotionActivity: clamp(Number(state.photoMotionActivity !== undefined ? state.photoMotionActivity : 1.00), 0.10, 2.00),
+        photoStrobeSpeed: clamp(Number(state.photoStrobeSpeed !== undefined ? state.photoStrobeSpeed : 1.00), 0.10, 2.00),
         photoFadeDuration: clamp(Number(state.photoFadeDuration !== undefined ? state.photoFadeDuration : 0.35), 0.00, 6.00),
         photoXyzTilt: clamp(Number(state.photoXyzTilt !== undefined ? state.photoXyzTilt : 1.00), 0.00, 2.50),
         photoZoomPunch: clamp(Number(state.photoZoomPunch !== undefined ? state.photoZoomPunch : 1.15), 0.25, 2.50),
@@ -909,8 +909,8 @@ function captureUserPhotoMotionSettings(state) {
 function restoreUserPhotoMotionSettings(state) {
     if (!state || !state.userMotionSettings) return null
     var u = state.userMotionSettings
-    if (u.photoMotionActivity !== undefined) state.photoMotionActivity = clamp(Number(u.photoMotionActivity), 0.10, 3.00)
-    if (u.photoStrobeSpeed !== undefined) state.photoStrobeSpeed = clamp(Number(u.photoStrobeSpeed), 0.10, 4.00)
+    if (u.photoMotionActivity !== undefined) state.photoMotionActivity = clamp(Number(u.photoMotionActivity), 0.10, 2.00)
+    if (u.photoStrobeSpeed !== undefined) state.photoStrobeSpeed = clamp(Number(u.photoStrobeSpeed), 0.10, 2.00)
     if (u.photoFadeDuration !== undefined) state.photoFadeDuration = clamp(Number(u.photoFadeDuration), 0.00, 6.00)
     if (u.photoXyzTilt !== undefined) state.photoXyzTilt = clamp(Number(u.photoXyzTilt), 0.00, 2.50)
     if (u.photoZoomPunch !== undefined) state.photoZoomPunch = clamp(Number(u.photoZoomPunch), 0.25, 2.50)
@@ -929,9 +929,9 @@ function randomiseMotionControlsForEvent(state, randomFn) {
         captureUserPhotoMotionSettings(state)
     }
     var rng = (typeof randomFn === "function") ? randomFn : Math.random
-    var userAct = clamp(Number(state.userMotionSettings.photoMotionActivity !== undefined ? state.userMotionSettings.photoMotionActivity : 1.00), 0.10, 3.00)
-    state.photoMotionActivity = Math.round(clamp(userAct * (0.70 + Math.abs(Number(rng())) * 0.75), 0.25, 2.60) * 100) / 100
-    state.photoStrobeSpeed = Math.round((0.55 + Math.abs(Number(rng())) * 1.35) * 100) / 100
+    var userAct = clamp(Number(state.userMotionSettings.photoMotionActivity !== undefined ? state.userMotionSettings.photoMotionActivity : 1.00), 0.10, 2.00)
+    state.photoMotionActivity = Math.round(clamp(userAct * (0.70 + Math.abs(Number(rng())) * 0.70), 0.25, 2.00) * 100) / 100
+    state.photoStrobeSpeed = Math.round(clamp(0.50 + Math.abs(Number(rng())) * 1.15, 0.25, 2.00) * 100) / 100
     state.photoFadeDuration = Math.round((0.20 + Math.abs(Number(rng())) * 1.30) * 100) / 100
     state.photoXyzTilt = Math.round((0.55 + Math.abs(Number(rng())) * 1.15) * 100) / 100
     state.photoZoomPunch = Math.round((0.75 + Math.abs(Number(rng())) * 0.95) * 100) / 100
@@ -1572,10 +1572,10 @@ function stepPhotoMotionState(state, dt, audioTelemetry, pickNewEntryCallback) {
     var beat = clamp(audioTelemetry ? audioTelemetry.beat : 0.0, 0.0, 1.0)
 
     var links = state.audioLinks || {}
-    var baseActivity = clamp(Number(state.photoMotionActivity !== undefined ? state.photoMotionActivity : 1.00), 0.10, 3.00)
-    var effMotionActivity = evalPhotoAudioLink(baseActivity, 0.10, 3.00, links.l_photo_motion_activity, audioTelemetry, 0)
+    var baseActivity = clamp(Number(state.photoMotionActivity !== undefined ? state.photoMotionActivity : 1.00), 0.10, 2.00)
+    var effMotionActivity = evalPhotoAudioLink(baseActivity, 0.10, 2.00, links.l_photo_motion_activity, audioTelemetry, 0)
     var effOpacity = evalPhotoAudioLink(state.photoOpacity, 0.05, 1.00, links.l_photo_opacity, audioTelemetry, 0)
-    var effStrobeSpeed = evalPhotoAudioLink(state.photoStrobeSpeed, 0.10, 4.00, links.l_photo_strobe_rate, audioTelemetry, 0)
+    var effStrobeSpeed = evalPhotoAudioLink(state.photoStrobeSpeed, 0.10, 2.00, links.l_photo_strobe_rate, audioTelemetry, 0)
     var effXyzTilt = evalPhotoAudioLink(state.photoXyzTilt, 0.00, 2.50, links.l_photo_xyz_tilt, audioTelemetry, 0)
     var effZoomPunch = evalPhotoAudioLink(state.photoZoomPunch, 0.25, 2.50, links.l_photo_zoom_punch, audioTelemetry, 0)
     var effPaletteBloom = evalPhotoAudioLink(state.photoPaletteBloom, 0.00, 2.50, links.l_photo_palette_bloom, audioTelemetry, 0)
@@ -2258,11 +2258,11 @@ function renderPhotoMotionLayer(ctx, width, height, state, baseVariantImagesMap,
         ? clamp(secOps.composite * (0.28 + 0.72 * stepInfo.snapshotCrossfadeAlpha), 0.0, 1.0)
         : clamp(secOps.composite, 0.0, 1.0)
     var neonAlpha = clamp(secOps.colourSnatch * Math.min(1.0, 0.72 * Math.max(0.35, stepInfo.effectivePaletteBloom)), 0.15, 1.0)
-    var activityMul = clamp(stepInfo.effectiveMotionActivity !== undefined ? stepInfo.effectiveMotionActivity : 1.0, 0.10, 3.00)
+    var activityMul = clamp(stepInfo.effectiveMotionActivity !== undefined ? stepInfo.effectiveMotionActivity : 1.0, 0.10, 2.00)
     var actScaleRender = 0.35 + 0.65 * activityMul
     var tiltMul = clamp(stepInfo.effectiveXyzTilt * actScaleRender, 0.10, 3.00)
     var warpMul = clamp(stepInfo.effectiveWarpIntensity * actScaleRender, 0.10, 3.00)
-    var strobeMul = clamp(stepInfo.effectiveStrobeSpeed * (0.45 + 0.55 * activityMul), 0.10, 4.00)
+    var strobeMul = clamp(stepInfo.effectiveStrobeSpeed * (0.45 + 0.55 * activityMul), 0.10, 2.00)
 
     // Full-range off-centre section magnification & shift (`panShiftX`, `panShiftY`) so 2D section/slice/lens/tile
     // modes sample shifting off-centre regions of the photograph rather than always the centre point (0, 0).

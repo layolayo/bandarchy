@@ -1755,8 +1755,8 @@ FocusScope {
             ? Number(root.userPhotoMotionSettings.photoMotionActivity)
             : 1.00
         root._applyingRandomPhotoMotion = true
-        root.photoMotionActivity = Math.round(Math.max(0.25, Math.min(2.60, userAct * (0.70 + Math.random() * 0.75))) * 100) / 100
-        root.photoStrobeSpeed = Math.round((0.55 + Math.random() * 1.35) * 100) / 100
+        root.photoMotionActivity = Math.round(Math.max(0.25, Math.min(2.00, userAct * (0.70 + Math.random() * 0.70))) * 100) / 100
+        root.photoStrobeSpeed = Math.round(Math.max(0.25, Math.min(2.00, 0.50 + Math.random() * 1.15)) * 100) / 100
         root.photoFadeDuration = Math.round((0.20 + Math.random() * 1.30) * 100) / 100
         root.photoXyzTilt = Math.round((0.55 + Math.random() * 1.15) * 100) / 100
         root.photoZoomPunch = Math.round((0.75 + Math.random() * 0.95) * 100) / 100
@@ -2118,12 +2118,12 @@ FocusScope {
         if (cfg.photoPinnedVariant !== undefined) root.photoPinnedVariant = Math.max(-1, Math.min(PhotoMotion.STAGE1_EFFECT_IDS.length - 1, Math.round(Number(cfg.photoPinnedVariant))))
         if (cfg.photoOpacity !== undefined) root.photoOpacity = Math.max(0.05, Math.min(1.00, Number(cfg.photoOpacity)))
         if (cfg.photoFadeDuration !== undefined) root.photoFadeDuration = Math.max(0.00, Math.min(6.00, Number(cfg.photoFadeDuration)))
-        if (cfg.photoStrobeSpeed !== undefined) root.photoStrobeSpeed = Math.max(0.10, Math.min(4.00, Number(cfg.photoStrobeSpeed)))
+        if (cfg.photoStrobeSpeed !== undefined) root.photoStrobeSpeed = Math.max(0.10, Math.min(2.00, Number(cfg.photoStrobeSpeed)))
         if (cfg.photoBlackOpacity !== undefined) root.photoBlackOpacity = Math.max(0.00, Math.min(1.00, Number(cfg.photoBlackOpacity)))
         if (cfg.photoMidOpacity !== undefined) root.photoMidOpacity = Math.max(0.00, Math.min(1.00, Number(cfg.photoMidOpacity)))
         if (cfg.photoWhiteOpacity !== undefined) root.photoWhiteOpacity = Math.max(0.00, Math.min(1.00, Number(cfg.photoWhiteOpacity)))
         if (cfg.photoColourSnatchOpacity !== undefined) root.photoColourSnatchOpacity = Math.max(0.00, Math.min(1.50, Number(cfg.photoColourSnatchOpacity)))
-        if (cfg.photoMotionActivity !== undefined) root.photoMotionActivity = Math.max(0.10, Math.min(3.00, Number(cfg.photoMotionActivity)))
+        if (cfg.photoMotionActivity !== undefined) root.photoMotionActivity = Math.max(0.10, Math.min(2.00, Number(cfg.photoMotionActivity)))
         if (cfg.photoXyzTilt !== undefined) root.photoXyzTilt = Math.max(0.00, Math.min(2.50, Number(cfg.photoXyzTilt)))
         if (cfg.photoZoomPunch !== undefined) root.photoZoomPunch = Math.max(0.25, Math.min(2.50, Number(cfg.photoZoomPunch)))
         if (cfg.photoPaletteBloom !== undefined) root.photoPaletteBloom = Math.max(0.00, Math.min(2.50, Number(cfg.photoPaletteBloom)))
@@ -2429,7 +2429,7 @@ FocusScope {
         if (item.photoPinnedVariant !== undefined) root.photoPinnedVariant = Math.max(-1, Math.min(PhotoMotion.STAGE1_EFFECT_IDS.length - 1, Math.round(Number(item.photoPinnedVariant))))
         if (item.photoOpacity !== undefined) root.photoOpacity = Math.max(0.05, Math.min(1.00, Number(item.photoOpacity)))
         if (item.photoFadeDuration !== undefined) root.photoFadeDuration = Math.max(0.00, Math.min(6.00, Number(item.photoFadeDuration)))
-        if (item.photoStrobeSpeed !== undefined) root.photoStrobeSpeed = Math.max(0.10, Math.min(4.00, Number(item.photoStrobeSpeed)))
+        if (item.photoStrobeSpeed !== undefined) root.photoStrobeSpeed = Math.max(0.10, Math.min(2.00, Number(item.photoStrobeSpeed)))
         if (item.photoBlackOpacity !== undefined) root.photoBlackOpacity = Math.max(0.00, Math.min(1.00, Number(item.photoBlackOpacity)))
         if (item.photoMidOpacity !== undefined) root.photoMidOpacity = Math.max(0.00, Math.min(1.00, Number(item.photoMidOpacity)))
         if (item.photoWhiteOpacity !== undefined) root.photoWhiteOpacity = Math.max(0.00, Math.min(1.00, Number(item.photoWhiteOpacity)))
@@ -6007,9 +6007,24 @@ FocusScope {
                     pillHeight: 22
                     fontSize: 9
                     horizontalPad: 4
-                    text: "Spd:" + root.layer1Speed.toFixed(1) + "x"
-                    active: Math.abs(root.layer1Speed - 1.0) > 0.05
+                    text: "Spd:" + ((root.layer1Mode === 11) ? root.photoMotionActivity : root.layer1Speed).toFixed(1) + "x"
+                    active: Math.abs(((root.layer1Mode === 11) ? root.photoMotionActivity : root.layer1Speed) - 1.0) > 0.05
                     onClicked: {
+                        if (root.layer1Mode === 11) {
+                            var pSteps = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
+                            var nextP = 1.0
+                            for (var pi = 0; pi < pSteps.length; pi++) {
+                                if (pSteps[pi] > root.photoMotionActivity + 0.05) {
+                                    nextP = pSteps[pi]
+                                    break
+                                }
+                                if (pi === pSteps.length - 1) nextP = pSteps[0]
+                            }
+                            root.photoMotionActivity = nextP
+                            root.photoStrobeSpeed = nextP
+                            scheduleSaveVisualiserConfig()
+                            return
+                        }
                         var steps = [0.5, 1.0, 1.5, 2.0, 3.0, 4.0]
                         var nextS = 1.0
                         for (var i = 0; i < steps.length; i++) {
@@ -6024,11 +6039,24 @@ FocusScope {
                         scheduleSaveVisualiserConfig()
                     }
                     onRightClicked: {
+                        if (root.layer1Mode === 11) {
+                            root.photoMotionActivity = 1.0
+                            root.photoStrobeSpeed = 1.0
+                            scheduleSaveVisualiserConfig()
+                            return
+                        }
                         root.layer1Speed = 1.0
                         vizCanvas.requestPaint()
                         scheduleSaveVisualiserConfig()
                     }
                     onWheelScrolled: delta => {
+                        if (root.layer1Mode === 11) {
+                            var nextSpd = Math.max(0.10, Math.min(2.0, Math.round((root.photoMotionActivity + delta * 0.10) * 100) / 100))
+                            root.photoMotionActivity = nextSpd
+                            root.photoStrobeSpeed = nextSpd
+                            scheduleSaveVisualiserConfig()
+                            return
+                        }
                         root.layer1Speed = Math.max(0.05, Math.min(4.0, Math.round((root.layer1Speed + delta * 0.15) * 100) / 100))
                         vizCanvas.requestPaint()
                         scheduleSaveVisualiserConfig()
@@ -8895,7 +8923,7 @@ FocusScope {
                                         label: "Motion Activity / Speed"
                                         value: root.photoMotionActivity
                                         minValue: 0.10
-                                        maxValue: 3.00
+                                        maxValue: 2.00
                                         unitSuffix: "x"
                                         onValueEdited: v => { root.photoMotionActivity = v }
                                     }
@@ -8942,7 +8970,7 @@ FocusScope {
                                         label: "16-Variant Strobe Rate"
                                         value: root.photoStrobeSpeed
                                         minValue: 0.10
-                                        maxValue: 4.00
+                                        maxValue: 2.00
                                         unitSuffix: "x"
                                         onValueEdited: v => { root.photoStrobeSpeed = v }
                                     }

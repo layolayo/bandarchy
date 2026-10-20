@@ -9757,13 +9757,209 @@ var LAYER3_STYLE_PALETTES = [
 
 // Cool Retro Term authentic CRT terminal phosphor colour schemes for Style 20 (ASCII Cell Matrix)
 var COOL_RETRO_TERM_PHOSPHORS = [
-    { name: "P3 Amber Phosphor",   fg: "#FFB000", core: "#FFE082", bg: "#180D00", revBg: "#FFB000", bezel: "#664400" }, // 0: Classic Amber P3
+    { name: "P3 Amber Phosphor",   fg: "#FF8800", core: "#FFE082", bg: "#140900", revBg: "#FF8800", bezel: "#663800" }, // 0: Classic Amber P3 (exact crt_ref.png hue)
     { name: "IBM 5151 P1 Green",   fg: "#33FF33", core: "#B3FFB3", bg: "#021402", revBg: "#33FF33", bezel: "#145214" }, // 1: Green P1
     { name: "DEC VT100 P4 White",  fg: "#BCE8FF", core: "#F4FBFF", bg: "#050D14", revBg: "#BCE8FF", bezel: "#2D556E" }, // 2: White/Blue P4
     { name: "IBM 3290 Plasma Red", fg: "#FF4500", core: "#FFAB80", bg: "#1A0500", revBg: "#FF4500", bezel: "#6E1C00" }, // 3: Gas-Plasma Red-Orange
     { name: "Commodore 64 CRT",    fg: "#70A4B2", core: "#C7F0FF", bg: "#141030", revBg: "#70A4B2", bezel: "#352879" }, // 4: C64 Blue/Cyan
     { name: "Apple II Cyan-Green", fg: "#00F5D4", core: "#B8FFF4", bg: "#021412", revBg: "#00F5D4", bezel: "#0D5C54" }  // 5: Cyan-Emerald Matrix
 ]
+
+// Authentic 5×7 Cool-Retro-Term Horizontal Scanline Raster Bitmap Font (7 horizontal scanline rows per glyph, 5-bit row mask 0x10..0x01)
+// Matches the exact horizontal scanline-bar geometry of Cool-Retro-Term (`C`, `R`, `T` & 7-bar block cursor `█`).
+var CRT_SCANLINE_FONT_5X7 = {
+    "A": [0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11],
+    "B": [0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E],
+    "C": [0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E],
+    "D": [0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E],
+    "E": [0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F],
+    "F": [0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10],
+    "G": [0x0E, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0F],
+    "H": [0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11],
+    "I": [0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E],
+    "J": [0x07, 0x02, 0x02, 0x02, 0x12, 0x12, 0x0C],
+    "K": [0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11],
+    "L": [0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F],
+    "M": [0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11],
+    "N": [0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11],
+    "O": [0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E],
+    "P": [0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10],
+    "Q": [0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D],
+    "R": [0x1E, 0x11, 0x11, 0x1E, 0x1C, 0x12, 0x11],
+    "S": [0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E],
+    "T": [0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04],
+    "U": [0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E],
+    "V": [0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04],
+    "W": [0x11, 0x11, 0x11, 0x15, 0x15, 0x1B, 0x11],
+    "X": [0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11],
+    "Y": [0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04],
+    "Z": [0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F],
+    "0": [0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E],
+    "1": [0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E],
+    "2": [0x0E, 0x11, 0x01, 0x06, 0x08, 0x10, 0x1F],
+    "3": [0x1F, 0x02, 0x04, 0x06, 0x01, 0x11, 0x0E],
+    "4": [0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02],
+    "5": [0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E],
+    "6": [0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E],
+    "7": [0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08],
+    "8": [0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E],
+    "9": [0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C],
+    "!": [0x04, 0x04, 0x04, 0x04, 0x04, 0x00, 0x04],
+    "?": [0x0E, 0x11, 0x01, 0x06, 0x04, 0x00, 0x04],
+    ".": [0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C],
+    ",": [0x00, 0x00, 0x00, 0x00, 0x06, 0x04, 0x08],
+    ":": [0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x0C, 0x00],
+    ";": [0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x04, 0x08],
+    "-": [0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00],
+    "_": [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F],
+    "+": [0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00],
+    "=": [0x00, 0x00, 0x1F, 0x00, 0x1F, 0x00, 0x00],
+    "/": [0x01, 0x02, 0x02, 0x04, 0x08, 0x08, 0x10],
+    "\\": [0x10, 0x08, 0x08, 0x04, 0x02, 0x02, 0x01],
+    "|": [0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04],
+    "(": [0x02, 0x04, 0x08, 0x08, 0x08, 0x04, 0x02],
+    ")": [0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08],
+    "[": [0x0E, 0x08, 0x08, 0x08, 0x08, 0x08, 0x0E],
+    "]": [0x0E, 0x02, 0x02, 0x02, 0x02, 0x02, 0x0E],
+    "<": [0x02, 0x04, 0x08, 0x10, 0x08, 0x04, 0x02],
+    ">": [0x08, 0x04, 0x02, 0x01, 0x02, 0x04, 0x08],
+    "'": [0x04, 0x04, 0x08, 0x00, 0x00, 0x00, 0x00],
+    "\"": [0x0A, 0x0A, 0x0A, 0x00, 0x00, 0x00, 0x00],
+    "#": [0x0A, 0x1F, 0x0A, 0x0A, 0x1F, 0x0A, 0x0A],
+    "$": [0x04, 0x0F, 0x14, 0x0E, 0x05, 0x1E, 0x04],
+    "%": [0x19, 0x19, 0x02, 0x04, 0x08, 0x13, 0x13],
+    "&": [0x0C, 0x12, 0x14, 0x08, 0x15, 0x12, 0x0D],
+    "*": [0x00, 0x04, 0x15, 0x0E, 0x15, 0x04, 0x00],
+    "█": [0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F]
+}
+
+function getCrtScanlineBitmap(ch) {
+    if (!ch || ch === " ") return [0, 0, 0, 0, 0, 0, 0]
+    var up = String(ch).toUpperCase()
+    if (CRT_SCANLINE_FONT_5X7[up]) return CRT_SCANLINE_FONT_5X7[up]
+    var code = up.charCodeAt(0) || 65
+    return [
+        0x0E | ((code & 1) << 4),
+        0x11 | ((code & 2) << 2),
+        0x15,
+        0x1F,
+        0x15,
+        0x11 | ((code & 4) << 1),
+        0x0E
+    ]
+}
+
+// Renders a single Cool-Retro-Term (`crt_ref.png`) 7-scanline-row character cell centered at (0, 0):
+//   crtMode 0: Dark CRT glass cell + faint unlit scanline tracks + glowing 7-row horizontal phosphor bars (Style 16 & Style 20 normal)
+//   crtMode 1: Pure floating 7-row horizontal CRT phosphor scanline bars with zero background (Style 18)
+//   crtMode 2: Reverse-video 7-scanline-row CRT block where unlit pixels glow as horizontal phosphor bars & glyph is dark/carved (Style 17 & Style 20 rev)
+//   crtMode 3: Reverse-video Knockout 7-scanline-row CRT block where only the complement horizontal scanline bars are drawn (Style 19 & Style 20 knockout)
+function drawCrtScanlineCell(ctx, ch, cellW, cellH, fgCol, coreCol, bgCol, crtMode, isEcho, beatPulse) {
+    var rows = getCrtScanlineBitmap(ch)
+    var numRows = 7
+    var pitchY = cellH / numRows
+    var barH = Math.max(1.6, pitchY * 0.62) // 62% glowing phosphor scanline bar, 38% dark horizontal CRT scanline gap!
+    var coreH = Math.max(0.85, barH * 0.42)
+    var bloomH = barH * 1.48
+
+    // In reverse-video modes (2 & 3), add a 1-column left/right margin (7 columns total: bits 6..0) so the 5×7 character is framed inside the 7 scanline bars!
+    var isReverse = (crtMode === 2 || crtMode === 3)
+    var numCols = isReverse ? 7 : 5
+    var colW = (cellW * (isReverse ? 0.92 : 0.82)) / numCols
+    var startX = -0.5 * numCols * colW
+    var startY = -0.5 * cellH
+
+    // 1. Optional dark smoked CRT glass backing + faint unlit horizontal raster scanline tracks
+    if (crtMode === 0 || crtMode === 2) {
+        ctx.fillStyle = colourWithAlpha(bgCol || "#0A0602", isEcho ? 0.76 : 0.92)
+        ctx.fillRect(-cellW * 0.48, -cellH * 0.54, cellW * 0.96, cellH * 1.08)
+        if (!isEcho) {
+            ctx.fillStyle = colourWithAlpha(fgCol, 0.10)
+            for (var tr = 0; tr < numRows; tr++) {
+                var ty = startY + (tr + 0.5) * pitchY - barH * 0.5
+                ctx.fillRect(-cellW * 0.44, ty, cellW * 0.88, barH)
+            }
+        }
+    }
+
+    // Collect merged horizontal scanline bar runs `[x, y, w]` across all 7 scanline rows
+    var barRuns = []
+    var darkGlyphRuns = []
+    for (var r = 0; r < numRows; r++) {
+        var raw5 = rows[r] & 0x1F
+        // Shift 5-bit glyph into centre of 7-bit row (bits 5..1) when in reverse-video 7-col block mode
+        var rowMask = isReverse ? ((~((raw5 << 1) & 0x3E)) & 0x7F) : raw5
+        var ry = startY + (r + 0.5) * pitchY - barH * 0.5
+        var c = 0
+        while (c < numCols) {
+            var bitMask = 1 << (numCols - 1 - c)
+            if (rowMask & bitMask) {
+                var runStart = c
+                while (c < numCols && (rowMask & (1 << (numCols - 1 - c)))) {
+                    c++
+                }
+                var runCols = c - runStart
+                var rx = startX + runStart * colW
+                var rw = Math.max(1.5, runCols * colW - colW * 0.10)
+                barRuns.push(rx, ry, rw)
+            } else {
+                c++
+            }
+        }
+        if (crtMode === 2 && !isEcho) {
+            // Also record the inner character scanline bars for dark/contrasting recessed phosphor rendering
+            var gc = 0
+            while (gc < 5) {
+                if (raw5 & (1 << (4 - gc))) {
+                    var gStart = gc
+                    while (gc < 5 && (raw5 & (1 << (4 - gc)))) {
+                        gc++
+                    }
+                    var gx = startX + (gStart + 1) * colW
+                    var gw = Math.max(1.2, (gc - gStart) * colW - colW * 0.12)
+                    darkGlyphRuns.push(gx, ry, gw)
+                } else {
+                    gc++
+                }
+            }
+        }
+    }
+
+    // 2. Pass 1: Warm Outer CRT Phosphor Halation Bloom around every horizontal scanline bar
+    if (!isEcho && barRuns.length > 0) {
+        var padX = Math.max(1.2, colW * 0.22)
+        var padY = (bloomH - barH) * 0.5
+        ctx.fillStyle = colourWithAlpha(fgCol, 0.34 + (beatPulse || 0.0) * 0.14)
+        for (var b0 = 0; b0 < barRuns.length; b0 += 3) {
+            ctx.fillRect(barRuns[b0] - padX, barRuns[b0 + 1] - padY, barRuns[b0 + 2] + padX * 2.0, bloomH)
+        }
+    }
+
+    // 3. Pass 2: Crisp Saturated Horizontal CRT Scanline Phosphor Bars
+    ctx.fillStyle = colourWithAlpha(fgCol, isEcho ? 0.80 : 0.98)
+    for (var b1 = 0; b1 < barRuns.length; b1 += 3) {
+        ctx.fillRect(barRuns[b1], barRuns[b1 + 1], barRuns[b1 + 2], barH)
+    }
+
+    // 4. Pass 3: Hot Incandescent Electron-Beam Centre Filament inside each horizontal scanline bar
+    if (!isEcho && barRuns.length > 0) {
+        var coreInsetX = Math.max(0.5, colW * 0.08)
+        var coreOffsetY = (barH - coreH) * 0.5
+        ctx.fillStyle = colourWithAlpha(coreCol || "#FFE885", 0.88)
+        for (var b2 = 0; b2 < barRuns.length; b2 += 3) {
+            var cw = Math.max(1.0, barRuns[b2 + 2] - coreInsetX * 2.0)
+            ctx.fillRect(barRuns[b2] + coreInsetX, barRuns[b2 + 1] + coreOffsetY, cw, coreH)
+        }
+    }
+
+    // 5. In crtMode 2 (Lit Block / Dark Recessed Glyph), render the recessed dark CRT scanline bars inside the cutout
+    if (crtMode === 2 && darkGlyphRuns.length > 0) {
+        ctx.fillStyle = colourWithAlpha(bgCol || "#050608", 0.96)
+        for (var d0 = 0; d0 < darkGlyphRuns.length; d0 += 3) {
+            ctx.fillRect(darkGlyphRuns[d0], darkGlyphRuns[d0 + 1], darkGlyphRuns[d0 + 2], barH)
+        }
+    }
+}
 
 function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFrames) {
     if (!cfg || !cfg.layer3Enabled) return
@@ -9867,15 +10063,15 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
         } else if (textStyle === 8 && displayLines.length > 0) {
             displayLines[0] = "⌜ " + displayLines[0] + " ⌝"
         } else if (textStyle === 16 && displayLines.length > 0) {
-            for (var a16 = 0; a16 < displayLines.length; a16++) displayLines[a16] = "[# " + displayLines[a16] + " #]"
+            displayLines[0] = displayLines[0] + " █"
         } else if (textStyle === 17 && displayLines.length > 0) {
-            for (var a17 = 0; a17 < displayLines.length; a17++) displayLines[a17] = "█▓ " + displayLines[a17] + " ▓█"
+            displayLines[0] = "█ " + displayLines[0] + " █"
         } else if (textStyle === 18 && displayLines.length > 0) {
-            for (var a18 = 0; a18 < displayLines.length; a18++) displayLines[a18] = "<< " + displayLines[a18] + " >>"
+            for (var a18 = 0; a18 < displayLines.length; a18++) displayLines[a18] = "< " + displayLines[a18] + " >"
         } else if (textStyle === 19 && displayLines.length > 0) {
-            for (var a19 = 0; a19 < displayLines.length; a19++) displayLines[a19] = "|| " + displayLines[a19] + " ||"
+            for (var a19 = 0; a19 < displayLines.length; a19++) displayLines[a19] = "[ " + displayLines[a19] + " ]"
         } else if (textStyle === 20 && displayLines.length > 0) {
-            for (var a20 = 0; a20 < displayLines.length; a20++) displayLines[a20] = "[* " + displayLines[a20] + " *]"
+            displayLines[0] = displayLines[0] + " █"
         }
         var maxChars = 12
         for (var li = 0; li < displayLines.length; li++) {
@@ -9923,13 +10119,11 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                 var nCh = str.length
                 if (nCh === 0) continue
                 var rowFontPx = (rowIdx === 0) ? baseFontPx : Math.max(15, Math.floor(baseFontPx * (rowIdx === 1 ? 0.78 : 0.60)))
-                var trackingMul = (textStyle === 20)
-                    ? 0.88
-                    : (isAsciiStyle
-                        ? (0.74 + state.beatPulse * 0.04)
-                        : ((textStyle === 7 || textStyle === 8)
-                            ? (0.72 + state.bassSmooth * 0.12 + state.beatPulse * 0.05)
-                            : (textStyle === 0 || textStyle === 10 ? (0.70 + state.bassSmooth * 0.06) : (0.66 + state.bassSmooth * 0.06))))
+                var trackingMul = isAsciiStyle
+                    ? (0.88 + state.beatPulse * 0.04)
+                    : ((textStyle === 7 || textStyle === 8)
+                        ? (0.72 + state.bassSmooth * 0.12 + state.beatPulse * 0.05)
+                        : (textStyle === 0 || textStyle === 10 ? (0.70 + state.bassSmooth * 0.06) : (0.66 + state.bassSmooth * 0.06)))
                 var charStep = rowFontPx * trackingMul
                 var rowHalfW = Math.max(1.0, (nCh - 1) * charStep * 0.5)
                 var hyNorm = (displayLines.length === 1) ? 0.0 : ((rowIdx / (displayLines.length - 1)) * 2.0 - 1.0) * 0.55
@@ -9961,41 +10155,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                     rowColAlt = hslToHex((rPrismHue + 90) % 360, 0.92, 0.55)
                 }
 
-                // Line-level ASCII block strips for Styles 16, 17, 19 (1 full-row backing plate per line)
-                var linePlateW = rowHalfW * 2.0 + rowFontPx * 1.36
-                var linePlateH = rowFontPx * 1.20
-                if (textStyle === 16) {
-                    ctx.save()
-                    ctx.fillStyle = isEchoT ? "rgba(4, 4, 8, 0.78)" : "rgba(4, 4, 8, 0.95)"
-                    ctx.fillRect(rowLineCenterX - linePlateW * 0.5, rowLineCenterY - linePlateH * 0.5, linePlateW, linePlateH)
-                    if (!isEchoT && typeof ctx.strokeRect === "function") {
-                        ctx.lineWidth = 1.6
-                        ctx.strokeStyle = (colourMode === 0 && !isPaletteShifted) ? "rgba(255, 255, 255, 0.62)" : colourWithAlpha(rowColCh, 0.78)
-                        ctx.strokeRect(rowLineCenterX - linePlateW * 0.5, rowLineCenterY - linePlateH * 0.5, linePlateW, linePlateH)
-                    }
-                    ctx.restore()
-                } else if (textStyle === 17) {
-                    ctx.save()
-                    var whtStripCol = (colourMode === 0 && !isPaletteShifted) ? "#FFFFFF" : rowColCh
-                    ctx.fillStyle = colourWithAlpha(whtStripCol, isEchoT ? 0.78 : 0.95)
-                    ctx.fillRect(rowLineCenterX - linePlateW * 0.5, rowLineCenterY - linePlateH * 0.5, linePlateW, linePlateH)
-                    if (!isEchoT && typeof ctx.strokeRect === "function") {
-                        ctx.lineWidth = 1.6
-                        ctx.strokeStyle = (colourMode === 0 && !isPaletteShifted) ? "rgba(8, 10, 14, 0.65)" : colourWithAlpha(rowColAlt, 0.78)
-                        ctx.strokeRect(rowLineCenterX - linePlateW * 0.5, rowLineCenterY - linePlateH * 0.5, linePlateW, linePlateH)
-                    }
-                    ctx.restore()
-                } else if (textStyle === 19) {
-                    ctx.save()
-                    ctx.fillStyle = colourWithAlpha(rowColCh, isEchoT ? 0.74 : 0.94)
-                    ctx.fillRect(rowLineCenterX - linePlateW * 0.5, rowLineCenterY - linePlateH * 0.5, linePlateW, linePlateH)
-                    if (!isEchoT && typeof ctx.strokeRect === "function") {
-                        ctx.lineWidth = 1.6
-                        ctx.strokeStyle = colourWithAlpha(rowColAlt, 0.84)
-                        ctx.strokeRect(rowLineCenterX - linePlateW * 0.5, rowLineCenterY - linePlateH * 0.5, linePlateW, linePlateH)
-                    }
-                    ctx.restore()
-                }
+                // Per-cell 7-scanline-row Cool-Retro-Term raster rendering is used for Styles 16..20 (no flat solid row fillRects)
 
                 // Row-level stage plates / brutalist bars / laser scanlines / futuristic HUD & Copperbars on front pass
                 if (!isEchoT) {
@@ -10437,16 +10597,10 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                         sy = sx
                     }
 
-                    // Keep each character strictly locked inside its own CRT cell block (0, 0) while allowing full 3D perspective swoop & scaling!
-                    if (textStyle === 20) {
+                    // Keep each character strictly locked inside its own CRT scanline cell block (0, 0) while allowing full 3D perspective swoop & scaling!
+                    if (isAsciiStyle) {
                         sx = (sx < 0 ? -1.0 : 1.0) * clamp(Math.abs(sx), 0.22, 2.45)
                         sy = (sy < 0 ? -1.0 : 1.0) * clamp(Math.abs(sy), 0.22, 2.45)
-                    } else if (isLineAsciiBlockStyle) {
-                        cpx = rowLineCenterX + (ci - (nCh - 1) * 0.5) * charStep
-                        cpy = rowLineCenterY
-                        rot = 0.0
-                        sx = clamp(1.0 + state.beatPulse * 0.14, 0.82, 1.45)
-                        sy = sx
                     }
 
                     var palLen = Math.max(1, activeStylePal.length)
@@ -10778,112 +10932,46 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                         ctx.fillStyle = (qGlyph !== ch) ? (useSigCols ? "#FFD166" : colAcc) : colCh
                         ctx.fillText(qGlyph, 0, 0)
                     } else if (textStyle === 16) {
-                        // 16: ASCII Black Block / Multi-Colour Text — line-level dark block strip + vivid multi-colour glyph locked inside
-                        ctx.fillStyle = ((useSigCols && !isPaletteShifted) || (colourMode === 2 && !isEchoT)) ? "#FFFFFF" : colCh
-                        ctx.fillText(ch, 0, 0)
+                        // 16: ASCII Black Block / Multi-Colour Text — Authentic Cool-Retro-Term 7-scanline-row CRT cell (dark CRT glass + glowing horizontal scanline phosphor bars)
+                        var crtW16 = charStep * 0.92
+                        var crtH16 = rowFontPx * 1.08
+                        var fg16 = (useSigCols && !isPaletteShifted) ? "#FF8800" : colCh
+                        var core16 = (useSigCols && !isPaletteShifted) ? "#FFE082" : colAcc
+                        drawCrtScanlineCell(ctx, ch, crtW16, crtH16, fg16, core16, "#0A0500", 0, isEchoT, state.beatPulse)
                     } else if (textStyle === 17) {
-                        // 17: ASCII Vivid Back / Dark Text — line-level vivid block strip + crisp dark glyph locked inside
-                        ctx.fillStyle = (useSigCols && !isPaletteShifted) ? "#050608" : ((colourMode === 2 && !isEchoT) ? "#050608" : colAlt)
-                        ctx.fillText(ch, 0, 0)
+                        // 17: ASCII Vivid Back / Dark Text — Reverse-video 7-scanline-row CRT block where horizontal phosphor bars frame the recessed dark character
+                        var crtW17 = charStep * 0.92
+                        var crtH17 = rowFontPx * 1.08
+                        var fg17 = (useSigCols && !isPaletteShifted) ? "#FF8800" : colCh
+                        var core17 = (useSigCols && !isPaletteShifted) ? "#FFE082" : colAcc
+                        drawCrtScanlineCell(ctx, ch, crtW17, crtH17, fg17, core17, "#050608", 2, isEchoT, state.beatPulse)
                     } else if (textStyle === 18) {
-                        // 18: ASCII Transparent Back / Multi-Colour Text — strictly transparent background (zero fillRect calls) + stroked corner ticks & multi-colour glyph
-                        var asciiTrW = charStep * 0.92
-                        var asciiTrH = rowFontPx * 1.06
-                        if (!isEchoT) {
-                            var tickLen = Math.max(2.0, rowFontPx * 0.12)
-                            ctx.strokeStyle = colourWithAlpha(colAlt, 0.78)
-                            ctx.lineWidth = 1.3
-                            ctx.beginPath()
-                            ctx.moveTo(-asciiTrW * 0.5, -asciiTrH * 0.5 + tickLen)
-                            ctx.lineTo(-asciiTrW * 0.5, -asciiTrH * 0.5)
-                            ctx.lineTo(-asciiTrW * 0.5 + tickLen, -asciiTrH * 0.5)
-                            ctx.moveTo(asciiTrW * 0.5 - tickLen, asciiTrH * 0.5)
-                            ctx.lineTo(asciiTrW * 0.5, asciiTrH * 0.5)
-                            ctx.lineTo(asciiTrW * 0.5, asciiTrH * 0.5 - tickLen)
-                            ctx.stroke()
-                        }
-                        if (!isEchoT && hasStrokeText) {
-                            ctx.lineWidth = Math.max(1.8, rowFontPx * 0.09)
-                            ctx.strokeStyle = colourWithAlpha(colAlt, 0.85)
-                            ctx.strokeText(ch, 0, 0)
-                        }
-                        ctx.fillStyle = colCh
-                        ctx.fillText(ch, 0, 0)
+                        // 18: ASCII Transparent Back / Multi-Colour Text — Pure floating 7-row horizontal CRT phosphor scanline bars (100% transparent background)
+                        var crtW18 = charStep * 0.92
+                        var crtH18 = rowFontPx * 1.08
+                        var fg18 = (useSigCols && !isPaletteShifted) ? "#00FF99" : colCh
+                        var core18 = (useSigCols && !isPaletteShifted) ? "#B8FFF4" : colAcc
+                        drawCrtScanlineCell(ctx, ch, crtW18, crtH18, fg18, core18, null, 1, isEchoT, state.beatPulse)
                     } else if (textStyle === 19) {
-                        // 19: ASCII Coloured Back / Transparent Text — line-level coloured block strip + knockout transparent glyph locked inside
-                        var prevComp19 = ctx.globalCompositeOperation || "source-over"
-                        ctx.globalCompositeOperation = "destination-out"
-                        ctx.fillStyle = "rgba(0, 0, 0, 1.0)"
-                        ctx.fillText(ch, 0, 0)
-                        ctx.globalCompositeOperation = prevComp19
-                        if (hasStrokeText) {
-                            ctx.lineWidth = Math.max(1.2, rowFontPx * 0.06)
-                            ctx.strokeStyle = "rgba(5, 7, 12, 0.85)"
-                            ctx.strokeText(ch, 0, 0)
-                        }
+                        // 19: ASCII Coloured Back / Transparent Text — Reverse-video knockout 7-scanline-row CRT block (complement horizontal scanline bars, transparent glyph cutout)
+                        var crtW19 = charStep * 0.92
+                        var crtH19 = rowFontPx * 1.08
+                        drawCrtScanlineCell(ctx, ch, crtW19, crtH19, colCh, colAlt, null, 3, isEchoT, state.beatPulse)
                     } else {
-                        // 20: ASCII Cell Matrix — Multi-Colour Cool Retro Term individual CRT character cell blocks
-                        // Each character lives strictly inside its own fixed CRT cell block (0, 0) and never moves outside its background,
-                        // while cycling vivid multi-colour palette & CRT phosphor hues across every character cell!
-                        var cellMixW = charStep * 0.90
-                        var cellMixH = rowFontPx * 1.12
-                        var crtInnerFontPx = Math.max(10, Math.floor(rowFontPx * 0.78))
-                        ctx.font = "900 " + crtInnerFontPx + "px " + activeFontFamily
-
-                        // Select per-character multi-colour Cool Retro Term CRT Phosphor & active palette triad
+                        // 20: ASCII Cell Matrix — Authentic Cool-Retro-Term (`crt_ref.png`) 7-scanline-row horizontal phosphor bar matrix!
+                        // Mixes normal lit 7-scanline-bar CRT characters (`crtMode = 0`) and reverse-video 7-scanline-bar CRT blocks (`crtMode = 2` / `3`)
+                        // across Classic P3 Amber (#FF8800), IBM P1 Green (#33FF33), VT100 P4 White (#BCE8FF), and active palette colours!
+                        var cellMixW = charStep * 0.92
+                        var cellMixH = rowFontPx * 1.08
                         var crtSchemeIdx = (ci + rowIdx * 2 + Math.floor(state.hueShift / 30)) % COOL_RETRO_TERM_PHOSPHORS.length
                         var crtScheme = COOL_RETRO_TERM_PHOSPHORS[crtSchemeIdx] || COOL_RETRO_TERM_PHOSPHORS[0]
-                        var useVividCellTriad = (colourMode !== 2)
+                        var useVividCellTriad = (colourMode !== 0 || isPaletteShifted)
                         var crtFg = useVividCellTriad ? (((ci + rowIdx) & 1) === 0 ? colCh : crtScheme.fg) : crtScheme.fg
-                        var crtCore = useVividCellTriad ? (((ci + rowIdx) % 3 === 0) ? colAlt : colAcc) : crtScheme.core
+                        var crtCore = useVividCellTriad ? (((ci + rowIdx) % 3 === 0) ? colAlt : crtScheme.core) : crtScheme.core
                         var crtBg = crtScheme.bg
-                        var crtBezel = useVividCellTriad ? colourWithAlpha(colCh, 0.72) : crtScheme.bezel
-
-                        var cellKind = (ci + rowIdx * 2 + Math.floor(l3T * 4.0)) & 3
-                        if (cellKind === 0 || cellKind === 2) {
-                            // Standard Lit CRT Phosphor Cell: dark phosphor glass cell block + multi-colour bezel + CRT phosphor halation & vivid core glyph locked inside
-                            ctx.fillStyle = colourWithAlpha(crtBg, isEchoT ? 0.80 : 0.96)
-                            ctx.fillRect(-cellMixW * 0.5, -cellMixH * 0.5, cellMixW, cellMixH)
-                            if (!isEchoT && typeof ctx.strokeRect === "function") {
-                                ctx.lineWidth = 1.2
-                                ctx.strokeStyle = colourWithAlpha(crtBezel, cellKind === 0 ? 0.82 : 0.62)
-                                ctx.strokeRect(-cellMixW * 0.5, -cellMixH * 0.5, cellMixW, cellMixH)
-                            }
-                            if (!isEchoT && hasStrokeText) {
-                                ctx.lineWidth = Math.max(2.2, crtInnerFontPx * 0.16)
-                                ctx.strokeStyle = colourWithAlpha(crtFg, 0.48 + state.bassSmooth * 0.28)
-                                ctx.strokeText(ch, 0, 0)
-                            }
-                            ctx.fillStyle = (cellKind === 0) ? crtCore : crtFg
-                            ctx.fillText(ch, 0, 0)
-                        } else if (cellKind === 1) {
-                            // Reverse-Video Multi-Colour CRT Terminal Cell: full lit vivid cell block with dark CRT character locked inside
-                            ctx.fillStyle = colourWithAlpha(crtFg, isEchoT ? 0.82 : 0.95)
-                            ctx.fillRect(-cellMixW * 0.5, -cellMixH * 0.5, cellMixW, cellMixH)
-                            if (!isEchoT && typeof ctx.strokeRect === "function") {
-                                ctx.lineWidth = 1.2
-                                ctx.strokeStyle = colourWithAlpha(crtCore, 0.88)
-                                ctx.strokeRect(-cellMixW * 0.5, -cellMixH * 0.5, cellMixW, cellMixH)
-                            }
-                            ctx.fillStyle = crtBg
-                            ctx.fillText(ch, 0, 0)
-                        } else {
-                            // Reverse-Video Knockout Multi-Colour CRT Cursor Cell: lit vivid block with destination-out knockout glyph locked inside
-                            ctx.fillStyle = colourWithAlpha(crtCore, isEchoT ? 0.80 : 0.94)
-                            ctx.fillRect(-cellMixW * 0.5, -cellMixH * 0.5, cellMixW, cellMixH)
-                            var prevComp20 = ctx.globalCompositeOperation || "source-over"
-                            ctx.globalCompositeOperation = "destination-out"
-                            ctx.fillStyle = "rgba(0, 0, 0, 1.0)"
-                            ctx.fillText(ch, 0, 0)
-                            ctx.globalCompositeOperation = prevComp20
-                            if (hasStrokeText) {
-                                ctx.lineWidth = Math.max(1.1, crtInnerFontPx * 0.06)
-                                ctx.strokeStyle = crtBg
-                                ctx.strokeText(ch, 0, 0)
-                            }
-                        }
-                        // Restore row font for subsequent characters
-                        ctx.font = fontSlope + rowFontPx + "px " + activeFontFamily
+                        var cellKind = (ch === "█") ? 0 : ((ci + rowIdx * 2 + Math.floor(l3T * 2.5)) & 3)
+                        var cellCrtMode = (cellKind === 1) ? 2 : ((cellKind === 3) ? 3 : 0)
+                        drawCrtScanlineCell(ctx, ch, cellMixW, cellMixH, crtFg, crtCore, crtBg, cellCrtMode, isEchoT, state.beatPulse)
                     }
                     ctx.restore()
 

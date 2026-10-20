@@ -2122,46 +2122,37 @@ for (let st = 0; st < 21; st++) {
         }, 0, []);
         const palTypo = buildPalette(theme, state.hueShift, cfgTypo.palette);
         drawLayer3AlbumArt(ctxTypo, 640, 360, state, palTypo, cfgTypo, [], []);
-        if (ctxTypo.fillTextCount < 1) {
-            throw new Error('Typography style ' + st + ' colourMode ' + cm + ' failed to render text');
-        }
-        // Styles 16, 17, 19 must render a single line-level block strip per row (1 fillRect for 1 row with layer3Tracers=1)
-        if ((st === 16 || st === 17 || st === 19) && ctxTypo.fillRectCount !== 1) {
-            throw new Error('Line-level ASCII style ' + st + ' must draw 1 line-level fillRect per row, got ' + ctxTypo.fillRectCount);
-        }
-        // Style 18 ("ASCII Transparent Back / Text") must strictly have zero filled rectangles (transparent background)
-        if (st === 18 && ctxTypo.fillRectCount !== 0) {
-            throw new Error('Style 18 (ASCII Transparent Back / Text) must have 0 fillRect calls, got ' + ctxTypo.fillRectCount);
-        }
-        // Style 19 ("ASCII Coloured Back / Transparent Text") must punch out transparent glyphs via destination-out inside line-level coloured block
-        if (st === 19 && (ctxTypo.destOutCount < 1 || ctxTypo.fillRectCount !== 1)) {
-            throw new Error('Style 19 (ASCII Coloured Back / Transparent Text) must draw line-level coloured block and destination-out glyph knockout');
-        }
-        // Style 20 ("ASCII Cell Matrix") must render character-level mixed cells (multiple per-character fillRects + destination-out knockout cells)
-        if (st === 20 && (ctxTypo.fillRectCount < 4 || ctxTypo.destOutCount < 1)) {
-            throw new Error('Style 20 (ASCII Cell Matrix) must mix character-level blocks and knockout cells, got fillRect=' + ctxTypo.fillRectCount + ' destOut=' + ctxTypo.destOutCount);
+        if (st < 16) {
+            if (ctxTypo.fillTextCount < 1) {
+                throw new Error('Typography style ' + st + ' colourMode ' + cm + ' failed to render text');
+            }
+        } else {
+            // Styles 16..20 are authentic Cool-Retro-Term 7-scanline-row horizontal phosphor bar cells (rendered via drawCrtScanlineCell fillRect bars, zero fillText)
+            if (ctxTypo.fillTextCount !== 0 || ctxTypo.fillRectCount < 20) {
+                throw new Error('CRT Scanline ASCII style ' + st + ' colourMode ' + cm + ' must render 7-row horizontal scanline phosphor bars via fillRect, got fillRect=' + ctxTypo.fillRectCount + ' fillText=' + ctxTypo.fillTextCount);
+            }
         }
     }
 }
-// Verify shifting palette (paletteIndex > 0) shifts Style 16 text colour and Style 17 block colour
+// Verify shifting palette (paletteIndex > 0) shifts Style 16 & Style 17 CRT phosphor bar colours
 const ctxS16Default = makeStrictCtx();
 const ctxS16Shifted = makeStrictCtx();
 const cfg16Def = normaliseConfig({
     layer1Enabled: false, layer2Enabled: false, layer3Enabled: true,
     useAlbumArt: false, asciiMode: 'text', palette: 0, layer3Tracers: 1,
     layer3Mode: 0, layer3TextStyle: 16, layer3ColourMode: 0,
-    layer3ShowArtist: false, layer3ShowTrack: true, layer3ShowAlbum: false, trackTitle: 'ASCII'
+    layer3ShowArtist: false, layer3ShowTrack: true, layer3ShowAlbum: false, trackTitle: 'CRT'
 }, 0, []);
 const cfg16Shf = normaliseConfig({
     layer1Enabled: false, layer2Enabled: false, layer3Enabled: true,
     useAlbumArt: false, asciiMode: 'text', palette: 3, layer3Tracers: 1,
     layer3Mode: 0, layer3TextStyle: 16, layer3ColourMode: 0,
-    layer3ShowArtist: false, layer3ShowTrack: true, layer3ShowAlbum: false, trackTitle: 'ASCII'
+    layer3ShowArtist: false, layer3ShowTrack: true, layer3ShowAlbum: false, trackTitle: 'CRT'
 }, 3, []);
 drawLayer3AlbumArt(ctxS16Default, 640, 360, state, buildPalette(theme, state.hueShift, 0), cfg16Def, [], []);
 drawLayer3AlbumArt(ctxS16Shifted, 640, 360, state, buildPalette(theme, state.hueShift, 3), cfg16Shf, [], []);
-if (ctxS16Default.fillTextStyles[0] !== '#FFFFFF' || ctxS16Shifted.fillTextStyles[0] === '#FFFFFF') {
-    throw new Error('Style 16 must default to #FFFFFF text and shift text colour when palette changes');
+if (ctxS16Default.fillRectStyles.join(',') === ctxS16Shifted.fillRectStyles.join(',')) {
+    throw new Error('Style 16 must shift its CRT scanline phosphor bar colours when palette changes');
 }
 const ctxS17Default = makeStrictCtx();
 const ctxS17Shifted = makeStrictCtx();
@@ -2169,18 +2160,18 @@ const cfg17Def = normaliseConfig({
     layer1Enabled: false, layer2Enabled: false, layer3Enabled: true,
     useAlbumArt: false, asciiMode: 'text', palette: 0, layer3Tracers: 1,
     layer3Mode: 0, layer3TextStyle: 17, layer3ColourMode: 0,
-    layer3ShowArtist: false, layer3ShowTrack: true, layer3ShowAlbum: false, trackTitle: 'ASCII'
+    layer3ShowArtist: false, layer3ShowTrack: true, layer3ShowAlbum: false, trackTitle: 'CRT'
 }, 0, []);
 const cfg17Shf = normaliseConfig({
     layer1Enabled: false, layer2Enabled: false, layer3Enabled: true,
     useAlbumArt: false, asciiMode: 'text', palette: 3, layer3Tracers: 1,
     layer3Mode: 0, layer3TextStyle: 17, layer3ColourMode: 0,
-    layer3ShowArtist: false, layer3ShowTrack: true, layer3ShowAlbum: false, trackTitle: 'ASCII'
+    layer3ShowArtist: false, layer3ShowTrack: true, layer3ShowAlbum: false, trackTitle: 'CRT'
 }, 3, []);
 drawLayer3AlbumArt(ctxS17Default, 640, 360, state, buildPalette(theme, state.hueShift, 0), cfg17Def, [], []);
 drawLayer3AlbumArt(ctxS17Shifted, 640, 360, state, buildPalette(theme, state.hueShift, 3), cfg17Shf, [], []);
-if (ctxS17Default.fillRectStyles[0] === ctxS17Shifted.fillRectStyles[0]) {
-    throw new Error('Style 17 must shift its line-level backing block colour when palette changes');
+if (ctxS17Default.fillRectStyles.join(',') === ctxS17Shifted.fillRectStyles.join(',')) {
+    throw new Error('Style 17 must shift its reverse-video CRT scanline phosphor bar colours when palette changes');
 }
 
 
@@ -2218,7 +2209,7 @@ const actState = PhotoMotion.createPhotoMotionState();
 actState.photoMotionActivity = 1.65;
 actState.photoXyzTilt = 1.80;
 actState.photoWarpIntensity = 1.45;
-actState.photoStrobeSpeed = 2.10;
+actState.photoStrobeSpeed = 1.85;
 PhotoMotion.togglePhotoRandomiseMotionControls(actState, true, () => 0.15);
 if (!actState.randomiseMotionControls || (actState.photoMotionActivity === 1.65 && actState.photoXyzTilt === 1.80)) {
     throw new Error('Expected togglePhotoRandomiseMotionControls(true) to enable persistent toggle and randomise live motion controls');
@@ -2233,7 +2224,7 @@ if (actState.randomiseMotionControls ||
     Math.abs(actState.photoMotionActivity - 1.65) > 1e-6 ||
     Math.abs(actState.photoXyzTilt - 1.80) > 1e-6 ||
     Math.abs(actState.photoWarpIntensity - 1.45) > 1e-6 ||
-    Math.abs(actState.photoStrobeSpeed - 2.10) > 1e-6) {
+    Math.abs(actState.photoStrobeSpeed - 1.85) > 1e-6) {
     throw new Error('Switching Rand Photo Motion OFF must restore user motion settings, got ' + JSON.stringify(actState));
 }
 
@@ -2908,8 +2899,8 @@ for (let cm = 0; cm < 4; cm++) {
     }, 0, []);
     const ctxCrt = makeTrackCtx();
     renderFrame(ctxCrt, 1280, 720, stTypo, 0, theme, [], [], [], cfgCrt, null);
-    if (ctxCrt.fillCount < 10 || ctxCrt.strokeCount < 5) {
-        throw new Error(`Expected ASCII Cell Matrix (textStyle=20, colourMode=${cm}) to render CRT cells and text`);
+    if (ctxCrt.fillCount < 40) {
+        throw new Error(`Expected ASCII Cell Matrix (textStyle=20, colourMode=${cm}) to render 7-scanline-row CRT cells, got fillCount=${ctxCrt.fillCount}`);
     }
 }
 
