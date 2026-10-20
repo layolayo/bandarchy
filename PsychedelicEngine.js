@@ -851,50 +851,31 @@ function buildPalette(theme, hueShift, paletteIndex) {
     var palIdx = ((Number(paletteIndex) || 0) % PALETTES.length + PALETTES.length) % PALETTES.length
     var preset = PALETTES[palIdx] || PALETTES[0]
     var h = Number(hueShift) || 0
-    if (palIdx >= DARK_PALETTE_START_INDEX) {
-        // Dark Horror, Gritty Drama, Noir & Thriller palettes:
-        // Derive all 16 slots directly from the 6 dark swatches with subtle atmospheric drift,
-        // avoiding bright neon rainbow HSL injection in slots 6..15.
-        var darkOut = [
-            preset[0],
-            preset[1],
-            preset[2],
-            preset[3],
-            preset[4],
-            preset[5]
-        ]
-        var driftDeg = Math.sin((h * Math.PI) / 180.0) * 12.0
-        for (var di = 6; di < 16; di++) {
-            var baseHex = preset[di % 6]
-            var dHsl = rgbToHsl(baseHex)
-            var lDelta = ((di % 3) - 1) * 0.06
-            var sScale = (di % 2 === 0) ? 0.92 : 1.06
-            darkOut.push(hslToHex(
-                dHsl[0] + driftDeg * ((di % 2 === 0) ? 1.0 : -0.7),
-                clamp(dHsl[1] * sScale, 0.06, 0.78),
-                clamp(dHsl[2] + lDelta, 0.12, 0.54)
-            ))
-        }
-        return darkOut
-    }
-    return [
+    var isDark = palIdx >= DARK_PALETTE_START_INDEX
+    // Derive all 16 slots directly from the 6 swatches of the selected palette
+    // with subtle harmonic drift so 100% of visualiser layers stay locked to the chosen palette
+    // rather than being overwritten by a generic 360° rainbow.
+    var out = [
         preset[0],
         preset[1],
         preset[2],
         preset[3],
         preset[4],
-        preset[5],
-        (theme && theme.accent) ? theme.accent.toString() : "#6ee7b7",
-        (theme && theme.urgent) ? theme.urgent.toString() : "#f472b6",
-        hslToHex(h, 0.96, 0.58),
-        hslToHex(h + 45, 0.96, 0.60),
-        hslToHex(h + 95, 0.95, 0.58),
-        hslToHex(h + 145, 0.94, 0.60),
-        hslToHex(h + 195, 0.96, 0.62),
-        hslToHex(h + 245, 0.95, 0.60),
-        hslToHex(h + 295, 0.96, 0.62),
-        hslToHex(h + 335, 0.98, 0.68)
+        preset[5]
     ]
+    var driftDeg = Math.sin((h * Math.PI) / 180.0) * (isDark ? 12.0 : 16.0)
+    for (var di = 6; di < 16; di++) {
+        var baseHex = preset[di % 6]
+        var dHsl = rgbToHsl(baseHex)
+        var lDelta = ((di % 3) - 1) * (isDark ? 0.06 : 0.08)
+        var sScale = (di % 2 === 0) ? 0.94 : 1.06
+        out.push(hslToHex(
+            dHsl[0] + driftDeg * ((di % 2 === 0) ? 1.0 : -0.75),
+            clamp(dHsl[1] * sScale, isDark ? 0.06 : 0.35, isDark ? 0.78 : 1.0),
+            clamp(dHsl[2] + lDelta, isDark ? 0.12 : 0.38, isDark ? 0.54 : 0.78)
+        ))
+    }
+    return out
 }
 
 function createState() {
@@ -5162,24 +5143,24 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 }
             }
 
-            // Continuous, smooth Lissajous / Figure-8 / slalom trajectory in local stage coordinates
+            // Continuous, smooth Lissajous / Figure-8 / slalom trajectory across an extended wide board
             var roamRate = 0.36 + l1Spd * 0.12
             var roamT = l1T * roamRate
-            var roamRx = w * 0.34
-            var roamRy = h * 0.28
+            var roamRx = w * 0.62
+            var roamRy = h * 0.54
             var evalLocalPacCurve = function (uVal) {
                 return {
-                    lx: Math.sin(uVal * 1.0) * roamRx + Math.cos(uVal * 2.0) * (w * 0.06),
-                    ly: Math.sin(uVal * 2.0) * roamRy * 0.72 + Math.sin(uVal * 3.0) * (h * 0.05)
+                    lx: Math.sin(uVal * 1.0) * roamRx + Math.cos(uVal * 2.0) * (w * 0.11),
+                    ly: Math.sin(uVal * 2.0) * roamRy * 0.76 + Math.sin(uVal * 3.0) * (h * 0.09)
                 }
             }
 
-            // 4 Classic Arcade Ghosts trajectories in local board coordinates
+            // 4 Classic Arcade Ghosts trajectories in extended local board coordinates, driven by active palette
             var ghostSpecs = [
-                { name: "BLINKY", col: "#FF1E38", rim: "#FF94A2", fx: 0.72, fy: 0.95, px: 0.4,  py: 1.1, rx: 0.34, ry: 0.28 },
-                { name: "PINKY",  col: "#FF82D8", rim: "#FBCFE8", fx: 0.88, fy: 0.64, px: 2.1,  py: 2.6, rx: 0.36, ry: 0.30 },
-                { name: "INKY",   col: "#00F5FF", rim: "#A5F3FC", fx: 0.63, fy: 1.12, px: 3.8,  py: 0.7, rx: 0.32, ry: 0.27 },
-                { name: "CLYDE",  col: "#FFB84D", rim: "#FED7AA", fx: 0.54, fy: 0.78, px: 5.1,  py: 4.2, rx: 0.38, ry: 0.32 }
+                { name: "BLINKY", col: palette[1 % palette.length] || "#FF1E38", rim: palette[4 % palette.length] || "#FF94A2", fx: 0.72, fy: 0.95, px: 0.4,  py: 1.1, rx: 0.60, ry: 0.50 },
+                { name: "PINKY",  col: palette[2 % palette.length] || "#FF82D8", rim: palette[5 % palette.length] || "#FBCFE8", fx: 0.88, fy: 0.64, px: 2.1,  py: 2.6, rx: 0.64, ry: 0.54 },
+                { name: "INKY",   col: palette[0 % palette.length] || "#00F5FF", rim: palette[3 % palette.length] || "#A5F3FC", fx: 0.63, fy: 1.12, px: 3.8,  py: 0.7, rx: 0.58, ry: 0.48 },
+                { name: "CLYDE",  col: palette[3 % palette.length] || "#FFB84D", rim: palette[0 % palette.length] || "#FED7AA", fx: 0.54, fy: 0.78, px: 5.1,  py: 4.2, rx: 0.68, ry: 0.56 }
             ]
             var ghostRate = 0.48 + l1Spd * 0.14
             var evalLocalGhostPos = function (gi, tPlane) {
@@ -5497,107 +5478,35 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 ctx.restore()
             }
 
-            // 1. 3D Flipping Arcade Rave Table / Board (Dual-Deck Surface Grid + 3D Slab Side-Wall Rim & Bumpers)
-            var isBoardFlipped = boardPose.normalZ < 0.0
-            var topGridCol = palette[0] || "#22d3ee"
-            var botGridCol = palette[1 % palette.length] || "#f43f5e"
-            var rimNeonCol = palette[2 % palette.length] || "#a855f7"
-            var activeDeckCol = isBoardFlipped ? botGridCol : topGridCol
-            var backDeckCol = isBoardFlipped ? topGridCol : botGridCol
-            var halfSpanX = w * 0.46
-            var halfSpanY = h * 0.42
-            var boardThick = minDim * 0.044
-            var zFrontDeck = isBoardFlipped ? (boardThick * 0.5) : (-boardThick * 0.5)
-            var zBackDeck = -zFrontDeck
-            var gridLines = 8
-
-            // 1a. Back/Opposite Deck Parallax Grid (visible through the translucent neon table as it tilts & flips)
-            ctx.strokeStyle = colourWithAlpha(backDeckCol, clamp(0.11 * l1Opac, 0.03, 0.22))
-            ctx.lineWidth = 1.0
-            ctx.beginPath()
-            for (var biLine = 0; biLine <= gridLines; biLine++) {
-                var bf = (biLine / gridLines) * 2.0 - 1.0
-                var bA = projectRavePlane(bf * halfSpanX, -halfSpanY, zBackDeck)
-                var bB = projectRavePlane(bf * halfSpanX,  halfSpanY, zBackDeck)
-                ctx.moveTo(bA.x, bA.y)
-                ctx.lineTo(bB.x, bB.y)
-                var bC = projectRavePlane(-halfSpanX, bf * halfSpanY, zBackDeck)
-                var bD = projectRavePlane( halfSpanX, bf * halfSpanY, zBackDeck)
-                ctx.moveTo(bC.x, bC.y)
-                ctx.lineTo(bD.x, bD.y)
-            }
-            ctx.stroke()
-
-            // 1b. 3D Table Slab Side-Wall Struts & Dual Perimeter Bezel (shows 3D board thickness during steep tilts & 180°/360° flips)
-            ctx.strokeStyle = colourWithAlpha(rimNeonCol, clamp((0.28 + 0.18 * boardPose.flipActivity) * l1Opac, 0.08, 0.52))
-            ctx.lineWidth = 1.5
-            ctx.beginPath()
-            for (var si = 0; si <= gridLines; si++) {
-                var sf = (si / gridLines) * 2.0 - 1.0
-                var sTopN = projectRavePlane(sf * halfSpanX, -halfSpanY, zFrontDeck)
-                var sBotN = projectRavePlane(sf * halfSpanX, -halfSpanY, zBackDeck)
-                ctx.moveTo(sTopN.x, sTopN.y)
-                ctx.lineTo(sBotN.x, sBotN.y)
-                var sTopS = projectRavePlane(sf * halfSpanX, halfSpanY, zFrontDeck)
-                var sBotS = projectRavePlane(sf * halfSpanX, halfSpanY, zBackDeck)
-                ctx.moveTo(sTopS.x, sTopS.y)
-                ctx.lineTo(sBotS.x, sBotS.y)
-                if (si > 0 && si < gridLines) {
-                    var sTopW = projectRavePlane(-halfSpanX, sf * halfSpanY, zFrontDeck)
-                    var sBotW = projectRavePlane(-halfSpanX, sf * halfSpanY, zBackDeck)
-                    ctx.moveTo(sTopW.x, sTopW.y)
-                    ctx.lineTo(sBotW.x, sBotW.y)
-                    var sTopE = projectRavePlane(halfSpanX, sf * halfSpanY, zFrontDeck)
-                    var sBotE = projectRavePlane(halfSpanX, sf * halfSpanY, zBackDeck)
-                    ctx.moveTo(sTopE.x, sTopE.y)
-                    ctx.lineTo(sBotE.x, sBotE.y)
-                }
-            }
-            ctx.stroke()
-
-            // 1c. Active Front Deck Grid + Highlighted Neon Table Rim
-            ctx.strokeStyle = colourWithAlpha(activeDeckCol, clamp((0.20 + 0.10 * boardPose.flipActivity) * l1Opac, 0.06, 0.38))
-            ctx.lineWidth = 1.25
-            ctx.beginPath()
-            for (var giLine = 0; giLine <= gridLines; giLine++) {
-                var gf = (giLine / gridLines) * 2.0 - 1.0
-                var gA = projectRavePlane(gf * halfSpanX, -halfSpanY, zFrontDeck)
-                var gB = projectRavePlane(gf * halfSpanX,  halfSpanY, zFrontDeck)
-                ctx.moveTo(gA.x, gA.y)
-                ctx.lineTo(gB.x, gB.y)
-                var gC = projectRavePlane(-halfSpanX, gf * halfSpanY, zFrontDeck)
-                var gD = projectRavePlane( halfSpanX, gf * halfSpanY, zFrontDeck)
-                ctx.moveTo(gC.x, gC.y)
-                ctx.lineTo(gD.x, gD.y)
-            }
-            ctx.stroke()
-
-            // 2. Open Free-Roaming Constellation & Curve Trail of Spinning 3D 'E' Pills
-            var colsCount = clamp(Math.round(5 + l1Den * 2.0), 5, 8)
-            var rowsCount = clamp(Math.round(4 + l1Den * 1.5), 4, 6)
-            var spanX = w * 0.76
-            var spanY = h * 0.68
+            // 1. Extended Free-Roaming Constellation & Curve Trail of Spinning 3D 'E' Pills (Zero internal construction grid lines!)
+            var colsCount = clamp(Math.round(7 + l1Den * 2.0), 7, 10)
+            var rowsCount = clamp(Math.round(5 + l1Den * 1.5), 5, 8)
+            var spanX = w * 1.48
+            var spanY = h * 1.34
             var basePillR = minDim * 0.024 * (1.0 + state.beatPulse * 0.16)
             var chompRadius = minDim * 0.095
+            var pillRimHex = palette[4 % palette.length] || "#ffffff"
+            var pillEGlyphHex = palette[3 % palette.length] || "#fef08a"
 
             for (var rIdx = 0; rIdx < rowsCount; rIdx++) {
                 for (var cIdx = 0; cIdx < colsCount; cIdx++) {
                     var seed = rIdx * 13 + cIdx * 7
                     var uCell = (colsCount > 1 ? cIdx / (colsCount - 1) : 0.5) - 0.5
                     var vCell = (rowsCount > 1 ? rIdx / (rowsCount - 1) : 0.5) - 0.5
-                    // Gentle organic float in local plane coordinates before 3D plane tilt & flip
-                    var plx = uCell * spanX + Math.sin(l1T * 1.15 + seed * 1.7) * (minDim * 0.025)
-                    var ply = vCell * spanY + Math.cos(l1T * 1.35 + seed * 2.3) * (minDim * 0.025)
+                    // Gentle organic float in extended local plane coordinates before 3D plane tilt & flip
+                    var plx = uCell * spanX + Math.sin(l1T * 1.15 + seed * 1.7) * (minDim * 0.032)
+                    var ply = vCell * spanY + Math.cos(l1T * 1.35 + seed * 2.3) * (minDim * 0.032)
                     var pillPrj = projectRavePlane(plx, ply, 0.0)
                     var px = pillPrj.x
                     var py = pillPrj.y
+                    if (px < -w * 0.25 || px > w * 1.25 || py < -h * 0.25 || py > h * 1.25) continue
                     var pillSc = clamp(pillPrj.sc, 0.35, 2.65)
                     var isPower = ((rIdx === 0 || rIdx === rowsCount - 1) && (cIdx === 0 || cIdx === colsCount - 1)) || ((seed % 11) === 0)
                     var pillR = basePillR * (isPower ? 1.55 : 1.0) * pillSc
                     var distToPac = Math.hypot(plx - pacLX, ply - pacLY)
                     var pillCol = isPower
                         ? (palette[1 % palette.length] || "#f43f5e")
-                        : (palette[(2 + (seed % 3)) % palette.length] || "#a855f7")
+                        : (palette[(2 + (seed % 4)) % palette.length] || "#a855f7")
 
                     if (distToPac < chompRadius) {
                         // Pac-Man is chomping over this pill: draw multi-ray CRT starburst flash!
@@ -5613,8 +5522,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                             pillSpin,
                             pillTilt,
                             pillCol,
-                            "#ffffff",
-                            "#fef08a",
+                            pillRimHex,
+                            pillEGlyphHex,
                             l1Opac * 0.92,
                             isPower
                         )
@@ -5623,9 +5532,9 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             }
 
             // Trail of 'E' rave pills directly along Pac-Man's Lissajous curve so he continuously chomps & pops pills
-            var trailStepU = 0.26 / clamp(0.65 + l1Den * 0.35, 0.55, 1.65)
+            var trailStepU = 0.24 / clamp(0.65 + l1Den * 0.35, 0.55, 1.65)
             var curStationIdx = Math.floor(roamT / trailStepU)
-            for (var sk = curStationIdx - 8; sk <= curStationIdx + 12; sk++) {
+            for (var sk = curStationIdx - 10; sk <= curStationIdx + 14; sk++) {
                 var uStation = sk * trailStepU
                 var passedU = (roamT - uStation) * dirSign
                 var stLoc = evalLocalPacCurve(uStation)
@@ -5646,15 +5555,15 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                         state.t * 3.4 + sk * 0.85 + stagePitch * 0.5,
                         Math.sin(stageRoll) * 0.55 + Math.sin(state.t * 2.0 + sk) * 0.24,
                         stCol,
-                        "#ffffff",
-                        "#fef08a",
+                        pillRimHex,
+                        pillEGlyphHex,
                         l1Opac * aheadFade,
                         isPowerSt
                     )
                 }
             }
 
-            // 3. 4 Classic Arcade Ghosts Free-Roaming Upright Across the Tilting & Flipping Pill Table
+            // 2. 4 Classic Arcade Ghosts Free-Roaming Upright Across the Tilting & Flipping Pill Field
             var baseGhostR = minDim * 0.046 * (1.0 + state.bassSmooth * 0.14)
             for (var gi = 0; gi < 4; gi++) {
                 var gs = ghostSpecs[gi]
@@ -5674,11 +5583,13 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 )
             }
 
-            // 4. Upright Yellow CRT Rave-Man Gliding Smoothly & Chomping Consistently Every Frame!
+            // 3. Upright CRT Rave-Man Gliding Smoothly & Chomping Consistently Every Frame!
             var pacSc = clamp(pacPrj.sc, 0.45, 2.70)
             var pacR = minDim * 0.068 * pacSc * (1.0 + state.beatPulse * 0.14)
             var chompAngle = 0.06 + 0.72 * Math.abs(Math.sin(state.t * 10.0))
             var pacScanRows = Math.round(clamp(17 * Math.sqrt(pacSc * 0.85), 15, 23))
+            var pacPrimaryCol = isDarkMoodPalette(cfg && cfg.palette) ? (palette[3 % palette.length] || "#d97706") : "#facc15"
+            var pacHighlightCol = isDarkMoodPalette(cfg && cfg.palette) ? (palette[5 % palette.length] || "#fde68a") : "#fef9c3"
 
             ctx.save()
             ctx.translate(pacX, pacY)
@@ -5689,7 +5600,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             var backUY = -vy / speedNorm
             for (var wk = 1; wk <= 3; wk++) {
                 var wkAlpha = (0.28 / wk) * l1Opac
-                ctx.strokeStyle = colourWithAlpha("#facc15", wkAlpha)
+                ctx.strokeStyle = colourWithAlpha(pacPrimaryCol, wkAlpha)
                 ctx.lineWidth = 1.6
                 ctx.beginPath()
                 ctx.arc(backUX * pacR * 0.48 * wk, backUY * pacR * 0.48 * wk, pacR * (1.0 - wk * 0.18), mouthDir + chompAngle, mouthDir + TAU - chompAngle)
@@ -5705,8 +5616,8 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
 
             for (var pass = 0; pass < 2; pass++) {
                 ctx.strokeStyle = pass === 0
-                    ? colourWithAlpha("#facc15", l1Opac * 0.98)
-                    : colourWithAlpha("#fef9c3", l1Opac * 0.86)
+                    ? colourWithAlpha(pacPrimaryCol, l1Opac * 0.98)
+                    : colourWithAlpha(pacHighlightCol, l1Opac * 0.86)
                 ctx.lineWidth = pass === 0
                     ? Math.max(2.6, (pacR * 1.85) / pacScanRows)
                     : Math.max(1.2, (pacR * 0.85) / pacScanRows)
@@ -5747,7 +5658,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             }
 
             // Crisp Neon Yellow Perimeter Arc & Chomping Jaw Edges so the bite is unmistakable
-            ctx.strokeStyle = colourWithAlpha("#fef08a", l1Opac * 0.96)
+            ctx.strokeStyle = colourWithAlpha(pacHighlightCol, l1Opac * 0.96)
             ctx.lineWidth = 2.4
             ctx.beginPath()
             ctx.moveTo(0, 0)
@@ -12223,7 +12134,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     var isDarkGlobalPal = isDarkMoodPalette(cfg.palette)
     var activeStylePal = hasCustomL3Pal
         ? cfg.layer3CustomPalette
-        : ((colourMode === 0 && !isDarkGlobalPal && !(isAsciiStyle && isPaletteShifted))
+        : ((colourMode === 0 && !isDarkGlobalPal && !isPaletteShifted)
             ? (LAYER3_STYLE_PALETTES[textStyle] || palette)
             : ((palette && palette.length > 0) ? palette : LAYER3_STYLE_PALETTES[textStyle]))
     var fontPresetIdx = clamp(Math.round(Number(cfg.layer3FontPreset !== undefined ? cfg.layer3FontPreset : 0)), 0, LAYER3_FONT_PRESET_FAMILIES.length - 1)

@@ -72,7 +72,9 @@ FocusScope {
         "Tokyo", "Plasma", "Acid303", "Outrun", "Holo",
         "DMT", "Cryo", "Magma", "Vapor", "Supernova",
         "Jungle", "Strobe", "Amethyst", "Copper", "Abalone",
-        "Isotope", "Quasar", "Crimson", "Oceanic", "Prismatic"
+        "Isotope", "Quasar", "Crimson", "Oceanic", "Prismatic",
+        "DarkHorror", "GrittyDrama", "NoirThrill", "GialloSlash", "PsychDread", "Eldritch",
+        "AshWasteland", "NordicNoir", "OccultRitual", "MorgueSteel", "CyberThrill", "VampireCrypt"
     ]
     readonly property var trackArcModes: Engine.TRACK_ARC_MODES
 
@@ -163,6 +165,29 @@ FocusScope {
     property int visualMode: 0
     property alias layer2Mode: root.visualMode
     property int paletteIndex: 0
+    onPaletteIndexChanged: {
+        var pal = Engine.PALETTES[root.paletteIndex % Engine.PALETTES.length]
+        if (pal && pal.length >= 3) {
+            var c0 = root.hexToVec4(pal[0])
+            var c1 = root.hexToVec4(pal[2 % pal.length])
+            var c2 = root.hexToVec4(pal[4 % pal.length])
+            if (typeof gpuShaderStage !== "undefined" && gpuShaderStage) {
+                gpuShaderStage.uCol0 = c0
+                gpuShaderStage.uCol1 = c1
+                gpuShaderStage.uCol2 = c2
+            }
+            if (typeof gpuPhotoStage !== "undefined" && gpuPhotoStage) {
+                gpuPhotoStage.uCol0 = c0
+                gpuPhotoStage.uCol1 = c1
+                gpuPhotoStage.uCol2 = c2
+            }
+        }
+        clearCanvasImmediate()
+        if (typeof vizCanvas !== "undefined" && vizCanvas) {
+            vizCanvas.requestPaint()
+        }
+        scheduleSaveVisualiserConfig()
+    }
     property int symmetryIndex: 0
     property bool autoCycle: false
     property real sensitivity: 1.35
