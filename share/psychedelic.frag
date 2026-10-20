@@ -973,23 +973,24 @@ void main() {
                     vec2 cTopR = vec2(xMid + cellW * 0.22 + aimShift, y3);
                     vec2 cPeak = vec2(xMid + aimShift * 1.1, yCupola);
 
-                    // Gun breeches mounted on the turret cheeks at depth zF, with muzzles projecting FORWARD in 3D (-z towards camera!)
-                    float fireCycle = fract(abs(l1T) * 0.72 + rowIdx * 0.37 + float(tSlot) * 0.53);
+                    // Gun breeches mounted on the Red Stage 3 gun head at depth zF, with muzzles projecting FORWARD in 3D (-z towards camera!)
+                    // Driven by strictly monotonic forward time uTime so bolts ALWAYS fire out of the muzzles towards the camera
+                    float fireCycle = fract(uTime * 1.45 + rowIdx * 0.37 + float(tSlot) * 0.53);
                     float recoil = exp(-fireCycle * 8.0) * 0.06;
-                    vec2 breechL = vec2(xMid - cellW * 0.30 + aimShift, mix(y1, y2, 0.55));
-                    vec2 breechR = vec2(xMid + cellW * 0.30 + aimShift, mix(y1, y2, 0.55));
+                    float gunHeadRatio = (1.72 + 0.20 * uBass) * 0.85 - 1.0; // ~0.50 above camera horizon
+                    vec2 breechL = vec2(xMid - cellW * 0.26 + aimShift, horizonOffset - gunHeadRatio * hyF);
+                    vec2 breechR = vec2(xMid + cellW * 0.26 + aimShift, horizonOffset - gunHeadRatio * hyF);
 
                     // True 3D perspective projection for the gun muzzles (closer to the camera at zMuzzle < zF)
-                    // and incoming laser bolts/missiles flying from zMuzzle -> zNear (0.22) towards the player!
-                    float zMuzzle = max(0.22, zF - (0.28 - recoil));
+                    // and incoming laser bolts/missiles flying from zMuzzle -> zNear (0.18) past the player's canopy!
+                    float zMuzzle = max(0.22, zF - (0.30 - recoil));
                     float scaleXMuz = 1.0 / (gridScaleX * zMuzzle);
                     float hyMuz = 0.26 / zMuzzle;
-                    // Aim from turret world X (gx0 + 0.5) slightly towards the player's camPanX lane, but keeping clear of direct centre impact
                     float gxTurret = gx0 + 0.5;
-                    float aimTowardPlayer = clamp(camPanX - gxTurret, -2.2, 2.2) * 0.14;
-                    float gxMuzL = gxTurret - 0.26 + aimTowardPlayer;
-                    float gxMuzR = gxTurret + 0.26 + aimTowardPlayer;
-                    float yMuz = horizonOffset + hyMuz - hyMuz * (1.02 + 0.12 * uBass);
+                    float aimTowardPlayer = clamp(camPanX - gxTurret, -2.2, 2.2) * 0.16;
+                    float gxMuzL = gxTurret - 0.24 + aimTowardPlayer;
+                    float gxMuzR = gxTurret + 0.24 + aimTowardPlayer;
+                    float yMuz = horizonOffset - gunHeadRatio * hyMuz;
                     vec2 muzzleL = vec2((gxMuzL - camPanX) * scaleXMuz, yMuz);
                     vec2 muzzleR = vec2((gxMuzR - camPanX) * scaleXMuz, yMuz);
                     vec2 railOffset = vec2(0.0, -totalH * 0.048);
@@ -1008,10 +1009,10 @@ void main() {
                                     + segGlow(bp, muzzleR, muzzleR + railOffset, lw);
 
                     // Incoming 3D Laser Bolts / Missiles travelling FORWARD from the turret muzzles (zMuzzle)
-                    // towards the foreground camera (zNear = 0.20) as we fly forward!
+                    // towards the foreground camera canopy (zNear = 0.18) as we fly forward!
                     float laserBolts = 0.0;
-                    if (zF > 0.55) {
-                        float zNear = 0.20;
+                    if (zF > 0.48) {
+                        float zNear = 0.18;
                         float s0 = fireCycle;
                         float s1 = min(1.0, fireCycle + 0.16);
                         float zB0 = mix(zMuzzle, zNear, s0);
@@ -1020,20 +1021,20 @@ void main() {
                         float scX1 = 1.0 / (gridScaleX * zB1);
                         float hyB0 = 0.26 / zB0;
                         float hyB1 = 0.26 / zB1;
-                        float yB0 = horizonOffset + hyB0 - hyB0 * mix(1.02, 0.72, s0);
-                        float yB1 = horizonOffset + hyB1 - hyB1 * mix(1.02, 0.72, s1);
-                        float gxB0L = gxMuzL + aimTowardPlayer * (s0 * 2.2);
-                        float gxB1L = gxMuzL + aimTowardPlayer * (s1 * 2.2);
-                        float gxB0R = gxMuzR + aimTowardPlayer * (s0 * 2.2);
-                        float gxB1R = gxMuzR + aimTowardPlayer * (s1 * 2.2);
+                        float yB0 = horizonOffset - mix(gunHeadRatio, gunHeadRatio * 0.84, s0) * hyB0;
+                        float yB1 = horizonOffset - mix(gunHeadRatio, gunHeadRatio * 0.84, s1) * hyB1;
+                        float gxB0L = gxMuzL + aimTowardPlayer * (s0 * 1.35);
+                        float gxB1L = gxMuzL + aimTowardPlayer * (s1 * 1.35);
+                        float gxB0R = gxMuzR + aimTowardPlayer * (s0 * 1.35);
+                        float gxB1R = gxMuzR + aimTowardPlayer * (s1 * 1.35);
 
                         vec2 boltL0 = vec2((gxB0L - camPanX) * scX0, yB0);
                         vec2 boltL1 = vec2((gxB1L - camPanX) * scX1, yB1);
                         vec2 boltR0 = vec2((gxB0R - camPanX) * scX0, yB0);
                         vec2 boltR1 = vec2((gxB1R - camPanX) * scX1, yB1);
                         float boltFade = (1.0 - smoothstep(0.82, 1.0, s0));
-                        laserBolts = (segGlow(bp, boltL0, boltL1, lw * 0.85) + segGlow(bp, boltR0, boltR1, lw * 0.85))
-                                   * boltFade * (1.35 + 0.65 * uBeat);
+                        laserBolts = (segGlow(bp, boltL0, boltL1, lw * 0.82) + segGlow(bp, boltR0, boltR1, lw * 0.82))
+                                   * boltFade * (1.40 + 0.65 * uBeat);
                     }
                     float muzzleFlash = (exp(-length(bp - muzzleL) * (lw * 0.85)) + exp(-length(bp - muzzleR) * (lw * 0.85)))
                                       * exp(-fireCycle * 6.0) * 1.6;

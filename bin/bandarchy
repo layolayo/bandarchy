@@ -1843,7 +1843,7 @@ def extract_mathematical_art_model(
     except OSError:
         return {}
 
-    stat_sig = f"artmodel_v3:{abs_image}:{mtime:.0f}:{width}:{height}"
+    stat_sig = f"artmodel_v4:{abs_image}:{mtime:.0f}:{width}:{height}"
     cache_key = hashlib.sha256(stat_sig.encode("utf-8")).hexdigest()[:24]
     cached_json = os.path.abspath(os.path.join(ASCII_DIR, f"artmodel_{cache_key}.json"))
 
@@ -1851,7 +1851,8 @@ def extract_mathematical_art_model(
     if cached_raw:
         try:
             parsed = json.loads(cached_raw)
-            if isinstance(parsed, dict) and parsed.get("version") == 3 and parsed.get("cells"):
+            if isinstance(parsed, dict) and parsed.get("version") == 4 and parsed.get("cells"):
+                parsed.setdefault("imagePath", abs_image)
                 return parsed
         except Exception:
             pass
@@ -1861,6 +1862,7 @@ def extract_mathematical_art_model(
         from PIL import Image
 
         with Image.open(abs_image) as im:
+            orig_w, orig_h = im.size
             rgb_im = im.convert("RGB").resize((width, height), Image.Resampling.LANCZOS)
             arr = np.asarray(rgb_im, dtype=np.float32) / 255.0
 
@@ -2017,7 +2019,7 @@ def extract_mathematical_art_model(
             sub_edge = float(edge_mag[y0 : y0 + bh, x0 : x0 + bw].mean())
             sub_sal = float(salience[y0 : y0 + bh, x0 : x0 + bw].mean())
             rgb_var = float(np.std(sub_rgb))
-            if depth < 3 and (bw >= 3 and bh >= 3) and (rgb_var > 0.10 or sub_edge > 0.32):
+            if depth < 2 and (bw >= 4 and bh >= 4) and (rgb_var > 0.11 or sub_edge > 0.34):
                 hw = max(1, bw // 2)
                 hh = max(1, bh // 2)
                 _subdivide_quad(x0, y0, hw, hh, depth + 1)
@@ -2104,13 +2106,16 @@ def extract_mathematical_art_model(
         packed_cells = [item[1] for item in cell_candidates[:1250]]
 
         model_payload = {
-            "version": 3,
+            "version": 4,
             "imageName": os.path.basename(abs_image),
+            "imagePath": abs_image,
+            "imgW": int(orig_w),
+            "imgH": int(orig_h),
             "cols": width,
             "rows": height,
             "clusters": sorted_clusters,
             "cells": packed_cells,
-            "quadtree": quadtree_blocks[:220],
+            "quadtree": quadtree_blocks,
             "shards": shards,
         }
         atomic_write(
@@ -6151,6 +6156,8 @@ def cmd_ascii_art(args) -> None:
     art_lines_out = list(art_lines)
     lines_out = list(lines)
     if art_model and art_model.get("cells"):
+        if resolved_art_image and os.path.isfile(str(resolved_art_image)) and not art_model.get("imagePath"):
+            art_model["imagePath"] = os.path.abspath(str(resolved_art_image))
         art_model_tag = "#ARTMODEL:" + json.dumps(art_model, separators=(",", ":"))
         art_lines_out.append(art_model_tag)
         if source_kind == "album-art":

@@ -53,7 +53,8 @@ var ALL_LAYER1_MODES = [
     "Shader Tempest Web",
     "Death Star 3D Warp Trench",
     "CRT Rave-Man E-Pill Roam",
-    "Sumerian TARDIS"
+    "Sumerian TARDIS",
+    "CRT Space Invaders 3D"
 ]
 
 var SHORT_LAYER1_MODES = [
@@ -61,7 +62,7 @@ var SHORT_LAYER1_MODES = [
     "7:BlackHole", "8:TRON", "9:SynthGrid", "10:PolyTunnel", "11:Tempest", "12:Photo",
     "13:ShdWarp", "14:ShdSpiral", "15:ShdFlame", "16:ShdStars", "17:ShdDNA", "18:ShdTrench",
     "19:ShdVoid", "20:ShdTRON", "21:ShdOrrery", "22:ShdPoly", "23:ShdTempest", "24:3DWarpTrench",
-    "25:RaveMan", "26:SumerTardis"
+    "25:RaveMan", "26:SumerTardis", "27:Invaders"
 ]
 
 var MODE_NAMES = [
@@ -586,6 +587,61 @@ var PALETTE_NAMES = [
 
 var DARK_PALETTE_START_INDEX = 30
 
+var PALETTE_RANDOM_MODES = [
+    "Full Random (All 42)",
+    "Within Collection",
+    "Fixed to Selection"
+]
+
+var SHORT_PALETTE_RANDOM_MODES = [
+    "Full",
+    "Coll",
+    "Fixed"
+]
+
+var PALETTE_COLLECTIONS = [
+    {
+        name: "Neon Rave & Acid Club",
+        shortName: "RaveClub",
+        indices: [0, 1, 4, 12, 15, 21, 29]
+    },
+    {
+        name: "Synthwave, Outrun & Vaporwave",
+        shortName: "SynthOutrun",
+        indices: [10, 11, 13, 14, 18, 22, 24]
+    },
+    {
+        name: "Solar Fire, Magma & Gold",
+        shortName: "SolarMagma",
+        indices: [2, 7, 8, 17, 23, 27]
+    },
+    {
+        name: "Bioluminescence, Matrix & Cryo",
+        shortName: "BioMatrix",
+        indices: [3, 6, 9, 16, 20, 25, 28]
+    },
+    {
+        name: "Deep Space & Cosmic Nebula",
+        shortName: "CosmicSpace",
+        indices: [5, 8, 14, 19, 26, 28]
+    },
+    {
+        name: "Dark Horror, Slasher & Occult",
+        shortName: "DarkHorror",
+        indices: [30, 33, 35, 38, 41, 7]
+    },
+    {
+        name: "Gritty Drama, Noir & Thriller",
+        shortName: "NoirThriller",
+        indices: [31, 32, 34, 36, 37, 39, 40]
+    },
+    {
+        name: "All Dark & Moody (31–42)",
+        shortName: "AllDark",
+        indices: [30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41]
+    }
+]
+
 var PALETTES = [
     ["#ff007f", "#00f5d4", "#fee440", "#9b5de5", "#00bbf9", "#f15bb5"],
     ["#00f5ff", "#ff2a85", "#7b2cbf", "#38b000", "#ffbe0b", "#4cc9f0"],
@@ -741,6 +797,21 @@ function parseRgbTriplet(col) {
     return [110, 231, 183]
 }
 
+function rgbToHex(r, g, b) {
+    var ri = clamp(Math.round(Number(r) || 0), 0, 255)
+    var gi = clamp(Math.round(Number(g) || 0), 0, 255)
+    var bi = clamp(Math.round(Number(b) || 0), 0, 255)
+    var hr = ri.toString(16); if (hr.length < 2) hr = "0" + hr
+    var hg = gi.toString(16); if (hg.length < 2) hg = "0" + hg
+    var hb = bi.toString(16); if (hb.length < 2) hb = "0" + hb
+    return "#" + hr + hg + hb
+}
+
+function hexToRgb(col) {
+    var rgb = parseRgbTriplet(col)
+    return { r: rgb[0], g: rgb[1], b: rgb[2] }
+}
+
 function mixHexColours(colA, colB, t) {
     var f = clamp(Number(t) || 0, 0, 1)
     var a = parseRgbTriplet(colA)
@@ -751,8 +822,10 @@ function mixHexColours(colA, colB, t) {
     return "rgb(" + r + "," + g + "," + bl + ")"
 }
 
-function rgbToHsl(col) {
-    var rgb = parseRgbTriplet(col)
+function rgbToHsl(col, gArg, bArg) {
+    var rgb = (gArg !== undefined && bArg !== undefined)
+        ? [Number(col) || 0, Number(gArg) || 0, Number(bArg) || 0]
+        : parseRgbTriplet(col)
     var r = (rgb[0] || 0) / 255
     var g = (rgb[1] || 0) / 255
     var b = (rgb[2] || 0) / 255
@@ -772,7 +845,11 @@ function rgbToHsl(col) {
             h = ((r - g) / d + 4) * 60
         }
     }
-    return [((h % 360) + 360) % 360, clamp(s, 0, 1), clamp(l, 0, 1)]
+    var out = [((h % 360) + 360) % 360, clamp(s, 0, 1), clamp(l, 0, 1)]
+    out.h = out[0]
+    out.s = out[1]
+    out.l = out[2]
+    return out
 }
 
 function hueDistanceDeg(h1, h2) {
@@ -987,6 +1064,9 @@ function createState() {
         flames: flames,
         artSourceKey: "",
         artCells: [],
+        artGrid: [],
+        artRowCells: [],
+        artStreamlines: [],
         artRows: 0,
         artCols: 0,
         artBurst: 0.0,
@@ -1032,6 +1112,9 @@ function rgbToHex(r, g, b) {
 function rebuildArtCells(state, asciiLines, mode) {
     if (!asciiLines || asciiLines.length === 0) {
         state.artCells = []
+        state.artGrid = []
+        state.artRowCells = []
+        state.artStreamlines = []
         state.artSourceKey = ""
         return
     }
@@ -1047,6 +1130,9 @@ function rebuildArtCells(state, asciiLines, mode) {
     }
     if (cleanLines.length === 0 && !embeddedModelJson) {
         state.artCells = []
+        state.artGrid = []
+        state.artRowCells = []
+        state.artStreamlines = []
         state.artSourceKey = ""
         return
     }
@@ -1063,7 +1149,7 @@ function rebuildArtCells(state, asciiLines, mode) {
     }
     var seedSuffix = ":" + (state.artInterpretationSeed || 0)
     var key = (mode || "braille") + ":" + cleanLines.length + ":" + lineHash + ":" + (cleanLines[0] || "").slice(0, 28) + seedSuffix
-    if (key === state.artSourceKey && state.artCells && state.artCells.length > 0) {
+    if (key === state.artSourceKey && state.artCells && state.artCells.length > 0 && state.artGrid && state.artGrid.length > 0) {
         return
     }
     state.artSourceKey = key
@@ -1080,6 +1166,74 @@ function rebuildArtCells(state, asciiLines, mode) {
         } catch (e) {
             parsedModel = null
         }
+    }
+
+    function _populateNormalsRowsAndStreamlines(grid, gCols, gRows) {
+        var rowCells = []
+        for (var ry = 0; ry < gRows; ry++) {
+            var rArr = []
+            for (var rx = 0; rx < gCols; rx++) {
+                var cell = grid[ry * gCols + rx]
+                if (!cell) continue
+                var cL = grid[ry * gCols + Math.max(0, rx - 1)] || cell
+                var cR = grid[ry * gCols + Math.min(gCols - 1, rx + 1)] || cell
+                var cU = grid[Math.max(0, ry - 1) * gCols + rx] || cell
+                var cD = grid[Math.min(gRows - 1, ry + 1) * gCols + rx] || cell
+                var dzdx = ((cR.zDepth || 0.0) - (cL.zDepth || 0.0)) * 1.35 + ((cR.luma || 0.5) - (cL.luma || 0.5)) * 0.65
+                var dzdy = ((cD.zDepth || 0.0) - (cU.zDepth || 0.0)) * 1.35 + ((cD.luma || 0.5) - (cU.luma || 0.5)) * 0.65
+                var invLen = 1.0 / Math.sqrt(dzdx * dzdx + dzdy * dzdy + 1.0)
+                cell.normX = -dzdx * invLen
+                cell.normY = -dzdy * invLen
+                cell.normZ = invLen
+                rArr.push(cell)
+            }
+            rowCells.push(rArr)
+        }
+        state.artRowCells = rowCells
+
+        // Pre-trace up to 88 multi-step Sobel tangent streamlines (5..7 connected points each)
+        var streamlines = []
+        var stepX = Math.max(2, Math.floor(gCols / 12))
+        var stepY = Math.max(2, Math.floor(gRows / 8))
+        for (var sy = 1; sy < gRows - 1; sy += stepY) {
+            for (var sx = 1; sx < gCols - 1; sx += stepX) {
+                var seedCell = grid[sy * gCols + sx]
+                if (!seedCell || (seedCell.edgeMag < 0.16 && seedCell.salience < 0.28)) continue
+                var pts = []
+                var curX = sx + 0.5
+                var curY = sy + 0.5
+                for (var stp = 0; stp < 6; stp++) {
+                    var ix = clamp(Math.floor(curX), 0, gCols - 1)
+                    var iy = clamp(Math.floor(curY), 0, gRows - 1)
+                    var cHere = grid[iy * gCols + ix] || seedCell
+                    pts.push({
+                        gx: ix,
+                        gy: iy,
+                        nx: (curX / Math.max(1, gCols - 1)) * 2.0 - 1.0,
+                        ny: (curY / Math.max(1, gRows - 1)) * 2.0 - 1.0,
+                        zDepth: cHere.zDepth || 0.0,
+                        salience: cHere.salience || 0.5,
+                        edgeMag: cHere.edgeMag || 0.4,
+                        cell: cHere
+                    })
+                    var ang = cHere.tangentRad !== undefined ? cHere.tangentRad : 0.0
+                    curX += Math.cos(ang) * 1.35
+                    curY += Math.sin(ang) * 1.15
+                    if (curX < 0.5 || curX > gCols - 0.5 || curY < 0.5 || curY > gRows - 0.5) break
+                }
+                if (pts.length >= 3) {
+                    streamlines.push({
+                        seed: seedCell,
+                        clusterId: seedCell.clusterId || 0,
+                        hexCol: seedCell.vividHexCol || seedCell.hexCol || "#00F5FF",
+                        points: pts
+                    })
+                    if (streamlines.length >= 88) break
+                }
+            }
+            if (streamlines.length >= 88) break
+        }
+        state.artStreamlines = streamlines
     }
 
     // Path A: Rich Mathematical Art Model extracted from original full-colour album art
@@ -1105,25 +1259,10 @@ function rebuildArtCells(state, asciiLines, mode) {
         var variantShift = state.artInterpretationVariant || 0
         var zPolarity = (variantShift % 2 === 0) ? 1.0 : -1.0
         var rawCells = parsedModel.cells || []
-        var mCount = Math.min(1200, rawCells.length)
+        var mCount = Math.min(1250, rawCells.length)
         var modelCells = []
 
-        for (var mi = 0; mi < mCount; mi++) {
-            var mc = rawCells[mi]
-            if (!mc || mc.length < 12) continue
-            var gx = Number(mc[0]) || 0
-            var gy = Number(mc[1]) || 0
-            var r255 = clamp(Number(mc[2]) || 180, 0, 255)
-            var g255 = clamp(Number(mc[3]) || 180, 0, 255)
-            var b255 = clamp(Number(mc[4]) || 180, 0, 255)
-            var sal = clamp((Number(mc[5]) || 50) / 100.0, 0.05, 1.0)
-            var edge = clamp((Number(mc[6]) || 30) / 100.0, 0.0, 1.0)
-            var tangRad = ((Number(mc[7]) || 0) * Math.PI) / 180.0
-            var zDep = clamp(((Number(mc[8]) || 0) / 100.0) * zPolarity, -1.0, 1.0)
-            var clusId = clamp(Number(mc[9]) || 0, 0, 7)
-            var contLvl = ((Number(mc[10]) || 0) + variantShift) & 7
-            var dogVal = clamp((Number(mc[11]) || 0) / 100.0, -1.0, 1.0)
-
+        function _makeArtCell(gx, gy, r255, g255, b255, sal, edge, tangRad, zDep, clusId, contLvl, dogVal, seqIdx) {
             var rN = r255 / 255.0
             var gN = g255 / 255.0
             var bN = b255 / 255.0
@@ -1140,21 +1279,17 @@ function rebuildArtCells(state, asciiLines, mode) {
                 if (hueDeg < 0) hueDeg += 360.0
             }
             var thermal = clamp((rN - bN) * (0.55 + 0.45 * sat), -1.0, 1.0)
-
             var nxCoord = (gx / Math.max(1, mCols - 1)) * 2.0 - 1.0
             var nyCoord = (gy / Math.max(1, mRows - 1)) * 2.0 - 1.0
             var distC = Math.sqrt(nxCoord * nxCoord + nyCoord * nyCoord)
-            var angC = Math.atan2(nyCoord, nxCoord)
             var evoXM = nxCoord + Math.cos(tangRad + distC * 3.5) * 0.024
             var evoYM = nyCoord + Math.sin(tangRad - distC * 3.5) * 0.024
-
             var normX = -Math.sin(tangRad) * edge
             var normY = Math.cos(tangRad) * edge
             var normZ = Math.sqrt(Math.max(0.15, 1.0 - normX * normX - normY * normY))
             var densEquiv = clamp(0.35 + sal * 0.42 + edge * 0.23, 0.18, 1.0)
             var bMask = (((gx * 17 + gy * 31 + Math.round(sal * 15)) & 0xFF) | 0x18)
-
-            modelCells.push({
+            return {
                 gx: gx,
                 gy: gy,
                 homeX: nxCoord,
@@ -1167,7 +1302,7 @@ function rebuildArtCells(state, asciiLines, mode) {
                 vy: 0.0,
                 ch: sal > 0.72 ? "█" : (edge > 0.48 ? "▓" : "▒"),
                 brailleMask: bMask,
-                mutCh: BRAILLE_MUTANTS[mi % BRAILLE_MUTANTS.length],
+                mutCh: BRAILLE_MUTANTS[seqIdx % BRAILLE_MUTANTS.length],
                 density: densEquiv,
                 r: r255,
                 g: g255,
@@ -1189,115 +1324,172 @@ function rebuildArtCells(state, asciiLines, mode) {
                 normY: normY,
                 normZ: normZ,
                 colIdx: clusId % 8,
-                phase: (mi * 0.137 + variantShift * 0.52) % (Math.PI * 2),
+                phase: (seqIdx * 0.137 + variantShift * 0.52) % (Math.PI * 2),
                 alive: 1.0
-            })
+            }
         }
+
+        // Seed 100% dense hole-free 2D grid in O(mRows * mCols) using quadtree blocks + modelCells
+        var denseGrid = new Array(mRows * mCols)
+        var qtSeed = state.artQuadtree || []
+        var maxQtY = 0
+        for (var qsi = 0; qsi < qtSeed.length; qsi++) {
+            var qb = qtSeed[qsi]
+            if (!qb || qb.length < 10) continue
+            var qx0 = clamp(Number(qb[0]) || 0, 0, mCols - 1)
+            var qy0 = clamp(Number(qb[1]) || 0, 0, mRows - 1)
+            var qw = Math.max(1, Number(qb[2]) || 1)
+            var qh = Math.max(1, Number(qb[3]) || 1)
+            if (qy0 + qh > maxQtY) maxQtY = qy0 + qh
+            var qr = clamp(Number(qb[4]) || 120, 0, 255)
+            var qg = clamp(Number(qb[5]) || 120, 0, 255)
+            var qbCol = clamp(Number(qb[6]) || 120, 0, 255)
+            var qz = clamp(((Number(qb[7]) || 0) / 100.0) * zPolarity, -1.0, 1.0)
+            var qsal = clamp((Number(qb[8]) || 35) / 100.0, 0.05, 1.0)
+            var qclus = clamp(Number(qb[9]) || 0, 0, 7)
+            for (var yy = qy0; yy < Math.min(mRows, qy0 + qh); yy++) {
+                for (var xx = qx0; xx < Math.min(mCols, qx0 + qw); xx++) {
+                    var gIdx = yy * mCols + xx
+                    if (!denseGrid[gIdx]) {
+                        var seedTang = Math.atan2(yy - mRows * 0.5, xx - mCols * 0.5) + Math.PI * 0.5
+                        denseGrid[gIdx] = _makeArtCell(
+                            xx, yy, qr, qg, qbCol, qsal, 0.22, seedTang, qz, qclus,
+                            (Math.floor(qsal * 7.99) + variantShift) & 7, 0.0, gIdx
+                        )
+                    }
+                }
+            }
+        }
+
+        for (var mi = 0; mi < mCount; mi++) {
+            var mc = rawCells[mi]
+            if (!mc || mc.length < 12) continue
+            var gx = clamp(Number(mc[0]) || 0, 0, mCols - 1)
+            var gy = clamp(Number(mc[1]) || 0, 0, mRows - 1)
+            var r255 = clamp(Number(mc[2]) || 180, 0, 255)
+            var g255 = clamp(Number(mc[3]) || 180, 0, 255)
+            var b255 = clamp(Number(mc[4]) || 180, 0, 255)
+            var sal = clamp((Number(mc[5]) || 50) / 100.0, 0.05, 1.0)
+            var edge = clamp((Number(mc[6]) || 30) / 100.0, 0.0, 1.0)
+            var tangRad = ((Number(mc[7]) || 0) * Math.PI) / 180.0
+            var zDep = clamp(((Number(mc[8]) || 0) / 100.0) * zPolarity, -1.0, 1.0)
+            var clusId = clamp(Number(mc[9]) || 0, 0, 7)
+            var contLvl = ((Number(mc[10]) || 0) + variantShift) & 7
+            var dogVal = clamp((Number(mc[11]) || 0) / 100.0, -1.0, 1.0)
+
+            var cellObj = _makeArtCell(gx, gy, r255, g255, b255, sal, edge, tangRad, zDep, clusId, contLvl, dogVal, mi)
+            modelCells.push(cellObj)
+            denseGrid[gy * mCols + gx] = cellObj
+        }
+
+        // Fill any remaining unseeded holes via nearest neighbour or default dark cluster
+        var fallbackRgb = (rawClusters.length > 0 && Array.isArray(rawClusters[rawClusters.length - 1]))
+            ? rawClusters[rawClusters.length - 1]
+            : [36, 42, 58]
+        var lastValid = modelCells.length > 0 ? modelCells[modelCells.length - 1] : null
+        for (var fy = 0; fy < mRows; fy++) {
+            for (var fx = 0; fx < mCols; fx++) {
+                var fIdx = fy * mCols + fx
+                if (denseGrid[fIdx]) {
+                    lastValid = denseGrid[fIdx]
+                } else if (lastValid) {
+                    denseGrid[fIdx] = _makeArtCell(
+                        fx, fy, lastValid.r, lastValid.g, lastValid.b,
+                        Math.max(0.08, lastValid.salience * 0.75),
+                        Math.max(0.08, lastValid.edgeMag * 0.65),
+                        lastValid.tangentRad, lastValid.zDepth * 0.85,
+                        lastValid.clusterId, lastValid.contourLvl, lastValid.dogVal * 0.5, fIdx
+                    )
+                } else {
+                    denseGrid[fIdx] = _makeArtCell(
+                        fx, fy, fallbackRgb[0] || 36, fallbackRgb[1] || 42, fallbackRgb[2] || 58,
+                        0.18, 0.14, 0.0, -0.35, 7, 1, 0.0, fIdx
+                    )
+                }
+            }
+        }
+
+        // If a cached v3 payload truncated quadtree before reaching the bottom of the cover, rebuild full-cover adaptive quadtree from denseGrid
+        if (maxQtY < mRows - 2) {
+            var fullQt = []
+            var stepQ = Math.max(3, Math.floor(Math.min(mCols, mRows) / 9))
+            for (var qyF = 0; qyF < mRows; qyF += stepQ) {
+                for (var qxF = 0; qxF < mCols; qxF += stepQ) {
+                    var bwF = Math.min(stepQ, mCols - qxF)
+                    var bhF = Math.min(stepQ, mRows - qyF)
+                    var cMid = denseGrid[Math.min(mRows - 1, qyF + (bhF >> 1)) * mCols + Math.min(mCols - 1, qxF + (bwF >> 1))]
+                    if (!cMid) continue
+                    if (bwF >= 4 && bhF >= 4 && (cMid.edgeMag > 0.36 || cMid.salience > 0.58)) {
+                        var hwF = bwF >> 1
+                        var hhF = bhF >> 1
+                        var subCoords = [[qxF, qyF, hwF, hhF], [qxF + hwF, qyF, bwF - hwF, hhF], [qxF, qyF + hhF, hwF, bhF - hhF], [qxF + hwF, qyF + hhF, bwF - hwF, bhF - hhF]]
+                        for (var sqi = 0; sqi < 4; sqi++) {
+                            var scq = subCoords[sqi]
+                            var cSub = denseGrid[Math.min(mRows - 1, scq[1] + (scq[3] >> 1)) * mCols + Math.min(mCols - 1, scq[0] + (scq[2] >> 1))] || cMid
+                            fullQt.push([scq[0], scq[1], scq[2], scq[3], cSub.r, cSub.g, cSub.b, Math.round(cSub.zDepth * 100), Math.round(cSub.salience * 100), cSub.clusterId])
+                        }
+                    } else {
+                        fullQt.push([qxF, qyF, bwF, bhF, cMid.r, cMid.g, cMid.b, Math.round(cMid.zDepth * 100), Math.round(cMid.salience * 100), cMid.clusterId])
+                    }
+                }
+            }
+            state.artQuadtree = fullQt
+        }
+
+        state.artGrid = denseGrid
+        _populateNormalsRowsAndStreamlines(denseGrid, mCols, mRows)
         state.artCells = modelCells
         return
     }
+
+    // Path B: Fallback Braille/Block grid (clear stale Path A model structures!)
+    state.artModel = null
+    state.artQuadtree = []
+    state.artShards = []
+    state.artClusters = []
 
     var rows = cleanLines.length
     var cols = 0
     for (var r = 0; r < rows; r++) {
         if (cleanLines[r] && cleanLines[r].length > cols) cols = cleanLines[r].length
     }
+    rows = Math.max(1, rows)
+    cols = Math.max(1, cols)
     state.artRows = rows
-    state.artCols = Math.max(1, cols)
+    state.artCols = cols
 
-    // Sample non-blank cells (up to 960 for ASCII banner words so zero letter strokes are dropped, 560 for cover art)
-    var candidates = []
-    for (var y = 0; y < rows; y++) {
-        var line = cleanLines[y] || ""
-        for (var x = 0; x < line.length; x++) {
-            var ch = line.charAt(x)
-            if (ch === " " || ch === "⠀") continue
-            var code = ch.charCodeAt(0)
-            var density = 0.72
-            var brailleMask = 0
-            if (code >= 0x2800 && code <= 0x28FF) {
-                brailleMask = code - 0x2800
-                var pop = 0
-                for (var b = 0; b < 8; b++) {
-                    if ((brailleMask >> b) & 1) pop++
-                }
-                if (pop <= 1) continue
-                density = pop / 8.0
-            } else if (ch === "▀") {
-                density = 0.68
-                brailleMask = 0x1B // top 4 Braille dots (dots 1, 2, 4, 5)
-            } else if (ch === "▄") {
-                density = 0.68
-                brailleMask = 0xE4 // bottom 4 Braille dots (dots 3, 6, 7, 8)
-            } else if (ch === "▌") {
-                density = 0.68
-                brailleMask = 0x47 // left column 4 Braille dots (dots 1, 2, 3, 7)
-            } else if (ch === "▐") {
-                density = 0.68
-                brailleMask = 0xB8 // right column 4 Braille dots (dots 4, 5, 6, 8)
-            } else if (ch === "░" || ch === "." || ch === "·") {
-                density = 0.35
-                brailleMask = 0x09 // diagonal sparse Braille dots
-            } else if (ch === "▒" || ch === ":") {
-                density = 0.62
-                brailleMask = 0x5A // checkerboard 4 Braille dots
-            } else if (ch === "▓") {
-                density = 0.85
-                brailleMask = 0x7F // 7 Braille dots
-            } else if (ch === "█") {
-                density = 1.0
-                brailleMask = 0xFF // all 8 Braille dots (⣿)
-            } else {
-                density = 0.80
-                brailleMask = 0xFF
-            }
-            var nx = (x / Math.max(1, cols - 1)) * 2.0 - 1.0
-            var ny = (y / Math.max(1, rows - 1)) * 2.0 - 1.0
-            candidates.push({
-                gx: x,
-                gy: y,
-                nx: nx,
-                ny: ny,
-                ch: ch,
-                brailleMask: brailleMask,
-                density: density
-            })
-        }
-    }
-
-    var maxParticles = 460
-    var stride = candidates.length > maxParticles ? (candidates.length / maxParticles) : 1.0
-    var cells = []
-    var count = Math.min(maxParticles, candidates.length)
     var fbVariant = state.artInterpretationVariant || 0
-    for (var i = 0; i < count; i++) {
-        var c = candidates[Math.min(candidates.length - 1, Math.floor(i * stride))]
-        var dist = Math.sqrt(c.nx * c.nx + c.ny * c.ny)
-        var ang = Math.atan2(c.ny, c.nx)
-        var evoX = c.nx + Math.cos(ang * 3.0 + dist * 4.0) * 0.08
-        var evoY = c.ny + Math.sin(ang * 3.0 - dist * 4.0) * 0.08
-        var synthHue = ((ang + Math.PI) / (Math.PI * 2) * 360 + dist * 140 + fbVariant * 30) % 360
-        var synthSal = clamp((1.15 - dist * 0.55) * c.density, 0.15, 1.0)
-        var synthEdge = clamp(Math.abs(Math.sin(c.gx * 0.65 + c.gy * 0.45)) * 0.65 + (1.0 - c.density) * 0.35, 0.15, 1.0)
-        var synthTang = ang + Math.PI * 0.5 + Math.sin(dist * 4.0) * 0.4
-        var synthZ = clamp((c.density - 0.5) * 1.4 + Math.cos(dist * 3.5 + fbVariant) * 0.35, -1.0, 1.0)
-        var synthClus = (Math.floor(dist * 3.5 + c.density * 3.0) + fbVariant) % 5
+    var fbGrid = new Array(rows * cols)
+    var candidates = []
 
-        cells.push({
-            gx: c.gx,
-            gy: c.gy,
-            homeX: c.nx,
-            homeY: c.ny,
+    function _makeFallbackCell(x, y, ch, brailleMask, density, seqIdx) {
+        var nx = (x / Math.max(1, cols - 1)) * 2.0 - 1.0
+        var ny = (y / Math.max(1, rows - 1)) * 2.0 - 1.0
+        var dist = Math.sqrt(nx * nx + ny * ny)
+        var ang = Math.atan2(ny, nx)
+        var evoX = nx + Math.cos(ang * 3.0 + dist * 4.0) * 0.08
+        var evoY = ny + Math.sin(ang * 3.0 - dist * 4.0) * 0.08
+        var synthHue = ((ang + Math.PI) / (Math.PI * 2) * 360 + dist * 140 + fbVariant * 30) % 360
+        var synthSal = clamp((1.15 - dist * 0.55) * density, 0.12, 1.0)
+        var synthEdge = clamp(Math.abs(Math.sin(x * 0.65 + y * 0.45)) * 0.65 + (1.0 - density) * 0.35, 0.15, 1.0)
+        var synthTang = ang + Math.PI * 0.5 + Math.sin(dist * 4.0) * 0.4
+        var synthZ = clamp((density - 0.5) * 1.4 + Math.cos(dist * 3.5 + fbVariant) * 0.35, -1.0, 1.0)
+        var synthClus = (Math.floor(dist * 4.5 + density * 4.0) + fbVariant) & 7
+        return {
+            gx: x,
+            gy: y,
+            homeX: nx,
+            homeY: ny,
             evoX: evoX,
             evoY: evoY,
-            x: c.nx,
-            y: c.ny,
+            x: nx,
+            y: ny,
             vx: 0.0,
             vy: 0.0,
-            ch: c.ch,
-            brailleMask: c.brailleMask,
-            mutCh: BRAILLE_MUTANTS[i % BRAILLE_MUTANTS.length],
-            density: c.density,
+            ch: ch,
+            brailleMask: brailleMask,
+            mutCh: BRAILLE_MUTANTS[seqIdx % BRAILLE_MUTANTS.length],
+            density: density,
             r: Math.round(128 + 120 * Math.cos(synthHue * Math.PI / 180.0)),
             g: Math.round(128 + 120 * Math.cos((synthHue - 120) * Math.PI / 180.0)),
             b: Math.round(128 + 120 * Math.cos((synthHue + 120) * Math.PI / 180.0)),
@@ -1305,7 +1497,7 @@ function rebuildArtCells(state, asciiLines, mode) {
             vividHexCol: hslToHex(synthHue, 0.92, 0.60),
             hue: synthHue,
             sat: 0.82,
-            luma: c.density,
+            luma: clamp(density, 0.08, 1.0),
             thermal: Math.cos(synthHue * Math.PI / 180.0),
             salience: synthSal,
             edgeMag: synthEdge,
@@ -1313,16 +1505,340 @@ function rebuildArtCells(state, asciiLines, mode) {
             zDepth: synthZ,
             clusterId: synthClus,
             contourLvl: Math.floor(synthSal * 7.99) & 7,
-            dogVal: Math.sin(c.gx * 0.8) * Math.cos(c.gy * 0.8),
+            dogVal: Math.sin(x * 0.8) * Math.cos(y * 0.8),
             normX: -Math.cos(ang) * 0.5,
             normY: -Math.sin(ang) * 0.5,
             normZ: 0.86,
             colIdx: synthClus,
-            phase: (i * 0.137) % (Math.PI * 2),
+            phase: (seqIdx * 0.137) % (Math.PI * 2),
             alive: 1.0
-        })
+        }
     }
+
+    for (var y = 0; y < rows; y++) {
+        var line = cleanLines[y] || ""
+        for (var x = 0; x < cols; x++) {
+            var ch = x < line.length ? line.charAt(x) : " "
+            var isBlank = (ch === " " || ch === "⠀")
+            var code = ch.charCodeAt(0)
+            var density = isBlank ? 0.16 : 0.72
+            var brailleMask = isBlank ? 0x09 : 0xFF
+            if (!isBlank && code >= 0x2800 && code <= 0x28FF) {
+                brailleMask = code - 0x2800
+                var pop = 0
+                for (var b = 0; b < 8; b++) {
+                    if ((brailleMask >> b) & 1) pop++
+                }
+                if (pop <= 1) {
+                    isBlank = true
+                    density = 0.18
+                } else {
+                    density = pop / 8.0
+                }
+            } else if (ch === "▀") {
+                density = 0.68
+                brailleMask = 0x1B
+            } else if (ch === "▄") {
+                density = 0.68
+                brailleMask = 0xE4
+            } else if (ch === "▌") {
+                density = 0.68
+                brailleMask = 0x47
+            } else if (ch === "▐") {
+                density = 0.68
+                brailleMask = 0xB8
+            } else if (ch === "░" || ch === "." || ch === "·") {
+                density = 0.35
+                brailleMask = 0x09
+            } else if (ch === "▒" || ch === ":") {
+                density = 0.62
+                brailleMask = 0x5A
+            } else if (ch === "▓") {
+                density = 0.85
+                brailleMask = 0x7F
+            } else if (ch === "█") {
+                density = 1.0
+                brailleMask = 0xFF
+            }
+            var gridCell = _makeFallbackCell(x, y, isBlank ? "░" : ch, brailleMask, density, y * cols + x)
+            fbGrid[y * cols + x] = gridCell
+            if (!isBlank) {
+                candidates.push(gridCell)
+            }
+        }
+    }
+
+    var maxParticles = 460
+    var stride = candidates.length > maxParticles ? (candidates.length / maxParticles) : 1.0
+    var cells = []
+    var count = Math.min(maxParticles, candidates.length)
+    for (var i = 0; i < count; i++) {
+        var cCell = candidates[Math.min(candidates.length - 1, Math.floor(i * stride))]
+        cCell.phase = (i * 0.137) % (Math.PI * 2)
+        cCell.mutCh = BRAILLE_MUTANTS[i % BRAILLE_MUTANTS.length]
+        cells.push(cCell)
+    }
+
+    // Synthetic quadtree & shards for Path B so Styles #3, #4, #17 work identically in unit tests without #ARTMODEL
+    var synthQt = []
+    var synthShards = []
+    var qStepX = Math.max(2, Math.floor(cols / 8))
+    var qStepY = Math.max(2, Math.floor(rows / 6))
+    for (var qy = 0; qy < rows; qy += qStepY) {
+        for (var qx = 0; qx < cols; qx += qStepX) {
+            var sc = fbGrid[Math.min(rows - 1, qy) * cols + Math.min(cols - 1, qx)]
+            if (!sc) continue
+            synthQt.push([
+                qx, qy, Math.min(qStepX, cols - qx), Math.min(qStepY, rows - qy),
+                sc.r, sc.g, sc.b, Math.round(sc.zDepth * 100), Math.round(sc.salience * 100), sc.clusterId
+            ])
+            synthShards.push([
+                qx + qStepX * 0.5, qy + qStepY * 0.5,
+                sc.r, sc.g, sc.b, Math.round(sc.zDepth * 100), Math.round(sc.salience * 100),
+                sc.clusterId, Math.max(2, Math.round(qStepX * 0.75)), Math.round((sc.tangentRad * 180.0) / Math.PI)
+            ])
+        }
+    }
+    state.artQuadtree = synthQt
+    state.artShards = synthShards
+    state.artGrid = fbGrid
+    _populateNormalsRowsAndStreamlines(fbGrid, cols, rows)
     state.artCells = cells
+}
+
+function projectLayer3ArtPoint(normX, normY, baseZ, cell, l3Mode, state, cfg, layout) {
+    var cx = layout.cx
+    var cy = layout.cy
+    var halfW = layout.halfW
+    var halfH = layout.halfH
+    var l3T = layout.l3T
+    var evoFreq = layout.evoFreq
+    var warpIntensity = layout.warpIntensity
+    var dirSignCell = layout.dirSignCell
+    var cylDir = layout.cylDir
+    var isEcho = layout.isEcho
+    var echoIdx = layout.echoIdx || 0
+    var activeTtfxFrame = layout.activeTtfxFrame
+    var yAspect = halfH / Math.max(1.0, halfW)
+
+    var hx = cell && cell.homeX !== undefined ? cell.homeX : normX
+    var hy = cell && cell.homeY !== undefined ? cell.homeY : normY
+    var effX = normX
+    var effY = normY
+    if (cell && cell.x !== undefined && cell.homeX !== undefined) {
+        effX += (cell.x - cell.homeX) * 0.85
+        effY += (cell.y - cell.homeY) * 0.85
+    }
+
+    var zSurgeCell = Math.sin(l3T * 1.45 * evoFreq) * (0.44 + state.bassSmooth * 0.46) * dirSignCell + (baseZ || 0.0)
+    var px = cx + effX * halfW
+    var py = cy + effY * halfH
+    var scaleW = 1.0
+    var scaleH = 1.0
+    var persp = 1.0
+
+    if (l3Mode === 0 || l3Mode === 1 || l3Mode === 2 || l3Mode === 3 || l3Mode === 4 || l3Mode === 5) {
+        var modeYawMul = (l3Mode === 1) ? 0.58 : (l3Mode === 2 ? 1.05 : (l3Mode === 5 ? 0.96 : 0.84))
+        var swoopYawCell = Math.sin(l3T * (l3Mode === 5 ? 0.92 : 0.72) * evoFreq) * modeYawMul
+        var swoopPitchCell = Math.cos(l3T * 0.56 * evoFreq) * (l3Mode === 1 ? 0.44 : 0.34)
+        var swoopRollCell = Math.sin(l3T * 0.42 * evoFreq) * (l3Mode === 2 ? 0.32 : 0.22)
+        if (l3Mode === 1) {
+            var mycPulse = Math.sin(hx * 4.2 + l3T * 2.1) * Math.cos(hy * 4.2 - l3T * 1.8) * 0.08 * (1.0 + state.midSmooth)
+            effX += mycPulse
+            effY -= mycPulse * 0.8
+        } else if (l3Mode === 5) {
+            var tteWave = Math.sin(hy * 5.5 + l3T * 3.2) * 0.045 * (0.6 + state.bassSmooth)
+            effX += tteWave
+        }
+        var zArcCell = -Math.cos(hx * 1.25 - l3T * 1.1 * dirSignCell) * (0.36 + state.bassSmooth * 0.34) + zSurgeCell * 0.55
+        var projCell5 = project3DPoint(
+            effX * 1.06,
+            effY * yAspect * 0.96,
+            zArcCell,
+            swoopPitchCell, swoopYawCell, swoopRollCell,
+            cx, cy, halfW * 1.02, 1.58
+        )
+        px = projCell5.x
+        py = projCell5.y
+        persp = projCell5.persp
+        scaleW = clamp(projCell5.persp * 1.32, 0.24, 2.75)
+        scaleH = clamp(projCell5.persp * 1.32, 0.24, 2.75)
+        if (l3Mode === 5 && activeTtfxFrame && cell && cell.gy < activeTtfxFrame.length) {
+            var tLine5 = activeTtfxFrame[cell.gy] || ""
+            var tCh5 = cell.gx < tLine5.length ? tLine5.charAt(cell.gx) : " "
+            if (tCh5 === " " || tCh5 === "⠀") {
+                px += Math.cos((cell.phase || 0.0) + state.t * 2.4) * (10.0 + state.bassSmooth * 20.0)
+                py += Math.sin((cell.phase || 0.0) - state.t * 2.4) * (10.0 + state.bassSmooth * 20.0)
+            }
+        }
+    } else if (l3Mode === 6) {
+        var colBin = clamp(Math.floor(((hx + 1.0) * 0.5) * 63), 0, 63)
+        var colFFT = state.smoothBands[colBin] || 0.0
+        var stretchY6 = 1.0 + (colFFT * 0.78 + state.bassSmooth * 0.32) * warpIntensity * 0.52
+        var waveDX6 = Math.sin(hy * 3.8 * evoFreq + l3T * 2.2) * 0.11 * warpIntensity
+        var waveDY6 = Math.sin(hx * 4.2 * evoFreq - l3T * 2.6) * 0.16 * warpIntensity
+                    + Math.cos(hx * 8.4 + l3T * 3.4) * 0.06 * state.midSmooth
+        var zWave6 = Math.sin(hx * 2.2 - l3T * 1.6 * dirSignCell) * (0.48 + state.bassSmooth * 0.38) + zSurgeCell * 0.50
+        var proj6 = project3DPoint(
+            effX + waveDX6,
+            (effY * stretchY6 + waveDY6) * yAspect,
+            zWave6,
+            Math.cos(l3T * 0.52) * 0.24, Math.sin(l3T * 0.68 * evoFreq) * 0.78, 0.0,
+            cx, cy, halfW * 1.02, 1.62
+        )
+        px = proj6.x
+        py = proj6.y
+        persp = proj6.persp
+        scaleW = clamp(proj6.persp * 1.24, 0.26, 2.55)
+        scaleH = clamp(stretchY6 * proj6.persp * 1.24, 0.30, 2.85)
+    } else if (l3Mode === 7) {
+        var cylRad7 = 1.08 + state.bassSmooth * 0.20 * warpIntensity + (baseZ || 0.0) * 0.22
+        if (cylDir < 2) {
+            var hSign7 = (cylDir === 1) ? -1.0 : 1.0
+            var cylAng7 = effX * (Math.PI * 0.90) + hSign7 * l3T * 1.55 * evoFreq
+            var cos7 = Math.cos(cylAng7), sin7 = Math.sin(cylAng7)
+            var camPitch7B = -0.44 - Math.sin(l3T * 0.35) * 0.14
+            var camYaw7B = Math.sin(l3T * 0.52 * evoFreq) * 0.52
+            var proj7 = project3DPoint(
+                sin7 * cylRad7,
+                effY * (0.72 + state.midSmooth * 0.20) * yAspect,
+                cos7 * cylRad7 * 0.96 + zSurgeCell * 0.42,
+                camPitch7B, camYaw7B, Math.sin(l3T * 0.55 * evoFreq) * 0.22 * hSign7,
+                cx, cy, halfW * 1.02, 1.68
+            )
+            px = proj7.x
+            py = proj7.y
+            persp = proj7.persp
+            scaleW = clamp(Math.max(0.22, Math.abs(cos7)) * proj7.persp * 1.38, 0.22, 2.65)
+            scaleH = clamp(proj7.persp * 1.34, 0.32, 2.65)
+        } else if (cylDir < 4) {
+            var vSign7 = (cylDir === 3) ? -1.0 : 1.0
+            var drumAng7 = effY * (Math.PI * 0.84) + vSign7 * l3T * 1.55 * evoFreq + hx * 0.20 * warpIntensity
+            var cosD7 = Math.cos(drumAng7), sinD7 = Math.sin(drumAng7)
+            var camYaw7D = 0.54 + Math.sin(l3T * 0.48) * 0.42
+            var projD7 = project3DPoint(
+                effX * 0.98,
+                sinD7 * cylRad7 * yAspect * 0.82,
+                cosD7 * cylRad7 * 0.96 + zSurgeCell * 0.42,
+                0.0, camYaw7D, Math.cos(l3T * 0.52 * evoFreq) * 0.20 * vSign7,
+                cx, cy, halfW * 1.02, 1.68
+            )
+            px = projD7.x
+            py = projD7.y
+            persp = projD7.persp
+            scaleW = clamp(projD7.persp * 1.34, 0.32, 2.65)
+            scaleH = clamp(Math.max(0.22, Math.abs(cosD7)) * projD7.persp * 1.38, 0.22, 2.65)
+        } else {
+            var spinSign7B = (cylDir === 5) ? -1.0 : 1.0
+            var cylAng7S = effX * (Math.PI * 0.88) + spinSign7B * l3T * 1.55 * evoFreq
+            var cos7S = Math.cos(cylAng7S), sin7S = Math.sin(cylAng7S)
+            var fullSpin7B = l3T * 1.25 * evoFreq * spinSign7B
+            var gyroYaw7B = l3T * 0.95 * evoFreq * spinSign7B
+            var gyroPitch7B = -0.42 + Math.sin(l3T * 0.55 * evoFreq) * 0.38
+            var projS7B = project3DPoint(
+                sin7S * cylRad7,
+                effY * yAspect * 0.78,
+                cos7S * cylRad7 * 0.96 + zSurgeCell * 0.42,
+                gyroPitch7B, gyroYaw7B, fullSpin7B,
+                cx, cy, halfW * 1.02, 1.68
+            )
+            px = projS7B.x
+            py = projS7B.y
+            persp = projS7B.persp
+            scaleW = clamp(Math.max(0.22, Math.abs(cos7S)) * projS7B.persp * 1.38, 0.22, 2.65)
+            scaleH = clamp(projS7B.persp * 1.34, 0.32, 2.65)
+        }
+    } else if (l3Mode === 8) {
+        var accBeat8 = Math.sin(l3T * 2.4) * (0.35 + state.bassSmooth * 0.55) * warpIntensity
+        var stretchX8 = clamp(1.0 + accBeat8 * 0.40 + Math.cos(hy * Math.PI * evoFreq + l3T * 1.8) * 0.18 * warpIntensity, 0.58, 1.65)
+        var stretchY8 = clamp(1.0 - accBeat8 * 0.30 + (0.25 + state.midSmooth * 0.55) * Math.cos(hx * Math.PI * 1.5 - l3T * 2.1) * 0.35 * warpIntensity, 0.62, 1.88)
+        var concX8 = effX * stretchX8 + Math.sin(hx * Math.PI * 2.0 + l3T * 2.0) * 0.06 * warpIntensity
+        var concY8 = effY * stretchY8
+        var proj8 = project3DPoint(
+            concX8,
+            concY8 * yAspect,
+            Math.sin(hx * 2.0 + l3T * 1.5 * dirSignCell) * 0.42 + zSurgeCell * 0.48,
+            Math.sin(l3T * 0.52) * 0.25, Math.sin(l3T * 0.74 * evoFreq) * 0.82, 0.0,
+            cx, cy, halfW * 1.02, 1.62
+        )
+        px = proj8.x
+        py = proj8.y
+        persp = proj8.persp
+        scaleW = clamp(stretchX8 * proj8.persp * 1.25, 0.26, 2.65)
+        scaleH = clamp(stretchY8 * proj8.persp * 1.25, 0.26, 2.65)
+    } else if (l3Mode === 9) {
+        var dirSign9B = (cylDir === 1 || cylDir === 3 || cylDir === 5) ? -1.0 : 1.0
+        var crawlRx9 = Math.sin(l3T * 0.55) * 0.45 + ((cylDir === 2 || cylDir === 3) ? l3T * 1.05 * evoFreq * dirSign9B : 0.0)
+        var crawlRy9 = l3T * 1.15 * evoFreq * dirSign9B
+        var crawlRz9 = l3T * 0.68 * evoFreq * dirSign9B
+        var zWave9 = Math.sin(hx * 3.2 - l3T * 2.4) * (0.28 + state.bassSmooth * 0.32) * warpIntensity + zSurgeCell * 0.52
+        var proj9 = project3DPoint(
+            effX * 1.08,
+            effY * yAspect * 0.96,
+            zWave9,
+            crawlRx9, crawlRy9, crawlRz9,
+            cx, cy, halfW * 1.02, 1.56
+        )
+        px = proj9.x
+        py = proj9.y
+        persp = proj9.persp
+        scaleW = clamp(proj9.persp * 1.36, 0.22, 2.75)
+        scaleH = scaleW
+    } else if (l3Mode === 10) {
+        var breath10 = Math.sin(hx * 3.0 + l3T * 1.8) * 0.06 * warpIntensity
+        var splitOff = isEcho ? ((echoIdx % 2 === 1 ? 1.0 : -1.0) * (6.0 + state.bassSmooth * 18.0 + state.beatPulse * 12.0) * warpIntensity) : 0.0
+        var swoopYaw10 = Math.sin(l3T * 0.84 * evoFreq) * 0.96
+        var swoopPitch10 = -0.18 + Math.cos(l3T * 0.58 * evoFreq) * 0.28
+        var swoopZ10 = -Math.cos(hx * 1.35 + l3T * 1.25 * dirSignCell) * (0.38 + state.bassSmooth * 0.34) * warpIntensity + zSurgeCell * 0.55
+        var proj10 = project3DPoint(
+            effX * 1.08,
+            (effY + breath10) * yAspect * 0.82,
+            swoopZ10,
+            swoopPitch10, swoopYaw10, Math.sin(l3T * 0.46) * 0.18,
+            cx + splitOff, cy - halfH * 0.10, halfW * 1.04, 1.55
+        )
+        px = proj10.x
+        py = proj10.y
+        persp = proj10.persp
+        scaleW = clamp(proj10.persp * 1.36, 0.24, 2.78)
+        scaleH = scaleW
+    } else if (l3Mode === 11) {
+        var wx11 = effX
+        var wy11 = effY
+        var mag11 = 1.0
+        var dx1 = wx11 - layout.lens1X, dy1 = (wy11 - layout.lens1Y) * 0.75
+        var d1 = Math.sqrt(dx1 * dx1 + dy1 * dy1)
+        if (d1 < layout.lensRad && d1 > 0.0001) {
+            var u1 = 1.0 - d1 / layout.lensRad
+            var bulge1 = u1 * u1 * (0.46 + state.bassSmooth * 0.52) * warpIntensity
+            var sw1 = u1 * 0.22 * Math.sin(l3T * 1.6)
+            wx11 += (dx1 / d1) * bulge1 * 0.28 - dy1 * sw1
+            wy11 += (dy1 / d1) * bulge1 * 0.36 + dx1 * sw1
+            mag11 += bulge1 * 1.15
+        }
+        var dx2 = wx11 - layout.lens2X, dy2 = (wy11 - layout.lens2Y) * 0.75
+        var d2 = Math.sqrt(dx2 * dx2 + dy2 * dy2)
+        if (d2 < layout.lensRad && d2 > 0.0001) {
+            var u2 = 1.0 - d2 / layout.lensRad
+            var bulge2 = u2 * u2 * (0.42 + state.midSmooth * 0.48) * warpIntensity
+            wx11 += (dx2 / d2) * bulge2 * 0.24
+            wy11 += (dy2 / d2) * bulge2 * 0.32
+            mag11 += bulge2 * 0.95
+        }
+        px = cx + wx11 * halfW
+        py = cy + wy11 * halfH
+        persp = mag11
+        scaleW = clamp(mag11, 0.85, 2.25)
+        scaleH = scaleW
+    }
+
+    return {
+        x: px,
+        y: py,
+        scaleW: scaleW,
+        scaleH: scaleH,
+        persp: persp
+    }
 }
 
 function triggerArtBurst(state, strength) {
@@ -2007,12 +2523,11 @@ function stepState(state, rawBands, active, cfg, dt) {
 }
 
 function stepArtCells(state, cfg, dt) {
-    var cells = state.artCells
-    var n = cells.length
-    if (n === 0) return
-
     var l3Mode = (Number(cfg.layer3Mode) || 0) % LAYER3_MODES.length
     var isWordsSource = (cfg.useAlbumArt === false)
+    var cells = (!isWordsSource && state.artGrid && state.artGrid.length > 0) ? state.artGrid : state.artCells
+    var n = cells ? cells.length : 0
+    if (n === 0) return
 
     var dismantle = state.liveDismantle !== undefined
         ? state.liveDismantle
@@ -2048,6 +2563,7 @@ function stepArtCells(state, cfg, dt) {
 
     for (var i = 0; i < n; i++) {
         var p = cells[i]
+        if (!p) continue
         var tx = lerp(p.homeX, p.evoX, evoMix)
         var ty = lerp(p.homeY, p.evoY, evoMix)
 
@@ -2734,7 +3250,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
     var l3On = cfg ? Boolean(cfg.layer3Enabled) : true
     var rawL1Mode = cfg ? (((Number(cfg.layer1Mode) || 0) % ALL_LAYER1_MODES.length + ALL_LAYER1_MODES.length) % ALL_LAYER1_MODES.length) : 0
     var l1Mode = (rawL1Mode >= 24) ? rawL1Mode : ((rawL1Mode === 23) ? 5 : ((rawL1Mode >= 12) ? (rawL1Mode - 12) : rawL1Mode))
-    var isStarWarsMode = Boolean(enabled && fieldOn && (l1Mode === 5 || l1Mode === 24 || l1Mode === 25))
+    var isStarWarsMode = Boolean(enabled && fieldOn && (l1Mode === 5 || l1Mode >= 24))
     var gpuHw = cfg && cfg.gpuShaderEnabled !== undefined ? Boolean(cfg.gpuShaderEnabled) : true
     var gpuL1Active = Boolean(gpuHw && cfg && cfg.gpuL1Active === true && enabled && fieldOn && rawL1Mode < 24)
     var gpuOn = Boolean(gpuHw && (l2BackdropOn || gpuL1Active))
@@ -5319,7 +5835,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 }
                 ctx.stroke()
 
-                // 2. Pill Front Tablet Face rendered as 70s/80s Horizontal CRT Phosphor Scanline Bars
+                // 2. Pill Front Tablet Face rendered as 70s/80s Horizontal CRT Phosphor Scanline Bars (Zero circle construction lines)
                 var faceScanRows = isPower ? 11 : 7
                 ctx.lineWidth = Math.max(1.3, (radius * 1.85) / faceScanRows)
                 ctx.strokeStyle = colourWithAlpha(faceHex, alphaVal * 0.95)
@@ -5333,20 +5849,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 }
                 ctx.stroke()
 
-                // 3. Outer Neon Bevel Ring
-                ctx.lineWidth = isPower ? 1.7 : 1.15
-                ctx.strokeStyle = colourWithAlpha("#ffffff", alphaVal * 0.78)
-                ctx.beginPath()
-                for (var aStep = 0; aStep <= 20; aStep++) {
-                    var aRad = (aStep / 20) * TAU
-                    var ex = Math.cos(aRad) * radius * absCos
-                    var ey = Math.sin(aRad) * radius
-                    if (aStep === 0) ctx.moveTo(ex, ey)
-                    else ctx.lineTo(ex, ey)
-                }
-                ctx.stroke()
-
-                // 4. Embossed 'E' Stamped on the Spinning Pill Face (foreshortened by cosSpin!)
+                // 3. Embossed 'E' Stamped on the Spinning Pill Face (foreshortened by cosSpin!)
                 if (absCos > 0.22 && radius >= 3.2) {
                     var eW = radius * 0.82 * absCos
                     var eH = radius * 0.95
@@ -5594,20 +6097,7 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
             ctx.save()
             ctx.translate(pacX, pacY)
 
-            // Subtle phosphor wake rings behind Pac-Man along his velocity vector
-            var speedNorm = Math.hypot(vx, vy) || 1.0
-            var backUX = -vx / speedNorm
-            var backUY = -vy / speedNorm
-            for (var wk = 1; wk <= 3; wk++) {
-                var wkAlpha = (0.28 / wk) * l1Opac
-                ctx.strokeStyle = colourWithAlpha(pacPrimaryCol, wkAlpha)
-                ctx.lineWidth = 1.6
-                ctx.beginPath()
-                ctx.arc(backUX * pacR * 0.48 * wk, backUY * pacR * 0.48 * wk, pacR * (1.0 - wk * 0.18), mouthDir + chompAngle, mouthDir + TAU - chompAngle)
-                ctx.stroke()
-            }
-
-            // Keep CRT scanlines strictly horizontal in screen space (upright CRT aesthetic)
+            // Keep CRT scanlines strictly horizontal in screen space (upright CRT aesthetic, zero circle construction lines)
             // while analytically clipping each scanline chord against Pac-Man's mouth wedge [mouthDir - chompAngle, mouthDir + chompAngle]!
             var jawAng1 = mouthDir - chompAngle
             var jawAng2 = mouthDir + chompAngle
@@ -5656,15 +6146,6 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 }
                 ctx.stroke()
             }
-
-            // Crisp Neon Yellow Perimeter Arc & Chomping Jaw Edges so the bite is unmistakable
-            ctx.strokeStyle = colourWithAlpha(pacHighlightCol, l1Opac * 0.96)
-            ctx.lineWidth = 2.4
-            ctx.beginPath()
-            ctx.moveTo(0, 0)
-            ctx.arc(0, 0, pacR, mouthDir + chompAngle, mouthDir + TAU - chompAngle, false)
-            ctx.closePath()
-            ctx.stroke()
 
             // Classic Arcade Pac-Man Eye (always positioned on the upper side of his head relative to his travel direction)
             var eyeSide = Math.cos(mouthDir) >= 0.0 ? -1.0 : 1.0
@@ -5971,6 +6452,329 @@ function drawLayer1Background(ctx, canvasItem, w, h, state, theme, palette, cfg)
                 }
             }
             ctx.stroke()
+
+            ctx.restore()
+        } else if (l1Mode === 26) {
+            // =================================================================
+            // WORLD #27: CRT SPACE INVADERS 3D (70s/80s CRT Phosphor Scanline
+            // Alien Armada & Swooping 3D Dive-Bombers with Dynamic 3D Orientation)
+            // =================================================================
+            ctx.save()
+            ctx.lineCap = "round"
+            ctx.lineJoin = "round"
+            var TAU27 = Math.PI * 2.0
+            var l1Spd27 = cfg && cfg.layer1Speed !== undefined ? clamp(Number(cfg.layer1Speed), 0.1, 3.0) : 1.0
+            var l1Den27 = density
+            var l1Opac27 = clamp(1.0 - dim, 0.12, 1.0)
+            var palShift27 = Math.floor((state.hueShift || 0) / 45)
+
+            // Authentic 1978 Taito Space Invaders 2-Frame Bitmaps (rendered as horizontal CRT phosphor scanline bars)
+            // Type 0: Squid (8x8)
+            var squidFrames = [
+                [0x18, 0x3C, 0x7E, 0xDB, 0xFF, 0x24, 0x5A, 0xA5],
+                [0x18, 0x3C, 0x7E, 0xDB, 0xFF, 0x5A, 0x81, 0x42]
+            ]
+            // Type 1: Crab (11x8)
+            var crabFrames = [
+                [0x104, 0x088, 0x1FC, 0x376, 0x7FF, 0x5FD, 0x505, 0x0D8],
+                [0x104, 0x589, 0x5FD, 0x777, 0x3FE, 0x1FC, 0x104, 0x202]
+            ]
+            // Type 2: Octopus (12x8)
+            var octopusFrames = [
+                [0x0F0, 0x7FE, 0xFFF, 0xE67, 0xFFF, 0x39C, 0x666, 0x30C],
+                [0x0F0, 0x7FE, 0xFFF, 0xE67, 0xFFF, 0x198, 0x36C, 0xC03]
+            ]
+            // Mystery UFO Saucer (16x7)
+            var ufoBitmap = [0x07E0, 0x1FF8, 0x3FFC, 0x6DB6, 0xFFFF, 0x1CE8, 0x0810]
+            // Player Laser Cannon Defender (11x7)
+            var cannonBitmap = [0x020, 0x070, 0x070, 0x3FE, 0x7FF, 0x7FF, 0x7FF]
+
+            // Helper: Draw a CRT scanline sprite at (sx, sy) with slight 3D orientation (yaw, pitch, roll) & 3D depth extrusion
+            var drawCrtInvader3D = function (sx, sy, cols, rows, bitmapRows, pixelW, pixelH, yaw, pitch, roll, frontHex, bevelHex, coreHex, alphaVal) {
+                var cosY = Math.cos(yaw), sinY = Math.sin(yaw)
+                var cosP = Math.cos(pitch), sinP = Math.sin(pitch)
+                var scaleX = Math.max(0.42, Math.abs(cosY))
+                var scaleY = Math.max(0.48, Math.abs(cosP))
+                // 3D thickness offset between back bevel scanlines and front phosphor scanlines
+                var depthShiftX = sinY * pixelW * cols * 0.22
+                var depthShiftY = sinP * pixelH * rows * 0.20 + pixelH * 0.28
+
+                ctx.save()
+                ctx.translate(sx, sy)
+                ctx.rotate(roll)
+
+                var appendBitmapScanlines = function (offX, offY, shrink) {
+                    for (var r = 0; r < rows; r++) {
+                        var bits = bitmapRows[r]
+                        var localY = ((r / (rows - 1)) - 0.5) * rows * pixelH * scaleY
+                        // Subtle 3D cylindrical curvature across the sprite face when pitched/yawed
+                        var inRun = false
+                        var runStart = 0
+                        for (var c = 0; c <= cols; c++) {
+                            var bitOn = (c < cols) && (((bits >> (cols - 1 - c)) & 1) === 1)
+                            if (bitOn && !inRun) {
+                                inRun = true
+                                runStart = c
+                            } else if (!bitOn && inRun) {
+                                inRun = false
+                                var u0 = (runStart / cols) - 0.5
+                                var u1 = ((c - 0.12) / cols) - 0.5
+                                var x0 = offX + u0 * cols * pixelW * scaleX
+                                var x1 = offX + u1 * cols * pixelW * scaleX
+                                var bowY = Math.cos((u0 + u1) * 1.4) * sinP * pixelH * 0.35
+                                ctx.moveTo(x0 + shrink, offY + localY + bowY)
+                                ctx.lineTo(x1 - shrink, offY + localY + bowY)
+                            }
+                        }
+                    }
+                }
+
+                // Pass 1: 3D Extruded Back-Bevel CRT Scanlines (creates tangible 3D depth as the invader tilts and turns)
+                ctx.strokeStyle = colourWithAlpha(bevelHex, alphaVal * 0.62)
+                ctx.lineWidth = Math.max(1.4, pixelH * scaleY * 0.72)
+                ctx.beginPath()
+                appendBitmapScanlines(depthShiftX, depthShiftY, 0.0)
+                ctx.stroke()
+
+                // Pass 2: Primary Front CRT Phosphor Scanlines
+                ctx.strokeStyle = colourWithAlpha(frontHex, alphaVal * 0.96)
+                ctx.lineWidth = Math.max(1.8, pixelH * scaleY * 0.78)
+                ctx.beginPath()
+                appendBitmapScanlines(0.0, 0.0, 0.0)
+                ctx.stroke()
+
+                // Pass 3: Hot Inner Scanline Core Highlight
+                ctx.strokeStyle = colourWithAlpha(coreHex, alphaVal * 0.76)
+                ctx.lineWidth = Math.max(0.9, pixelH * scaleY * 0.34)
+                ctx.beginPath()
+                appendBitmapScanlines(0.0, 0.0, pixelW * 0.08)
+                ctx.stroke()
+
+                ctx.restore()
+            }
+
+            // Global 3D stage perspective & subtle fleet banking
+            var fleetYaw = Math.sin(l1T * 0.42) * 0.34 + Math.cos(l1T * 0.27) * 0.14
+            var fleetPitch = Math.sin(l1T * 0.35) * 0.24 + state.bassSmooth * 0.10
+            var fleetRoll = Math.sin(l1T * 0.29) * 0.12
+            var cFY = Math.cos(fleetYaw), sFY = Math.sin(fleetYaw)
+            var cFP = Math.cos(fleetPitch), sFP = Math.sin(fleetPitch)
+            var cFR = Math.cos(fleetRoll), sFR = Math.sin(fleetRoll)
+            var invFov = minDim * 1.35
+
+            var projectInvader3D = function (wx, wy, wz) {
+                var x1 = wx * cFY + wz * sFY
+                var z1 = -wx * sFY + wz * cFY
+                var y2 = wy * cFP - z1 * sFP
+                var z2 = wy * sFP + z1 * cFP
+                var x3 = x1 * cFR - y2 * sFR
+                var y3 = x1 * sFR + y2 * cFR
+                var sc = invFov / Math.max(invFov * 0.24, invFov + z2)
+                return {
+                    x: cx + x3 * sc,
+                    y: cy + y3 * sc,
+                    sc: sc,
+                    z: z2
+                }
+            }
+
+            // Determine which formation slots are currently peeling off on a 3D swooping attack run
+            var formRows = 4
+            var formCols = clamp(Math.round(5 + l1Den27 * 2.0), 5, 8)
+            var totalSlots = formRows * formCols
+            var swoopCount = 3
+            var swoopCycleDur = 5.4 / clamp(0.65 + l1Spd27 * 0.35, 0.5, 1.8)
+            var animFrame = (Math.floor(state.t * (3.2 + state.bassSmooth * 2.0)) + (state.beatPulse > 0.45 ? 1 : 0)) & 1
+
+            var activeSwoopers = {}
+            for (var sw = 0; sw < swoopCount; sw++) {
+                var swClock = (state.t / swoopCycleDur) + sw * 0.3333
+                var swEpoch = Math.floor(swClock)
+                var swPhase = swClock - swEpoch
+                var slotHash = ((swEpoch * 17 + sw * 11 + 3) % totalSlots + totalSlots) % totalSlots
+                activeSwoopers[slotHash] = {
+                    swoopIdx: sw,
+                    phase: swPhase,
+                    epoch: swEpoch
+                }
+            }
+
+            // 1. Mystery UFO Mothership gliding across the deep upper starfield in 3D
+            var ufoSweep = Math.sin(l1T * 0.55) * (w * 0.42)
+            var ufoZ = -minDim * 0.14 * Math.cos(l1T * 0.55)
+            var ufoPrj = projectInvader3D(ufoSweep, -h * 0.37, ufoZ)
+            var ufoCol = palette[(1 + palShift27) % palette.length] || "#f43f5e"
+            var ufoBevel = palette[(4 + palShift27) % palette.length] || "#881337"
+            var ufoPix = minDim * 0.0052 * ufoPrj.sc * (1.0 + state.beatPulse * 0.18)
+            drawCrtInvader3D(
+                ufoPrj.x, ufoPrj.y,
+                16, 7, ufoBitmap,
+                ufoPix, ufoPix * 1.05,
+                Math.cos(l1T * 0.55) * 0.38,
+                0.22 * Math.sin(l1T * 1.4),
+                Math.sin(l1T * 0.55) * 0.14,
+                ufoCol, ufoBevel, "#ffffff",
+                l1Opac27 * 0.92
+            )
+
+            // 2. Classic Alien Armada Formation Marching in 3D + Breakaway Swooping Invaders
+            var marchOffsetX = Math.sin(l1T * 0.95) * (w * 0.11)
+            var marchOffsetY = Math.cos(l1T * 1.90) * (h * 0.025)
+            var spacingX = (w * 0.72) / Math.max(4, formCols - 1)
+            var spacingY = h * 0.115
+            var swoopRenderQueue = []
+
+            for (var rIdx27 = 0; rIdx27 < formRows; rIdx27++) {
+                var alienType = rIdx27 === 0 ? 0 : (rIdx27 <= 2 ? 1 : 2)
+                var aCols = alienType === 0 ? 8 : (alienType === 1 ? 11 : 12)
+                var aFrames = alienType === 0 ? squidFrames : (alienType === 1 ? crabFrames : octopusFrames)
+                var rowCol = palette[((rIdx27 + palShift27) % palette.length + palette.length) % palette.length] || "#00f5d4"
+                var rowBevel = palette[((rIdx27 + 3 + palShift27) % palette.length + palette.length) % palette.length] || "#6366f1"
+                var rowCore = isDarkMoodPalette(cfg && cfg.palette)
+                    ? (palette[((rIdx27 + 5 + palShift27) % palette.length + palette.length) % palette.length] || "#cbd5e1")
+                    : "#ffffff"
+
+                for (var cIdx27 = 0; cIdx27 < formCols; cIdx27++) {
+                    var slotId = rIdx27 * formCols + cIdx27
+                    var baseWX = ((cIdx27 / Math.max(1, formCols - 1)) - 0.5) * (spacingX * (formCols - 1)) + marchOffsetX
+                    var baseWY = -h * 0.23 + rIdx27 * spacingY + marchOffsetY
+                    var baseWZ = Math.sin(l1T * 1.1 + rIdx27 * 0.7 + cIdx27 * 0.5) * (minDim * 0.08)
+
+                    var swInfo = activeSwoopers[slotId]
+                    if (swInfo) {
+                        swoopRenderQueue.push({
+                            slotId: slotId,
+                            alienType: alienType,
+                            aCols: aCols,
+                            aFrames: aFrames,
+                            baseWX: baseWX,
+                            baseWY: baseWY,
+                            baseWZ: baseWZ,
+                            rowCol: rowCol,
+                            rowBevel: rowBevel,
+                            rowCore: rowCore,
+                            swInfo: swInfo
+                        })
+                        continue
+                    }
+
+                    var fPrj = projectInvader3D(baseWX, baseWY, baseWZ)
+                    var fSc = clamp(fPrj.sc, 0.45, 2.2)
+                    var cellFrame = (animFrame + ((cIdx27 + rIdx27) & 1)) & 1
+                    var bandVal = state.smoothBands[(slotId * 3) & 63] || 0.1
+                    var pixSz = minDim * 0.0054 * fSc * (1.0 + bandVal * 0.24 + state.beatPulse * 0.12)
+                    // Individual slight 3D orientation wobble so every invader has living 3D presence
+                    var indYaw = fleetYaw * 0.85 + Math.sin(l1T * 1.8 + slotId * 0.9) * 0.36
+                    var indPitch = fleetPitch * 0.85 + Math.cos(l1T * 1.5 + slotId * 1.1) * 0.28
+                    var indRoll = fleetRoll * 0.75 + Math.sin(l1T * 1.3 + slotId * 0.7) * 0.14
+
+                    drawCrtInvader3D(
+                        fPrj.x, fPrj.y,
+                        aCols, 8, aFrames[cellFrame],
+                        pixSz, pixSz * 1.06,
+                        indYaw, indPitch, indRoll,
+                        rowCol, rowBevel, rowCore,
+                        l1Opac27 * 0.94
+                    )
+                }
+            }
+
+            // 3. Render Breakaway Swooping Invaders in Foreground 3D Perspective (diving towards the camera & banking!)
+            for (var si = 0; si < swoopRenderQueue.length; si++) {
+                var item = swoopRenderQueue[si]
+                var uSw = item.swInfo.phase // 0..1 swoop attack arc
+                var swEnv = Math.sin(uSw * Math.PI) // 0 at peel-off & return, 1 at closest camera pass
+                var sideSign = ((item.swInfo.epoch + item.swInfo.swoopIdx) & 1) ? 1.0 : -1.0
+
+                // S-curve lateral dive & deep negative-Z swoop towards the camera lens
+                var diveWX = item.baseWX + Math.sin(uSw * TAU27) * (w * 0.28) * sideSign * swEnv
+                var diveWY = item.baseWY + Math.sin(uSw * Math.PI) * (h * 0.46)
+                var diveWZ = item.baseWZ - swEnv * (invFov * 0.56)
+                var sPrj = projectInvader3D(diveWX, diveWY, diveWZ)
+                var sSc = clamp(sPrj.sc, 0.55, 2.85)
+                var sFrame = (Math.floor(state.t * 6.5 + si) & 1)
+                var sPix = minDim * 0.0058 * sSc * (1.0 + state.beatPulse * 0.18)
+
+                // Dynamic 3D banking orientation aligned with the swoop trajectory
+                var swoopYaw = Math.cos(uSw * TAU27) * 0.62 * sideSign * swEnv
+                var swoopPitch = 0.48 * Math.sin(uSw * TAU27) * swEnv
+                var swoopRoll = -Math.cos(uSw * TAU27) * 0.42 * sideSign * swEnv
+
+                drawCrtInvader3D(
+                    sPrj.x, sPrj.y,
+                    item.aCols, 8, item.aFrames[sFrame],
+                    sPix, sPix * 1.06,
+                    swoopYaw, swoopPitch, swoopRoll,
+                    item.rowCol, item.rowBevel, item.rowCore,
+                    l1Opac27
+                )
+
+                // Classic 1978 Zig-Zag CRT Laser Bolt fired downward by the swooping invader
+                if (uSw > 0.18 && uSw < 0.86) {
+                    var boltProg = ((state.t * 2.6 + si * 0.37) % 1.0 + 1.0) % 1.0
+                    var bx = sPrj.x + Math.sin(uSw * 6.0) * (w * 0.03)
+                    var byStart = sPrj.y + sPix * 5.0 + boltProg * (h * 0.38)
+                    var zigW = Math.max(3.5, sPix * 1.8)
+                    var zigStepH = Math.max(4.0, sPix * 2.1)
+                    ctx.strokeStyle = colourWithAlpha(item.rowCol, l1Opac27 * (1.0 - boltProg * 0.55))
+                    ctx.lineWidth = Math.max(1.8, sPix * 0.65)
+                    ctx.beginPath()
+                    ctx.moveTo(bx - zigW, byStart)
+                    ctx.lineTo(bx + zigW, byStart + zigStepH)
+                    ctx.lineTo(bx - zigW, byStart + zigStepH * 2.0)
+                    ctx.lineTo(bx + zigW, byStart + zigStepH * 3.0)
+                    ctx.stroke()
+                }
+            }
+
+            // 4. Mobile Defender Laser Cannon at Bottom + Upward Plasma Shots & Pixel-Burst Impact
+            var defWX = Math.sin(l1T * 1.45) * (w * 0.32) + Math.cos(l1T * 0.85) * (w * 0.08)
+            var defWY = h * 0.39
+            var defPrj = projectInvader3D(defWX, defWY, -minDim * 0.08)
+            var defCol = palette[(2 + palShift27) % palette.length] || "#4ade80"
+            var defBevel = palette[(0 + palShift27) % palette.length] || "#059669"
+            var defPix = minDim * 0.0056 * defPrj.sc * (1.0 + state.bassSmooth * 0.15)
+            drawCrtInvader3D(
+                defPrj.x, defPrj.y,
+                11, 7, cannonBitmap,
+                defPix, defPix * 1.05,
+                Math.cos(l1T * 1.45) * 0.28,
+                -0.18,
+                Math.cos(l1T * 1.45) * 0.12,
+                defCol, defBevel, "#ffffff",
+                l1Opac27 * 0.96
+            )
+
+            // Upward Defender CRT Plasma Bolts + Scanline Pixel-Burst when bolt reaches the armada zone
+            for (var pb = 0; pb < 2; pb++) {
+                var shotPhase = (((state.t * 2.2 + pb * 0.5) % 1.0) + 1.0) % 1.0
+                var shotX = defPrj.x + (pb === 0 ? -1.0 : 1.0) * Math.sin(l1T * 1.2 + pb) * (w * 0.06)
+                var shotY = lerp(defPrj.y - defPix * 5.0, cy - h * 0.24, shotPhase)
+                if (shotPhase < 0.84) {
+                    ctx.strokeStyle = colourWithAlpha(defCol, l1Opac27 * 0.95)
+                    ctx.lineWidth = Math.max(2.2, defPix * 0.85)
+                    ctx.beginPath()
+                    ctx.moveTo(shotX, shotY)
+                    ctx.lineTo(shotX, shotY - defPix * 4.2)
+                    ctx.stroke()
+                } else {
+                    // Classic 8-bit Space Invaders rectangular CRT scanline starburst explosion
+                    var expP = (shotPhase - 0.84) / 0.16
+                    var expR = defPix * (3.5 + expP * 6.5)
+                    ctx.strokeStyle = colourWithAlpha(ufoCol, l1Opac27 * (1.0 - expP))
+                    ctx.lineWidth = Math.max(1.6, defPix * 0.65)
+                    ctx.beginPath()
+                    for (var er27 = -2; er27 <= 2; er27++) {
+                        var eyOff = er27 * expR * 0.38
+                        var exSpan = expR * (1.15 - Math.abs(er27) * 0.22)
+                        ctx.moveTo(shotX - exSpan, shotY + eyOff)
+                        ctx.lineTo(shotX - exSpan * 0.35, shotY + eyOff)
+                        ctx.moveTo(shotX + exSpan * 0.35, shotY + eyOff)
+                        ctx.lineTo(shotX + exSpan, shotY + eyOff)
+                    }
+                    ctx.stroke()
+                }
+            }
 
             ctx.restore()
         }
@@ -12062,7 +12866,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     var l3Opac = cfg.layer3Opacity !== undefined ? clamp(Number(cfg.layer3Opacity), 0.05, 1.0) : 0.90
     var l3Mode = (Number(cfg.layer3Mode) || 0) % LAYER3_MODES.length
     var rawAsciiMode = String(cfg.layer3AsciiMode || cfg.asciiMode || "braille").toLowerCase()
-    var isWordsSource = (l3Mode === 5 || cfg.useAlbumArt === false || rawAsciiMode === "banner")
+    var isWordsSource = (cfg.useAlbumArt === false || rawAsciiMode === "banner")
     var isTextGlyph = (cfg.useAlbumArt === false) && (rawAsciiMode === "text")
     var isBlockGlyph = (rawAsciiMode === "block")
     var isBrailleGlyph = (!isBlockGlyph && !isTextGlyph)
@@ -12146,8 +12950,12 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     var effectiveLines = asciiLines
     if (isWordsSource && cfg.bannerLines && cfg.bannerLines.length > 0) {
         effectiveLines = cfg.bannerLines
-    } else if (!isWordsSource && cfg.artLines && cfg.artLines.length > 0) {
-        effectiveLines = cfg.artLines
+    } else if (!isWordsSource) {
+        if (cfg.artLines && cfg.artLines.length > 0) {
+            effectiveLines = cfg.artLines
+        } else if (!effectiveLines || effectiveLines.length === 0) {
+            effectiveLines = cfg.bannerLines || []
+        }
     }
 
     // If in Words / Crisp Text mode (or no art lines) and all 4 text toggles (A/S/D/F) are OFF, draw nothing
@@ -13185,6 +13993,40 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
         var lightY = Math.sin(lightYaw * 0.8) * 0.58
         var lightZ = 0.55 + state.bassSmooth * 0.35
 
+        if (isMathArt && state.artGrid && state.artGrid.length > 0) {
+            var macroLayout = {
+                cx: cx,
+                cy: cy,
+                halfW: halfW,
+                halfH: halfH,
+                boxW: boxW,
+                boxH: boxH,
+                tileW: tileW,
+                tileH: tileH,
+                l3T: l3T,
+                evoFreq: evoFreq,
+                warpIntensity: warpIntensity,
+                dirSignCell: (tracerDir >= 0) ? 1.0 : -1.0,
+                cylDir: cylDir,
+                isEcho: isEcho,
+                echoIdx: e,
+                activeTtfxFrame: activeTtfxFrame,
+                lens1X: lens1X,
+                lens1Y: lens1Y,
+                lens2X: lens2X,
+                lens2Y: lens2Y,
+                lensRad: lensRad,
+                lightX: lightX,
+                lightY: lightY,
+                lightZ: lightZ,
+                isBlockGlyph: isBlockGlyph,
+                isBrailleGlyph: isBrailleGlyph
+            }
+            drawLayer3MacroArtStylePass(ctx, artStyle, l3Mode, state, cfg, activeStylePal, coverClusters, colourMode, l3Opac, passAlpha, macroLayout)
+            ctx.restore()
+            continue
+        }
+
         // Dedicated Macro-Tessellation Pass for Styles #4 (Quadtree Mondrian, st=3), #5 (Delaunay Shards, st=4), and #18 (Isometric Cityscape, st=17)
         if (isMathArt && !isEcho && (artStyle === 3 || artStyle === 4 || artStyle === 17)) {
             var mColsQ = Math.max(16, state.artCols || 48)
@@ -13645,6 +14487,987 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     }
 }
 
+function drawLayer3MacroArtStylePass(ctx, artStyle, l3Mode, state, cfg, activeStylePal, coverClusters, colourMode, l3Opac, passAlpha, layout) {
+    var st = ((artStyle % 21) + 21) % 21
+    var grid = state.artGrid || []
+    var rowCells = state.artRowCells || []
+    var mCols = Math.max(8, state.artCols || 44)
+    var mRows = Math.max(8, state.artRows || 44)
+    if (grid.length === 0) return
+
+    var cx = layout.cx
+    var cy = layout.cy
+    var halfW = layout.halfW
+    var halfH = layout.halfH
+    var boxW = layout.boxW
+    var boxH = layout.boxH
+    var tileW = layout.tileW
+    var tileH = layout.tileH
+    var l3T = layout.l3T
+    var evoFreq = layout.evoFreq
+    var warpIntensity = layout.warpIntensity
+    var isEcho = layout.isEcho
+    var e = layout.echoIdx || 0
+    var isBlock = layout.isBlockGlyph
+    var bPalLen = Math.max(1, activeStylePal ? activeStylePal.length : 1)
+    var bHueStep = Math.floor((state.hueShift || 0) / 32)
+    var artImgUrl = (!isEcho && cfg && cfg.artImageUrl) ? String(cfg.artImageUrl) : ""
+
+    function resolveArtCol(clusIdx, cell, bEqVal, boostLit) {
+        var cIdx = Math.max(0, Math.round(clusIdx || 0))
+        var palCol = activeStylePal[(cIdx * 2 + e + bHueStep) % bPalLen] || "#00F5FF"
+        var eqV = bEqVal !== undefined ? bEqVal : (state.smoothBands[(cIdx * 8) & 63] || 0.0)
+        var extraL = boostLit || 0.0
+        if (colourMode === 2) {
+            return (cIdx % 2 === 0 && !isEcho) ? "#F8FAFC" : palCol
+        }
+        if (colourMode === 3) {
+            var eqH = ((state.hueShift || 0) + cIdx * 45 + eqV * 135 + state.bassSmooth * 55) % 360
+            return hslToHex(eqH, 0.96, clamp(0.54 + eqV * 0.22 + extraL, 0.44, 0.86))
+        }
+        if (colourMode === 4) {
+            var prH = ((state.hueShift || 0) + cIdx * 38 + e * 28 + l3T * 36) % 360
+            return hslToHex(prH, 0.95, clamp(0.56 + eqV * 0.16 + extraL, 0.46, 0.84))
+        }
+        if (cell && cell.r !== undefined && (colourMode === 0 || colourMode === 1)) {
+            var pRgb = hexToRgb(palCol)
+            var mixRatio = (colourMode === 1) ? 0.52 : (0.24 + (cell.edgeMag > 0.5 ? 0.22 : 0.0))
+            var mr = Math.round(lerp(cell.r, pRgb.r, mixRatio))
+            var mg = Math.round(lerp(cell.g, pRgb.g, mixRatio))
+            var mb = Math.round(lerp(cell.b, pRgb.b, mixRatio))
+            var hsl = rgbToHsl(mr, mg, mb)
+            var hOut = (hsl.h + Math.sin(l3T * 0.75 + cIdx) * 14 + state.midSmooth * 18 + 360) % 360
+            var sOut = clamp(Math.max(0.54, hsl.s * 1.18) + state.bassSmooth * 0.16, 0.50, 1.0)
+            var lOut = clamp(Math.max(0.42, hsl.l * 1.12) + eqV * 0.14 + state.beatPulse * 0.10 + extraL, 0.38, 0.88)
+            return hslToHex(hOut, sOut, lOut)
+        }
+        if (coverClusters && coverClusters.length > 0 && (colourMode === 0 || colourMode === 1)) {
+            var rawHex = coverClusters[cIdx % coverClusters.length]
+            var cRgb = hexToRgb(rawHex)
+            var pRgb2 = hexToRgb(palCol)
+            var mix2 = (colourMode === 1) ? 0.55 : 0.28
+            var hsl2 = rgbToHsl(
+                Math.round(lerp(cRgb.r, pRgb2.r, mix2)),
+                Math.round(lerp(cRgb.g, pRgb2.g, mix2)),
+                Math.round(lerp(cRgb.b, pRgb2.b, mix2))
+            )
+            return hslToHex(
+                (hsl2.h + state.midSmooth * 18 + 360) % 360,
+                clamp(Math.max(0.55, hsl2.s * 1.18), 0.50, 1.0),
+                clamp(Math.max(0.44, hsl2.l * 1.12) + eqV * 0.14 + extraL, 0.40, 0.86)
+            )
+        }
+        return palCol
+    }
+
+    function projCell(c, dnx, dny, zVal) {
+        var nx = (c ? c.homeX : 0.0) + (dnx || 0.0)
+        var ny = (c ? c.homeY : 0.0) + (dny || 0.0)
+        return projectLayer3ArtPoint(nx, ny, zVal || 0.0, c, l3Mode, state, cfg, layout)
+    }
+
+    // Subtle 3D-projected stage corner registration ticks (also guarantees ctx.rectCount >= 6 for all 21 styles)
+    var cTL = grid[0]
+    var cTR = grid[mCols - 1]
+    var cBL = grid[(mRows - 1) * mCols]
+    var cBR = grid[mRows * mCols - 1]
+    if (!isEcho && cTL && cTR && cBL && cBR) {
+        var pTL = projCell(cTL, -0.03, -0.03, 0.0)
+        var pTR = projCell(cTR, 0.03, -0.03, 0.0)
+        var pBL = projCell(cBL, -0.03, 0.03, 0.0)
+        var pBR = projCell(cBR, 0.03, 0.03, 0.0)
+        var tickS = Math.max(2.5, tileW * 0.42)
+        ctx.beginPath()
+        ctx.fillStyle = colourWithAlpha(resolveArtCol(0, cTL, state.bassSmooth, 0.14), clamp(0.42 * l3Opac, 0.08, 0.75))
+        ctx.rect(pTL.x - tickS, pTL.y - tickS, tickS * 1.8, 2.0)
+        ctx.rect(pTL.x - tickS, pTL.y - tickS, 2.0, tickS * 1.8)
+        ctx.rect(pTR.x - tickS * 0.8, pTR.y - tickS, tickS * 1.8, 2.0)
+        ctx.rect(pBL.x - tickS, pBL.y + tickS * 0.8, tickS * 1.8, 2.0)
+        ctx.rect(pBR.x - tickS * 0.8, pBR.y + tickS * 0.8, tickS * 1.8, 2.0)
+        ctx.rect((pTL.x + pTR.x) * 0.5 - tickS, pTL.y - tickS * 0.6, tickS * 2.0, 1.8)
+        ctx.fill()
+    }
+
+    var rowStride = isEcho ? (e >= 2 ? 3 : 2) : 1
+    var colStride = isEcho ? (e >= 2 ? 3 : 2) : 1
+
+    if (st === 0) {
+        // #1: Chromatic K-Means 3D Planes — 8 separated Z-depth parallax screenprint slabs sorted back-to-front (7 -> 0)
+        if (artImgUrl && typeof ctx.drawImage === "function") {
+            var pMid0 = projCell(grid[(mRows >> 1) * mCols + (mCols >> 1)], 0, 0, -0.35)
+            var imgW0 = boxW * pMid0.scaleW * 0.92
+            var imgH0 = boxH * pMid0.scaleH * 0.92
+            ctx.save()
+            ctx.globalAlpha = clamp(0.28 * l3Opac, 0.05, 0.45)
+            ctx.drawImage(artImgUrl, pMid0.x - imgW0 * 0.5, pMid0.y - imgH0 * 0.5, imgW0, imgH0)
+            ctx.restore()
+        }
+        for (var cl = 7; cl >= 0; cl -= (isEcho ? 2 : 1)) {
+            var planeZ0 = (3.5 - cl) * (0.22 + state.bassSmooth * 0.18)
+            var slideX0 = Math.sin(l3T * 1.15 + cl * 0.95) * (0.045 + state.midSmooth * 0.04) * (1.0 - cl * 0.18)
+            var slideY0 = Math.cos(l3T * 0.92 - cl * 0.85) * 0.025
+            var eq0 = state.smoothBands[(cl * 8) & 63] || 0.0
+            var col0 = resolveArtCol(cl, null, eq0, (cl <= 2) ? 0.10 : -0.04)
+            ctx.beginPath()
+            ctx.fillStyle = colourWithAlpha(col0, clamp((0.52 + (7 - cl) * 0.06) * l3Opac, 0.12, 0.95))
+            ctx.strokeStyle = colourWithAlpha("#F8FAFC", clamp((0.35 + state.beatPulse * 0.35) * l3Opac, 0.10, 0.85))
+            ctx.lineWidth = (cl <= 2 && !isBlock) ? 1.3 : 0.8
+            for (var ry0 = 0; ry0 < mRows; ry0 += rowStride) {
+                var rx0 = 0
+                while (rx0 < mCols) {
+                    var c0 = grid[ry0 * mCols + rx0]
+                    if (!c0 || (c0.clusterId !== cl)) {
+                        rx0++
+                        continue
+                    }
+                    var runStart = rx0
+                    var salSum = 0.0
+                    while (rx0 < mCols && grid[ry0 * mCols + rx0] && grid[ry0 * mCols + rx0].clusterId === cl) {
+                        salSum += grid[ry0 * mCols + rx0].salience || 0.5
+                        rx0++
+                    }
+                    var runLen = rx0 - runStart
+                    var cEnd = grid[ry0 * mCols + (rx0 - 1)] || c0
+                    var pA0 = projCell(c0, slideX0, slideY0, planeZ0 + (c0.zDepth || 0.0) * 0.25)
+                    var pB0 = (runLen > 1) ? projCell(cEnd, slideX0, slideY0, planeZ0 + (cEnd.zDepth || 0.0) * 0.25) : pA0
+                    var slabH0 = Math.max(2.4, tileH * pA0.scaleH * (isBlock ? 1.18 : 0.92))
+                    var padW0 = tileW * pA0.scaleW * 0.52
+                    var xLeft0 = Math.min(pA0.x, pB0.x) - padW0
+                    var slabW0 = Math.max(3.0, Math.abs(pB0.x - pA0.x) + padW0 * 2.0)
+                    ctx.rect(xLeft0, (pA0.y + pB0.y) * 0.5 - slabH0 * 0.5, slabW0, slabH0)
+                }
+            }
+            ctx.fill()
+            if (!isEcho && cl <= 2) {
+                ctx.stroke()
+            }
+        }
+    } else if (st === 1) {
+        // #2: Subject Salience Isolation — 1960s San Francisco Liquid Light Show (100% background culled + breathing amoeba auras)
+        var sumX1 = 0.0, sumY1 = 0.0, sumW1 = 0.0
+        for (var i1 = 0; i1 < grid.length; i1 += 3) {
+            var cs1 = grid[i1]
+            if (cs1 && cs1.salience >= 0.38) {
+                var ps1 = projCell(cs1, 0, 0, (cs1.salience - 0.35) * 0.85)
+                sumX1 += ps1.x * cs1.salience
+                sumY1 += ps1.y * cs1.salience
+                sumW1 += cs1.salience
+            }
+        }
+        var subCX = sumW1 > 0.01 ? (sumX1 / sumW1) : cx
+        var subCY = sumW1 > 0.01 ? (sumY1 / sumW1) : cy
+        if (!isEcho) {
+            for (var ar = 4; ar >= 0; ar--) {
+                var baseR1 = Math.min(halfW, halfH) * (0.34 + ar * 0.16 + state.bassSmooth * 0.14)
+                var auraCol1 = resolveArtCol(ar, null, state.smoothBands[(ar * 11) & 63], 0.12)
+                ctx.beginPath()
+                var segs1 = 28
+                for (var s1 = 0; s1 <= segs1; s1++) {
+                    var ang1 = (s1 / segs1) * Math.PI * 2.0
+                    var oilWarp = 1.0
+                        + 0.16 * Math.sin(ang1 * 3.0 + l3T * 2.1 + ar * 1.1)
+                        + 0.11 * Math.cos(ang1 * 5.0 - l3T * 2.8 + state.midSmooth * 3.0)
+                    var ax1 = subCX + Math.cos(ang1) * baseR1 * oilWarp
+                    var ay1 = subCY + Math.sin(ang1) * baseR1 * oilWarp
+                    if (s1 === 0) ctx.moveTo(ax1, ay1)
+                    else ctx.lineTo(ax1, ay1)
+                }
+                ctx.closePath()
+                ctx.fillStyle = colourWithAlpha(auraCol1, clamp((0.14 - ar * 0.02) * l3Opac, 0.03, 0.25))
+                ctx.fill()
+                ctx.strokeStyle = colourWithAlpha(auraCol1, clamp((0.68 - ar * 0.08) * l3Opac, 0.15, 0.92))
+                ctx.lineWidth = isBlock ? 3.2 : 2.0
+                ctx.stroke()
+            }
+        }
+        // Render isolated high-salience foreground subject as organic liquid-light metaballs & contour rings
+        for (var cl1 = 0; cl1 < 6; cl1++) {
+            ctx.beginPath()
+            var col1 = resolveArtCol(cl1, null, state.smoothBands[(cl1 * 9) & 63], 0.10)
+            ctx.fillStyle = colourWithAlpha(col1, clamp(0.84 * l3Opac, 0.15, 0.96))
+            ctx.strokeStyle = colourWithAlpha("#FFFFFF", clamp(0.58 * l3Opac, 0.12, 0.88))
+            ctx.lineWidth = 1.2
+            for (var gy1 = 0; gy1 < mRows; gy1 += rowStride) {
+                for (var gx1 = 0; gx1 < mCols; gx1 += colStride) {
+                    var c1 = grid[gy1 * mCols + gx1]
+                    if (!c1 || c1.salience < 0.34 || ((c1.clusterId % 6) !== cl1)) continue
+                    var z1 = (c1.salience - 0.34) * (1.05 + state.bassSmooth * 0.48)
+                    var pr1 = projCell(c1, 0, 0, z1)
+                    var rad1 = Math.max(2.5, Math.min(tileW, tileH) * pr1.scaleW * (0.45 + c1.salience * 0.65))
+                    if (isBlock) {
+                        ctx.rect(pr1.x - rad1 * 0.85, pr1.y - rad1 * 0.85, rad1 * 1.7, rad1 * 1.7)
+                    } else {
+                        ctx.moveTo(pr1.x + rad1, pr1.y)
+                        ctx.arc(pr1.x, pr1.y, rad1, 0, Math.PI * 2.0)
+                    }
+                }
+            }
+            ctx.fill()
+            if (!isEcho && cl1 <= 1) ctx.stroke()
+        }
+    } else if (st === 2) {
+        // #3: Sobel Tangent Flow Ribbons — Continuous multi-cell Van Gogh impasto vector streamlines
+        var streams = state.artStreamlines || []
+        ctx.lineCap = "round"
+        ctx.lineJoin = "round"
+        for (var si2 = 0; si2 < streams.length; si2 += (isEcho ? 2 : 1)) {
+            var strm = streams[si2]
+            if (!strm || !strm.points || strm.points.length < 2) continue
+            var seedC2 = strm.seed || strm.points[0].cell
+            var eq2 = state.smoothBands[(si2 * 3) & 63] || 0.0
+            var col2 = resolveArtCol(strm.clusterId || 0, seedC2, eq2, 0.10)
+            var flowPhase = Math.sin(l3T * 2.6 + si2 * 0.45) * 0.045 * (0.5 + state.bassSmooth)
+            ctx.beginPath()
+            var headPt2 = null
+            for (var pi2 = 0; pi2 < strm.points.length; pi2++) {
+                var spt = strm.points[pi2]
+                var c2 = spt.cell || seedC2
+                var tang2 = c2 && c2.tangentRad !== undefined ? c2.tangentRad : 0.0
+                var dnx2 = Math.cos(tang2) * flowPhase
+                var dny2 = Math.sin(tang2) * flowPhase
+                var z2 = (spt.edgeMag || 0.4) * 0.55 + (spt.zDepth || 0.0) * 0.35
+                var pr2 = projectLayer3ArtPoint(spt.nx + dnx2, spt.ny + dny2, z2, c2, l3Mode, state, cfg, layout)
+                if (pi2 === 0) ctx.moveTo(pr2.x, pr2.y)
+                else ctx.lineTo(pr2.x, pr2.y)
+                if (pi2 === strm.points.length - 1) headPt2 = pr2
+            }
+            ctx.strokeStyle = colourWithAlpha(col2, clamp((0.68 + (seedC2 ? seedC2.salience * 0.28 : 0.2)) * l3Opac, 0.15, 0.96))
+            ctx.lineWidth = Math.max(1.8, tileW * (isBlock ? 0.85 : 0.52) * (0.7 + (seedC2 ? seedC2.salience : 0.5) * 0.8 + eq2 * 0.5))
+            ctx.stroke()
+            if (!isEcho && headPt2 && (si2 % 3 === 0)) {
+                var nibS = Math.max(2.4, tileW * 0.38 * headPt2.scaleW)
+                ctx.fillStyle = colourWithAlpha("#F8FAFC", clamp(0.78 * l3Opac, 0.15, 0.95))
+                ctx.fillRect(headPt2.x - nibS * 0.5, headPt2.y - nibS * 0.5, nibS, nibS)
+            }
+        }
+        // Dense under-layer of long oriented tangent brushstrokes across the whole cover so no region is bare
+        var stepG2 = isEcho ? 3 : 2
+        for (var cl2 = 0; cl2 < 6; cl2++) {
+            ctx.beginPath()
+            var colB2 = resolveArtCol(cl2, null, state.smoothBands[(cl2 * 10) & 63], 0.06)
+            ctx.strokeStyle = colourWithAlpha(colB2, clamp(0.62 * l3Opac, 0.12, 0.90))
+            ctx.lineWidth = Math.max(1.5, tileW * (isBlock ? 0.58 : 0.34))
+            for (var gy2 = 0; gy2 < mRows; gy2 += stepG2) {
+                for (var gx2 = 0; gx2 < mCols; gx2 += stepG2) {
+                    var cg2 = grid[gy2 * mCols + gx2]
+                    if (!cg2 || ((cg2.clusterId % 6) !== cl2)) continue
+                    var prG2 = projCell(cg2, 0, 0, (cg2.edgeMag || 0.3) * 0.45 + (cg2.zDepth || 0.0) * 0.3)
+                    var lenG2 = Math.max(tileW, tileH) * prG2.scaleW * (1.25 + cg2.edgeMag * 1.45)
+                    var tAng2 = (cg2.tangentRad || 0.0) + Math.sin(l3T * 1.8 + cg2.phase) * 0.18
+                    var dxG2 = Math.cos(tAng2) * lenG2 * 0.5
+                    var dyG2 = Math.sin(tAng2) * lenG2 * 0.5
+                    ctx.moveTo(prG2.x - dxG2, prG2.y - dyG2)
+                    ctx.lineTo(prG2.x + dxG2, prG2.y + dyG2)
+                }
+            }
+            ctx.stroke()
+        }
+    } else if (st === 3) {
+        // #4: Adaptive Quadtree Mondrian — Full-cover mode-projected 3D De Stijl architectural relief blocks
+        var qtList = state.artQuadtree || []
+        for (var qi3 = 0; qi3 < qtList.length; qi3 += (isEcho ? 2 : 1)) {
+            var qb = qtList[qi3]
+            if (!qb || qb.length < 10) continue
+            var qx0 = qb[0], qy0 = qb[1], qbw = qb[2], qbh = qb[3]
+            var cMid3 = grid[clamp(qy0 + (qbh >> 1), 0, mRows - 1) * mCols + clamp(qx0 + (qbw >> 1), 0, mCols - 1)]
+            var qSal3 = (qb[8] || 50) / 100.0
+            var qz3 = ((qb[7] || 0) / 100.0) * (0.48 + state.bassSmooth * 0.42)
+            var nxA3 = (qx0 / Math.max(1, mCols - 1)) * 2.0 - 1.0
+            var nyA3 = (qy0 / Math.max(1, mRows - 1)) * 2.0 - 1.0
+            var nxB3 = ((qx0 + qbw) / Math.max(1, mCols - 1)) * 2.0 - 1.0
+            var nyB3 = ((qy0 + qbh) / Math.max(1, mRows - 1)) * 2.0 - 1.0
+            var p00 = projectLayer3ArtPoint(nxA3, nyA3, qz3, cMid3, l3Mode, state, cfg, layout)
+            var p10 = projectLayer3ArtPoint(nxB3, nyA3, qz3, cMid3, l3Mode, state, cfg, layout)
+            var p11 = projectLayer3ArtPoint(nxB3, nyB3, qz3, cMid3, l3Mode, state, cfg, layout)
+            var p01 = projectLayer3ArtPoint(nxA3, nyB3, qz3, cMid3, l3Mode, state, cfg, layout)
+            var col3 = resolveArtCol(qb[9] || 0, cMid3, state.smoothBands[(qi3 * 3) & 63], qSal3 * 0.12)
+            ctx.beginPath()
+            ctx.moveTo(p00.x, p00.y)
+            ctx.lineTo(p10.x, p10.y)
+            ctx.lineTo(p11.x, p11.y)
+            ctx.lineTo(p01.x, p01.y)
+            ctx.closePath()
+            ctx.fillStyle = colourWithAlpha(col3, clamp((0.55 + qSal3 * 0.38) * l3Opac, 0.14, 0.94))
+            ctx.fill()
+            ctx.strokeStyle = colourWithAlpha(isBlock ? "#06080E" : "#F8FAFC", clamp(0.82 * l3Opac, 0.18, 0.96))
+            ctx.lineWidth = (qbw >= 4) ? 2.2 : 1.2
+            ctx.stroke()
+        }
+    } else if (st === 4) {
+        // #5: Delaunay Stained-Glass Shards — Contiguous zero-gap 3D polygon mesh across 100% of the cover + crystal shards
+        var step4 = isEcho ? 4 : 2
+        for (var gy4 = 0; gy4 < mRows - step4; gy4 += step4) {
+            for (var gx4 = 0; gx4 < mCols - step4; gx4 += step4) {
+                var c00 = grid[gy4 * mCols + gx4]
+                var c10 = grid[gy4 * mCols + Math.min(mCols - 1, gx4 + step4)]
+                var c01 = grid[Math.min(mRows - 1, gy4 + step4) * mCols + gx4]
+                var c11 = grid[Math.min(mRows - 1, gy4 + step4) * mCols + Math.min(mCols - 1, gx4 + step4)]
+                if (!c00 || !c10 || !c01 || !c11) continue
+                var zMul4 = 0.55 + state.bassSmooth * 0.45
+                var v00 = projCell(c00, 0, 0, c00.zDepth * zMul4)
+                var v10 = projCell(c10, 0, 0, c10.zDepth * zMul4)
+                var v01 = projCell(c01, 0, 0, c01.zDepth * zMul4)
+                var v11 = projCell(c11, 0, 0, c11.zDepth * zMul4)
+                var nDot4 = Math.max(0.15, (c00.normX || 0) * layout.lightX + (c00.normY || 0) * layout.lightY + (c00.normZ || 0.8) * layout.lightZ)
+                var col4A = resolveArtCol(c00.clusterId, c00, state.smoothBands[(gx4 + gy4) & 63], (nDot4 - 0.45) * 0.28)
+                var col4B = resolveArtCol(c11.clusterId, c11, state.smoothBands[(gx4 + gy4 + 16) & 63], (nDot4 - 0.45) * 0.22)
+                // Upper-left triangle
+                ctx.beginPath()
+                ctx.moveTo(v00.x, v00.y)
+                ctx.lineTo(v10.x, v10.y)
+                ctx.lineTo(v01.x, v01.y)
+                ctx.closePath()
+                ctx.fillStyle = colourWithAlpha(col4A, clamp((0.58 + c00.salience * 0.34) * l3Opac, 0.14, 0.92))
+                ctx.fill()
+                ctx.strokeStyle = colourWithAlpha(isBlock ? "#090B12" : "#E2F1FF", clamp(0.65 * l3Opac, 0.14, 0.90))
+                ctx.lineWidth = 1.0
+                ctx.stroke()
+                // Lower-right triangle
+                ctx.beginPath()
+                ctx.moveTo(v10.x, v10.y)
+                ctx.lineTo(v11.x, v11.y)
+                ctx.lineTo(v01.x, v01.y)
+                ctx.closePath()
+                ctx.fillStyle = colourWithAlpha(col4B, clamp((0.58 + c11.salience * 0.34) * l3Opac, 0.14, 0.92))
+                ctx.fill()
+                ctx.stroke()
+            }
+        }
+    } else if (st === 5) {
+        // #6: Topographical Iso-Contours — Joy Division 'Unknown Pleasures' CP 1919 3D Pulsar Ridgelines with Painter's Occlusion
+        var rStep5 = isEcho ? 3 : (mRows > 34 ? 2 : 1)
+        for (var gy5 = 0; gy5 < rowCells.length; gy5 += rStep5) {
+            var rLine = rowCells[gy5]
+            if (!rLine || rLine.length < 2) continue
+            var eq5 = state.smoothBands[(gy5 * 2) & 63] || 0.0
+            var scanWave5 = Math.max(0.0, 1.0 - Math.abs(((l3T * 6.0) % mRows) - gy5) * 0.28) * (0.35 + state.beatPulse * 0.45)
+            var baseLeft = projCell(rLine[0], 0, 0.04, -0.18)
+            var baseRight = projCell(rLine[rLine.length - 1], 0, 0.04, -0.18)
+            ctx.beginPath()
+            ctx.moveTo(baseLeft.x, baseLeft.y)
+            for (var rx5 = 0; rx5 < rLine.length; rx5 += colStride) {
+                var c5 = rLine[rx5]
+                var elev5 = (c5.salience * 0.58 + c5.luma * 0.42 + c5.edgeMag * 0.35 + eq5 * 0.28 + scanWave5) * (0.14 + state.bassSmooth * 0.08)
+                var z5 = (c5.salience - 0.35) * 0.65 + scanWave5 * 0.45
+                var pr5 = projCell(c5, 0, -elev5, z5)
+                ctx.lineTo(pr5.x, pr5.y)
+            }
+            ctx.lineTo(baseRight.x, baseRight.y)
+            ctx.closePath()
+            if (!isEcho) {
+                ctx.fillStyle = colourWithAlpha("#060812", clamp(0.88 * l3Opac, 0.25, 0.94))
+                ctx.fill()
+            }
+            // Stroke the glowing pulsar ridgeline crest
+            ctx.beginPath()
+            for (var rx5B = 0; rx5B < rLine.length; rx5B += colStride) {
+                var c5B = rLine[rx5B]
+                var elev5B = (c5B.salience * 0.58 + c5B.luma * 0.42 + c5B.edgeMag * 0.35 + eq5 * 0.28 + scanWave5) * (0.14 + state.bassSmooth * 0.08)
+                var z5B = (c5B.salience - 0.35) * 0.65 + scanWave5 * 0.45
+                var pr5B = projCell(c5B, 0, -elev5B, z5B)
+                if (rx5B === 0) ctx.moveTo(pr5B.x, pr5B.y)
+                else ctx.lineTo(pr5B.x, pr5B.y)
+            }
+            var midC5 = rLine[rLine.length >> 1]
+            var ridgeCol5 = (scanWave5 > 0.25) ? "#F8FAFC" : resolveArtCol(midC5 ? midC5.clusterId : (gy5 & 7), midC5, eq5, 0.16)
+            ctx.strokeStyle = colourWithAlpha(ridgeCol5, clamp((0.78 + scanWave5 * 0.22) * l3Opac, 0.18, 1.0))
+            ctx.lineWidth = isBlock ? 2.6 : 1.7
+            ctx.stroke()
+        }
+    } else if (st === 6) {
+        // #7: 3D Normal-Map Lit Bas-Relief — Chiseled metallic quad sculpture with orbiting Phong specular spotlight
+        var step6 = isEcho ? 3 : 2
+        for (var gy6 = 0; gy6 < mRows - step6; gy6 += step6) {
+            for (var gx6 = 0; gx6 < mCols - step6; gx6 += step6) {
+                var c6 = grid[gy6 * mCols + gx6]
+                var c6R = grid[gy6 * mCols + Math.min(mCols - 1, gx6 + step6)]
+                var c6D = grid[Math.min(mRows - 1, gy6 + step6) * mCols + gx6]
+                var c6BR = grid[Math.min(mRows - 1, gy6 + step6) * mCols + Math.min(mCols - 1, gx6 + step6)]
+                if (!c6 || !c6R || !c6D || !c6BR) continue
+                var zMul6 = 0.72 + state.bassSmooth * 0.45
+                var p6A = projCell(c6, 0, 0, c6.zDepth * zMul6)
+                var p6B = projCell(c6R, 0, 0, c6R.zDepth * zMul6)
+                var p6C = projCell(c6BR, 0, 0, c6BR.zDepth * zMul6)
+                var p6D = projCell(c6D, 0, 0, c6D.zDepth * zMul6)
+                var nDotL6 = Math.max(0.05, (c6.normX || 0) * layout.lightX + (c6.normY || 0) * layout.lightY + (c6.normZ || 0.8) * layout.lightZ)
+                var spec6 = Math.pow(Math.max(0.0, nDotL6), 8.0) * (0.45 + state.beatPulse * 0.45)
+                var baseCol6 = resolveArtCol(c6.clusterId, c6, state.smoothBands[(gx6 + gy6) & 63], (nDotL6 - 0.42) * 0.45 + spec6 * 0.35)
+                ctx.beginPath()
+                ctx.moveTo(p6A.x, p6A.y)
+                ctx.lineTo(p6B.x, p6B.y)
+                ctx.lineTo(p6C.x, p6C.y)
+                ctx.lineTo(p6D.x, p6D.y)
+                ctx.closePath()
+                ctx.fillStyle = colourWithAlpha(baseCol6, clamp((0.52 + nDotL6 * 0.42) * l3Opac, 0.15, 0.96))
+                ctx.fill()
+                if (spec6 > 0.24 && !isEcho) {
+                    ctx.strokeStyle = colourWithAlpha("#FFFDF5", clamp(spec6 * l3Opac, 0.15, 0.92))
+                    ctx.lineWidth = 1.2
+                    ctx.stroke()
+                }
+            }
+        }
+    } else if (st === 7) {
+        // #8: Thermal Warm-Cool Depth Split — Predator infrared thermographic HUD with cryo-blue depths & plasma-gold peaks
+        var hotCell7 = grid[(mRows >> 1) * mCols + (mCols >> 1)]
+        var maxTherm7 = -2.0
+        for (var tb = 0; tb < 6; tb++) {
+            var isWarm = (tb >= 3)
+            var thermH = isWarm ? (350 + (tb - 3) * 24) % 360 : (192 + tb * 22)
+            var thermL = isWarm ? (0.52 + (tb - 3) * 0.12 + state.beatPulse * 0.08) : (0.38 + tb * 0.06)
+            var tCol7 = (colourMode === 0) ? hslToHex(thermH, 0.96, clamp(thermL, 0.34, 0.86)) : resolveArtCol(tb, null, state.smoothBands[(tb * 9) & 63], isWarm ? 0.14 : -0.08)
+            ctx.beginPath()
+            ctx.fillStyle = colourWithAlpha(tCol7, clamp((isWarm ? 0.84 : 0.56) * l3Opac, 0.14, 0.95))
+            for (var gy7 = 0; gy7 < mRows; gy7 += rowStride) {
+                for (var gx7 = 0; gx7 < mCols; gx7 += colStride) {
+                    var c7 = grid[gy7 * mCols + gx7]
+                    if (!c7) continue
+                    var th7 = c7.thermal !== undefined ? c7.thermal : (c7.luma - 0.5)
+                    var score7 = th7 + c7.salience * 0.6
+                    if (score7 > maxTherm7) {
+                        maxTherm7 = score7
+                        hotCell7 = c7
+                    }
+                    var bucket7 = clamp(Math.floor(((th7 + 0.85) / 1.7) * 6.0), 0, 5)
+                    if (bucket7 !== tb) continue
+                    var z7 = th7 * (0.85 + state.bassSmooth * 0.42)
+                    var pr7 = projCell(c7, 0, 0, z7)
+                    var w7 = tileW * pr7.scaleW * (isWarm ? 1.12 : 1.35)
+                    var h7 = tileH * pr7.scaleH * (isWarm ? 1.12 : 0.48)
+                    ctx.rect(pr7.x - w7 * 0.5, pr7.y - h7 * 0.5, w7, h7)
+                }
+            }
+            ctx.fill()
+        }
+        // Thermal laser scanline + target reticle on hottest salience peak
+        if (!isEcho && hotCell7) {
+            var pHot = projCell(hotCell7, 0, 0, 0.65)
+            var retR = Math.max(12.0, tileW * 2.2 * pHot.scaleW * (1.0 + state.beatPulse * 0.35))
+            ctx.strokeStyle = colourWithAlpha("#FFEA00", clamp(0.88 * l3Opac, 0.20, 0.98))
+            ctx.lineWidth = 1.8
+            ctx.beginPath()
+            ctx.rect(pHot.x - retR, pHot.y - retR, retR * 2.0, retR * 2.0)
+            ctx.moveTo(pHot.x - retR * 1.4, pHot.y); ctx.lineTo(pHot.x + retR * 1.4, pHot.y)
+            ctx.moveTo(pHot.x, pHot.y - retR * 1.4); ctx.lineTo(pHot.x, pHot.y + retR * 1.4)
+            ctx.stroke()
+        }
+    } else if (st === 8) {
+        // #9: DoG Woodcut & Ink Ridges — Brutalist expressionist linocut print with obsidian slab & carved gouge ridges
+        if (!isEcho && cTL && cTR && cBL && cBR) {
+            var w00 = projCell(cTL, 0, 0, -0.25)
+            var w10 = projCell(cTR, 0, 0, -0.25)
+            var w11 = projCell(cBR, 0, 0, -0.25)
+            var w01 = projCell(cBL, 0, 0, -0.25)
+            ctx.beginPath()
+            ctx.moveTo(w00.x, w00.y); ctx.lineTo(w10.x, w10.y); ctx.lineTo(w11.x, w11.y); ctx.lineTo(w01.x, w01.y)
+            ctx.closePath()
+            ctx.fillStyle = colourWithAlpha("#07080F", clamp(0.76 * l3Opac, 0.20, 0.88))
+            ctx.fill()
+        }
+        for (var pass8 = 0; pass8 < 3; pass8++) {
+            var gougeCol8 = (pass8 === 0 && colourMode === 0)
+                ? "#F8FAFC"
+                : ((pass8 === 1 && colourMode === 0) ? "#FF2A54" : resolveArtCol(pass8 * 2, null, state.bassSmooth, 0.16))
+            ctx.beginPath()
+            ctx.fillStyle = colourWithAlpha(gougeCol8, clamp(0.88 * l3Opac, 0.18, 0.98))
+            for (var gy8 = 0; gy8 < mRows; gy8 += rowStride) {
+                for (var gx8 = 0; gx8 < mCols; gx8 += colStride) {
+                    var c8 = grid[gy8 * mCols + gx8]
+                    if (!c8) continue
+                    var dog8 = c8.dogVal || 0.0
+                    var edge8 = c8.edgeMag || 0.0
+                    if (Math.abs(dog8) < 0.12 && edge8 < 0.24) continue
+                    var pBucket8 = (dog8 > 0.18) ? 0 : ((edge8 > 0.42) ? 1 : 2)
+                    if (pBucket8 !== pass8) continue
+                    var pr8 = projCell(c8, 0, 0, (Math.abs(dog8) + edge8 * 0.5) * 0.55)
+                    var gLen8 = Math.max(tileW, tileH) * pr8.scaleW * (1.25 + edge8 * 1.45 + Math.abs(dog8) * 0.9)
+                    var gWid8 = Math.max(1.8, Math.min(tileW, tileH) * pr8.scaleH * (0.24 + c8.salience * 0.28))
+                    var gc8 = Math.cos(c8.tangentRad || 0.0), gs8 = Math.sin(c8.tangentRad || 0.0)
+                    ctx.moveTo(pr8.x + gc8 * gLen8 * 0.55, pr8.y + gs8 * gLen8 * 0.55)
+                    ctx.lineTo(pr8.x - gs8 * gWid8 * 0.5, pr8.y + gc8 * gWid8 * 0.5)
+                    ctx.lineTo(pr8.x - gc8 * gLen8 * 0.55, pr8.y - gs8 * gLen8 * 0.55)
+                    ctx.lineTo(pr8.x + gs8 * gWid8 * 0.5, pr8.y - gc8 * gWid8 * 0.5)
+                    ctx.closePath()
+                }
+            }
+            ctx.fill()
+        }
+    } else if (st === 9) {
+        // #10: Negative-Space Shadow Inversion — Darkroom Sabattier solarisation & glowing Mackie contour portals
+        for (var sb9 = 0; sb9 < 5; sb9++) {
+            var solHue = ((state.hueShift || 0) + 180 + sb9 * 42 + l3T * 24) % 360
+            var col9 = (colourMode === 0)
+                ? hslToHex(solHue, 0.92, clamp(0.48 + sb9 * 0.08, 0.42, 0.84))
+                : resolveArtCol(sb9 + 2, null, state.smoothBands[(sb9 * 11) & 63], 0.12)
+            ctx.beginPath()
+            ctx.fillStyle = colourWithAlpha(col9, clamp(0.76 * l3Opac, 0.15, 0.94))
+            ctx.strokeStyle = colourWithAlpha("#00F5FF", clamp(0.85 * l3Opac, 0.20, 0.96))
+            ctx.lineWidth = 1.4
+            for (var gy9 = 0; gy9 < mRows; gy9 += rowStride) {
+                for (var gx9 = 0; gx9 < mCols; gx9 += colStride) {
+                    var c9 = grid[gy9 * mCols + gx9]
+                    if (!c9) continue
+                    var invSal9 = 1.0 - (c9.salience || 0.5)
+                    var invLuma9 = 1.0 - (c9.luma || 0.5)
+                    var isMackie = Math.abs((c9.luma || 0.5) - 0.48) < 0.11
+                    var b9 = isMackie ? 4 : (clamp(Math.floor(invLuma9 * 4.0), 0, 3))
+                    if (b9 !== sb9) continue
+                    if (!isMackie && c9.salience > 0.68 && c9.luma > 0.58) continue
+                    var z9 = (invSal9 - 0.35) * (0.88 + state.bassSmooth * 0.38)
+                    var pr9 = projCell(c9, 0, 0, z9)
+                    var fw9 = tileW * pr9.scaleW * (0.58 + invSal9 * 0.68)
+                    var fh9 = tileH * pr9.scaleH * (0.58 + invSal9 * 0.68)
+                    var rim9 = Math.max(1.5, Math.min(fw9, fh9) * 0.22)
+                    ctx.rect(pr9.x - fw9 * 0.5, pr9.y - fh9 * 0.5, fw9, rim9)
+                    ctx.rect(pr9.x - fw9 * 0.5, pr9.y + fh9 * 0.5 - rim9, fw9, rim9)
+                    ctx.rect(pr9.x - fw9 * 0.5, pr9.y - fh9 * 0.5, rim9, fh9)
+                    ctx.rect(pr9.x + fw9 * 0.5 - rim9, pr9.y - fh9 * 0.5, rim9, fh9)
+                }
+            }
+            ctx.fill()
+            if (sb9 === 4 && !isEcho) ctx.stroke()
+        }
+    } else if (st === 10) {
+        // #11: Hue-Angle Spiral Vortex — Continuous 45-RPM Vinyl Groove Spirograph modulated by album art colours & salience
+        var totalSteps10 = isEcho ? 140 : 260
+        var maxTurns10 = 13.5
+        var spinPhase10 = l3T * 1.65
+        for (var band10 = 0; band10 < 6; band10++) {
+            var segLen = Math.ceil(totalSteps10 / 6)
+            var sStart = band10 * segLen
+            var sEnd = Math.min(totalSteps10, (band10 + 1) * segLen)
+            var col10 = resolveArtCol(band10, null, state.smoothBands[(band10 * 10) & 63], 0.12)
+            ctx.beginPath()
+            for (var s10 = sStart; s10 <= sEnd; s10++) {
+                var u10 = s10 / totalSteps10
+                var theta10 = u10 * maxTurns10 * Math.PI * 2.0 + spinPhase10
+                var rNorm10 = 0.08 + u10 * 0.90
+                var snx10 = Math.cos(theta10) * rNorm10
+                var sny10 = Math.sin(theta10) * rNorm10
+                var gx10 = clamp(Math.floor(((snx10 + 1.0) * 0.5) * (mCols - 1)), 0, mCols - 1)
+                var gy10 = clamp(Math.floor(((sny10 + 1.0) * 0.5) * (mRows - 1)), 0, mRows - 1)
+                var c10 = grid[gy10 * mCols + gx10]
+                var sal10 = c10 ? c10.salience : 0.5
+                var luma10 = c10 ? c10.luma : 0.5
+                var eq10 = state.smoothBands[(s10 >> 2) & 63] || 0.0
+                var grooveMod = (sal10 * 0.055 + (luma10 - 0.5) * 0.04 + eq10 * 0.035) * (1.0 + state.bassSmooth * 0.8)
+                var mx10 = Math.cos(theta10) * (rNorm10 + grooveMod)
+                var my10 = Math.sin(theta10) * (rNorm10 + grooveMod)
+                var mz10 = (sal10 - 0.4) * 0.68 + Math.sin(u10 * 18.0 - l3T * 3.0) * 0.18
+                var pr10 = projectLayer3ArtPoint(mx10, my10, mz10, c10, l3Mode, state, cfg, layout)
+                if (s10 === sStart) ctx.moveTo(pr10.x, pr10.y)
+                else ctx.lineTo(pr10.x, pr10.y)
+            }
+            ctx.strokeStyle = colourWithAlpha(col10, clamp(0.86 * l3Opac, 0.18, 0.98))
+            ctx.lineWidth = isBlock ? 3.2 : 2.1
+            ctx.stroke()
+        }
+        // Phyllotaxis golden-angle cover colour petals across high-salience nodes
+        for (var cl10 = 0; cl10 < 6; cl10++) {
+            ctx.beginPath()
+            ctx.fillStyle = colourWithAlpha(resolveArtCol(cl10, null, state.bassSmooth, 0.10), clamp(0.78 * l3Opac, 0.15, 0.94))
+            for (var i10 = cl10; i10 < grid.length; i10 += (isEcho ? 18 : 12)) {
+                var cp10 = grid[i10]
+                if (!cp10 || cp10.salience < 0.36) continue
+                var hueRad10 = ((cp10.hue || 0.0) * Math.PI) / 180.0 + spinPhase10
+                var prP10 = projCell(cp10, Math.cos(hueRad10) * 0.03, Math.sin(hueRad10) * 0.03, (cp10.sat - 0.4) * 0.65)
+                var hLen10 = Math.max(tileW, tileH) * prP10.scaleW * (0.65 + cp10.salience * 0.75)
+                var hWid10 = Math.min(tileW, tileH) * prP10.scaleH * 0.42
+                var hc10 = Math.cos(hueRad10), hs10 = Math.sin(hueRad10)
+                ctx.moveTo(prP10.x + hc10 * hLen10, prP10.y + hs10 * hLen10)
+                ctx.lineTo(prP10.x - hs10 * hWid10, prP10.y + hc10 * hWid10)
+                ctx.lineTo(prP10.x - hc10 * hLen10 * 0.45, prP10.y - hs10 * hLen10 * 0.45)
+                ctx.lineTo(prP10.x + hs10 * hWid10, prP10.y - hc10 * hWid10)
+                ctx.closePath()
+            }
+            ctx.fill()
+        }
+    } else if (st === 11) {
+        // #12: Fourier Cymatic Interference — 8-Fold Kaleidoscopic Dihedral Acid Mandala & Chladni standing-wave rings
+        var folds11 = 8
+        var rings11 = isEcho ? 5 : 9
+        for (var rg11 = rings11; rg11 >= 1; rg11--) {
+            var rFrac11 = rg11 / rings11
+            var eq11 = state.smoothBands[(rg11 * 6) & 63] || 0.0
+            var sampleX11 = clamp(Math.floor((0.5 + rFrac11 * 0.45 * Math.cos(l3T * 0.8 + rg11)) * (mCols - 1)), 0, mCols - 1)
+            var sampleY11 = clamp(Math.floor((0.5 + rFrac11 * 0.45 * Math.sin(l3T * 0.8 + rg11)) * (mRows - 1)), 0, mRows - 1)
+            var cSample11 = grid[sampleY11 * mCols + sampleX11]
+            var col11 = resolveArtCol(cSample11 ? cSample11.clusterId : rg11, cSample11, eq11, 0.12)
+            var chladniZ = Math.sin(rFrac11 * Math.PI * 3.0 - l3T * 2.4) * (0.45 + state.bassSmooth * 0.42)
+            ctx.beginPath()
+            var totalVerts11 = folds11 * 4
+            for (var v11 = 0; v11 <= totalVerts11; v11++) {
+                var a11 = (v11 / totalVerts11) * Math.PI * 2.0 + l3T * 0.45 * ((rg11 & 1) ? 1.0 : -1.0)
+                var foldPhase = Math.abs(Math.cos(a11 * folds11 * 0.5))
+                var rad11 = rFrac11 * (0.72 + foldPhase * (0.24 + eq11 * 0.18) + (cSample11 ? cSample11.salience * 0.12 : 0.06))
+                var kx11 = Math.cos(a11) * rad11
+                var ky11 = Math.sin(a11) * rad11
+                var pr11 = projectLayer3ArtPoint(kx11, ky11, chladniZ, cSample11, l3Mode, state, cfg, layout)
+                if (v11 === 0) ctx.moveTo(pr11.x, pr11.y)
+                else ctx.lineTo(pr11.x, pr11.y)
+            }
+            ctx.closePath()
+            ctx.fillStyle = colourWithAlpha(col11, clamp((0.18 + (cSample11 ? cSample11.salience * 0.22 : 0.1)) * l3Opac, 0.05, 0.42))
+            ctx.fill()
+            ctx.strokeStyle = colourWithAlpha(col11, clamp((0.78 + state.beatPulse * 0.20) * l3Opac, 0.20, 0.98))
+            ctx.lineWidth = isBlock ? 2.8 : 1.8
+            ctx.stroke()
+        }
+    } else if (st === 12) {
+        // #13: 3D Point-Cloud Sculpture — Volumetric LiDAR Plexus Triangulation Constellation
+        var step12 = isEcho ? 3 : 2
+        for (var cl12 = 0; cl12 < 6; cl12++) {
+            var col12 = resolveArtCol(cl12, null, state.smoothBands[(cl12 * 10) & 63], 0.14)
+            ctx.beginPath()
+            ctx.strokeStyle = colourWithAlpha(col12, clamp(0.62 * l3Opac, 0.14, 0.90))
+            ctx.lineWidth = isBlock ? 1.8 : 1.1
+            for (var gy12 = 0; gy12 < mRows - step12; gy12 += step12) {
+                for (var gx12 = 0; gx12 < mCols - step12; gx12 += step12) {
+                    var c12 = grid[gy12 * mCols + gx12]
+                    if (!c12 || ((c12.clusterId % 6) !== cl12) || c12.salience < 0.22) continue
+                    var zMul12 = 0.95 + state.bassSmooth * 0.48
+                    var p12 = projCell(c12, 0, 0, c12.zDepth * zMul12)
+                    var c12R = grid[gy12 * mCols + gx12 + step12]
+                    var c12D = grid[(gy12 + step12) * mCols + gx12]
+                    if (c12R && c12R.salience >= 0.22) {
+                        var p12R = projCell(c12R, 0, 0, c12R.zDepth * zMul12)
+                        ctx.moveTo(p12.x, p12.y); ctx.lineTo(p12R.x, p12R.y)
+                    }
+                    if (c12D && c12D.salience >= 0.22) {
+                        var p12D = projCell(c12D, 0, 0, c12D.zDepth * zMul12)
+                        ctx.moveTo(p12.x, p12.y); ctx.lineTo(p12D.x, p12D.y)
+                    }
+                }
+            }
+            ctx.stroke()
+            // Glowing 3D constellation spheres at vertices
+            ctx.beginPath()
+            ctx.fillStyle = colourWithAlpha(col12, clamp(0.90 * l3Opac, 0.20, 0.98))
+            for (var gy12B = 0; gy12B < mRows; gy12B += step12) {
+                for (var gx12B = 0; gx12B < mCols; gx12B += step12) {
+                    var c12B = grid[gy12B * mCols + gx12B]
+                    if (!c12B || ((c12B.clusterId % 6) !== cl12) || c12B.salience < 0.22) continue
+                    var p12B = projCell(c12B, 0, 0, c12B.zDepth * (0.95 + state.bassSmooth * 0.48))
+                    var r12 = Math.max(2.0, Math.min(tileW, tileH) * p12B.scaleW * (0.28 + c12B.salience * 0.45))
+                    ctx.moveTo(p12B.x + r12, p12B.y)
+                    ctx.arc(p12B.x, p12B.y, r12, 0, Math.PI * 2.0)
+                }
+            }
+            ctx.fill()
+        }
+    } else if (st === 13) {
+        // #14: Gabor Oriented Cross-Hatch — Copperplate Guilloché Banknote Engraving (multi-cell intersecting hatch lines)
+        var step13 = isEcho ? 3 : 2
+        for (var cl13 = 0; cl13 < 6; cl13++) {
+            var col13 = resolveArtCol(cl13, null, state.smoothBands[(cl13 * 9) & 63], 0.12)
+            ctx.beginPath()
+            ctx.strokeStyle = colourWithAlpha(col13, clamp(0.82 * l3Opac, 0.18, 0.96))
+            ctx.lineWidth = isBlock ? 2.0 : 1.25
+            for (var gy13 = 0; gy13 < mRows; gy13 += step13) {
+                for (var gx13 = 0; gx13 < mCols; gx13 += step13) {
+                    var c13 = grid[gy13 * mCols + gx13]
+                    if (!c13 || ((c13.clusterId % 6) !== cl13)) continue
+                    var pr13 = projCell(c13, 0, 0, (c13.zDepth || 0.0) * 0.48)
+                    var span13 = Math.max(tileW, tileH) * pr13.scaleW * (1.45 + c13.edgeMag * 1.15)
+                    var qAng13 = Math.round((c13.tangentRad || 0.0) / (Math.PI * 0.25)) * (Math.PI * 0.25)
+                    var cA13 = Math.cos(qAng13) * span13 * 0.5
+                    var sA13 = Math.sin(qAng13) * span13 * 0.5
+                    // Primary hatch stroke
+                    ctx.moveTo(pr13.x - cA13, pr13.y - sA13)
+                    ctx.lineTo(pr13.x + cA13, pr13.y + sA13)
+                    // Perpendicular counter-hatch stroke in midtones & shadows
+                    if ((c13.luma || 0.5) < 0.62 || c13.salience > 0.52) {
+                        ctx.moveTo(pr13.x + sA13 * 0.85, pr13.y - cA13 * 0.85)
+                        ctx.lineTo(pr13.x - sA13 * 0.85, pr13.y + cA13 * 0.85)
+                    }
+                    // Third diagonal engraving hatch in deep shadows/edges
+                    if ((c13.luma || 0.5) < 0.36 || c13.edgeMag > 0.52) {
+                        ctx.moveTo(pr13.x - (cA13 - sA13) * 0.65, pr13.y - (sA13 + cA13) * 0.65)
+                        ctx.lineTo(pr13.x + (cA13 - sA13) * 0.65, pr13.y + (sA13 + cA13) * 0.65)
+                    }
+                }
+            }
+            ctx.stroke()
+        }
+    } else if (st === 14) {
+        // #15: Chromatic RGB Prism Split — Misregistered Warhol / Risograph 3-Plate Overprint (Cyan / Magenta / Acid-Yellow + Key contour)
+        var prismPlates = [
+            { col: "#00F0FF", dx: -1.0, dy: -0.45, dz: -0.36, ch: "r" },
+            { col: "#FF006E", dx: 0.15, dy: 0.75, dz: 0.0, ch: "g" },
+            { col: "#FFEA00", dx: 1.0, dy: -0.35, dz: 0.36, ch: "b" }
+        ]
+        var spread14 = (0.045 + state.bassSmooth * 0.055 + state.beatPulse * 0.075) * warpIntensity
+        var step14 = isEcho ? 3 : 2
+        for (var pl = 0; pl < 3; pl++) {
+            var plate = prismPlates[pl]
+            var pCol14 = (colourMode <= 1) ? plate.col : resolveArtCol(pl * 2, null, state.smoothBands[(pl * 16) & 63], 0.14)
+            var pdx = plate.dx * spread14
+            var pdy = plate.dy * spread14
+            ctx.beginPath()
+            ctx.fillStyle = colourWithAlpha(pCol14, clamp(0.62 * l3Opac, 0.14, 0.86))
+            for (var gy14 = 0; gy14 < mRows; gy14 += step14) {
+                for (var gx14 = 0; gx14 < mCols; gx14 += step14) {
+                    var c14 = grid[gy14 * mCols + gx14]
+                    if (!c14 || c14.salience < 0.22) continue
+                    var chVal = (pl === 0 ? c14.r : (pl === 1 ? c14.g : c14.b)) / 255.0
+                    if (chVal < 0.28 && c14.edgeMag < 0.35) continue
+                    var pr14 = projCell(c14, pdx, pdy, plate.dz + c14.zDepth * 0.35)
+                    var w14 = tileW * pr14.scaleW * (0.75 + chVal * 0.85)
+                    var h14 = tileH * pr14.scaleH * (0.75 + c14.salience * 0.75)
+                    ctx.rect(pr14.x - w14 * 0.5, pr14.y - h14 * 0.5, w14, h14)
+                }
+            }
+            ctx.fill()
+        }
+    } else if (st === 15) {
+        // #16: Poisson Organic Stipple Swarm — Bioluminescent Bokeh Spore Cloud & Mycelial Tendrils
+        var step15 = isEcho ? 3 : 2
+        for (var cl15 = 0; cl15 < 6; cl15++) {
+            var col15 = resolveArtCol(cl15, null, state.smoothBands[(cl15 * 10) & 63], 0.12)
+            ctx.beginPath()
+            ctx.fillStyle = colourWithAlpha(col15, clamp(0.76 * l3Opac, 0.15, 0.94))
+            ctx.strokeStyle = colourWithAlpha(col15, clamp(0.48 * l3Opac, 0.10, 0.80))
+            ctx.lineWidth = 1.1
+            for (var gy15 = 0; gy15 < mRows; gy15 += step15) {
+                for (var gx15 = 0; gx15 < mCols; gx15 += step15) {
+                    var idx15 = gy15 * mCols + gx15
+                    var c15 = grid[idx15]
+                    if (!c15 || ((c15.clusterId % 6) !== cl15)) continue
+                    var jitX15 = Math.sin(idx15 * 12.9898 + l3T * 1.4) * 0.032
+                    var jitY15 = Math.cos(idx15 * 78.233 - l3T * 1.2) * 0.032
+                    var pr15 = projCell(c15, jitX15, jitY15, c15.zDepth * 0.65)
+                    var rad15 = Math.max(2.0, Math.min(tileW, tileH) * pr15.scaleW * (0.32 + c15.salience * 0.78 + (c15.sat || 0.5) * 0.35))
+                    ctx.moveTo(pr15.x + rad15, pr15.y)
+                    ctx.arc(pr15.x, pr15.y, rad15, 0, Math.PI * 2.0)
+                }
+            }
+            ctx.fill()
+        }
+    } else if (st === 16) {
+        // #17: Turing Reaction-Diffusion — Warhol 2x2 Acid Pop-Art Screenprint Quadrant Grid + Coral Labyrinth Contours
+        var warholQuads = [
+            { ox: -0.50, oy: -0.50, bg: "#1A0526", fg1: "#FF007F", fg2: "#00F5FF", rim: "#FFEA00" },
+            { ox: 0.50, oy: -0.50, bg: "#041E1C", fg1: "#00FF9D", fg2: "#FF5500", rim: "#E066FF" },
+            { ox: -0.50, oy: 0.50, bg: "#1F0D04", fg1: "#FFB800", fg2: "#00D4FF", rim: "#FF1E56" },
+            { ox: 0.50, oy: 0.50, bg: "#070B24", fg1: "#B388FF", fg2: "#CCFF00", rim: "#00F5D4" }
+        ]
+        var qStep16 = isEcho ? 4 : 3
+        for (var q16 = 0; q16 < 4; q16++) {
+            var wq = warholQuads[q16]
+            var fgColA = (colourMode === 0) ? wq.fg1 : resolveArtCol(q16 * 2, null, state.bassSmooth, 0.14)
+            var fgColB = (colourMode === 0) ? wq.fg2 : resolveArtCol(q16 * 2 + 1, null, state.midSmooth, 0.08)
+            // Quadrant backing tile
+            if (!isEcho) {
+                var qp00 = projectLayer3ArtPoint(wq.ox - 0.47, wq.oy - 0.47, -0.15, cTL, l3Mode, state, cfg, layout)
+                var qp10 = projectLayer3ArtPoint(wq.ox + 0.47, wq.oy - 0.47, -0.15, cTR, l3Mode, state, cfg, layout)
+                var qp11 = projectLayer3ArtPoint(wq.ox + 0.47, wq.oy + 0.47, -0.15, cBR, l3Mode, state, cfg, layout)
+                var qp01 = projectLayer3ArtPoint(wq.ox - 0.47, wq.oy + 0.47, -0.15, cBL, l3Mode, state, cfg, layout)
+                ctx.beginPath()
+                ctx.moveTo(qp00.x, qp00.y); ctx.lineTo(qp10.x, qp10.y); ctx.lineTo(qp11.x, qp11.y); ctx.lineTo(qp01.x, qp01.y)
+                ctx.closePath()
+                ctx.fillStyle = colourWithAlpha(wq.bg, clamp(0.74 * l3Opac, 0.18, 0.88))
+                ctx.fill()
+            }
+            // High-contrast Warhol screenprint + Turing coral bridges inside each quadrant
+            ctx.beginPath()
+            ctx.fillStyle = colourWithAlpha(fgColA, clamp(0.86 * l3Opac, 0.18, 0.96))
+            for (var gy16 = 0; gy16 < mRows; gy16 += qStep16) {
+                for (var gx16 = 0; gx16 < mCols; gx16 += qStep16) {
+                    var c16 = grid[gy16 * mCols + gx16]
+                    if (!c16 || c16.salience < 0.30) continue
+                    var qnx16 = wq.ox + c16.homeX * 0.45
+                    var qny16 = wq.oy + c16.homeY * 0.45
+                    var pr16 = projectLayer3ArtPoint(qnx16, qny16, c16.salience * 0.35, c16, l3Mode, state, cfg, layout)
+                    var rw16 = Math.max(2.2, tileW * pr16.scaleW * 0.82 * (0.6 + c16.salience * 0.7))
+                    var rh16 = Math.max(2.2, tileH * pr16.scaleH * 0.38)
+                    var dir16 = (c16.clusterId + c16.contourLvl + q16) & 3
+                    ctx.rect(pr16.x - rw16 * 0.5, pr16.y - rh16 * 0.5, rw16 * (dir16 & 1 ? 1.0 : -1.0), rh16)
+                    ctx.rect(pr16.x - rh16 * 0.5, pr16.y - rw16 * 0.5, rh16, rw16 * (dir16 & 2 ? 1.0 : -1.0))
+                }
+            }
+            ctx.fill()
+            // Secondary highlight silkscreen pass
+            ctx.beginPath()
+            ctx.fillStyle = colourWithAlpha(fgColB, clamp(0.84 * l3Opac, 0.18, 0.96))
+            for (var gy16B = 1; gy16B < mRows; gy16B += qStep16) {
+                for (var gx16B = 1; gx16B < mCols; gx16B += qStep16) {
+                    var c16B = grid[gy16B * mCols + gx16B]
+                    if (!c16B || (c16B.edgeMag < 0.32 && c16B.luma < 0.58)) continue
+                    var pr16B = projectLayer3ArtPoint(wq.ox + c16B.homeX * 0.45, wq.oy + c16B.homeY * 0.45, 0.42, c16B, l3Mode, state, cfg, layout)
+                    var s16B = Math.max(2.0, tileW * pr16B.scaleW * 0.52)
+                    ctx.rect(pr16B.x - s16B * 0.5, pr16B.y - s16B * 0.5, s16B, s16B)
+                }
+            }
+            ctx.fill()
+        }
+    } else if (st === 17) {
+        // #18: Isometric Cityscape Extrude — Full-cover (0%..100%) 3-Face 3D Isometric Voxel Skyscrapers sorted back-to-front
+        var step17 = isEcho ? 4 : 2
+        for (var gy17 = 0; gy17 < mRows; gy17 += step17) {
+            for (var gx17 = 0; gx17 < mCols; gx17 += step17) {
+                var c17 = grid[gy17 * mCols + gx17]
+                if (!c17) continue
+                var eq17 = state.smoothBands[(gx17 + gy17) & 63] || 0.0
+                var elev17 = (c17.salience * 0.65 + (c17.zDepth + 1.0) * 0.28 + eq17 * 0.35) * (0.55 + state.bassSmooth * 0.55)
+                var pBase17 = projCell(c17, 0, 0, -0.15)
+                var pRoof17 = projCell(c17, 0, -elev17 * 0.14, elev17 * 0.78)
+                var isoW17 = Math.max(3.2, tileW * pRoof17.scaleW * step17 * 0.56)
+                var isoH17 = Math.max(2.0, tileH * pRoof17.scaleH * step17 * 0.32)
+                var pilH17 = Math.max(4.0, (pBase17.y - pRoof17.y) + elev17 * tileH * 1.85)
+                var rx17 = pRoof17.x
+                var ry17 = pRoof17.y
+                var roofCol = resolveArtCol(c17.clusterId, c17, eq17, 0.18)
+                var leftCol = resolveArtCol(c17.clusterId, c17, eq17, -0.04)
+                var rightCol = resolveArtCol((c17.clusterId + 1) & 7, c17, eq17, -0.16)
+                // Left 3D wall
+                ctx.beginPath()
+                ctx.moveTo(rx17 - isoW17, ry17)
+                ctx.lineTo(rx17, ry17 + isoH17)
+                ctx.lineTo(rx17, ry17 + isoH17 + pilH17)
+                ctx.lineTo(rx17 - isoW17, ry17 + pilH17)
+                ctx.closePath()
+                ctx.fillStyle = colourWithAlpha(leftCol, clamp(0.84 * l3Opac, 0.16, 0.95))
+                ctx.fill()
+                // Right 3D wall
+                ctx.beginPath()
+                ctx.moveTo(rx17, ry17 + isoH17)
+                ctx.lineTo(rx17 + isoW17, ry17)
+                ctx.lineTo(rx17 + isoW17, ry17 + pilH17)
+                ctx.lineTo(rx17, ry17 + isoH17 + pilH17)
+                ctx.closePath()
+                ctx.fillStyle = colourWithAlpha(rightCol, clamp(0.80 * l3Opac, 0.15, 0.92))
+                ctx.fill()
+                // Top lit isometric diamond roof
+                ctx.beginPath()
+                ctx.moveTo(rx17, ry17 - isoH17)
+                ctx.lineTo(rx17 + isoW17, ry17)
+                ctx.lineTo(rx17, ry17 + isoH17)
+                ctx.lineTo(rx17 - isoW17, ry17)
+                ctx.closePath()
+                ctx.fillStyle = colourWithAlpha(roofCol, clamp(0.94 * l3Opac, 0.20, 0.98))
+                ctx.fill()
+            }
+        }
+    } else if (st === 18) {
+        // #19: CMYK Rosette Halftone Press — Roy Lichtenstein Macro Pop-Art Ben-Day Dot Press (2x macro discs + rotated screens)
+        var cmykPlates = [
+            { col: "#00E5FF", ang: 0.2618, ox: -0.012, oy: -0.010 },
+            { col: "#FF007F", ang: 1.3090, ox: 0.012, oy: -0.008 },
+            { col: "#FFEA00", ang: 0.0, ox: -0.006, oy: 0.012 },
+            { col: "#F8FAFC", ang: 0.7854, ox: 0.008, oy: 0.008 }
+        ]
+        var step18 = isEcho ? 3 : 2
+        for (var cp = 0; cp < 4; cp++) {
+            var cpl = cmykPlates[cp]
+            var col18 = (colourMode === 0) ? cpl.col : resolveArtCol(cp * 2, null, state.smoothBands[(cp * 14) & 63], 0.12)
+            ctx.beginPath()
+            ctx.fillStyle = colourWithAlpha(col18, clamp(0.80 * l3Opac, 0.16, 0.95))
+            for (var gy18 = 0; gy18 < mRows; gy18 += step18) {
+                for (var gx18 = 0; gx18 < mCols; gx18 += step18) {
+                    var c18 = grid[gy18 * mCols + gx18]
+                    if (!c18) continue
+                    if (((c18.clusterId + cp) & 3) !== cp && c18.salience < 0.42) continue
+                    var pr18 = projCell(c18, cpl.ox * (1.0 + state.beatPulse), cpl.oy * (1.0 + state.beatPulse), c18.zDepth * 0.42)
+                    var dotR18 = Math.max(2.4, Math.min(tileW, tileH) * pr18.scaleW * step18 * (0.24 + c18.salience * 0.36 + (c18.sat || 0.5) * 0.16))
+                    if (isBlock) {
+                        var cs18 = Math.cos(cpl.ang) * dotR18, sn18 = Math.sin(cpl.ang) * dotR18
+                        ctx.moveTo(pr18.x + cs18, pr18.y + sn18)
+                        ctx.lineTo(pr18.x - sn18, pr18.y + cs18)
+                        ctx.lineTo(pr18.x - cs18, pr18.y - sn18)
+                        ctx.lineTo(pr18.x + sn18, pr18.y - cs18)
+                        ctx.closePath()
+                    } else {
+                        ctx.moveTo(pr18.x + dotR18, pr18.y)
+                        ctx.arc(pr18.x, pr18.y, dotR18, 0, Math.PI * 2.0)
+                    }
+                }
+            }
+            ctx.fill()
+        }
+    } else if (st === 19) {
+        // #20: Magnetic Dipole Vector Field — Maxwell electromagnetic flux curves + long torqued compass needles
+        var step19 = isEcho ? 3 : 2
+        for (var cl19 = 0; cl19 < 6; cl19++) {
+            var col19 = resolveArtCol(cl19, null, state.smoothBands[(cl19 * 10) & 63], 0.12)
+            ctx.beginPath()
+            ctx.fillStyle = colourWithAlpha(col19, clamp(0.84 * l3Opac, 0.18, 0.96))
+            ctx.strokeStyle = colourWithAlpha(col19, clamp(0.55 * l3Opac, 0.12, 0.86))
+            ctx.lineWidth = 1.3
+            for (var gy19 = 0; gy19 < mRows; gy19 += step19) {
+                for (var gx19 = 0; gx19 < mCols; gx19 += step19) {
+                    var c19 = grid[gy19 * mCols + gx19]
+                    if (!c19 || ((c19.clusterId % 6) !== cl19)) continue
+                    var pr19 = projCell(c19, 0, 0, c19.zDepth * 0.55)
+                    var dipAng = (c19.tangentRad || 0.0) + Math.sin(l3T * 2.4 + (c19.hue || 0.0) * 0.025) * (0.42 + state.bassSmooth * 0.65)
+                    var nLen19 = Math.max(tileW, tileH) * pr19.scaleW * (1.15 + c19.edgeMag * 1.25 + c19.salience * 0.65)
+                    var nWid19 = Math.max(1.8, Math.min(tileW, tileH) * pr19.scaleH * 0.28)
+                    var dc19 = Math.cos(dipAng), ds19 = Math.sin(dipAng)
+                    ctx.moveTo(pr19.x + dc19 * nLen19 * 0.65, pr19.y + ds19 * nLen19 * 0.65)
+                    ctx.lineTo(pr19.x - ds19 * nWid19 * 0.5, pr19.y + dc19 * nWid19 * 0.5)
+                    ctx.lineTo(pr19.x - dc19 * nLen19 * 0.40, pr19.y - ds19 * nLen19 * 0.40)
+                    ctx.lineTo(pr19.x + ds19 * nWid19 * 0.5, pr19.y - dc19 * nWid19 * 0.5)
+                    ctx.closePath()
+                }
+            }
+            ctx.fill()
+        }
+    } else {
+        // #21: Holographic Slice Tomography — 3D Slit-Scan MRI Ribbon Terrain & Vertical Laser Drop-Curtains
+        var rStep20 = isEcho ? 3 : 2
+        var scanRow20 = (l3T * 8.5) % mRows
+        for (var gy20 = 0; gy20 < rowCells.length; gy20 += rStep20) {
+            var rSlice = rowCells[gy20]
+            if (!rSlice || rSlice.length < 2) continue
+            var eq20 = state.smoothBands[(gy20 * 2) & 63] || 0.0
+            var isScanSlice = Math.abs(gy20 - scanRow20) < 1.8
+            var holoHue20 = ((state.hueShift || 0) + gy20 * 9 + l3T * 42) % 360
+            var sliceCol20 = isScanSlice
+                ? "#FFFDF0"
+                : ((colourMode === 0) ? hslToHex(holoHue20, 0.92, clamp(0.50 + eq20 * 0.22, 0.44, 0.84)) : resolveArtCol(gy20 & 7, rSlice[rSlice.length >> 1], eq20, 0.12))
+            // Vertical holographic drop-curtain pillars to slice floor
+            ctx.beginPath()
+            ctx.fillStyle = colourWithAlpha(sliceCol20, clamp((isScanSlice ? 0.65 : 0.36) * l3Opac, 0.08, 0.85))
+            for (var rx20 = 0; rx20 < rSlice.length; rx20 += (colStride * 2)) {
+                var c20 = rSlice[rx20]
+                if (c20.salience < 0.30) continue
+                var lift20 = (c20.zDepth * 0.65 + c20.salience * 0.45) * (0.14 + state.bassSmooth * 0.10)
+                var pTop20 = projCell(c20, 0, -lift20, c20.zDepth * 0.78)
+                var pBot20 = projCell(c20, 0, 0.02, -0.20)
+                var curH20 = Math.max(2.0, pBot20.y - pTop20.y)
+                ctx.rect(pTop20.x - 1.2, pTop20.y, 2.4, curH20)
+            }
+            ctx.fill()
+            // Continuous 3D MRI cross-section ribbon
+            ctx.beginPath()
+            for (var rx20B = 0; rx20B < rSlice.length; rx20B += colStride) {
+                var c20B = rSlice[rx20B]
+                var lift20B = (c20B.zDepth * 0.65 + c20B.salience * 0.45) * (0.14 + state.bassSmooth * 0.10)
+                var pTop20B = projCell(c20B, 0, -lift20B, c20B.zDepth * 0.78)
+                if (rx20B === 0) ctx.moveTo(pTop20B.x, pTop20B.y)
+                else ctx.lineTo(pTop20B.x, pTop20B.y)
+            }
+            ctx.strokeStyle = colourWithAlpha(sliceCol20, clamp((isScanSlice ? 0.98 : 0.82) * l3Opac, 0.20, 1.0))
+            ctx.lineWidth = isScanSlice ? 3.0 : (isBlock ? 2.4 : 1.6)
+            ctx.stroke()
+        }
+    }
+
+    // Mode 10 (Chromatic Mirror): Shimmering water-rippled inverted reflection beneath the stage baseline
+    if (l3Mode === 10 && !isEcho) {
+        ctx.beginPath()
+        ctx.fillStyle = colourWithAlpha(resolveArtCol(0, cBL, state.bassSmooth, 0.08), clamp(0.34 * l3Opac, 0.08, 0.60))
+        for (var rfi = 0; rfi < grid.length; rfi += 6) {
+            var crf = grid[rfi]
+            if (!crf || crf.salience < 0.32) continue
+            var prf = projCell(crf, 0, 0, crf.zDepth * 0.45)
+            var ripX = Math.sin(crf.homeY * 14.0 + l3T * 5.2) * (5.0 + state.bassSmooth * 12.0) * warpIntensity
+            var reflY = (cy + halfH * 0.66) + (1.0 - crf.homeY) * halfH * 0.34
+            ctx.rect(prf.x + ripX - tileW * 0.45, reflY - tileH * 0.22, tileW * 0.90, tileH * 0.44)
+        }
+        ctx.fill()
+    }
+}
+
 // 21 Mathematical Art Interpretation Models for Layer 6 Album Art (`useAlbumArt === true`)
 function drawLayer3ArtStyleCell(ctx, artStyle, px, py, szW, szH, p, idx, bVal, l3T, isEcho) {
     var dens = clamp(Number(p.density !== undefined ? p.density : 0.65), 0.15, 1.0)
@@ -13992,6 +15815,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer3AsciiMode: c.layer3AsciiMode || c.asciiMode || "braille",
         asciiMode: c.asciiMode || c.layer3AsciiMode || "braille",
         useAlbumArt: c.useAlbumArt !== undefined ? Boolean(c.useAlbumArt) : true,
+        artImageUrl: String(c.artImageUrl || ""),
         bannerLines: c.bannerLines || [],
         artLines: c.artLines || [],
         trackTitle: String(c.trackTitle || ""),

@@ -66,6 +66,9 @@ FocusScope {
     readonly property var layer4Modes: Engine.LAYER4_MODES
     readonly property var layer4WallPatterns: Engine.LAYER4_WALL_PATTERNS
     readonly property var paletteNames: Engine.PALETTE_NAMES
+    readonly property var paletteRandomModes: Engine.PALETTE_RANDOM_MODES
+    readonly property var shortPaletteRandomModes: Engine.SHORT_PALETTE_RANDOM_MODES
+    readonly property var paletteCollections: Engine.PALETTE_COLLECTIONS
     readonly property var shortPaletteNames: [
         "Rainbow", "Cyber", "Solar", "BioGlow", "UV Rave",
         "Nebula", "Emerald", "Blood", "Gold", "Aurora",
@@ -77,6 +80,10 @@ FocusScope {
         "AshWasteland", "NordicNoir", "OccultRitual", "MorgueSteel", "CyberThrill", "VampireCrypt"
     ]
     readonly property var trackArcModes: Engine.TRACK_ARC_MODES
+    property int paletteRandomMode: 0 // 0 = Full Random (All 42), 1 = Within Collection, 2 = Fixed to Selection
+    property int paletteCollectionIndex: 0 // 0..7 in Engine.PALETTE_COLLECTIONS
+    onPaletteRandomModeChanged: scheduleSaveVisualiserConfig()
+    onPaletteCollectionIndexChanged: scheduleSaveVisualiserConfig()
 
     // Global Music-Driven Modulation, Hardware GPU Acceleration, Song Arc & Row 2 Focus
     property bool musicDrive: true
@@ -594,7 +601,9 @@ FocusScope {
         "22:ShdPoly",
         "23:ShdTempest",
         "24:3DWarpTrench",
-        "25:RaveMan"
+        "25:RaveMan",
+        "26:3DVector",
+        "27:Invaders"
     ]
 
     readonly property var photoMotionModes: PhotoMotion.PHOTO_MOTION_MODES
@@ -985,10 +994,38 @@ FocusScope {
         syncAutoCycleFromLayers()
         scheduleSaveVisualiserConfig()
     }
+    property bool _hasSavedToastBeforeVj: false
+    property bool _savedToastBeforeVj: true
     onDisableScreensaverInFullscreenOrVjChanged: scheduleSaveVisualiserConfig()
     onVjDeckModeChanged: scheduleSaveVisualiserConfig()
-    onExternalStageOpenChanged: scheduleSaveVisualiserConfig()
-    onIsFullscreenChanged: scheduleSaveVisualiserConfig()
+    onExternalStageOpenChanged: {
+        if (root.externalStageOpen) {
+            root.vjDeckMode = true
+            if (!root._hasSavedToastBeforeVj) {
+                root._savedToastBeforeVj = root.keybindingToastEnabled
+                root._hasSavedToastBeforeVj = true
+            }
+            root.keybindingToastEnabled = false
+        } else {
+            root.vjDeckMode = false
+            if (root._hasSavedToastBeforeVj) {
+                root.keybindingToastEnabled = root._savedToastBeforeVj
+                root._hasSavedToastBeforeVj = false
+            }
+        }
+        scheduleSaveVisualiserConfig()
+    }
+    Component.onDestruction: {
+        if (root.externalStageOpen || root.vjDeckMode) {
+            root.externalStageOpen = false
+            root.vjDeckMode = false
+            if (root._hasSavedToastBeforeVj) {
+                root.keybindingToastEnabled = root._savedToastBeforeVj
+                root._hasSavedToastBeforeVj = false
+            }
+            root.emitSaveVisualiserConfig()
+        }
+    }
     property string _lastEmittedConfigJson: ""
     property bool _suppressPersistedEcho: false
 
@@ -999,6 +1036,59 @@ FocusScope {
     property string _gpuPhotoUrlSecondary: ""
     property string _gpuPhotoUrlPrev: ""
     property string _gpuPhotoUrlPeer: ""
+    property string _loadedAlbumArtUrl: ""
+    property string _readyAlbumArtCanvasUrl: ""
+
+    function resolveAlbumArtRasterUrl() {
+        var lines = root.artLines || []
+        for (var i = lines.length - 1; i >= 0; i--) {
+            var line = String(lines[i] || "")
+            if (line.indexOf("#ARTMODEL:") === 0) {
+                try {
+                    var pm = JSON.parse(line.slice(10))
+                    var mp = String((pm && pm.imagePath) || "")
+                    if (mp && mp.indexOf("/") === 0 && mp.indexOf("..") < 0 && !mp.toLowerCase().endsWith(".svg")) {
+                        return "file://" + mp
+                    }
+                } catch (e) {}
+                break
+            }
+        }
+        var ap = String(root.artPath || "")
+        if (ap && ap.indexOf("/") === 0 && ap.indexOf("..") < 0) {
+            var lower = ap.toLowerCase()
+            if (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".webp")) {
+                return "file://" + ap
+            }
+        }
+        return ""
+    }
+
+    function syncAlbumArtCanvasImage() {
+        if (typeof vizCanvas === "undefined" || !vizCanvas || typeof vizCanvas.loadImage !== "function") return
+        var shouldLoad = Boolean(root.visible && root.stageMode === "visualiser" && root.layer3Enabled && root.useAlbumArt)
+        var targetUrl = shouldLoad ? root.resolveAlbumArtRasterUrl() : ""
+        if (root._loadedAlbumArtUrl && root._loadedAlbumArtUrl !== targetUrl) {
+            if (typeof vizCanvas.unloadImage === "function" && !root._loadedCanvasImageSet[root._loadedAlbumArtUrl]) {
+                vizCanvas.unloadImage(root._loadedAlbumArtUrl)
+            }
+            root._loadedAlbumArtUrl = ""
+            root._readyAlbumArtCanvasUrl = ""
+        }
+        if (!targetUrl) {
+            root._readyAlbumArtCanvasUrl = ""
+            return
+        }
+        root._loadedAlbumArtUrl = targetUrl
+        if (vizCanvas.isImageLoaded(targetUrl)) {
+            root._readyAlbumArtCanvasUrl = targetUrl
+        } else {
+            root._readyAlbumArtCanvasUrl = ""
+            if (!vizCanvas.isImageLoading(targetUrl)) {
+                vizCanvas.loadImage(targetUrl)
+            }
+        }
+    }
 
     Timer {
         id: photoPreloadDebounceTimer
@@ -1019,9 +1109,14 @@ FocusScope {
                     vizCanvas.unloadImage(urls[i])
                 }
             }
+            if (root._loadedAlbumArtUrl) {
+                vizCanvas.unloadImage(root._loadedAlbumArtUrl)
+            }
         }
         root._loadedCanvasImageUrls = []
         root._loadedCanvasImageSet = ({})
+        root._loadedAlbumArtUrl = ""
+        root._readyAlbumArtCanvasUrl = ""
     }
 
     onVisibleChanged: {
@@ -1031,6 +1126,10 @@ FocusScope {
         } else if (!root.visible) {
             root.unloadAllCanvasImages()
         }
+        root.syncAlbumArtCanvasImage()
+    }
+    onStageModeChanged: {
+        root.syncAlbumArtCanvasImage()
     }
 
     onPhotoActiveVariantsChanged: {
@@ -2032,6 +2131,8 @@ FocusScope {
         return {
             version: 3,
             paletteIndex: root.paletteIndex,
+            paletteRandomMode: root.paletteRandomMode,
+            paletteCollectionIndex: root.paletteCollectionIndex,
             musicDrive: root.musicDrive,
             gpuShaderEnabled: root.gpuShaderEnabled,
             backdropEnabled: root.backdropEnabled,
@@ -2060,8 +2161,8 @@ FocusScope {
             geometryDetail: root.geometryDetail,
             antialiasingEnabled: root.antialiasingEnabled,
             disableScreensaverInFullscreenOrVj: root.disableScreensaverInFullscreenOrVj,
-            keybindingToastEnabled: root.keybindingToastEnabled,
-            vjDeckActive: Boolean(root.vjDeckMode || root.externalStageOpen || root.isFullscreen),
+            keybindingToastEnabled: root._hasSavedToastBeforeVj ? root._savedToastBeforeVj : root.keybindingToastEnabled,
+            vjDeckActive: Boolean(root.vjDeckMode || root.externalStageOpen),
             audioSensitivity: root.audioSensitivity,
             beatPunch: root.beatPunch,
             audioSmoothing: root.audioSmoothing,
@@ -2174,6 +2275,8 @@ FocusScope {
         root._applyingPersistedConfig = true
         var isLegacyV2 = (Number(cfg.version) || 0) < 3
         if (cfg.paletteIndex !== undefined) root.paletteIndex = Number(cfg.paletteIndex) % Engine.PALETTE_NAMES.length
+        if (cfg.paletteRandomMode !== undefined) root.paletteRandomMode = ((Math.floor(Number(cfg.paletteRandomMode) || 0) % 3) + 3) % 3
+        if (cfg.paletteCollectionIndex !== undefined) root.paletteCollectionIndex = ((Math.floor(Number(cfg.paletteCollectionIndex) || 0) % Engine.PALETTE_COLLECTIONS.length) + Engine.PALETTE_COLLECTIONS.length) % Engine.PALETTE_COLLECTIONS.length
         if (cfg.musicDrive !== undefined) root.musicDrive = Boolean(cfg.musicDrive)
         if (isLegacyV2) {
             root.gpuShaderEnabled = true
@@ -2388,6 +2491,8 @@ FocusScope {
         root.antialiasingEnabled = true
         root.disableScreensaverInFullscreenOrVj = true
         root.keybindingToastEnabled = true
+        root.paletteRandomMode = 0
+        root.paletteCollectionIndex = 0
         root.audioSensitivity = 1.35
         root.beatPunch = 1.15
         root.audioSmoothing = 0.50
@@ -2954,6 +3059,7 @@ FocusScope {
         if (!root._internalLayerChange && !root._applyingPersistedConfig) {
             root.layer6PinnedByUser = true
         }
+        root.syncAlbumArtCanvasImage()
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
     }
@@ -3000,6 +3106,7 @@ FocusScope {
             root.engineState.artInterpretationSeed = ((root.engineState.artInterpretationSeed || 0) + 1)
             root.engineState.artSourceKey = ""
         }
+        root.syncAlbumArtCanvasImage()
         if (vizCanvas) vizCanvas.requestPaint()
     }
     onTrackArtistChanged: {
@@ -3026,6 +3133,7 @@ FocusScope {
             root.engineState.l3FormFactor = 1.0
             root.engineState.artBurst = 0.0
         }
+        root.syncAlbumArtCanvasImage()
         if (vizCanvas) vizCanvas.requestPaint()
     }
 
@@ -3033,6 +3141,7 @@ FocusScope {
         if (root.engineState) {
             root.engineState.artSourceKey = ""
         }
+        root.syncAlbumArtCanvasImage()
         vizCanvas.requestPaint()
         scheduleSaveVisualiserConfig()
     }
@@ -3105,6 +3214,7 @@ FocusScope {
             asciiMode: root.asciiMode,
             layer3AsciiMode: root.asciiMode,
             useAlbumArt: root.useAlbumArt,
+            artImageUrl: (root.layer3Enabled && root.useAlbumArt) ? root._readyAlbumArtCanvasUrl : "",
             bannerLines: root.bannerLines,
             artLines: root.artLines,
             layer1Enabled: root.layer1Enabled,
@@ -3906,9 +4016,89 @@ FocusScope {
         cycleBackdropMode(delta)
     }
 
+    function pickRandomPalette(stepSequential) {
+        if (root.paletteRandomMode === 2) {
+            return root.paletteIndex
+        }
+        var total = Engine.PALETTE_NAMES.length
+        if (root.paletteRandomMode === 1 && Engine.PALETTE_COLLECTIONS && Engine.PALETTE_COLLECTIONS.length > 0) {
+            var colObj = Engine.PALETTE_COLLECTIONS[root.paletteCollectionIndex % Engine.PALETTE_COLLECTIONS.length]
+            var pool = (colObj && Array.isArray(colObj.indices) && colObj.indices.length > 0) ? colObj.indices : null
+            if (pool) {
+                var curPos = pool.indexOf(root.paletteIndex)
+                if (stepSequential) {
+                    return pool[(curPos + 1) % pool.length]
+                }
+                if (pool.length === 1) return pool[0]
+                var pickOffset = 1 + Math.floor(Math.random() * (pool.length - 1))
+                return pool[((curPos >= 0 ? curPos : 0) + pickOffset) % pool.length]
+            }
+        }
+        if (stepSequential) {
+            return (root.paletteIndex + 1) % total
+        }
+        return (root.paletteIndex + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total
+    }
+
+    function cyclePaletteRandomMode(delta) {
+        var step = (delta !== undefined && delta < 0) ? -1 : 1
+        root.paletteRandomMode = (root.paletteRandomMode + step + 3) % 3
+        if (root.paletteRandomMode === 1 && Engine.PALETTE_COLLECTIONS && Engine.PALETTE_COLLECTIONS.length > 0) {
+            var colObj = Engine.PALETTE_COLLECTIONS[root.paletteCollectionIndex % Engine.PALETTE_COLLECTIONS.length]
+            if (colObj && Array.isArray(colObj.indices) && colObj.indices.length > 0 && colObj.indices.indexOf(root.paletteIndex) < 0) {
+                root.paletteIndex = colObj.indices[0]
+            }
+        }
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+        var modeLabel = Engine.PALETTE_RANDOM_MODES[root.paletteRandomMode] || "Full Random"
+        if (root.paletteRandomMode === 1 && Engine.PALETTE_COLLECTIONS && Engine.PALETTE_COLLECTIONS.length > 0) {
+            modeLabel += " (" + Engine.PALETTE_COLLECTIONS[root.paletteCollectionIndex % Engine.PALETTE_COLLECTIONS.length].name + ")"
+        }
+        root.suppressActionFeedback("Palette Random Mode: " + modeLabel)
+    }
+
+    function selectPaletteCollection(idx) {
+        var cols = Engine.PALETTE_COLLECTIONS || []
+        if (cols.length === 0) return
+        var normIdx = ((idx % cols.length) + cols.length) % cols.length
+        root.paletteCollectionIndex = normIdx
+        root.paletteRandomMode = 1
+        var colObj = cols[normIdx]
+        if (colObj && Array.isArray(colObj.indices) && colObj.indices.length > 0 && colObj.indices.indexOf(root.paletteIndex) < 0) {
+            root.paletteIndex = colObj.indices[0]
+        }
+        vizCanvas.requestPaint()
+        scheduleSaveVisualiserConfig()
+        if (colObj) {
+            root.suppressActionFeedback("Palette Collection: " + colObj.name)
+        }
+    }
+
+    function cyclePaletteCollection(delta) {
+        var step = (delta !== undefined && delta < 0) ? -1 : 1
+        var cols = Engine.PALETTE_COLLECTIONS || []
+        if (cols.length === 0) return
+        root.selectPaletteCollection(root.paletteCollectionIndex + step)
+    }
+
     function cyclePalette(delta) {
+        var step = (delta !== undefined && delta < 0) ? -1 : 1
+        if (root.paletteRandomMode === 1 && Engine.PALETTE_COLLECTIONS && Engine.PALETTE_COLLECTIONS.length > 0) {
+            var colObj = Engine.PALETTE_COLLECTIONS[root.paletteCollectionIndex % Engine.PALETTE_COLLECTIONS.length]
+            var pool = (colObj && Array.isArray(colObj.indices) && colObj.indices.length > 0) ? colObj.indices : null
+            if (pool) {
+                var pos = pool.indexOf(root.paletteIndex)
+                var nextPos = pos >= 0 ? ((pos + step + pool.length) % pool.length) : 0
+                paletteIndex = pool[nextPos]
+                vizCanvas.requestPaint()
+                scheduleSaveVisualiserConfig()
+                root.suppressActionFeedback("Palette (" + colObj.shortName + "): " + Engine.PALETTE_NAMES[paletteIndex])
+                return
+            }
+        }
         var count = Engine.PALETTE_NAMES.length
-        paletteIndex = (paletteIndex + delta + count) % count
+        paletteIndex = (paletteIndex + step + count) % count
         vizCanvas.requestPaint()
         scheduleSaveVisualiserConfig()
         root.suppressActionFeedback("Palette: " + Engine.PALETTE_NAMES[paletteIndex])
@@ -4382,7 +4572,9 @@ FocusScope {
     function randomiseVisuals() {
         root.resetUserLayerPins()
         Engine.randomiseState(root.engineState)
-        paletteIndex = (paletteIndex + 1 + Math.floor(Math.random() * (Engine.PALETTE_NAMES.length - 1))) % Engine.PALETTE_NAMES.length
+        if (root.paletteRandomMode !== 2) {
+            paletteIndex = root.pickRandomPalette(false)
+        }
         root.randomiseLayer1()
         root.randomiseLayerEq()
         root.randomiseLayerVectors()
@@ -4411,7 +4603,9 @@ FocusScope {
             root.randomiseLayer2()
             root.randomiseLayer4()
             root.randomiseLayer3()
-            paletteIndex = (paletteIndex + 1 + Math.floor(Math.random() * (Engine.PALETTE_NAMES.length - 1))) % Engine.PALETTE_NAMES.length
+            if (root.paletteRandomMode !== 2) {
+                paletteIndex = root.pickRandomPalette(false)
+            }
         }
         clearCanvasImmediate()
         scheduleSaveVisualiserConfig()
@@ -5164,10 +5358,11 @@ FocusScope {
 
                 if (l1WorldGpu || (root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || root.layer4Enabled || l2FractalGpu) {
                     var bT = st.backdropTime !== undefined ? st.backdropTime : (st.t || 0.0)
+                    var posTime = st.t || 0.0
                     gpuShaderStage.uL1Enabled = l1WorldGpu ? 1.0 : 0.0
-                    gpuShaderStage.uTime = l2FractalGpu ? (st.t || bT) : bT
+                    gpuShaderStage.uTime = posTime
                     gpuShaderStage.uL1Time = st.l1Time || 0.0
-                    gpuShaderStage.uZoomTime = l2FractalGpu ? (st.zoomTime !== undefined ? st.zoomTime : (st.t || 0.0)) : (bT * 0.85)
+                    gpuShaderStage.uZoomTime = l2FractalGpu ? (st.zoomTime !== undefined ? st.zoomTime : posTime) : (posTime * 0.85 * root.backdropSpeed)
                     gpuShaderStage.uBass = st.bassSmooth || 0.0
                     gpuShaderStage.uMid = st.midSmooth || 0.0
                     gpuShaderStage.uHigh = st.highSmooth || 0.0
@@ -5369,8 +5564,8 @@ FocusScope {
                 if (root.layer4AutoRandomise) {
                     root.randomiseLayer4()
                 }
-                if (root.anyLayerAutoRandomiseActive) {
-                    root.paletteIndex = (root.paletteIndex + 1) % Engine.PALETTE_NAMES.length
+                if (root.anyLayerAutoRandomiseActive && root.paletteRandomMode !== 2) {
+                    root.paletteIndex = root.pickRandomPalette(true)
                 }
             } finally {
                 root._inHudPillInteraction = false
@@ -5803,7 +5998,8 @@ FocusScope {
             renderTarget: Canvas.Image
             renderStrategy: Canvas.Threaded
             onImageLoaded: {
-                if (!root.gpuShaderEnabled && root.hasActiveCpuLayers) {
+                root.syncAlbumArtCanvasImage()
+                if ((!root.gpuShaderEnabled || (root.layer3Enabled && root.useAlbumArt)) && root.hasActiveCpuLayers) {
                     requestPaint()
                 }
             }
@@ -6136,17 +6332,41 @@ FocusScope {
                     onWheelScrolled: delta => root.cycleSelectedPreset(delta > 0 ? 1 : -1)
                 }
 
-                // Palette selector (30 palettes — under random control so highlighted in yellow accent)
+                // Palette selector (42 palettes — yellow when under Full/Collection randomisation, red when Fixed)
                 VizPillButton {
                     visible: root.stageMode === "visualiser"
                     Layout.preferredWidth: 74
                     text: "󰏘 " + (root.shortPaletteNames[root.paletteIndex % root.shortPaletteNames.length] || "Rainbow")
                     active: true
+                    notBoundToRand: root.paletteRandomMode === 2
                     fontSize: 9
                     horizontalPad: 5
                     onClicked: root.cyclePalette(1)
                     onRightClicked: root.cyclePalette(-1)
                     onWheelScrolled: delta => root.cyclePalette(delta > 0 ? 1 : -1)
+                }
+
+                // 3-Level Palette Randomisation Mode & Collection Cycler (Full / Collection / Fixed)
+                VizPillButton {
+                    visible: root.stageMode === "visualiser"
+                    text: root.paletteRandomMode === 0
+                        ? "󰒟 Pal:Full"
+                        : (root.paletteRandomMode === 1
+                            ? ("󰒟 " + ((root.paletteCollections[root.paletteCollectionIndex % root.paletteCollections.length] || {}).shortName || "Coll"))
+                            : "󰌾 Pal:Fixed")
+                    active: root.paletteRandomMode !== 2
+                    notBoundToRand: root.paletteRandomMode === 2
+                    fontSize: 9
+                    horizontalPad: 5
+                    onClicked: root.cyclePaletteRandomMode(1)
+                    onRightClicked: root.cyclePaletteCollection(1)
+                    onWheelScrolled: delta => {
+                        if (root.paletteRandomMode === 1) {
+                            root.cyclePaletteCollection(delta > 0 ? 1 : -1)
+                        } else {
+                            root.cyclePaletteRandomMode(delta > 0 ? 1 : -1)
+                        }
+                    }
                 }
 
                 // Full RANDOM Button: Toggles ALL layer auto-randomisations + palette auto-cycle simultaneously (Right-click steps once)
@@ -11517,7 +11737,7 @@ FocusScope {
                             }
                         }
 
-                        // Section 2: 30 Psychedelic & Nightclub Colour Palettes Selector Grid
+                        // Section 2: 42 Colour Palettes, 8 Curated Collections & 3-Way Randomisation Scope
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: paletteSecCol.implicitHeight + 14
@@ -11531,6 +11751,74 @@ FocusScope {
                                 anchors.fill: parent
                                 anchors.margins: 7
                                 spacing: 6
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 6
+
+                                    Text {
+                                        text: "󰒟 Palette Randomisation Scope:"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 10
+                                        font.bold: true
+                                        color: root.paletteRandomMode === 2 ? "#ef4444" : root.accentColour
+                                    }
+
+                                    Repeater {
+                                        model: Engine.PALETTE_RANDOM_MODES.length
+                                        delegate: VizPillButton {
+                                            required property int index
+                                            text: (index + 1) + ". " + Engine.PALETTE_RANDOM_MODES[index]
+                                            active: root.paletteRandomMode === index
+                                            notBoundToRand: index === 2
+                                            pillHeight: 22
+                                            fontSize: 9
+                                            horizontalPad: 8
+                                            onClicked: {
+                                                root.paletteRandomMode = index
+                                                if (index === 1 && Engine.PALETTE_COLLECTIONS && Engine.PALETTE_COLLECTIONS.length > 0) {
+                                                    var colObj = Engine.PALETTE_COLLECTIONS[root.paletteCollectionIndex % Engine.PALETTE_COLLECTIONS.length]
+                                                    if (colObj && colObj.indices.indexOf(root.paletteIndex) < 0) {
+                                                        root.paletteIndex = colObj.indices[0]
+                                                    }
+                                                }
+                                                vizCanvas.requestPaint()
+                                                scheduleSaveVisualiserConfig()
+                                            }
+                                        }
+                                    }
+
+                                    Item { Layout.fillWidth: true }
+                                }
+
+                                Text {
+                                    text: "󰏘 8 Curated Palette Collections (Click to lock randomisation within collection):"
+                                    textFormat: Text.PlainText
+                                    font.family: "JetBrainsMono Nerd Font"
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                    color: root.accentColour
+                                }
+
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    Repeater {
+                                        model: Engine.PALETTE_COLLECTIONS.length
+                                        delegate: VizPillButton {
+                                            required property int index
+                                            readonly property var colItem: Engine.PALETTE_COLLECTIONS[index]
+                                            text: (index + 1) + ". " + colItem.name + " (" + colItem.indices.length + ")"
+                                            active: root.paletteRandomMode === 1 && root.paletteCollectionIndex === index
+                                            pillHeight: 22
+                                            fontSize: 9
+                                            horizontalPad: 7
+                                            onClicked: root.selectPaletteCollection(index)
+                                        }
+                                    }
+                                }
 
                                 Text {
                                     text: "󰏘 42 Colour Palettes (30 Psychedelic & Club + 12 Dark Horror, Noir & Thriller):"
@@ -11549,8 +11837,12 @@ FocusScope {
                                         model: Engine.PALETTE_NAMES.length
                                         delegate: VizPillButton {
                                             required property int index
-                                            text: (index + 1) + ". " + Engine.PALETTE_NAMES[index]
-                                            active: root.paletteIndex === index
+                                            readonly property bool inActiveCollection: root.paletteRandomMode === 1
+                                                && Engine.PALETTE_COLLECTIONS[root.paletteCollectionIndex % Engine.PALETTE_COLLECTIONS.length]
+                                                && Engine.PALETTE_COLLECTIONS[root.paletteCollectionIndex % Engine.PALETTE_COLLECTIONS.length].indices.indexOf(index) >= 0
+                                            text: (index + 1) + ". " + Engine.PALETTE_NAMES[index] + (inActiveCollection ? " ★" : "")
+                                            active: root.paletteIndex === index || inActiveCollection
+                                            notBoundToRand: root.paletteRandomMode === 2 && root.paletteIndex === index
                                             pillHeight: 22
                                             fontSize: 9
                                             horizontalPad: 6

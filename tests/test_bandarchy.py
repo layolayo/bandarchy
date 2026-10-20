@@ -2594,8 +2594,11 @@ const vm = require('vm');
 let code = fs.readFileSync('PsychedelicEngine.js', 'utf8').replace(/^\.pragma\s+library\s*$/m, '');
 vm.runInThisContext(code);
 
-if (ALL_LAYER1_MODES.length !== 26 || SHORT_LAYER1_MODES.length !== 26) {
-    throw new Error('Expected 26 ALL_LAYER1_MODES and 26 SHORT_LAYER1_MODES, got ' + ALL_LAYER1_MODES.length);
+if (ALL_LAYER1_MODES.length !== 27 || SHORT_LAYER1_MODES.length !== 27) {
+    throw new Error('Expected 27 ALL_LAYER1_MODES and 27 SHORT_LAYER1_MODES, got ' + ALL_LAYER1_MODES.length);
+}
+if (PALETTE_COLLECTIONS.length !== 8 || PALETTE_RANDOM_MODES.length !== 3) {
+    throw new Error('Expected 8 PALETTE_COLLECTIONS and 3 PALETTE_RANDOM_MODES');
 }
 if (ALL_LAYER1_EQ_STYLES.length !== 24) {
     throw new Error('Expected 24 ALL_LAYER1_EQ_STYLES, got ' + ALL_LAYER1_EQ_STYLES.length);
@@ -2658,8 +2661,8 @@ function makeTrackCtx() {
 const bands = new Array(64).fill(520);
 const theme = { background: '#07090e', foreground: '#e2e8f0', accent: '#6ee7b7', urgent: '#f472b6' };
 
-// 1. Verify all 26 L1 Worlds normalise and render (0..10 and 24..25 on CPU canvas when gpuL1Active=false; 12..23 map to CPU fallback when gpuShaderEnabled=false)
-for (let m = 0; m < 26; m++) {
+// 1. Verify all 27 L1 Worlds normalise and render (0..10 and 24..26 on CPU canvas when gpuL1Active=false; 12..23 map to CPU fallback when gpuShaderEnabled=false)
+for (let m = 0; m < 27; m++) {
     const st = createState();
     const cfg = normaliseConfig({
         gpuShaderEnabled: false,
@@ -3005,7 +3008,7 @@ console.log('OK');
             frag_src = f.read()
         self.assertIn("ShdTrench: True 3D Star Wars Death Star Trench Run", frag_src)
         self.assertIn("Exhaust Port Torpedo Bay", frag_src)
-        self.assertIn("3-Stage Atari Star Wars Surface Towers Locked to Grid Intersections (Zero Red Ground Lines)", frag_src)
+        self.assertIn("Separated 3D Armoured Gun Turrets with Articulated Twin Laser Cannons", frag_src)
         self.assertIn("stage1Yellow", frag_src)
         self.assertIn("stage2Green", frag_src)
         self.assertIn("stage3Red", frag_src)
@@ -3127,7 +3130,11 @@ console.log('OK');
         self.assertNotIn("keybindingToastHideTimer", viz_src)
         for prop in (
             "property bool keybindingToastEnabled: true",
-            "keybindingToastTimer.stop()",
+            "property int paletteRandomMode: 0",
+            "property int paletteCollectionIndex: 0",
+            "function pickRandomPalette(stepSequential)",
+            "function selectPaletteCollection(idx)",
+            '"27:Invaders"',
             "property real layer1Opacity: 1.0",
             "property real layer1EqOpacity: 1.0",
             "property real layer1ShapesOpacity: 1.0",
@@ -3150,6 +3157,9 @@ console.log('OK');
         ):
             self.assertIn(prop, viz_src, f"Visualiser.qml missing {prop}")
 
+        self.assertIn("bandarchy-prev-state", svc_src)
+        self.assertIn("omarchy-shell notifications setDnd", svc_src)
+
         for fn in ("function setVolume(vol)", "function adjustVolume(delta)", "function toggleMute()"):
             self.assertIn(fn, svc_src, f"Service.qml missing {fn}")
 
@@ -3159,7 +3169,7 @@ console.log('OK');
             self.assertIn("onRequestToggleMute:", src, f"{qml_name} missing onRequestToggleMute")
             self.assertIn("Qt.Key_PageUp", src, f"{qml_name} missing PgUp volume keybinding")
             self.assertIn("Qt.Key_PageDown", src, f"{qml_name} missing PgDn volume keybinding")
-            self.assertIn("function selectPlayingAlbumInCatalog()", src, f"{qml_name} missing selectPlayingAlbumInCatalog")
+            self.assertIn("function selectPlayingAlbumInCatalog(", src, f"{qml_name} missing selectPlayingAlbumInCatalog")
 
         # 4. Verify CLI `bandarchy volume` and `bandarchy cmd volume/mute` + boundary clamping
         vol_set = self.run_cli("volume", "65")

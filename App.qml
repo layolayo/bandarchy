@@ -13,6 +13,7 @@ ShellRoot {
     Service {
         id: service
         visualiserActive: win.visible && (appVisualiser.stageMode === "visualiser" || appVisualiser.stageMode === "turntable")
+        fullscreenVisualiserOpen: win.visible && win.visualiserMaximised
     }
 
     FileView {

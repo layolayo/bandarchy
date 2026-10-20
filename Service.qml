@@ -594,10 +594,15 @@ Item {
                 var d = JSON.parse(raw)
                 if (d.ok && d.config && typeof d.config === "object") {
                     var cfgObj = Object.assign({}, d.config)
+                    // Never inherit a stale vjDeckActive flag from disk on initial load when no VJ window is open
+                    if (!root.visualiserConfigLoaded && cfgObj.vjDeckActive) {
+                        cfgObj.vjDeckActive = false
+                    }
                     if (Array.isArray(d.statements)) cfgObj.statements = d.statements
                     if (typeof d.statementsPath === "string") cfgObj.statementsPath = d.statementsPath
                     root.visualiserConfig = cfgObj
                     root.visualiserConfigLoaded = true
+                    root.syncScreensaverInhibit()
                     if (!root._topBarLedChangedLocally) {
                         if (d.config.topBarLedEnabled !== undefined) {
                             root.topBarLedEnabled = Boolean(d.config.topBarLedEnabled)
@@ -630,6 +635,7 @@ Item {
     }
 
     property bool _screensaverInhibitedByUs: false
+    property bool _staleInhibitChecked: false
     onFullscreenVisualiserOpenChanged: root.syncScreensaverInhibit()
 
     function syncScreensaverInhibit() {
@@ -641,18 +647,41 @@ Item {
             Quickshell.execDetached([
                 "/bin/sh", "-c",
                 "mkdir -p \"$HOME/.local/state/omarchy/toggles\" \"$HOME/.local/state/omarchy/indicators\" && " +
+                "STATE_FILE=\"$HOME/.local/state/omarchy/toggles/bandarchy-prev-state\" && " +
+                "if [ ! -f \"$STATE_FILE\" ]; then " +
+                "  PREV_AWAKE=0; [ -f \"$HOME/.local/state/omarchy/indicators/stay-awake\" ] && PREV_AWAKE=1; " +
+                "  PREV_SS_OFF=0; if [ -f \"$HOME/.local/state/omarchy/toggles/screensaver-off\" ] && ! grep -q 'bandarchy-fs-vj' \"$HOME/.local/state/omarchy/toggles/screensaver-off\" 2>/dev/null; then PREV_SS_OFF=1; fi; " +
+                "  PREV_DND=$(omarchy-shell notifications isDnd 2>/dev/null | tr -d '[:space:]'); " +
+                "  [ \"$PREV_DND\" = \"true\" ] || PREV_DND=\"false\"; " +
+                "  printf 'stay_awake=%s\\nscreensaver_off=%s\\ndnd=%s\\n' \"$PREV_AWAKE\" \"$PREV_SS_OFF\" \"$PREV_DND\" > \"$STATE_FILE\"; " +
+                "fi && " +
                 "if [ ! -f \"$HOME/.local/state/omarchy/toggles/screensaver-off\" ]; then " +
                 "  printf 'bandarchy-fs-vj\\n' > \"$HOME/.local/state/omarchy/toggles/screensaver-off\"; " +
-                "  touch \"$HOME/.local/state/omarchy/indicators/stay-awake\"; " +
-                "fi"
+                "fi && " +
+                "touch \"$HOME/.local/state/omarchy/indicators/stay-awake\" && " +
+                "omarchy-shell notifications setDnd true >/dev/null 2>&1 || true; " +
+                "omarchy-shell -q omarchy.indicators refresh >/dev/null 2>&1 || true"
             ])
-        } else if (!shouldInhibit && root._screensaverInhibitedByUs) {
+        } else if (!shouldInhibit && (root._screensaverInhibitedByUs || !root._staleInhibitChecked)) {
             root._screensaverInhibitedByUs = false
+            root._staleInhibitChecked = true
             Quickshell.execDetached([
                 "/bin/sh", "-c",
-                "if [ -f \"$HOME/.local/state/omarchy/toggles/screensaver-off\" ] && " +
-                "   grep -q 'bandarchy-fs-vj' \"$HOME/.local/state/omarchy/toggles/screensaver-off\" 2>/dev/null; then " +
-                "  rm -f \"$HOME/.local/state/omarchy/toggles/screensaver-off\" \"$HOME/.local/state/omarchy/indicators/stay-awake\"; " +
+                "STATE_FILE=\"$HOME/.local/state/omarchy/toggles/bandarchy-prev-state\" && " +
+                "HAS_MARKER=0 && " +
+                "if [ -f \"$HOME/.local/state/omarchy/toggles/screensaver-off\" ] && grep -q 'bandarchy-fs-vj' \"$HOME/.local/state/omarchy/toggles/screensaver-off\" 2>/dev/null; then HAS_MARKER=1; fi && " +
+                "if [ -f \"$STATE_FILE\" ] || [ \"$HAS_MARKER\" = \"1\" ]; then " +
+                "  PREV_AWAKE=0; PREV_SS_OFF=0; PREV_DND=\"false\"; " +
+                "  if [ -f \"$STATE_FILE\" ]; then " +
+                "    PREV_AWAKE=$(grep '^stay_awake=' \"$STATE_FILE\" 2>/dev/null | cut -d= -f2); " +
+                "    PREV_SS_OFF=$(grep '^screensaver_off=' \"$STATE_FILE\" 2>/dev/null | cut -d= -f2); " +
+                "    PREV_DND=$(grep '^dnd=' \"$STATE_FILE\" 2>/dev/null | cut -d= -f2); " +
+                "    rm -f \"$STATE_FILE\"; " +
+                "  fi; " +
+                "  if [ \"$PREV_SS_OFF\" != \"1\" ]; then rm -f \"$HOME/.local/state/omarchy/toggles/screensaver-off\"; fi; " +
+                "  if [ \"$PREV_AWAKE\" != \"1\" ]; then rm -f \"$HOME/.local/state/omarchy/indicators/stay-awake\"; else touch \"$HOME/.local/state/omarchy/indicators/stay-awake\"; fi; " +
+                "  if [ \"$PREV_DND\" = \"true\" ]; then omarchy-shell notifications setDnd true >/dev/null 2>&1 || true; else omarchy-shell notifications setDnd false >/dev/null 2>&1 || true; fi; " +
+                "  omarchy-shell -q omarchy.indicators refresh >/dev/null 2>&1 || true; " +
                 "fi"
             ])
         }
