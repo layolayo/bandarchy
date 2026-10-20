@@ -682,6 +682,7 @@ FocusScope {
         "ASCII Cell Matrix"
     ]
     readonly property var shortL3TextStyleLabels: root.shortL3StyleLabels
+    readonly property var shortL3ArtStyleLabels: Engine.SHORT_LAYER3_ART_STYLES
 
     readonly property var ttfxEffectsList: [
         "waves",
@@ -2577,11 +2578,12 @@ FocusScope {
     function saveCurrentL3Config() {
         var copy = (root.savedL3Configs || []).slice()
         var srcLabel = root.useAlbumArt ? "Art" : "Words"
-        var glyphLabel = root.asciiMode === "block" ? "Block" : (root.asciiMode === "text" ? "Text" : "Braille")
-        var styleLabel = root.shortL3StyleLabels[root.layer3TextStyle % root.shortL3StyleLabels.length] || "Techno"
+        var styleLabel = root.useAlbumArt
+            ? (root.shortL3ArtStyleLabels[root.layer3TextStyle % root.shortL3ArtStyleLabels.length] || "Braille")
+            : (root.shortL3StyleLabels[root.layer3TextStyle % root.shortL3StyleLabels.length] || "Techno")
         var modeLabel = (Engine.LAYER3_MODES[root.layer3Mode] || "Shatter").split(" ")[0]
         var item = {
-            name: srcLabel + " · " + glyphLabel + " · " + styleLabel + " · " + modeLabel,
+            name: srcLabel + " · " + styleLabel + " · " + modeLabel,
             l3Mode: root.layer3Mode,
             l3TextStyle: root.layer3TextStyle,
             l3ColourMode: root.layer3ColourMode,
@@ -3399,15 +3401,19 @@ FocusScope {
     }
 
     function cycleLayer3TextStyle(delta) {
-        var count = Engine.LAYER3_TEXT_STYLES.length
+        var count = root.useAlbumArt ? Engine.LAYER3_ART_STYLES.length : Engine.LAYER3_TEXT_STYLES.length
         var step = (delta !== undefined && delta < 0) ? -1 : 1
         root.layer3TextStyle = (root.layer3TextStyle + step + count) % count
         root.layer3Enabled = true
-        if (root.useAlbumArt || root.asciiMode !== "text") {
+        if (!root.useAlbumArt && root.asciiMode !== "text") {
             root.selectL3SourceOrGlyph("text")
         }
         vizCanvas.requestPaint()
-        root.suppressActionFeedback("Text Style: " + Engine.LAYER3_TEXT_STYLES[root.layer3TextStyle])
+        if (root.useAlbumArt) {
+            root.suppressActionFeedback("Art Style: " + Engine.LAYER3_ART_STYLES[root.layer3TextStyle])
+        } else {
+            root.suppressActionFeedback("Text Style: " + Engine.LAYER3_TEXT_STYLES[root.layer3TextStyle])
+        }
     }
 
     function cycleLayer3ColourMode(delta) {
@@ -7671,17 +7677,10 @@ FocusScope {
                     pillHeight: 22
                     fontSize: 9
                     horizontalPad: 4
-                    text: "󰬴 Crisp Text"
-                    active: !root.useAlbumArt && root.asciiMode === "text"
-                    onClicked: root.selectL3SourceOrGlyph("text")
-                }
-
-                VizPillButton {
-                    pillHeight: 22
-                    fontSize: 9
-                    horizontalPad: 4
-                    text: "󰏘 " + (root.shortL3StyleLabels[root.layer3TextStyle % root.shortL3StyleLabels.length] || "Techno")
-                    active: root.asciiMode === "text" || !root.useAlbumArt || root.asciiMode === "banner"
+                    text: "󰏘 " + (root.useAlbumArt
+                        ? (root.shortL3ArtStyleLabels[root.layer3TextStyle % root.shortL3ArtStyleLabels.length] || "Braille")
+                        : (root.shortL3StyleLabels[root.layer3TextStyle % root.shortL3StyleLabels.length] || "Techno"))
+                    active: true
                     onClicked: root.cycleLayer3TextStyle(1)
                     onRightClicked: root.cycleLayer3TextStyle(-1)
                     onWheelScrolled: delta => root.cycleLayer3TextStyle(delta > 0 ? 1 : -1)
@@ -10306,12 +10305,6 @@ FocusScope {
                             }
 
                             VizPillButton {
-                                text: "󰬴 Crisp Text"
-                                active: !root.useAlbumArt && root.asciiMode === "text"
-                                onClicked: root.selectL3SourceOrGlyph("text")
-                            }
-
-                            VizPillButton {
                                 text: root.layer3AutoRandomise ? "󰒟 Rand L3 (Auto: ON)" : "󰒟 Rand L3"
                                 active: root.layer3AutoRandomise
                                 onClicked: {
@@ -10788,7 +10781,9 @@ FocusScope {
                             spacing: 5
 
                             Text {
-                                text: "Psychedelic / Techno / Dance / ASCII Style (21):"
+                                text: root.useAlbumArt
+                                    ? "Art Pixel / Block / Halftone / Chromatic Style (21):"
+                                    : "Psychedelic / Techno / Dance / ASCII Text Style (21):"
                                 textFormat: Text.PlainText
                                 font.family: "JetBrainsMono Nerd Font"
                                 font.pixelSize: 10
@@ -10797,15 +10792,15 @@ FocusScope {
                             }
 
                             Repeater {
-                                model: Engine.LAYER3_TEXT_STYLES.length
+                                model: root.useAlbumArt ? Engine.LAYER3_ART_STYLES.length : Engine.LAYER3_TEXT_STYLES.length
                                 delegate: VizPillButton {
                                     required property int index
-                                    text: (index + 1) + ". " + Engine.LAYER3_TEXT_STYLES[index]
+                                    text: (index + 1) + ". " + (root.useAlbumArt ? Engine.LAYER3_ART_STYLES[index] : Engine.LAYER3_TEXT_STYLES[index])
                                     active: root.layer3TextStyle === index
                                     horizontalPad: 7
                                     onClicked: {
                                         root.layer3TextStyle = index
-                                        if (root.useAlbumArt || root.asciiMode !== "text") {
+                                        if (!root.useAlbumArt && root.asciiMode !== "text") {
                                             root.selectL3SourceOrGlyph("text")
                                         }
                                         vizCanvas.requestPaint()

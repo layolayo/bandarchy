@@ -171,6 +171,54 @@ var SHORT_LAYER3_TEXT_STYLES = [
     "ASCII Cell Matrix"
 ]
 
+var LAYER3_ART_STYLES = [
+    "Braille Sub-Pixel Matrix",
+    "Shaded Density Blocks",
+    "CMYK Halftone Discs",
+    "CRT Scanline Phosphor",
+    "Rotated Diamond Mosaic",
+    "Hexagonal Honeycomb",
+    "Embroidery Cross-Stitch",
+    "RGB Sub-Pixel LED Triad",
+    "3D Isometric Voxel Relief",
+    "Concentric Target Frames",
+    "Venetian Louvre Blades",
+    "Thermal Infrared Luma",
+    "Chromatic Aberration Split",
+    "Stained-Glass Jewel Shards",
+    "PCB Circuit Traces & Vias",
+    "Bauhaus Truchet Tiles",
+    "Neon Wireframe Cutout",
+    "Equaliser Spectrum Pills",
+    "4-Point Starburst Gems",
+    "Bayer Ordered Dither 2x2",
+    "Holographic Saturation Prism"
+]
+
+var SHORT_LAYER3_ART_STYLES = [
+    "Braille Dot",
+    "Density Blk",
+    "Halftone",
+    "CRT Scan",
+    "Diamond",
+    "Hex Hive",
+    "Cross-Stitch",
+    "RGB Triad",
+    "Iso Voxel",
+    "Target Ring",
+    "Louvres",
+    "Thermal IR",
+    "Chroma Split",
+    "Stained Glass",
+    "PCB Circuit",
+    "Bauhaus Tile",
+    "Neon Cutout",
+    "EQ Pills",
+    "Starburst",
+    "Bayer Dither",
+    "Holo Prism"
+]
+
 var LAYER3_CYLINDER_DIRS = [
     "L→R",
     "R→L",
@@ -11159,11 +11207,30 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
         var lens2Y = Math.sin(l3T * 0.92) * 0.30
         var lensRad = 0.52 + state.bassSmooth * 0.22
 
+        var artStyle = (isBlockGlyph && cfg.layer3TextStyle === undefined) ? 1 : textStyle
+
         for (var b = 0; b < numBuckets; b++) {
             var bHueStep = Math.floor(state.hueShift / 32)
             var bPalLen = Math.max(1, activeStylePal.length)
+            var uBucket = b / Math.max(1, numBuckets - 1)
             var col = activeStylePal[(b * 2 + e + bHueStep) % bPalLen]
-            if (colourMode === 0 || colourMode === 1 || colourMode === 5) {
+            if (artStyle === 11 && colourMode === 0) {
+                // 12: Thermal Infrared Luma — false-colour thermal luma spectrum (deep violet -> magenta -> crimson -> amber -> white-gold)
+                var thermHue = (268 + uBucket * 145) % 360
+                var thermSat = clamp(0.88 + uBucket * 0.12, 0.80, 1.0)
+                var thermLit = clamp(0.36 + uBucket * 0.48 + state.bassSmooth * 0.08, 0.32, 0.88)
+                col = hslToHex(thermHue, thermSat, thermLit)
+            } else if (artStyle === 20 && colourMode === 0) {
+                // 21: Holographic Saturation Prism — full HSV/HSL hue, saturation & lightness interpretation
+                var holoHue = (state.hueShift + b * 58 + l3T * 42) % 360
+                var holoSat = clamp(0.74 + (b % 3) * 0.12 + state.midSmooth * 0.10, 0.70, 1.0)
+                var holoLit = clamp(0.46 + uBucket * 0.34, 0.42, 0.84)
+                col = hslToHex(holoHue, holoSat, holoLit)
+            } else if (artStyle === 3 && colourMode === 0 && !isPaletteShifted) {
+                // 4: CRT Scanline Phosphor — Cool-Retro-Term CRT phosphor hues
+                var crtP = COOL_RETRO_TERM_PHOSPHORS[(b + Math.floor(state.hueShift / 45)) % COOL_RETRO_TERM_PHOSPHORS.length]
+                col = (b % 2 === 0) ? crtP.fg : crtP.core
+            } else if (colourMode === 0 || colourMode === 1 || colourMode === 5) {
                 var bTriad = deriveDistinctTypographyTriad(activeStylePal, (b * 2 + e + bHueStep) % bPalLen, b % 4, (e + bHueStep) % bPalLen)
                 col = (b % 3 === 0) ? bTriad.colCh : ((b % 3 === 1) ? bTriad.colAlt : bTriad.colAcc)
             } else if (colourMode === 2) {
@@ -11376,42 +11443,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                 var szW = tileW * pulseBoost * scaleW
                 var szH = tileH * pulseBoost * scaleH
 
-                if (isBrailleGlyph) {
-                    // Crisp, ultra-fast 2-dot Braille pinpoint rendering for Art · Braille and Words · Braille
-                    var mask = p.brailleMask || (((i * 37 + 13) & 0xFF) | 0x09)
-                    var dotW = Math.max(1.6, szW * 0.30)
-                    var dotH = Math.max(1.6, szH * 0.26)
-                    var maxDots = isEcho ? 1 : 2
-                    var drawnDots = 0
-                    for (var bit = 0; bit < 8; bit++) {
-                        if ((mask >> bit) & 1) {
-                            var dx = px + BRAILLE_DOT_DX[bit] * szW
-                            var dy = py + BRAILLE_DOT_DY[bit] * szH
-                            ctx.rect(dx - dotW * 0.5, dy - dotH * 0.5, dotW, dotH)
-                            drawnDots++
-                            if (drawnDots >= maxDots) break
-                        }
-                    }
-                } else {
-                    // Explicit Block glyph rendering (`█ Block`) for both Art · Block and Words · Block
-                    if (p.ch === "░" || p.ch === "." || p.ch === "·") {
-                        ctx.rect(px - szW * 0.22, py - szH * 0.22, szW * 0.44, szH * 0.44)
-                    } else if (p.ch === "▒" || p.ch === ":") {
-                        ctx.rect(px - szW * 0.34, py - szH * 0.34, szW * 0.68, szH * 0.68)
-                    } else if (p.ch === "▓") {
-                        ctx.rect(px - szW * 0.42, py - szH * 0.42, szW * 0.84, szH * 0.84)
-                    } else if (p.ch === "▀") {
-                        ctx.rect(px - szW * 0.46, py - szH * 0.46, szW * 0.92, szH * 0.48)
-                    } else if (p.ch === "▄") {
-                        ctx.rect(px - szW * 0.46, py + szH * 0.02, szW * 0.92, szH * 0.48)
-                    } else if (p.ch === "▌") {
-                        ctx.rect(px - szW * 0.46, py - szH * 0.46, szW * 0.48, szH * 0.92)
-                    } else if (p.ch === "▐") {
-                        ctx.rect(px + szW * 0.02, py - szH * 0.46, szW * 0.48, szH * 0.92)
-                    } else {
-                        ctx.rect(px - szW * 0.45, py - szH * 0.45, szW * 0.90, szH * 0.90)
-                    }
-                }
+                drawLayer3ArtStyleCell(ctx, artStyle, px, py, szW, szH, p, i, bVal, l3T, isEcho)
 
                 // Mode 10 (Chromatic Mirror): Shimmering water-rippled inverted reflection beneath the baseline
                 if (l3Mode === 10 && !isEcho && (i & 1) === 0) {
@@ -11424,6 +11456,234 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
             ctx.fill()
         }
         ctx.restore()
+    }
+}
+
+// 21 Pixel / Block / Halftone / Chromatic Art Presentation Styles for Layer 6 Album Art (`useAlbumArt === true`)
+function drawLayer3ArtStyleCell(ctx, artStyle, px, py, szW, szH, p, idx, bVal, l3T, isEcho) {
+    var dens = clamp(Number(p.density !== undefined ? p.density : 0.65), 0.15, 1.0)
+    var mask = p.brailleMask || (((idx * 37 + 13) & 0xFF) | 0x09)
+    var st = ((artStyle % 21) + 21) % 21
+
+    if (st === 0) {
+        // 0: Braille Sub-Pixel Matrix — 2×4 Braille sub-pixel dot cluster scaled by local density
+        var dotW = Math.max(1.6, szW * (0.24 + dens * 0.12))
+        var dotH = Math.max(1.6, szH * (0.22 + dens * 0.10))
+        var maxDots = isEcho ? 1 : (dens > 0.72 ? 3 : 2)
+        var drawnDots = 0
+        for (var bit = 0; bit < 8; bit++) {
+            if ((mask >> bit) & 1) {
+                var dx = px + BRAILLE_DOT_DX[bit] * szW
+                var dy = py + BRAILLE_DOT_DY[bit] * szH
+                ctx.rect(dx - dotW * 0.5, dy - dotH * 0.5, dotW, dotH)
+                drawnDots++
+                if (drawnDots >= maxDots) break
+            }
+        }
+    } else if (st === 1) {
+        // 1: Shaded Density Blocks — 4-tone stepped blocks (`░▒▓█`) + inner bright luma core
+        if (p.ch === "░" || p.ch === "." || p.ch === "·" || dens < 0.35) {
+            ctx.rect(px - szW * 0.22, py - szH * 0.22, szW * 0.44, szH * 0.44)
+        } else if (p.ch === "▒" || p.ch === ":" || dens < 0.60) {
+            ctx.rect(px - szW * 0.34, py - szH * 0.34, szW * 0.68, szH * 0.68)
+        } else if (p.ch === "▓" || dens < 0.82) {
+            ctx.rect(px - szW * 0.42, py - szH * 0.42, szW * 0.84, szH * 0.84)
+        } else if (p.ch === "▀") {
+            ctx.rect(px - szW * 0.46, py - szH * 0.46, szW * 0.92, szH * 0.48)
+        } else if (p.ch === "▄") {
+            ctx.rect(px - szW * 0.46, py + szH * 0.02, szW * 0.92, szH * 0.48)
+        } else if (p.ch === "▌") {
+            ctx.rect(px - szW * 0.46, py - szH * 0.46, szW * 0.48, szH * 0.92)
+        } else if (p.ch === "▐") {
+            ctx.rect(px + szW * 0.02, py - szH * 0.46, szW * 0.48, szH * 0.92)
+        } else {
+            ctx.rect(px - szW * 0.46, py - szH * 0.46, szW * 0.92, szH * 0.92)
+        }
+    } else if (st === 2) {
+        // 2: CMYK Halftone Discs — circular/octagonal pop-art halftone dot scaled by luminance & audio
+        var hr = Math.min(szW, szH) * (0.18 + dens * 0.34 + bVal * 0.12)
+        ctx.moveTo(px + hr, py)
+        ctx.arc(px, py, hr, 0, Math.PI * 2.0)
+        ctx.rect(px - hr * 0.35, py - hr * 0.35, hr * 0.70, hr * 0.70)
+    } else if (st === 3) {
+        // 3: CRT Scanline Phosphor — 3 horizontal CRT phosphor scanline bars with dark horizontal scanline gaps
+        var scanW = szW * (0.45 + dens * 0.50)
+        var scanBarH = Math.max(1.2, szH * 0.18)
+        for (var sr = -1; sr <= 1; sr++) {
+            var sy = py + sr * szH * 0.30 - scanBarH * 0.5
+            ctx.rect(px - scanW * 0.5, sy, scanW, scanBarH)
+        }
+    } else if (st === 4) {
+        // 4: Rotated Diamond Mosaic — 45° rhombic diamond tile + inner luma core rect
+        var dw = szW * (0.30 + dens * 0.28)
+        var dh = szH * (0.30 + dens * 0.28)
+        ctx.moveTo(px, py - dh)
+        ctx.lineTo(px + dw, py)
+        ctx.lineTo(px, py + dh)
+        ctx.lineTo(px - dw, py)
+        ctx.closePath()
+        ctx.rect(px - dw * 0.28, py - dh * 0.28, dw * 0.56, dh * 0.56)
+    } else if (st === 5) {
+        // 5: Hexagonal Honeycomb — 6-sided honeycomb cell with staggered row offset
+        var hexOffX = ((p.gy || 0) & 1) ? szW * 0.24 : -szW * 0.24
+        var hxC = px + hexOffX
+        var rxH = szW * (0.28 + dens * 0.22)
+        var ryH = szH * (0.28 + dens * 0.22)
+        ctx.moveTo(hxC, py - ryH)
+        ctx.lineTo(hxC + rxH, py - ryH * 0.5)
+        ctx.lineTo(hxC + rxH, py + ryH * 0.5)
+        ctx.lineTo(hxC, py + ryH)
+        ctx.lineTo(hxC - rxH, py + ryH * 0.5)
+        ctx.lineTo(hxC - rxH, py - ryH * 0.5)
+        ctx.closePath()
+        ctx.rect(hxC - rxH * 0.30, py - ryH * 0.30, rxH * 0.60, ryH * 0.60)
+    } else if (st === 6) {
+        // 6: Embroidery Cross-Stitch — crossed thread bars (`+` and diagonal stitch corners) scaled by density
+        var armW = szW * (0.38 + dens * 0.48)
+        var armH = szH * (0.38 + dens * 0.48)
+        var thW = Math.max(1.4, szW * 0.18)
+        var thH = Math.max(1.4, szH * 0.18)
+        ctx.rect(px - armW * 0.5, py - thH * 0.5, armW, thH)
+        ctx.rect(px - thW * 0.5, py - armH * 0.5, thW, armH)
+        if (dens > 0.58) {
+            ctx.rect(px - armW * 0.38, py - armH * 0.38, thW, thH)
+            ctx.rect(px + armW * 0.38 - thW, py + armH * 0.38 - thH, thW, thH)
+        }
+    } else if (st === 7) {
+        // 7: RGB Sub-Pixel LED Triad — 3 vertical sub-pixel LED phosphor strips per cell
+        var subW = Math.max(1.2, szW * 0.22)
+        var hL = szH * (0.32 + ((mask & 1) ? 0.52 : 0.22) * dens)
+        var hC = szH * (0.40 + dens * 0.54)
+        var hR = szH * (0.32 + ((mask & 4) ? 0.52 : 0.24) * (0.5 + bVal * 0.5))
+        ctx.rect(px - szW * 0.36, py - hL * 0.5, subW, hL)
+        ctx.rect(px - subW * 0.5, py - hC * 0.5, subW, hC)
+        ctx.rect(px + szW * 0.36 - subW, py - hR * 0.5, subW, hR)
+    } else if (st === 8) {
+        // 8: 3D Isometric Voxel Relief — density-extruded 3D isometric column cap + vertical pillar
+        var extY = dens * szH * (0.55 + bVal * 0.35)
+        var topY = py - extY
+        var isoW = szW * 0.44
+        var isoH = szH * 0.24
+        ctx.moveTo(px, topY - isoH)
+        ctx.lineTo(px + isoW, topY)
+        ctx.lineTo(px, topY + isoH)
+        ctx.lineTo(px - isoW, topY)
+        ctx.closePath()
+        ctx.rect(px - isoW * 0.68, topY + isoH * 0.3, isoW * 1.36, Math.max(1.8, extY))
+    } else if (st === 9) {
+        // 9: Concentric Target Frames — hollow outer frame bars + density-scaled inner bullseye core
+        var fw = szW * 0.88
+        var fh = szH * 0.88
+        var rim = Math.max(1.2, Math.min(szW, szH) * 0.14)
+        ctx.rect(px - fw * 0.5, py - fh * 0.5, fw, rim)
+        ctx.rect(px - fw * 0.5, py + fh * 0.5 - rim, fw, rim)
+        var coreS = (0.18 + dens * 0.36)
+        ctx.rect(px - szW * coreS * 0.5, py - szH * coreS * 0.5, szW * coreS, szH * coreS)
+    } else if (st === 10) {
+        // 10: Venetian Louvre Blades — angled/staggered vertical louvre slats modulated by density & mids
+        var slatW = Math.max(1.3, szW * (0.16 + dens * 0.18))
+        var slatH = szH * (0.48 + dens * 0.44)
+        var tiltOff = Math.sin(l3T * 2.2 + (p.gy || 0) * 0.4) * szH * 0.16
+        ctx.rect(px - szW * 0.28 - slatW * 0.5, py - slatH * 0.5 - tiltOff, slatW, slatH)
+        ctx.rect(px + szW * 0.28 - slatW * 0.5, py - slatH * 0.5 + tiltOff, slatW, slatH)
+    } else if (st === 11) {
+        // 11: Thermal Infrared Luma — cross-capsule thermal sensor pixels scaled by luminance
+        var tw = szW * (0.34 + dens * 0.56)
+        var th = szH * (0.34 + dens * 0.56)
+        ctx.rect(px - tw * 0.5, py - th * 0.28, tw, th * 0.56)
+        ctx.rect(px - tw * 0.28, py - th * 0.5, tw * 0.56, th)
+    } else if (st === 12) {
+        // 12: Chromatic Aberration Split — shear-displaced twin ghost plates per art cell
+        var splitDx = (1.8 + bVal * 4.5 + dens * 2.2) * ((idx & 1) ? 1.0 : -1.0)
+        var pw = szW * 0.56
+        var ph = szH * 0.36
+        ctx.rect(px - splitDx - pw * 0.5, py - ph * 0.7, pw, ph)
+        ctx.rect(px + splitDx - pw * 0.5, py + ph * 0.1, pw, ph)
+    } else if (st === 13) {
+        // 13: Stained-Glass Jewel Shards — asymmetric 5-vertex bevelled jewel shard + specular core rect
+        var jw = szW * (0.34 + dens * 0.22)
+        var jh = szH * (0.34 + dens * 0.22)
+        var asym = ((idx % 3) - 1) * 0.22
+        ctx.moveTo(px + jw * asym, py - jh)
+        ctx.lineTo(px + jw, py - jh * 0.2)
+        ctx.lineTo(px + jw * 0.65, py + jh)
+        ctx.lineTo(px - jw * 0.65, py + jh)
+        ctx.lineTo(px - jw, py - jh * 0.2)
+        ctx.closePath()
+        ctx.rect(px - jw * 0.22, py - jh * 0.22, jw * 0.44, jh * 0.44)
+    } else if (st === 14) {
+        // 14: PCB Circuit Traces & Vias — square solder-pad via + horizontal/vertical copper traces
+        var viaW = szW * (0.30 + dens * 0.22)
+        var viaH = szH * (0.30 + dens * 0.22)
+        var trThick = Math.max(1.2, Math.min(szW, szH) * 0.14)
+        ctx.rect(px - viaW * 0.5, py - viaH * 0.5, viaW, viaH)
+        if (mask & 1) ctx.rect(px + viaW * 0.5, py - trThick * 0.5, szW * 0.42, trThick)
+        if (mask & 2) ctx.rect(px - trThick * 0.5, py + viaH * 0.5, trThick, szH * 0.42)
+    } else if (st === 15) {
+        // 15: Bauhaus Truchet Tiles — diagonal right-triangle (`◤ ◥ ◣ ◢`) + accent micro-square
+        var bw = szW * 0.46
+        var bh = szH * 0.46
+        var orient = ((p.gx || 0) + (p.gy || 0)) & 3
+        if (orient === 0) {
+            ctx.moveTo(px - bw, py - bh); ctx.lineTo(px + bw, py - bh); ctx.lineTo(px - bw, py + bh)
+        } else if (orient === 1) {
+            ctx.moveTo(px + bw, py - bh); ctx.lineTo(px + bw, py + bh); ctx.lineTo(px - bw, py - bh)
+        } else if (orient === 2) {
+            ctx.moveTo(px + bw, py + bh); ctx.lineTo(px - bw, py + bh); ctx.lineTo(px + bw, py - bh)
+        } else {
+            ctx.moveTo(px - bw, py + bh); ctx.lineTo(px - bw, py - bh); ctx.lineTo(px + bw, py + bh)
+        }
+        ctx.closePath()
+        ctx.rect(px - bw * 0.24, py - bh * 0.24, bw * 0.48, bh * 0.48)
+    } else if (st === 16) {
+        // 16: Neon Wireframe Cutout — 4 hollow perimeter edge bars forming a glowing neon frame cell
+        var nw = szW * (0.52 + dens * 0.38)
+        var nh = szH * (0.52 + dens * 0.38)
+        var edgeT = Math.max(1.2, Math.min(nw, nh) * 0.18)
+        ctx.rect(px - nw * 0.5, py - nh * 0.5, nw, edgeT)
+        ctx.rect(px - nw * 0.5, py + nh * 0.5 - edgeT, nw, edgeT)
+        ctx.rect(px - nw * 0.5, py - nh * 0.5, edgeT, nh)
+        ctx.rect(px + nw * 0.5 - edgeT, py - nh * 0.5, edgeT, nh)
+    } else if (st === 17) {
+        // 17: Equaliser Spectrum Pills — vertical audio-reactive meter bar + floating peak-hold cap
+        var pillW = szW * 0.58
+        var pillH = szH * clamp(0.24 + dens * 0.52 + bVal * 0.42, 0.22, 1.05)
+        var baseY = py + szH * 0.46
+        ctx.rect(px - pillW * 0.5, baseY - pillH, pillW, pillH)
+        var capH = Math.max(1.3, szH * 0.12)
+        ctx.rect(px - pillW * 0.5, baseY - pillH - capH * 1.6, pillW, capH)
+    } else if (st === 18) {
+        // 18: 4-Point Starburst Gems — concave 4-point diamond star (`✦`) + centre spark rect
+        var srX = szW * (0.34 + dens * 0.32 + bVal * 0.16)
+        var srY = szH * (0.34 + dens * 0.32 + bVal * 0.16)
+        var pinch = 0.24
+        ctx.moveTo(px, py - srY)
+        ctx.lineTo(px + srX * pinch, py - srY * pinch)
+        ctx.lineTo(px + srX, py)
+        ctx.lineTo(px + srX * pinch, py + srY * pinch)
+        ctx.lineTo(px, py + srY)
+        ctx.lineTo(px - srX * pinch, py + srY * pinch)
+        ctx.lineTo(px - srX, py)
+        ctx.lineTo(px - srX * pinch, py - srY * pinch)
+        ctx.closePath()
+        ctx.rect(px - srX * 0.20, py - srY * 0.20, srX * 0.40, srY * 0.40)
+    } else if (st === 19) {
+        // 19: Bayer Ordered Dither 2×2 — 2×2 ordered Bayer dither micro-checkerboard lit by density thresholds
+        var qW = szW * 0.38
+        var qH = szH * 0.38
+        ctx.rect(px - szW * 0.42, py - szH * 0.42, qW, qH)
+        if (dens > 0.38) ctx.rect(px + szW * 0.04, py + szH * 0.04, qW, qH)
+        if (dens > 0.62) ctx.rect(px + szW * 0.04, py - szH * 0.42, qW, qH)
+        if (dens > 0.82) ctx.rect(px - szW * 0.42, py + szH * 0.04, qW, qH)
+    } else {
+        // 20: Holographic Saturation Prism — stepped concentric pyramid facets driven by hue/saturation/luma
+        var pOuterW = szW * (0.58 + dens * 0.36)
+        var pOuterH = szH * (0.58 + dens * 0.36)
+        var pInnerW = pOuterW * 0.48
+        var pInnerH = pOuterH * 0.48
+        ctx.rect(px - pOuterW * 0.5, py - pOuterH * 0.28, pOuterW, pOuterH * 0.56)
+        ctx.rect(px - pOuterW * 0.28, py - pOuterH * 0.5, pOuterW * 0.56, pOuterH)
+        ctx.rect(px - pInnerW * 0.5, py - pInnerH * 0.5, pInnerW, pInnerH)
     }
 }
 
