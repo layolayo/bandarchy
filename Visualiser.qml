@@ -3709,8 +3709,10 @@ FocusScope {
         root.suppressActionFeedback("Palette: " + Engine.PALETTE_NAMES[paletteIndex])
     }
 
-    function cycleSymmetry() {
-        symmetryIndex = (symmetryIndex + 1) % Engine.SYMMETRY_OPTIONS.length
+    function cycleSymmetry(delta) {
+        var step = (delta !== undefined && delta < 0) ? -1 : 1
+        var count = Engine.SYMMETRY_OPTIONS.length
+        symmetryIndex = (symmetryIndex + step + count) % count
         vizCanvas.requestPaint()
         scheduleSaveVisualiserConfig()
         root.suppressActionFeedback("Geometry Resonance: " + root.symmetryFolds + "x")
@@ -4231,8 +4233,10 @@ FocusScope {
         implicitWidth: pillLabel.implicitWidth + horizontalPad * 2
         Layout.preferredHeight: implicitHeight
         Layout.preferredWidth: implicitWidth
+        Layout.minimumWidth: Layout.fillWidth ? 72 : implicitWidth
         radius: 5
-        scale: pillArea.pressed ? 0.94 : (pillArea.containsMouse ? 1.02 : 1.0)
+        clip: true
+        scale: pillArea.pressed ? 0.96 : 1.0
         color: {
             if (flashTimer.running) return pill.urgent ? root.urgentColour : root.accentColour
             if (pillArea.pressed) return Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.44)
@@ -4269,6 +4273,9 @@ FocusScope {
         Text {
             id: pillLabel
             anchors.centerIn: parent
+            width: Math.min(implicitWidth, Math.max(16, pill.width - pill.horizontalPad * 2))
+            horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideRight
             text: pill.text
             textFormat: Text.PlainText
             font.family: "JetBrainsMono Nerd Font"
@@ -5637,6 +5644,10 @@ FocusScope {
                     onRightClicked: {
                         root.hudFocusedLayer = 1
                     }
+                    onWheelScrolled: delta => {
+                        root.hudFocusedLayer = 1
+                        root.cycleLayer1Mode(delta > 0 ? 1 : -1)
+                    }
                 }
 
                 // 2: Equaliser (LED & Sculptural 3D Equaliser)
@@ -5655,6 +5666,10 @@ FocusScope {
                     onRightClicked: {
                         root.hudFocusedLayer = 2
                     }
+                    onWheelScrolled: delta => {
+                        root.hudFocusedLayer = 2
+                        root.cycleLayer1EqStyle(delta > 0 ? 1 : -1)
+                    }
                 }
 
                 // 3: Vectors (Wireframe Beat Shapes)
@@ -5672,6 +5687,10 @@ FocusScope {
                     }
                     onRightClicked: {
                         root.hudFocusedLayer = 3
+                    }
+                    onWheelScrolled: delta => {
+                        root.hudFocusedLayer = 3
+                        root.cycleLayer1ShapeStyle(delta > 0 ? 1 : -1)
                     }
                 }
 
@@ -5694,6 +5713,10 @@ FocusScope {
                     onRightClicked: {
                         root.hudFocusedLayer = 4
                     }
+                    onWheelScrolled: delta => {
+                        root.hudFocusedLayer = 4
+                        root.cycleMode(delta > 0 ? 1 : -1)
+                    }
                 }
 
                 // 5: Vortex (Dedicated GPU Tunnel & Dual Vortex)
@@ -5713,6 +5736,10 @@ FocusScope {
                     onRightClicked: {
                         root.hudFocusedLayer = 5
                     }
+                    onWheelScrolled: delta => {
+                        root.hudFocusedLayer = 5
+                        root.cycleLayer4Mode(delta > 0 ? 1 : -1)
+                    }
                 }
 
                 // 6: Typography (Album Art & 3D Text Styles)
@@ -5729,6 +5756,10 @@ FocusScope {
                     }
                     onRightClicked: {
                         root.hudFocusedLayer = 6
+                    }
+                    onWheelScrolled: delta => {
+                        root.hudFocusedLayer = 6
+                        root.cycleLayer3Mode(delta > 0 ? 1 : -1)
                     }
                 }
 
@@ -5747,6 +5778,9 @@ FocusScope {
                     }
                     onRightClicked: {
                         root.hudFocusedLayer = ((root.hudFocusedLayer + 4) % 6) + 1
+                    }
+                    onWheelScrolled: delta => {
+                        root.hudFocusedLayer = ((root.hudFocusedLayer - 1 + (delta > 0 ? 1 : 5)) % 6) + 1
                     }
                 }
 
@@ -5771,6 +5805,7 @@ FocusScope {
                     horizontalPad: 5
                     onClicked: root.cycleSelectedPreset(1)
                     onRightClicked: root.cycleSelectedPreset(-1)
+                    onWheelScrolled: delta => root.cycleSelectedPreset(delta > 0 ? 1 : -1)
                 }
 
                 // Palette selector (30 palettes)
@@ -5782,6 +5817,7 @@ FocusScope {
                     horizontalPad: 5
                     onClicked: root.cyclePalette(1)
                     onRightClicked: root.cyclePalette(-1)
+                    onWheelScrolled: delta => root.cyclePalette(delta > 0 ? 1 : -1)
                 }
 
                 // Full RANDOM Button: Toggles ALL layer auto-randomisations + palette auto-cycle simultaneously (Right-click steps once)
@@ -5926,6 +5962,18 @@ FocusScope {
                         vizCanvas.requestPaint()
                         scheduleSaveVisualiserConfig()
                     }
+                    onRightClicked: {
+                        root.layer1Direction = 1
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => {
+                        var dirs = [1, -1, 0]
+                        var idx = Math.max(0, dirs.indexOf(root.layer1Direction))
+                        root.layer1Direction = dirs[(idx + (delta > 0 ? 1 : 2)) % 3]
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
                 }
 
                 VizPillButton {
@@ -5993,6 +6041,72 @@ FocusScope {
                 }
 
                 VizPillButton {
+                    visible: root.layer1Mode !== 11
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "Trail:" + Math.round(root.layer1Persistence * 100) + "%"
+                    active: Math.abs(root.layer1Persistence - 0.84) > 0.03
+                    onClicked: {
+                        var tSteps = [0.55, 0.72, 0.84, 0.92, 0.96]
+                        var nextT = 0.84
+                        for (var i = 0; i < tSteps.length; i++) {
+                            if (tSteps[i] > root.layer1Persistence + 0.02) {
+                                nextT = tSteps[i]
+                                break
+                            }
+                            if (i === tSteps.length - 1) nextT = tSteps[0]
+                        }
+                        root.layer1Persistence = nextT
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: {
+                        root.layer1Persistence = 0.84
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => {
+                        root.layer1Persistence = Math.max(0.40, Math.min(0.97, Math.round((root.layer1Persistence + (delta > 0 ? 0.03 : -0.03)) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    visible: root.layer1Mode !== 11
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "Dim:" + Math.round(root.layer1Dim * 100) + "%"
+                    active: Math.abs(root.layer1Dim - 0.16) > 0.03
+                    onClicked: {
+                        var dmSteps = [0.0, 0.16, 0.30, 0.50, 0.70]
+                        var nextDm = 0.16
+                        for (var i = 0; i < dmSteps.length; i++) {
+                            if (dmSteps[i] > root.layer1Dim + 0.03) {
+                                nextDm = dmSteps[i]
+                                break
+                            }
+                            if (i === dmSteps.length - 1) nextDm = dmSteps[0]
+                        }
+                        root.layer1Dim = nextDm
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: {
+                        root.layer1Dim = 0.16
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => {
+                        root.layer1Dim = Math.max(0.0, Math.min(0.80, Math.round((root.layer1Dim + (delta > 0 ? 0.05 : -0.05)) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
                     visible: root.layer1Mode === 11
                     pillHeight: 22
                     fontSize: 9
@@ -6028,12 +6142,112 @@ FocusScope {
                     visible: root.layer1Mode === 11
                     pillHeight: 22
                     fontSize: 9
+                    horizontalPad: 4
+                    text: root.photoPinnedVariant < 0 ? "Var:Auto" : ("Var:V" + ((root.photoPinnedVariant + 1) < 10 ? "0" : "") + (root.photoPinnedVariant + 1))
+                    active: root.photoPinnedVariant >= 0
+                    onClicked: root.cyclePhotoVariantEffect(1)
+                    onRightClicked: {
+                        root.photoPinnedVariant = -1
+                        root.syncGpuPhotoTextures()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => root.cyclePhotoVariantEffect(delta > 0 ? 1 : -1)
+                }
+
+                VizPillButton {
+                    visible: root.layer1Mode === 11
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "Cat:" + (root.photoActiveCategory || "all")
+                    active: root.photoActiveCategory !== "all"
+                    onClicked: root.stepPhotoCategoryByKey(1)
+                    onRightClicked: root.stepPhotoCategoryByKey(-1)
+                    onWheelScrolled: delta => root.stepPhotoCategoryByKey(delta > 0 ? 1 : -1)
+                }
+
+                VizPillButton {
+                    visible: root.layer1Mode === 11
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "Img◀▶"
+                    active: root.layer1Enabled && root.layer1FieldEnabled && root.layer1Mode === 11
+                    onClicked: root.stepPhotoHistoryByKey(1)
+                    onRightClicked: root.stepPhotoHistoryByKey(-1)
+                    onWheelScrolled: delta => root.stepPhotoHistoryByKey(delta > 0 ? 1 : -1)
+                }
+
+                VizPillButton {
+                    visible: root.layer1Mode === 11
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: root.photoHoldActive ? ("Hold:" + Math.ceil(root.photoHoldRemainingSec) + "s") : "Hold [H]"
+                    active: root.photoHoldActive
+                    urgent: root.photoHoldActive
+                    onClicked: root.triggerPhotoHoldByKey()
+                    onRightClicked: root.triggerPhotoHoldByKey()
+                }
+
+                VizPillButton {
+                    visible: root.layer1Mode === 11
+                    pillHeight: 22
+                    fontSize: 9
                     horizontalPad: 5
                     text: "; " + (PhotoMotion.PHOTO_POOL_MODES[root.photoPoolMode % 3] ? PhotoMotion.PHOTO_POOL_MODES[root.photoPoolMode % 3].shortName : "1:SameImg")
                     active: root.photoPoolMode > 0
                     onClicked: root.cyclePhotoPoolModeByKey(1)
                     onRightClicked: root.cyclePhotoPoolModeByKey(-1)
                     onWheelScrolled: delta => root.cyclePhotoPoolModeByKey(delta > 0 ? 1 : -1)
+                }
+
+                VizPillButton {
+                    visible: root.layer1Mode === 11
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "Tilt:" + root.photoXyzTilt.toFixed(1) + "x"
+                    active: Math.abs(root.photoXyzTilt - 1.0) > 0.05
+                    onClicked: {
+                        var tSteps = [0.0, 0.5, 1.0, 1.5, 2.0, 2.5]
+                        var nextTl = 1.0
+                        for (var i = 0; i < tSteps.length; i++) {
+                            if (tSteps[i] > root.photoXyzTilt + 0.05) { nextTl = tSteps[i]; break }
+                            if (i === tSteps.length - 1) nextTl = tSteps[0]
+                        }
+                        root.photoXyzTilt = nextTl
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: { root.photoXyzTilt = 1.0; scheduleSaveVisualiserConfig() }
+                    onWheelScrolled: delta => {
+                        root.photoXyzTilt = Math.max(0.0, Math.min(2.5, Math.round((root.photoXyzTilt + delta * 0.15) * 100) / 100))
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    visible: root.layer1Mode === 11
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "Warp:" + root.photoWarpIntensity.toFixed(1) + "x"
+                    active: Math.abs(root.photoWarpIntensity - 1.0) > 0.05
+                    onClicked: {
+                        var wSteps = [0.25, 0.6, 1.0, 1.5, 2.0, 2.5]
+                        var nextWp = 1.0
+                        for (var i = 0; i < wSteps.length; i++) {
+                            if (wSteps[i] > root.photoWarpIntensity + 0.05) { nextWp = wSteps[i]; break }
+                            if (i === wSteps.length - 1) nextWp = wSteps[0]
+                        }
+                        root.photoWarpIntensity = nextWp
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: { root.photoWarpIntensity = 1.0; scheduleSaveVisualiserConfig() }
+                    onWheelScrolled: delta => {
+                        root.photoWarpIntensity = Math.max(0.0, Math.min(2.5, Math.round((root.photoWarpIntensity + delta * 0.15) * 100) / 100))
+                        scheduleSaveVisualiserConfig()
+                    }
                 }
 
                 VizPillButton {
@@ -6147,7 +6361,7 @@ FocusScope {
             }
 
             // =================================================================
-            // ROW 2 — LAYER 2: EQUALISER (24 2D & Sculptural 3D EQ Styles + EqPos + EqSz + Spin + Gain + Rand)
+            // ROW 2 — LAYER 2: EQUALISER (24 2D & Sculptural 3D EQ Styles + EqPos + EqSz + Spin + Gain + Damp + Rand)
             // =================================================================
             RowLayout {
                 Layout.fillWidth: true
@@ -6346,6 +6560,30 @@ FocusScope {
                     pillHeight: 22
                     fontSize: 9
                     horizontalPad: 4
+                    text: "Damp:" + (["Fast", "Smooth", "Liquid"][root.layer1EqDamping % 3] || "Fast")
+                    active: root.layer1Enabled && root.layer1EqEnabled && root.layer1EqDamping > 0
+                    onClicked: {
+                        root.layer1EqDamping = (root.layer1EqDamping + 1) % Engine.LAYER1_EQ_DAMPING.length
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: {
+                        root.layer1EqDamping = 0
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => {
+                        var nDmp = Engine.LAYER1_EQ_DAMPING.length
+                        root.layer1EqDamping = (root.layer1EqDamping + (delta > 0 ? 1 : -1) + nDmp) % nDmp
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
                     text: "Opac:" + Math.round(root.layer1EqOpacity * 100) + "%"
                     active: root.layer1EqOpacity < 0.99
                     onClicked: {
@@ -6384,7 +6622,7 @@ FocusScope {
             }
 
             // =================================================================
-            // ROW 2 — LAYER 3: VECTORS (14 Wireframe Beat Shape & Arcade Craft Styles + ShDen + Scale + Rand)
+            // ROW 2 — LAYER 3: VECTORS (14 Wireframe Beat Shape & Arcade Craft Styles + ShDen + Scale + Spd + Spin + Rand)
             // =================================================================
             RowLayout {
                 Layout.fillWidth: true
@@ -6486,6 +6724,65 @@ FocusScope {
                     }
                     onRightClicked: {
                         root.layer1ShapeScale = 1.0
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => {
+                        root.layer1ShapeScale = Math.max(0.35, Math.min(2.25, Math.round((root.layer1ShapeScale + (delta > 0 ? 0.12 : -0.12)) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "Spd:" + root.layer1ShapeSpeed.toFixed(1) + "x"
+                    active: root.layer1Enabled && root.layer1ShapesEnabled && Math.abs(root.layer1ShapeSpeed - 1.0) > 0.05
+                    onClicked: {
+                        var nextSpd = root.layer1ShapeSpeed + 0.35
+                        if (nextSpd > 3.05) nextSpd = 0.35
+                        root.layer1ShapeSpeed = Math.round(nextSpd * 100) / 100
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: {
+                        root.layer1ShapeSpeed = 1.0
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => {
+                        root.layer1ShapeSpeed = Math.max(0.20, Math.min(3.00, Math.round((root.layer1ShapeSpeed + (delta > 0 ? 0.15 : -0.15)) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "Spin:" + root.layer1ShapeSpin.toFixed(1) + "x"
+                    active: root.layer1Enabled && root.layer1ShapesEnabled && Math.abs(root.layer1ShapeSpin - 1.0) > 0.05
+                    onClicked: {
+                        var spSteps = [-2.0, -1.0, 0.0, 0.5, 1.0, 1.5, 2.0]
+                        var nextSpn = 1.0
+                        for (var i = 0; i < spSteps.length; i++) {
+                            if (spSteps[i] > root.layer1ShapeSpin + 0.05) { nextSpn = spSteps[i]; break }
+                            if (i === spSteps.length - 1) nextSpn = spSteps[0]
+                        }
+                        root.layer1ShapeSpin = nextSpn
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: {
+                        root.layer1ShapeSpin = 1.0
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => {
+                        root.layer1ShapeSpin = Math.max(-2.50, Math.min(2.50, Math.round((root.layer1ShapeSpin + (delta > 0 ? 0.15 : -0.15)) * 100) / 100))
                         vizCanvas.requestPaint()
                         scheduleSaveVisualiserConfig()
                     }
@@ -6608,7 +6905,7 @@ FocusScope {
             }
 
             // =================================================================
-            // ROW 2 — LAYER 4: GEOMETRY (Sacred Geometry & Oscilloscopes: 13 Modes + Den + 3D Tracers + Rand)
+            // ROW 2 — LAYER 4: GEOMETRY (Sacred Geometry & Oscilloscopes: 20 Modes + Sym + Den + Spd + Zoom + Chaos + 3D Tracers + Rand)
             // Zero duplicate GPU Tunnel controls!
             // =================================================================
             RowLayout {
@@ -6667,6 +6964,21 @@ FocusScope {
                     pillHeight: 22
                     fontSize: 9
                     horizontalPad: 4
+                    text: "Sym:" + root.symmetryFolds + "x"
+                    active: root.layer2Enabled && root.layer2VizEnabled && root.symmetryIndex > 0
+                    onClicked: root.cycleSymmetry(1)
+                    onRightClicked: {
+                        root.symmetryIndex = 0
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => root.cycleSymmetry(delta > 0 ? 1 : -1)
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
                     text: "Den:" + root.layer2Complexity.toFixed(1) + "x"
                     active: Math.abs(root.layer2Complexity - 1.0) > 0.05
                     onClicked: {
@@ -6699,6 +7011,81 @@ FocusScope {
                     pillHeight: 22
                     fontSize: 9
                     horizontalPad: 4
+                    text: "Spd:" + root.layer2Speed.toFixed(1) + "x"
+                    active: Math.abs(root.layer2Speed - 1.0) > 0.05
+                    onClicked: {
+                        var sSteps = [0.5, 1.0, 1.5, 2.0, 3.0]
+                        var nextS = 1.0
+                        for (var i = 0; i < sSteps.length; i++) {
+                            if (sSteps[i] > root.layer2Speed + 0.05) { nextS = sSteps[i]; break }
+                            if (i === sSteps.length - 1) nextS = sSteps[0]
+                        }
+                        root.layer2Speed = nextS
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: { root.layer2Speed = 1.0; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                    onWheelScrolled: delta => {
+                        root.layer2Speed = Math.max(0.20, Math.min(3.50, Math.round((root.layer2Speed + delta * 0.15) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "Zoom:" + root.layer2Zoom.toFixed(1) + "x"
+                    active: Math.abs(root.layer2Zoom - 1.0) > 0.05
+                    onClicked: {
+                        var zSteps = [0.6, 0.8, 1.0, 1.3, 1.6, 2.0]
+                        var nextZ = 1.0
+                        for (var i = 0; i < zSteps.length; i++) {
+                            if (zSteps[i] > root.layer2Zoom + 0.05) { nextZ = zSteps[i]; break }
+                            if (i === zSteps.length - 1) nextZ = zSteps[0]
+                        }
+                        root.layer2Zoom = nextZ
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: { root.layer2Zoom = 1.0; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                    onWheelScrolled: delta => {
+                        root.layer2Zoom = Math.max(0.40, Math.min(2.50, Math.round((root.layer2Zoom + delta * 0.12) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
+                    text: "Chaos:" + Math.round(root.layer2Chaos * 100) + "%"
+                    active: Math.abs(root.layer2Chaos - 0.50) > 0.05
+                    onClicked: {
+                        var chSteps = [0.0, 0.25, 0.50, 0.80, 1.15, 1.50]
+                        var nextCh = 0.50
+                        for (var i = 0; i < chSteps.length; i++) {
+                            if (chSteps[i] > root.layer2Chaos + 0.04) { nextCh = chSteps[i]; break }
+                            if (i === chSteps.length - 1) nextCh = chSteps[0]
+                        }
+                        root.layer2Chaos = nextCh
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: { root.layer2Chaos = 0.50; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                    onWheelScrolled: delta => {
+                        root.layer2Chaos = Math.max(0.0, Math.min(1.50, Math.round((root.layer2Chaos + delta * 0.10) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
                     text: "Tracers:" + (root.layer2TracersEnabled ? (root.tracerCount + "x") : "OFF")
                     active: root.layer2Enabled && root.layer2TracersEnabled && root.tracerCount > 1
                     onClicked: root.cycleTracers(1)
@@ -6716,10 +7103,47 @@ FocusScope {
                     pillHeight: 22
                     fontSize: 9
                     horizontalPad: 4
+                    text: "TrSpd:" + root.tracerSpeed.toFixed(1) + "x"
+                    active: root.layer2Enabled && root.layer2TracersEnabled && Math.abs(root.tracerSpeed - 1.15) > 0.06
+                    onClicked: {
+                        var tsSteps = [0.5, 0.85, 1.15, 1.6, 2.2]
+                        var nextTs = 1.15
+                        for (var i = 0; i < tsSteps.length; i++) {
+                            if (tsSteps[i] > root.tracerSpeed + 0.05) { nextTs = tsSteps[i]; break }
+                            if (i === tsSteps.length - 1) nextTs = tsSteps[0]
+                        }
+                        root.tracerSpeed = nextTs
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: { root.tracerSpeed = 1.15; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                    onWheelScrolled: delta => {
+                        root.tracerSpeed = Math.max(0.20, Math.min(3.00, Math.round((root.tracerSpeed + delta * 0.15) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 9
+                    horizontalPad: 4
                     text: "Dir:" + (root.tracerDirection > 0 ? "Towards" : (root.tracerDirection < 0 ? "Away" : "Breathe"))
                     active: root.layer2Enabled && root.layer2TracersEnabled
                     onClicked: {
                         root.tracerDirection = (root.tracerDirection === 1) ? -1 : ((root.tracerDirection === -1) ? 0 : 1)
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: {
+                        root.tracerDirection = 1
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => {
+                        var tDirs = [1, -1, 0]
+                        var tIdx = Math.max(0, tDirs.indexOf(root.tracerDirection))
+                        root.tracerDirection = tDirs[(tIdx + (delta > 0 ? 1 : 2)) % 3]
                         vizCanvas.requestPaint()
                         scheduleSaveVisualiserConfig()
                     }
@@ -6768,7 +7192,7 @@ FocusScope {
             }
 
             // =================================================================
-            // ROW 2 — LAYER 5: VORTEX (Dedicated GPU Tunnel & Vortex: 16 Modes + Dual 2x + Wall Patterns + Rand)
+            // ROW 2 — LAYER 5: VORTEX (Dedicated GPU Tunnel & Vortex: 16 Modes + Dual 2x + Wall Patterns + Twist + Spd + Glow + Sym + Rand)
             // =================================================================
             RowLayout {
                 Layout.fillWidth: true
@@ -6801,6 +7225,15 @@ FocusScope {
                         root.backdropEnabled = true
                         root.layer4DualEnabled = true
                         root.layer4SecondaryMode = (root.layer4SecondaryMode + 1) % Engine.LAYER4_MODES.length
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => {
+                        root.layer4Enabled = true
+                        root.backdropEnabled = true
+                        root.layer4DualEnabled = true
+                        var nM = Engine.LAYER4_MODES.length
+                        root.layer4SecondaryMode = (root.layer4SecondaryMode + (delta > 0 ? 1 : -1) + nM) % nM
                         vizCanvas.requestPaint()
                         scheduleSaveVisualiserConfig()
                     }
@@ -6845,6 +7278,32 @@ FocusScope {
                 }
 
                 VizPillButton {
+                    visible: root.layer4DualEnabled
+                    pillHeight: 22
+                    fontSize: 8
+                    horizontalPad: 4
+                    text: "Mix:" + Math.round(root.layer4DualMix * 100) + "%"
+                    active: root.layer4DualEnabled && Math.abs(root.layer4DualMix - 0.50) > 0.04
+                    onClicked: {
+                        var mSteps = [0.25, 0.40, 0.50, 0.65, 0.80]
+                        var nextMx = 0.50
+                        for (var i = 0; i < mSteps.length; i++) {
+                            if (mSteps[i] > root.layer4DualMix + 0.04) { nextMx = mSteps[i]; break }
+                            if (i === mSteps.length - 1) nextMx = mSteps[0]
+                        }
+                        root.layer4DualMix = nextMx
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: { root.layer4DualMix = 0.50; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                    onWheelScrolled: delta => {
+                        root.layer4DualMix = Math.max(0.10, Math.min(0.90, Math.round((root.layer4DualMix + delta * 0.05) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
                     pillHeight: 22
                     fontSize: 8
                     horizontalPad: 3
@@ -6860,6 +7319,112 @@ FocusScope {
                         vizCanvas.requestPaint()
                         scheduleSaveVisualiserConfig()
                     }
+                    onWheelScrolled: delta => {
+                        var nWp = Engine.LAYER4_WALL_PATTERNS.length
+                        root.layer4WallPattern = (root.layer4WallPattern + (delta > 0 ? 1 : -1) + nWp) % nWp
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 8
+                    horizontalPad: 4
+                    text: "Twist:" + root.layer4Twist.toFixed(1) + "x"
+                    active: Math.abs(root.layer4Twist - 1.0) > 0.05
+                    onClicked: {
+                        var twSteps = [0.0, 0.5, 1.0, 1.5, 2.2, 3.0]
+                        var nextTw = 1.0
+                        for (var i = 0; i < twSteps.length; i++) {
+                            if (twSteps[i] > root.layer4Twist + 0.05) { nextTw = twSteps[i]; break }
+                            if (i === twSteps.length - 1) nextTw = twSteps[0]
+                        }
+                        root.layer4Twist = nextTw
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: { root.layer4Twist = 1.0; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                    onWheelScrolled: delta => {
+                        root.layer4Twist = Math.max(0.0, Math.min(3.0, Math.round((root.layer4Twist + delta * 0.15) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 8
+                    horizontalPad: 4
+                    text: "Spd:" + root.backdropSpeed.toFixed(1) + "x"
+                    active: Math.abs(root.backdropSpeed - 1.0) > 0.05
+                    onClicked: {
+                        var bsSteps = [0.5, 1.0, 1.5, 2.0, 3.0]
+                        var nextBs = 1.0
+                        for (var i = 0; i < bsSteps.length; i++) {
+                            if (bsSteps[i] > root.backdropSpeed + 0.05) { nextBs = bsSteps[i]; break }
+                            if (i === bsSteps.length - 1) nextBs = bsSteps[0]
+                        }
+                        root.backdropSpeed = nextBs
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: { root.backdropSpeed = 1.0; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                    onWheelScrolled: delta => {
+                        root.backdropSpeed = Math.max(0.20, Math.min(3.50, Math.round((root.backdropSpeed + delta * 0.15) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 8
+                    horizontalPad: 4
+                    text: "Glow:" + root.backdropIntensity.toFixed(1) + "x"
+                    active: Math.abs(root.backdropIntensity - 1.0) > 0.05
+                    onClicked: {
+                        var glSteps = [0.4, 0.7, 1.0, 1.35, 1.75, 2.2]
+                        var nextGl = 1.0
+                        for (var i = 0; i < glSteps.length; i++) {
+                            if (glSteps[i] > root.backdropIntensity + 0.05) { nextGl = glSteps[i]; break }
+                            if (i === glSteps.length - 1) nextGl = glSteps[0]
+                        }
+                        root.backdropIntensity = nextGl
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: { root.backdropIntensity = 1.0; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                    onWheelScrolled: delta => {
+                        root.backdropIntensity = Math.max(0.20, Math.min(2.50, Math.round((root.backdropIntensity + delta * 0.12) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 8
+                    horizontalPad: 4
+                    text: "Sym:" + root.backdropSymmetry + "x"
+                    active: root.backdropSymmetry !== 6
+                    onClicked: {
+                        var symSteps = [2, 4, 6, 8, 12, 16]
+                        var nextSm = 6
+                        for (var i = 0; i < symSteps.length; i++) {
+                            if (symSteps[i] > root.backdropSymmetry) { nextSm = symSteps[i]; break }
+                            if (i === symSteps.length - 1) nextSm = symSteps[0]
+                        }
+                        root.backdropSymmetry = nextSm
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: { root.backdropSymmetry = 6; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                    onWheelScrolled: delta => {
+                        root.backdropSymmetry = Math.max(2, Math.min(16, root.backdropSymmetry + (delta > 0 ? 1 : -1)))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
                 }
 
                 VizPillButton {
@@ -6870,6 +7435,20 @@ FocusScope {
                     active: root.layer4Direction !== 1
                     onClicked: {
                         root.layer4Direction = (root.layer4Direction === 1 ? -1 : (root.layer4Direction === -1 ? 0 : 1))
+                        root.backdropDirection = root.layer4Direction
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: {
+                        root.layer4Direction = 1
+                        root.backdropDirection = 1
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onWheelScrolled: delta => {
+                        var l4Dirs = [1, -1, 0]
+                        var l4Idx = Math.max(0, l4Dirs.indexOf(root.layer4Direction))
+                        root.layer4Direction = l4Dirs[(l4Idx + (delta > 0 ? 1 : 2)) % 3]
                         root.backdropDirection = root.layer4Direction
                         vizCanvas.requestPaint()
                         scheduleSaveVisualiserConfig()
@@ -6924,7 +7503,7 @@ FocusScope {
             }
 
             // =================================================================
-            // ROW 2 — LAYER 6: TYPOGRAPHY (Art/Words × Braille/Block/Text × 21 Styles × 6 Spin Axes × 12 Modes + Tracers + Rand)
+            // ROW 2 — LAYER 6: TYPOGRAPHY (Art/Words × Braille/Block/Text × 21 Styles × 6 Spin Axes × 12 Modes + Sz + Warp + Spd + Tracers + Rand)
             // =================================================================
             RowLayout {
                 Layout.fillWidth: true
@@ -6966,6 +7545,7 @@ FocusScope {
                     active: root.asciiMode === "text" || !root.useAlbumArt || root.asciiMode === "banner"
                     onClicked: root.cycleLayer3TextStyle(1)
                     onRightClicked: root.cycleLayer3TextStyle(-1)
+                    onWheelScrolled: delta => root.cycleLayer3TextStyle(delta > 0 ? 1 : -1)
                 }
 
                 VizPillButton {
@@ -6976,6 +7556,7 @@ FocusScope {
                     active: root.layer3ColourMode > 0
                     onClicked: root.cycleLayer3ColourMode(1)
                     onRightClicked: root.cycleLayer3ColourMode(-1)
+                    onWheelScrolled: delta => root.cycleLayer3ColourMode(delta > 0 ? 1 : -1)
                 }
 
                 VizPillButton {
@@ -6986,6 +7567,7 @@ FocusScope {
                     active: root.layer3CylinderDir > 0 || root.layer3Mode === 7 || root.layer3Mode === 9
                     onClicked: root.cycleLayer3CylinderDir(1)
                     onRightClicked: root.cycleLayer3CylinderDir(-1)
+                    onWheelScrolled: delta => root.cycleLayer3CylinderDir(delta > 0 ? 1 : -1)
                 }
 
                 VizPillButton {
@@ -7023,6 +7605,10 @@ FocusScope {
                     active: root.layer3ShowStatements
                     onClicked: root.toggleLayer3TextField("statements")
                     onRightClicked: {
+                        root.layer3ShowStatements = true
+                        root.pickRandomStatement()
+                    }
+                    onWheelScrolled: delta => {
                         root.layer3ShowStatements = true
                         root.pickRandomStatement()
                     }
@@ -7065,6 +7651,81 @@ FocusScope {
                     text: "▶"
                     active: root.layer3Enabled
                     onClicked: root.cycleLayer3Mode(1)
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 8
+                    horizontalPad: 3
+                    text: "Sz:" + root.layer3Scale.toFixed(1) + "x"
+                    active: Math.abs(root.layer3Scale - 1.0) > 0.05
+                    onClicked: {
+                        var l3SzSteps = [0.5, 0.75, 1.0, 1.3, 1.65, 2.0]
+                        var nextL3Sz = 1.0
+                        for (var i = 0; i < l3SzSteps.length; i++) {
+                            if (l3SzSteps[i] > root.layer3Scale + 0.05) { nextL3Sz = l3SzSteps[i]; break }
+                            if (i === l3SzSteps.length - 1) nextL3Sz = l3SzSteps[0]
+                        }
+                        root.layer3Scale = nextL3Sz
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: { root.layer3Scale = 1.0; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                    onWheelScrolled: delta => {
+                        root.layer3Scale = Math.max(0.35, Math.min(2.50, Math.round((root.layer3Scale + delta * 0.12) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 8
+                    horizontalPad: 3
+                    text: "Warp:" + root.layer3Dismantle.toFixed(1) + "x"
+                    active: Math.abs(root.layer3Dismantle - 1.15) > 0.06
+                    onClicked: {
+                        var l3WpSteps = [0.4, 0.8, 1.15, 1.5, 2.0]
+                        var nextL3Wp = 1.15
+                        for (var i = 0; i < l3WpSteps.length; i++) {
+                            if (l3WpSteps[i] > root.layer3Dismantle + 0.05) { nextL3Wp = l3WpSteps[i]; break }
+                            if (i === l3WpSteps.length - 1) nextL3Wp = l3WpSteps[0]
+                        }
+                        root.layer3Dismantle = nextL3Wp
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: { root.layer3Dismantle = 1.15; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                    onWheelScrolled: delta => {
+                        root.layer3Dismantle = Math.max(0.10, Math.min(2.50, Math.round((root.layer3Dismantle + delta * 0.12) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 8
+                    horizontalPad: 3
+                    text: "Spd:" + root.layer3Evolution.toFixed(1) + "x"
+                    active: Math.abs(root.layer3Evolution - 0.90) > 0.06
+                    onClicked: {
+                        var l3EvSteps = [0.4, 0.90, 1.3, 1.75, 2.2]
+                        var nextL3Ev = 0.90
+                        for (var i = 0; i < l3EvSteps.length; i++) {
+                            if (l3EvSteps[i] > root.layer3Evolution + 0.05) { nextL3Ev = l3EvSteps[i]; break }
+                            if (i === l3EvSteps.length - 1) nextL3Ev = l3EvSteps[0]
+                        }
+                        root.layer3Evolution = nextL3Ev
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
+                    onRightClicked: { root.layer3Evolution = 0.90; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                    onWheelScrolled: delta => {
+                        root.layer3Evolution = Math.max(0.20, Math.min(2.50, Math.round((root.layer3Evolution + delta * 0.12) * 100) / 100))
+                        vizCanvas.requestPaint()
+                        scheduleSaveVisualiserConfig()
+                    }
                 }
 
                 VizPillButton {
