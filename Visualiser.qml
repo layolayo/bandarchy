@@ -838,6 +838,19 @@ FocusScope {
         scheduleSaveVisualiserConfig()
     }
     onLayer1AutoRandomiseChanged: {
+        if (root.layer1AutoRandomise && !root._applyingPersistedConfig) {
+            root.layer1PinnedByUser = false
+            root.photoHoldActive = false
+            root.photoHoldRemainingSec = 0.0
+            if (root.photoState) {
+                root.photoState.holdActive = false
+                root.photoState.holdRemainingSec = 0.0
+                root.photoState.lastCameoTimestampSec = root.engineState ? (Number(root.engineState.t) || 0.0) : 0.0
+            }
+            if (typeof l1RandomiseTimer !== "undefined") {
+                l1RandomiseTimer.restart()
+            }
+        }
         syncAutoCycleFromLayers()
         scheduleSaveVisualiserConfig()
     }
@@ -2774,6 +2787,9 @@ FocusScope {
     }
     onLayer1ModeChanged: {
         if (root.layer1Mode === 11) {
+            if (root.photoState) {
+                root.photoState.lastCameoTimestampSec = root.engineState ? (Number(root.engineState.t) || 0.0) : 0.0
+            }
             root.syncGpuPhotoTextures()
             root.schedulePreloadPhotoVariants()
         } else {
@@ -3893,20 +3909,35 @@ FocusScope {
     }
 
     function randomiseLayer1() {
-        if (root.layer1PinnedByUser && !root.layer1FieldEnabled) {
+        if (root.layer1PinnedByUser && !root.layer1FieldEnabled && !root.layer1AutoRandomise) {
             return
         }
         var pSt = root.syncPhotoStateFromRoot()
         var nowSec = root.engineState ? (Number(root.engineState.t) || 0.0) : 0.0
         var totalL1Modes = root.layer1Modes.length
         var nonPhotoCount = Math.max(1, totalL1Modes - 1)
+        var prevMode = root.layer1Mode
+        var wasOnPhoto = (root.layer1FieldEnabled && prevMode === PhotoMotion.LAYER1_WORLD12_INDEX)
+        if (wasOnPhoto) {
+            pSt.lastCameoTimestampSec = nowSec
+            pSt.holdActive = false
+            pSt.holdRemainingSec = 0.0
+            root.photoHoldActive = false
+            root.photoHoldRemainingSec = 0.0
+        }
         root._internalLayerChange = true
-        if (root.layer1PinnedByUser) {
+        if (root.layer1PinnedByUser || root.layer1AutoRandomise || wasOnPhoto) {
             root.layer1FieldEnabled = true
             var mRoll = Math.floor(Math.random() * totalL1Modes)
-            if (mRoll === PhotoMotion.LAYER1_WORLD12_INDEX && !PhotoMotion.shouldSelectWorld12Cameo(pSt, nowSec, 0.0)) {
+            if (wasOnPhoto || (mRoll === PhotoMotion.LAYER1_WORLD12_INDEX && !PhotoMotion.shouldSelectWorld12Cameo(pSt, nowSec, Math.random()))) {
                 mRoll = Math.floor(Math.random() * nonPhotoCount)
                 if (mRoll >= PhotoMotion.LAYER1_WORLD12_INDEX) mRoll = (mRoll + 1) % totalL1Modes
+            }
+            if (totalL1Modes > 1 && mRoll === prevMode) {
+                mRoll = (mRoll + 1) % totalL1Modes
+                if (mRoll === PhotoMotion.LAYER1_WORLD12_INDEX && (wasOnPhoto || !PhotoMotion.shouldSelectWorld12Cameo(pSt, nowSec, Math.random()))) {
+                    mRoll = (mRoll + 1) % totalL1Modes
+                }
             }
             root.layer1Mode = mRoll
             root.layer1Density = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
@@ -3917,9 +3948,12 @@ FocusScope {
             var fRoll = Math.floor(Math.random() * (totalL1Modes + 1))
             root.layer1FieldEnabled = (fRoll < totalL1Modes)
             if (root.layer1FieldEnabled) {
-                if (fRoll === PhotoMotion.LAYER1_WORLD12_INDEX && !PhotoMotion.shouldSelectWorld12Cameo(pSt, nowSec, 0.0)) {
+                if (fRoll === PhotoMotion.LAYER1_WORLD12_INDEX && !PhotoMotion.shouldSelectWorld12Cameo(pSt, nowSec, Math.random())) {
                     fRoll = Math.floor(Math.random() * nonPhotoCount)
                     if (fRoll >= PhotoMotion.LAYER1_WORLD12_INDEX) fRoll = (fRoll + 1) % totalL1Modes
+                }
+                if (totalL1Modes > 1 && fRoll === prevMode) {
+                    fRoll = (fRoll + 1) % totalL1Modes
                 }
                 root.layer1Mode = fRoll
                 root.layer1Density = Math.round((0.55 + Math.random() * 1.45) * 100) / 100
