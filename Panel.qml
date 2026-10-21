@@ -2719,7 +2719,8 @@ Item {
                             active: Boolean((root.opened || root.standaloneMode) && root.service && root.service.activelyPlaying && !root.service.fullscreenVisualiserOpen)
                             bands: (active && root.service) ? root.service.spectrumBands : []
                             accentColour: root.colAccent
-                            peakColour: root.colUrgent
+                            secondaryColour: "#38bdf8"
+                            peakColour: "#c084fc"
                         }
 
                         // Transport Controls

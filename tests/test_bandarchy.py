@@ -647,7 +647,7 @@ class BandarchyTestSuite(unittest.TestCase):
                 text=True,
             )
             try:
-                time.sleep(1.5)
+                time.sleep(2.8)
             finally:
                 proc.terminate()
                 try:
@@ -3238,6 +3238,196 @@ console.log('OK');
         self.assertEqual(st_mid["title"], "Abandoner")
         self.assertAlmostEqual(st_mid["position"], 42.5, places=1)
 
+    def test_22_layer6_numbered_styles_album_palette_synthesis_3mode_rand_and_equaliser(self):
+        with open(os.path.join(REPO_ROOT, "Visualiser.qml"), "r", encoding="utf-8") as f:
+            viz_src = f.read()
+        with open(os.path.join(REPO_ROOT, "Spectrum.qml"), "r", encoding="utf-8") as f:
+            spec_src = f.read()
+        with open(os.path.join(REPO_ROOT, "Panel.qml"), "r", encoding="utf-8") as f:
+            panel_src = f.read()
+
+        # 1. Verify Visualiser.qml wires up 3-mode Layer 6 randomiser, 0..30s transition pause, Toast ON/OFF pill & U/I/J/O shortcuts, and non-red windowed equaliser
+        for expected in (
+            "readonly property var layer3RandomModes: Engine.LAYER3_RANDOM_MODES",
+            "readonly property var shortL3RandomModes: Engine.SHORT_LAYER3_RANDOM_MODES",
+            "property int layer3RandomMode: 0",
+            "function cycleLayer3RandomMode(delta)",
+            "function toggleKeybindingToast()",
+            'text: root.keybindingToastEnabled ? "⌨ Toast:ON" : "⌨ Toast:OFF"',
+            'label: "Transition Pause (0–30s)"',
+            "active: root.playing && bottomHud.visible && bottomMeterBox.showSpectrumMeter",
+            'text: "#" + (index + 1) + ": " + (root.useAlbumArt ? Engine.LAYER3_ART_STYLES[index] : Engine.LAYER3_TEXT_STYLES[index])',
+            "Shift + 6       : Cycle Layer 6 Rand (OFF / Selected / Art⟷Words)",
+            "U               : Toggle Keypress Feedback Toast ON / OFF",
+        ):
+            self.assertIn(expected, viz_src, f"Missing {expected} in Visualiser.qml")
+
+        self.assertNotIn("active: root.playing && root.showHud && root.isFullscreen && bottomMeterBox.showSpectrumMeter", viz_src)
+        self.assertNotIn("colUrgent", spec_src)
+        self.assertNotIn("peakColour: root.colUrgent", panel_src)
+
+        # 2. Verify in Node.js:
+        #    - #1..#21 prefixes on SHORT_LAYER3_ART_STYLES and SHORT_LAYER3_TEXT_STYLES
+        #    - LAYER3_RANDOM_MODES (3 modes) & normaliseConfig clamping for layer3RandomMode (0..2) and layer3TransitionPauseSec (0.0..30.0)
+        #    - Slimmed #3 Rave Laser Stencil text border (lineWidth <= 1.25)
+        #    - All 21 album art styles (0..20, including #17 Turing Coral at index 16 and #21 Tomography at index 20)
+        #      synthesise BOTH album-cover RGB colours AND active palette colours, with zero dark backing plates
+        if shutil.which("node"):
+            node_script = r"""
+const fs = require('fs');
+let code = fs.readFileSync('PsychedelicEngine.js', 'utf8').replace(/^\.pragma library\s*/m, '');
+eval(code);
+
+if (SHORT_LAYER3_ART_STYLES.length !== 21 || SHORT_LAYER3_TEXT_STYLES.length !== 21) {
+    throw new Error('Expected 21 SHORT_LAYER3_ART_STYLES and SHORT_LAYER3_TEXT_STYLES');
+}
+for (let i = 0; i < 21; i++) {
+    const prefix = '#' + (i + 1) + ' ';
+    if (!SHORT_LAYER3_ART_STYLES[i].startsWith(prefix)) {
+        throw new Error(`SHORT_LAYER3_ART_STYLES[${i}] missing "${prefix}": ${SHORT_LAYER3_ART_STYLES[i]}`);
+    }
+    if (!SHORT_LAYER3_TEXT_STYLES[i].startsWith(prefix)) {
+        throw new Error(`SHORT_LAYER3_TEXT_STYLES[${i}] missing "${prefix}": ${SHORT_LAYER3_TEXT_STYLES[i]}`);
+    }
+}
+
+if (LAYER3_RANDOM_MODES.length !== 3 || SHORT_LAYER3_RANDOM_MODES.length !== 3) {
+    throw new Error('Expected 3 LAYER3_RANDOM_MODES');
+}
+
+// Verify 0.0..30.0 clamping on layer3TransitionPauseSec and 0..2 on layer3RandomMode
+const cfgZero = normaliseConfig({ layer3TransitionPauseSec: 0.0, layer3RandomMode: 0 }, 0, []);
+const cfgMid  = normaliseConfig({ layer3TransitionPauseSec: 12.5, layer3RandomMode: 1 }, 0, []);
+const cfgHigh = normaliseConfig({ layer3TransitionPauseSec: 45.0, layer3RandomMode: 9 }, 0, []);
+const cfgNeg  = normaliseConfig({ layer3TransitionPauseSec: -5.0, layer3RandomMode: -2 }, 0, []);
+if (cfgZero.layer3TransitionPauseSec !== 0.0 || cfgZero.layer3RandomMode !== 0) {
+    throw new Error('Failed 0.0s pause / mode 0 normalisation: ' + JSON.stringify(cfgZero));
+}
+if (Math.abs(cfgMid.layer3TransitionPauseSec - 12.5) > 0.001 || cfgMid.layer3RandomMode !== 1) {
+    throw new Error('Failed 12.5s pause / mode 1 normalisation');
+}
+if (cfgHigh.layer3TransitionPauseSec !== 30.0 || cfgHigh.layer3RandomMode !== 2) {
+    throw new Error('Failed upper bound clamping (30.0s / mode 2): ' + JSON.stringify(cfgHigh));
+}
+if (cfgNeg.layer3TransitionPauseSec !== 0.0 || cfgNeg.layer3RandomMode !== 0) {
+    throw new Error('Failed lower bound clamping (0.0s / mode 0): ' + JSON.stringify(cfgNeg));
+}
+
+function makeInspectCtx() {
+    return {
+        fillStyles: [], strokeStyles: [], lineWidths: [], strokeTextCount: 0, fillTextCount: 0,
+        fillCount: 0, strokeCount: 0, arcCount: 0, darkPlateCount: 0,
+        fillStyle: '', strokeStyle: '', lineWidth: 1, lineCap: 'butt', lineJoin: 'miter',
+        globalAlpha: 1, globalCompositeOperation: 'source-over', font: '12px monospace',
+        save() {}, restore() {}, translate() {}, rotate() {}, scale() {},
+        beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, quadraticCurveTo() {}, bezierCurveTo() {},
+        rect() {}, arc() { this.arcCount++; },
+        fill() {
+            this.fillCount++;
+            this.fillStyles.push(String(this.fillStyle));
+            if (String(this.fillStyle).startsWith('rgba(4, 6, 12') || String(this.fillStyle).startsWith('rgba(2, 4, 8')) {
+                this.darkPlateCount++;
+            }
+        },
+        stroke() {
+            this.strokeCount++;
+            this.strokeStyles.push(String(this.strokeStyle));
+            this.lineWidths.push(this.lineWidth);
+        },
+        fillRect() {
+            this.fillCount++;
+            this.fillStyles.push(String(this.fillStyle));
+        },
+        strokeRect() {
+            this.strokeCount++;
+            this.strokeStyles.push(String(this.strokeStyle));
+            this.lineWidths.push(this.lineWidth);
+        },
+        clearRect() {},
+        fillText() { this.fillTextCount++; this.fillStyles.push(String(this.fillStyle)); },
+        strokeText() { this.strokeTextCount++; this.strokeStyles.push(String(this.strokeStyle)); this.lineWidths.push(this.lineWidth); },
+        drawImage() {},
+        createLinearGradient() { return { addColorStop() {} }; },
+        createRadialGradient() { return { addColorStop() {} }; }
+    };
+}
+
+const state = createState();
+const theme = { accent: '#6ee7b7', urgent: '#f472b6', foreground: '#e2e8f0', background: '#07090e' };
+const bands = Array.from({length: 64}, (_, i) => 500 + 300 * Math.sin(i * 0.3));
+
+// Verify #3: Rave Laser Stencil (layer3TextStyle = 2) uses slim border (lineWidth <= 1.25)
+const ctxLaser = makeInspectCtx();
+const cfgLaser = normaliseConfig({
+    layer1Enabled: false, layer2Enabled: false, layer3Enabled: true,
+    useAlbumArt: false, asciiMode: 'text', layer3Tracers: 1,
+    layer3Mode: 0, layer3TextStyle: 2, layer3ColourMode: 0,
+    layer3ShowArtist: false, layer3ShowTrack: true, layer3ShowAlbum: false,
+    trackTitle: 'RAVE LASER STENCIL'
+}, 0, []);
+stepState(state, bands, true, cfgLaser, 0.03);
+drawLayer3AlbumArt(ctxLaser, 640, 360, state, buildPalette(theme, state.hueShift, 0), cfgLaser, [], []);
+if (ctxLaser.strokeTextCount < 1 || Math.max(...ctxLaser.lineWidths) > 1.25) {
+    throw new Error('Expected slimmed #3 Rave Laser Stencil border <= 1.25px, got ' + JSON.stringify(ctxLaser.lineWidths));
+}
+
+// Verify all 21 Album Art styles (0..20, including #17 Turing Coral at 16 and #21 Tomography at 20)
+// synthesise BOTH true album-cover RGB colours AND active palette colours, with zero dark backing plates
+const artWarm = Array.from({length: 14}, (_, r) =>
+    '\x1b[38;2;250;' + (60 + r * 8) + ';30m⣿⣷⣯⣟⡿⢿⣻⣽\x1b[0m'.repeat(3)
+);
+const artCool = Array.from({length: 14}, (_, r) =>
+    '\x1b[38;2;20;' + (140 + r * 6) + ';250m⣿⣷⣯⣟⡿⢿⣻⣽\x1b[0m'.repeat(3)
+);
+
+for (let stIdx = 0; stIdx < 21; stIdx++) {
+    const ctxWarmP0 = makeInspectCtx();
+    const ctxCoolP0 = makeInspectCtx();
+    const ctxWarmP5 = makeInspectCtx();
+
+    const cfgW0 = normaliseConfig({
+        layer1Enabled: false, layer2Enabled: false, layer3Enabled: true,
+        useAlbumArt: true, asciiMode: 'braille', layer3Tracers: 1,
+        layer3Mode: 0, layer3TextStyle: stIdx, palette: 0, artLines: artWarm
+    }, 0, artWarm);
+    const cfgC0 = normaliseConfig({
+        layer1Enabled: false, layer2Enabled: false, layer3Enabled: true,
+        useAlbumArt: true, asciiMode: 'braille', layer3Tracers: 1,
+        layer3Mode: 0, layer3TextStyle: stIdx, palette: 0, artLines: artCool
+    }, 0, artCool);
+    const cfgW5 = normaliseConfig({
+        layer1Enabled: false, layer2Enabled: false, layer3Enabled: true,
+        useAlbumArt: true, asciiMode: 'braille', layer3Tracers: 1,
+        layer3Mode: 0, layer3TextStyle: stIdx, palette: 5, artLines: artWarm
+    }, 5, artWarm);
+
+    drawLayer3AlbumArt(ctxWarmP0, 640, 360, state, buildPalette(theme, state.hueShift, 0), cfgW0, artWarm, []);
+    drawLayer3AlbumArt(ctxCoolP0, 640, 360, state, buildPalette(theme, state.hueShift, 0), cfgC0, artCool, []);
+    drawLayer3AlbumArt(ctxWarmP5, 640, 360, state, buildPalette(theme, state.hueShift, 5), cfgW5, artWarm, []);
+
+    if (ctxWarmP0.fillCount + ctxWarmP0.strokeCount < 6) {
+        throw new Error(`Art style #${stIdx + 1} (${SHORT_LAYER3_ART_STYLES[stIdx]}) failed to draw geometry`);
+    }
+    if (ctxWarmP0.darkPlateCount !== 0) {
+        throw new Error(`Art style #${stIdx + 1} (${SHORT_LAYER3_ART_STYLES[stIdx]}) drew forbidden dark backing plate`);
+    }
+    const sigW0 = ctxWarmP0.fillStyles.concat(ctxWarmP0.strokeStyles).join('|');
+    const sigC0 = ctxCoolP0.fillStyles.concat(ctxCoolP0.strokeStyles).join('|');
+    const sigW5 = ctxWarmP5.fillStyles.concat(ctxWarmP5.strokeStyles).join('|');
+    if (sigW0 === sigC0) {
+        throw new Error(`Art style #${stIdx + 1} (${SHORT_LAYER3_ART_STYLES[stIdx]}) did not respond to album-cover RGB colours`);
+    }
+    if (sigW0 === sigW5) {
+        throw new Error(`Art style #${stIdx + 1} (${SHORT_LAYER3_ART_STYLES[stIdx]}) did not respond to active palette change`);
+    }
+}
+console.log('OK');
+"""
+            res = subprocess.run(["node", "-e", node_script], cwd=REPO_ROOT, capture_output=True, text=True, timeout=25)
+            self.assertEqual(res.returncode, 0, f"Node test_22 failed: {res.stderr}")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+

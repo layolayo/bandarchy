@@ -154,27 +154,27 @@ var LAYER3_TEXT_STYLES = [
 ]
 var LAYER3_TEXT_STYLE_NAMES = LAYER3_TEXT_STYLES
 var SHORT_LAYER3_TEXT_STYLES = [
-    "Techno",
-    "Liquid",
-    "Laser",
-    "Chrome",
-    "LED Wall",
-    "Acid Glitch",
-    "UV Glow",
-    "Brutalist",
-    "Holo HUD",
-    "Oscillo XY",
-    "Iso 3D",
-    "Tesla Arc",
-    "Y2K Metal",
-    "Copperbar",
-    "Bio Spore",
-    "Quantum",
-    "ASCII Black Block",
-    "ASCII White Block",
-    "ASCII Transparent",
-    "ASCII Colour Knockout",
-    "ASCII Cell Matrix"
+    "#1 Techno",
+    "#2 Liquid",
+    "#3 Laser",
+    "#4 Chrome",
+    "#5 LED Wall",
+    "#6 Acid Glitch",
+    "#7 UV Glow",
+    "#8 Brutalist",
+    "#9 Holo HUD",
+    "#10 Oscillo XY",
+    "#11 Iso 3D",
+    "#12 Tesla Arc",
+    "#13 Y2K Metal",
+    "#14 Copperbar",
+    "#15 Bio Spore",
+    "#16 Quantum",
+    "#17 ASCII Black Block",
+    "#18 ASCII White Block",
+    "#19 ASCII Transparent",
+    "#20 ASCII Colour Knockout",
+    "#21 ASCII Cell Matrix"
 ]
 
 var LAYER3_ART_STYLES = [
@@ -202,27 +202,39 @@ var LAYER3_ART_STYLES = [
 ]
 
 var SHORT_LAYER3_ART_STYLES = [
-    "K-Means 3D",
-    "Salience",
-    "Tangent Flow",
-    "Quadtree",
-    "Delaunay",
-    "Iso-Contours",
-    "Bas-Relief",
-    "Thermal 3D",
-    "DoG Woodcut",
-    "Neg-Space",
-    "Hue Vortex",
-    "FFT Cymatic",
-    "Point Cloud",
-    "Gabor Hatch",
-    "RGB Prism",
-    "Stipple 3D",
-    "Turing Coral",
-    "Iso City",
-    "CMYK Press",
-    "Dipole Field",
-    "Tomography"
+    "#1 K-Means 3D",
+    "#2 Salience",
+    "#3 Tangent Flow",
+    "#4 Quadtree",
+    "#5 Delaunay",
+    "#6 Iso-Contours",
+    "#7 Bas-Relief",
+    "#8 Thermal 3D",
+    "#9 DoG Woodcut",
+    "#10 Neg-Space",
+    "#11 Hue Vortex",
+    "#12 FFT Cymatic",
+    "#13 Point Cloud",
+    "#14 Gabor Hatch",
+    "#15 RGB Prism",
+    "#16 Stipple 3D",
+    "#17 Turing Coral",
+    "#18 Iso City",
+    "#19 CMYK Press",
+    "#20 Dipole Field",
+    "#21 Tomography"
+]
+
+var LAYER3_RANDOM_MODES = [
+    "No Randomise",
+    "Selected Only (Art or Words)",
+    "Art ⟷ Words (With Timing)"
+]
+
+var SHORT_LAYER3_RANDOM_MODES = [
+    "OFF",
+    "Selected",
+    "Art⟷Words"
 ]
 
 var LAYER3_CYLINDER_DIRS = [
@@ -1191,18 +1203,18 @@ function rebuildArtCells(state, asciiLines, mode) {
         }
         state.artRowCells = rowCells
 
-        // Pre-trace up to 88 multi-step Sobel tangent streamlines (5..7 connected points each)
+        // Pre-trace up to 160 multi-step RK2 curved Sobel tangent streamlines (6..8 connected points each)
         var streamlines = []
-        var stepX = Math.max(2, Math.floor(gCols / 12))
-        var stepY = Math.max(2, Math.floor(gRows / 8))
+        var stepX = Math.max(1, Math.floor(gCols / 15))
+        var stepY = Math.max(1, Math.floor(gRows / 11))
         for (var sy = 1; sy < gRows - 1; sy += stepY) {
             for (var sx = 1; sx < gCols - 1; sx += stepX) {
                 var seedCell = grid[sy * gCols + sx]
-                if (!seedCell || (seedCell.edgeMag < 0.16 && seedCell.salience < 0.28)) continue
+                if (!seedCell || (seedCell.edgeMag < 0.08 && seedCell.salience < 0.16)) continue
                 var pts = []
                 var curX = sx + 0.5
                 var curY = sy + 0.5
-                for (var stp = 0; stp < 6; stp++) {
+                for (var stp = 0; stp < 8; stp++) {
                     var ix = clamp(Math.floor(curX), 0, gCols - 1)
                     var iy = clamp(Math.floor(curY), 0, gRows - 1)
                     var cHere = grid[iy * gCols + ix] || seedCell
@@ -1216,9 +1228,16 @@ function rebuildArtCells(state, asciiLines, mode) {
                         edgeMag: cHere.edgeMag || 0.4,
                         cell: cHere
                     })
-                    var ang = cHere.tangentRad !== undefined ? cHere.tangentRad : 0.0
-                    curX += Math.cos(ang) * 1.35
-                    curY += Math.sin(ang) * 1.15
+                    var ang1 = cHere.tangentRad !== undefined ? cHere.tangentRad : 0.0
+                    var midX = clamp(Math.floor(curX + Math.cos(ang1) * 0.65), 0, gCols - 1)
+                    var midY = clamp(Math.floor(curY + Math.sin(ang1) * 0.65), 0, gRows - 1)
+                    var cMid = grid[midY * gCols + midX] || cHere
+                    var ang2 = cMid.tangentRad !== undefined ? cMid.tangentRad : ang1
+                    if (Math.cos(ang1) * Math.cos(ang2) + Math.sin(ang1) * Math.sin(ang2) < 0.0) {
+                        ang2 += Math.PI
+                    }
+                    curX += Math.cos(ang2) * 1.25
+                    curY += Math.sin(ang2) * 1.15
                     if (curX < 0.5 || curX > gCols - 0.5 || curY < 0.5 || curY > gRows - 0.5) break
                 }
                 if (pts.length >= 3) {
@@ -1228,10 +1247,10 @@ function rebuildArtCells(state, asciiLines, mode) {
                         hexCol: seedCell.vividHexCol || seedCell.hexCol || "#00F5FF",
                         points: pts
                     })
-                    if (streamlines.length >= 88) break
+                    if (streamlines.length >= 160) break
                 }
             }
-            if (streamlines.length >= 88) break
+            if (streamlines.length >= 160) break
         }
         state.artStreamlines = streamlines
     }
@@ -12938,7 +12957,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     var isDarkGlobalPal = isDarkMoodPalette(cfg.palette)
     var activeStylePal = hasCustomL3Pal
         ? cfg.layer3CustomPalette
-        : ((colourMode === 0 && !isDarkGlobalPal && !isPaletteShifted)
+        : ((isWordsSource && colourMode === 0 && !isDarkGlobalPal && !isPaletteShifted)
             ? (LAYER3_STYLE_PALETTES[textStyle] || palette)
             : ((palette && palette.length > 0) ? palette : LAYER3_STYLE_PALETTES[textStyle]))
     var fontPresetIdx = clamp(Math.round(Number(cfg.layer3FontPreset !== undefined ? cfg.layer3FontPreset : 0)), 0, LAYER3_FONT_PRESET_FAMILIES.length - 1)
@@ -13086,17 +13105,6 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                         ctx.fill()
                         ctx.lineWidth = 1.8 + state.beatPulse * 1.2
                         ctx.strokeStyle = rowIdx === 0 ? "#00F5FF" : "#FF1493"
-                        ctx.stroke()
-                        ctx.restore()
-                    } else if (textStyle === 2 && modeUsesPlate) {
-                        // Style 2: Rave Laser Stencil horizontal laser beam scanline
-                        var scanY = baseRowY + Math.sin(l3T * 6.5 + rowIdx * 1.7) * (plateH * 0.36)
-                        ctx.save()
-                        ctx.strokeStyle = colourWithAlpha("#00FF99", 0.52 + state.beatPulse * 0.40)
-                        ctx.lineWidth = 1.6 + state.bassSmooth * 2.0
-                        ctx.beginPath()
-                        ctx.moveTo(cx - plateW * 0.54, scanY)
-                        ctx.lineTo(cx + plateW * 0.54, scanY)
                         ctx.stroke()
                         ctx.restore()
                     } else if (textStyle === 7 && modeUsesPlate) {
@@ -13572,12 +13580,14 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                     if (rot !== 0.0) ctx.rotate(rot)
                     ctx.scale(sx, sy)
                     var hasStrokeText = (typeof ctx.strokeText === "function")
+                    ctx.lineJoin = "round"
+                    ctx.lineCap = "round"
 
                     // Universal 3D extruded depth shadow & beat-reactive chromatic ghost on front pass
                     if (!isEchoT && !isAsciiStyle) {
-                        var extDX = Math.cos(l3T * 1.4 + rowIdx) * (2.2 + state.bassSmooth * 3.2)
-                        var extDY = Math.sin(l3T * 1.4 + rowIdx) * (2.2 + state.bassSmooth * 3.2) + 2.0
-                        ctx.fillStyle = "rgba(4, 5, 14, 0.72)"
+                        var extDX = Math.cos(l3T * 1.4 + rowIdx) * (2.0 + state.bassSmooth * 2.8)
+                        var extDY = Math.sin(l3T * 1.4 + rowIdx) * (2.0 + state.bassSmooth * 2.8) + 1.8
+                        ctx.fillStyle = "rgba(4, 5, 14, 0.68)"
                         ctx.fillText(ch, extDX, extDY)
                         if (state.beatPulse > 0.18) {
                             ctx.fillStyle = colourWithAlpha(colAcc, 0.34 * state.beatPulse)
@@ -13588,51 +13598,50 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                     if (textStyle === 0) {
                         // 0: Cyber Techno — dual-bevel dark + neon laser rim + crisp cyber fill
                         if (!isEchoT && hasStrokeText) {
-                            ctx.lineWidth = Math.max(3.5, rowFontPx * 0.20)
-                            ctx.strokeStyle = "rgba(4, 6, 14, 0.94)"
+                            ctx.lineWidth = clamp(rowFontPx * 0.075, 1.4, 3.2)
+                            ctx.strokeStyle = "rgba(4, 6, 14, 0.90)"
                             ctx.strokeText(ch, 0, 0)
-                            ctx.lineWidth = Math.max(1.6, rowFontPx * 0.08)
+                            ctx.lineWidth = clamp(rowFontPx * 0.04, 1.0, 1.8)
                             ctx.strokeStyle = useSigCols ? ((rowIdx === 0) ? "#00F5FF" : "#FF1493") : colAlt
-                            ctx.strokeText(ch, 1.2, -1.2)
+                            ctx.strokeText(ch, 1.0, -1.0)
                         }
                         ctx.fillStyle = (rowIdx === 0 && (ci === 0 || ci === nCh - 1)) ? (useSigCols ? "#FF1493" : colAcc) : colCh
                         ctx.fillText(ch, 0, 0)
                     } else if (textStyle === 1) {
                         // 1: Psychedelic Liquid — concentric multi-ring rainbow prism aura halos + solarised fill
                         if (!isEchoT && hasStrokeText) {
-                            ctx.lineWidth = Math.max(5.0, rowFontPx * 0.28)
+                            ctx.lineWidth = clamp(rowFontPx * 0.095, 1.8, 4.0)
                             ctx.strokeStyle = colourWithAlpha(colAlt, 0.58 + state.bassSmooth * 0.32)
                             ctx.strokeText(ch, 0, 0)
-                            ctx.lineWidth = Math.max(2.2, rowFontPx * 0.12)
-                            ctx.strokeStyle = "rgba(10, 3, 22, 0.88)"
+                            ctx.lineWidth = clamp(rowFontPx * 0.045, 1.0, 2.0)
+                            ctx.strokeStyle = "rgba(10, 3, 22, 0.86)"
                             ctx.strokeText(ch, 0, 0)
                         }
                         ctx.fillStyle = colCh
                         ctx.fillText(ch, 0, 0)
                     } else if (textStyle === 2) {
-                        // 2: Rave Laser Stencil — wide RGB chromatic anaglyph split + hollow high-voltage neon vector outline
-                        var laserSplit = (2.2 + state.bassSmooth * 6.5 + state.beatPulse * 5.0)
-                        if (!isEchoT && hasStrokeText) {
-                            ctx.lineWidth = Math.max(1.8, rowFontPx * 0.09)
-                            ctx.strokeStyle = useSigCols ? "rgba(255, 0, 85, 0.78)" : colourWithAlpha(colAlt, 0.78)
-                            ctx.strokeText(ch, -laserSplit, 0)
-                            ctx.strokeStyle = useSigCols ? "rgba(0, 255, 204, 0.78)" : colourWithAlpha(colAcc, 0.78)
-                            ctx.strokeText(ch, laserSplit, 0)
+                        // 2: Rave Laser Stencil — sleek RGB chromatic laser split + razor-thin vector rim + crisp neon fill
+                        var laserSplit = 1.2 + state.bassSmooth * 2.2 + state.beatPulse * 1.6
+                        if (!isEchoT) {
+                            ctx.fillStyle = useSigCols ? "rgba(255, 0, 85, 0.54)" : colourWithAlpha(colAlt, 0.54)
+                            ctx.fillText(ch, -laserSplit, 0)
+                            ctx.fillStyle = useSigCols ? "rgba(0, 255, 204, 0.54)" : colourWithAlpha(colAcc, 0.54)
+                            ctx.fillText(ch, laserSplit, 0)
                         }
-                        ctx.fillStyle = "rgba(5, 8, 14, 0.86)"
-                        ctx.fillText(ch, 0, 0)
-                        if (hasStrokeText) {
-                            ctx.lineWidth = Math.max(2.0, rowFontPx * 0.11)
-                            ctx.strokeStyle = colCh
+                        if (!isEchoT && hasStrokeText) {
+                            ctx.lineWidth = clamp(rowFontPx * 0.032, 0.9, 1.5)
+                            ctx.strokeStyle = "rgba(5, 8, 14, 0.72)"
                             ctx.strokeText(ch, 0, 0)
                         }
+                        ctx.fillStyle = colCh
+                        ctx.fillText(ch, 0, 0)
                     } else if (textStyle === 3) {
                         // 3: Dance Chrome — 3D extruded shadow + neon rim + metallic chrome + specular horizon bar
                         if (!isEchoT) {
                             ctx.fillStyle = "#090418"
-                            ctx.fillText(ch, rowFontPx * 0.08, rowFontPx * 0.09)
+                            ctx.fillText(ch, rowFontPx * 0.07, rowFontPx * 0.08)
                             if (hasStrokeText) {
-                                ctx.lineWidth = Math.max(3.0, rowFontPx * 0.16)
+                                ctx.lineWidth = clamp(rowFontPx * 0.065, 1.2, 2.6)
                                 ctx.strokeStyle = colAlt
                                 ctx.strokeText(ch, 0, 0)
                             }
@@ -13672,8 +13681,8 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                             ctx.fillText(ch, 0, 0)
                         } else {
                             if (!isEchoT && hasStrokeText) {
-                                ctx.lineWidth = Math.max(2.5, rowFontPx * 0.14)
-                                ctx.strokeStyle = "rgba(5, 6, 10, 0.92)"
+                                ctx.lineWidth = clamp(rowFontPx * 0.06, 1.2, 2.4)
+                                ctx.strokeStyle = "rgba(5, 6, 10, 0.90)"
                                 ctx.strokeText(ch, 0, 0)
                             }
                             ctx.fillStyle = colCh
@@ -13682,11 +13691,11 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                     } else if (textStyle === 6) {
                         // 6: Psytrance UV Glow — deep ultraviolet & electric cyan phosphorescent multi-halo bloom
                         if (hasStrokeText) {
-                            ctx.lineWidth = Math.max(4.5, rowFontPx * 0.26)
+                            ctx.lineWidth = clamp(rowFontPx * 0.095, 1.8, 3.8)
                             ctx.strokeStyle = colourWithAlpha(useSigCols ? "#7209B7" : colAcc, 0.72)
                             ctx.strokeText(ch, 0, 0)
                             if (!isEchoT) {
-                                ctx.lineWidth = Math.max(2.2, rowFontPx * 0.12)
+                                ctx.lineWidth = clamp(rowFontPx * 0.045, 1.0, 2.0)
                                 ctx.strokeStyle = useSigCols ? "#00FFFF" : colAlt
                                 ctx.strokeText(ch, 0, 0)
                             }
@@ -13700,7 +13709,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                             ctx.fillText(ch, 0, 0)
                         } else {
                             if (!isEchoT && hasStrokeText) {
-                                ctx.lineWidth = Math.max(3.5, rowFontPx * 0.18)
+                                ctx.lineWidth = clamp(rowFontPx * 0.075, 1.4, 3.0)
                                 ctx.strokeStyle = "#060609"
                                 ctx.strokeText(ch, 0, 0)
                             }
@@ -13709,11 +13718,11 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                         }
                     } else if (textStyle === 8) {
                         // 8: Holographic Sci-Fi HUD — phase-shifted hologram ghost + cyan/emerald HUD reticle glyph + telemetry tick
-                        var holoShift = (1.8 + state.beatPulse * 3.8) * Math.sin(l3T * 9.0 + ci)
+                        var holoShift = (1.6 + state.beatPulse * 3.0) * Math.sin(l3T * 9.0 + ci)
                         ctx.fillStyle = useSigCols ? "rgba(0, 180, 216, 0.42)" : colourWithAlpha(colAlt, 0.42)
-                        ctx.fillText(ch, holoShift, -1.6)
+                        ctx.fillText(ch, holoShift, -1.4)
                         if (!isEchoT && hasStrokeText) {
-                            ctx.lineWidth = Math.max(1.8, rowFontPx * 0.09)
+                            ctx.lineWidth = clamp(rowFontPx * 0.042, 1.0, 1.8)
                             ctx.strokeStyle = useSigCols ? "#00FFD5" : colAlt
                             ctx.strokeText(ch, 0, 0)
                         }
@@ -13726,10 +13735,10 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                     } else if (textStyle === 9) {
                         // 9: Oscilloscope Vector Beam — Tektronix green/cyan phosphor outer bloom + crisp vector stroke + CRT vertex dots
                         if (hasStrokeText) {
-                            ctx.lineWidth = Math.max(4.2, rowFontPx * 0.22)
+                            ctx.lineWidth = clamp(rowFontPx * 0.085, 1.6, 3.6)
                             ctx.strokeStyle = useSigCols ? "rgba(0, 255, 102, 0.34)" : colourWithAlpha(colAlt, 0.38)
                             ctx.strokeText(ch, 0, 0)
-                            ctx.lineWidth = Math.max(1.5, rowFontPx * 0.08)
+                            ctx.lineWidth = clamp(rowFontPx * 0.038, 1.0, 1.6)
                             ctx.strokeStyle = useSigCols ? "#CCFFDD" : colCh
                             ctx.strokeText(ch, 0, 0)
                         }
@@ -13753,7 +13762,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                                 ctx.fillText(ch, isoDX * stp, isoDY * stp)
                             }
                             if (hasStrokeText) {
-                                ctx.lineWidth = Math.max(2.6, rowFontPx * 0.14)
+                                ctx.lineWidth = clamp(rowFontPx * 0.06, 1.2, 2.4)
                                 ctx.strokeStyle = "#080714"
                                 ctx.strokeText(ch, 0, 0)
                             }
@@ -13763,10 +13772,10 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                     } else if (textStyle === 11) {
                         // 11: Plasma Arc Tesla — violet/cyan high-voltage corona discharge + white-hot ionised core
                         if (hasStrokeText) {
-                            ctx.lineWidth = Math.max(5.0, rowFontPx * 0.28)
+                            ctx.lineWidth = clamp(rowFontPx * 0.095, 1.8, 3.8)
                             ctx.strokeStyle = colourWithAlpha(useSigCols ? "#B5179E" : colAcc, 0.56 + state.beatPulse * 0.34)
                             ctx.strokeText(ch, 0, 0)
-                            ctx.lineWidth = Math.max(2.4, rowFontPx * 0.12)
+                            ctx.lineWidth = clamp(rowFontPx * 0.045, 1.0, 2.0)
                             ctx.strokeStyle = useSigCols ? "#7DF9FF" : colAlt
                             ctx.strokeText(ch, 0, 0)
                         }
@@ -13775,12 +13784,12 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                     } else if (textStyle === 12) {
                         // 12: Y2K Iridescent Mercury — liquid-metal pearlescent triple rim + star specular glint
                         if (!isEchoT && hasStrokeText) {
-                            ctx.lineWidth = Math.max(4.6, rowFontPx * 0.24)
+                            ctx.lineWidth = clamp(rowFontPx * 0.085, 1.6, 3.4)
                             ctx.strokeStyle = useSigCols ? "#F472B6" : colAcc
-                            ctx.strokeText(ch, -1.2, 1.2)
-                            ctx.lineWidth = Math.max(2.6, rowFontPx * 0.14)
+                            ctx.strokeText(ch, -1.0, 1.0)
+                            ctx.lineWidth = clamp(rowFontPx * 0.045, 1.0, 2.0)
                             ctx.strokeStyle = useSigCols ? "#67E8F9" : colAlt
-                            ctx.strokeText(ch, 1.0, -1.0)
+                            ctx.strokeText(ch, 0.8, -0.8)
                         }
                         ctx.fillStyle = useSigCols ? "#F8FAFC" : colCh
                         ctx.fillText(ch, 0, 0)
@@ -13794,9 +13803,9 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                         // 13: Demoscene Copperbars — Amiga raster-bar silhouette shadow + crisp copper-lit glyph
                         if (!isEchoT) {
                             ctx.fillStyle = "#080412"
-                            ctx.fillText(ch, 2.6, 2.8)
+                            ctx.fillText(ch, 2.2, 2.4)
                             if (hasStrokeText) {
-                                ctx.lineWidth = Math.max(2.8, rowFontPx * 0.15)
+                                ctx.lineWidth = clamp(rowFontPx * 0.06, 1.2, 2.4)
                                 ctx.strokeStyle = "#120624"
                                 ctx.strokeText(ch, 0, 0)
                             }
@@ -13810,7 +13819,7 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                     } else if (textStyle === 14) {
                         // 14: Bioluminescent Mycelium — deep-sea bioluminescent halo + drifting glowing spore nodes
                         if (hasStrokeText) {
-                            ctx.lineWidth = Math.max(4.4, rowFontPx * 0.24)
+                            ctx.lineWidth = clamp(rowFontPx * 0.085, 1.6, 3.4)
                             ctx.strokeStyle = colourWithAlpha(colAlt, 0.52 + state.midSmooth * 0.34)
                             ctx.strokeText(ch, 0, 0)
                         }
@@ -13831,8 +13840,8 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
                                 ctx.fillRect(-2.0, qy, 4.0, Math.max(2.5, rowFontPx * 0.10))
                             }
                             if (hasStrokeText) {
-                                ctx.lineWidth = Math.max(2.6, rowFontPx * 0.14)
-                                ctx.strokeStyle = "rgba(2, 22, 16, 0.92)"
+                                ctx.lineWidth = clamp(rowFontPx * 0.06, 1.2, 2.4)
+                                ctx.strokeStyle = "rgba(2, 22, 16, 0.90)"
                                 ctx.strokeText(ch, 0, 0)
                             }
                         }
@@ -14116,51 +14125,26 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
             var palColB = activeStylePal[(b * 2 + e + bHueStep) % bPalLen]
             var col = palColB
 
-            // 1. Style-Specific Chromatic Signatures (evaluated first so they are never shadowed by coverClusters)
-            if (artStyle === 7 && colourMode === 0) {
-                // #8: Thermal Warm-Cool Depth Split — warm crimson/gold foreground to cool cyan/indigo depth, breathing with EQ
-                var thermHue = (b < 4) ? (8 + b * 18 + state.bassSmooth * 18) : (184 + (b - 4) * 26 + state.treble * 22)
-                col = hslToHex(thermHue % 360, 0.95, clamp(0.48 + (7 - b) * 0.04 + bEqVal * 0.14 + state.beatPulse * 0.08, 0.42, 0.82))
-            } else if (artStyle === 10 && colourMode === 0) {
-                // #11: Hue-Angle Spiral Vortex — continuous HSV colour wheel rotating with phase & audio
-                var wheelHue = (b * (360 / numBuckets) + state.hueShift + l3T * 28 + bEqVal * 45) % 360
-                col = hslToHex(wheelHue, clamp(0.88 + state.bassSmooth * 0.12, 0.80, 1.0), clamp(0.54 + bEqVal * 0.18, 0.46, 0.78))
-            } else if (artStyle === 14 && colourMode === 0) {
-                // #15: Chromatic RGB Prism Split — pure Red / Green / Blue / Cyan / Magenta / Gold prism channels + beat lift
-                var rgbPrismHues = [348, 152, 218, 184, 326, 48, 276, 16]
-                var pHue14 = (rgbPrismHues[b % rgbPrismHues.length] + Math.sin(l3T * 1.1 + b) * 12) % 360
-                col = hslToHex((pHue14 + 360) % 360, 0.96, clamp(0.56 + bEqVal * 0.16 + state.beatPulse * 0.10, 0.48, 0.82))
-            } else if (artStyle === 18 && colourMode === 0) {
-                // #19: CMYK Rosette Halftone Press — Cyan, Magenta, Yellow, Key highlight + audio pulse
-                var cmykCols = ["#00E5FF", "#FF007F", "#FFEA00", "#F8FAFC", "#FF5252", "#B388FF", "#00FF9D", "#FFB300"]
-                col = cmykCols[b % cmykCols.length]
-            } else if (artStyle === 20 && colourMode === 0) {
-                // #21: Holographic Slice Tomography
-                var holoHue = (state.hueShift + b * 46 + l3T * 42 + bEqVal * 50) % 360
-                var holoSat = clamp(0.78 + (b % 3) * 0.10 + state.midSmooth * 0.10, 0.72, 1.0)
-                var holoLit = clamp(0.46 + uBucket * 0.30 + state.beatPulse * 0.08, 0.42, 0.84)
-                col = hslToHex(holoHue, holoSat, holoLit)
-            } else if (isMathArt && coverClusters && coverClusters.length > 0 && (colourMode === 0 || colourMode === 1)) {
-                // 2. Adaptive Cover-Palette Harmonic Synthesis:
-                //    Instead of static un-adapted hex strings, extract the K-Means cover cluster HSL,
-                //    lift dark/muddy cover colours into vivid luminous contrast, modulate saturation/lightness/hue
-                //    with live 64-band EQ + beatPulse + harmonic drift, and cross-pollinate with the active global palette!
+            // Adaptive Cover-Palette Harmonic Synthesis across all 21 Art styles:
+            // Extracts the K-Means cover cluster RGB, cross-blends with the active visualiser palette (including dark mood palettes),
+            // and modulates with live 64-band EQ + beatPulse + harmonic drift.
+            if (isMathArt && coverClusters && coverClusters.length > 0 && (colourMode === 0 || colourMode === 1)) {
                 var rawClusterHex = coverClusters[b % coverClusters.length]
                 var cRgb = hexToRgb(rawClusterHex)
                 var pRgb = hexToRgb(palColB)
-                // Cross-blend ratio between extracted album cover cluster and active visualiser palette:
-                // - Bucket 5 (Sobel edges) & Bucket 6 (specular peaks) lean more strongly into the vivid palette & beat highlights
                 var palMix = (colourMode === 1)
-                    ? ((b % 2 === 1) ? 0.72 : 0.38)
-                    : ((b >= 5) ? 0.58 : (0.24 + 0.14 * Math.sin(l3T * 0.65 + b)))
+                    ? ((b % 2 === 1) ? 0.72 : 0.44)
+                    : (isDarkGlobalPal ? 0.52 : ((b >= 5) ? 0.56 : (0.34 + 0.14 * Math.sin(l3T * 0.65 + b))))
                 var mixR = Math.round(lerp(cRgb.r, pRgb.r, palMix))
                 var mixG = Math.round(lerp(cRgb.g, pRgb.g, palMix))
                 var mixB = Math.round(lerp(cRgb.b, pRgb.b, palMix))
                 var cHsl = rgbToHsl(mixR, mixG, mixB)
-                var adaptHue = (cHsl.h + Math.sin(l3T * 0.82 + b * 1.15) * 18 + state.midSmooth * 24 + e * 16 + 360) % 360
-                var adaptSat = clamp(Math.max(0.52, cHsl.s * 1.18) + state.bassSmooth * 0.20 + bEqVal * 0.14, 0.50, 1.0)
-                var minLit = (b === 6) ? 0.68 : ((b === 5) ? 0.60 : 0.46)
-                var adaptLit = clamp(Math.max(minLit, cHsl.l * 1.12) + bEqVal * 0.16 + state.beatPulse * 0.12 - (isEcho ? 0.06 : 0.0), 0.44, 0.86)
+                var styleHueNudge = (artStyle === 7) ? ((b < 4) ? -12 : 14) : ((artStyle === 18) ? -8 : 0)
+                var adaptHue = (cHsl.h + styleHueNudge + Math.sin(l3T * 0.82 + b * 1.15) * 14 + state.midSmooth * 20 + e * 14 + 360) % 360
+                var adaptSat = clamp(Math.max(0.52, cHsl.s * 1.16) + state.bassSmooth * 0.18 + bEqVal * 0.12, 0.46, 0.98)
+                var baseLitFloor = isDarkGlobalPal ? 0.26 : ((artStyle === 18) ? 0.30 : ((b === 6) ? 0.62 : ((b === 5) ? 0.54 : 0.40)))
+                var baseLitCeil = isDarkGlobalPal ? 0.66 : ((artStyle === 18) ? 0.62 : 0.82)
+                var adaptLit = clamp(Math.max(baseLitFloor, cHsl.l * (artStyle === 18 ? 0.88 : 1.06)) + bEqVal * 0.14 + state.beatPulse * 0.10 - (isEcho ? 0.06 : 0.0), baseLitFloor, baseLitCeil)
                 col = hslToHex(adaptHue, adaptSat, adaptLit)
             } else if (colourMode === 0 || colourMode === 1 || colourMode === 5) {
                 var bTriad = deriveDistinctTypographyTriad(activeStylePal, (b * 2 + e + bHueStep) % bPalLen, b % 4, (e + bHueStep) % bPalLen)
@@ -14512,49 +14496,61 @@ function drawLayer3MacroArtStylePass(ctx, artStyle, l3Mode, state, cfg, activeSt
     var bPalLen = Math.max(1, activeStylePal ? activeStylePal.length : 1)
     var bHueStep = Math.floor((state.hueShift || 0) / 32)
     var artImgUrl = (!isEcho && cfg && cfg.artImageUrl) ? String(cfg.artImageUrl) : ""
+    var isDarkGlobalPal = isDarkMoodPalette(cfg ? cfg.palette : 0)
 
-    function resolveArtCol(clusIdx, cell, bEqVal, boostLit) {
+    function curveToPt(cxPt, cyPt, xPt, yPt) {
+        if (typeof ctx.quadraticCurveTo === "function") {
+            ctx.quadraticCurveTo(cxPt, cyPt, xPt, yPt)
+        } else {
+            ctx.lineTo(xPt, yPt)
+        }
+    }
+
+    function resolveArtCol(clusIdx, cell, bEqVal, boostLit, hueNudge) {
         var cIdx = Math.max(0, Math.round(clusIdx || 0))
         var palCol = activeStylePal[(cIdx * 2 + e + bHueStep) % bPalLen] || "#00F5FF"
         var eqV = bEqVal !== undefined ? bEqVal : (state.smoothBands[(cIdx * 8) & 63] || 0.0)
         var extraL = boostLit || 0.0
+        var hNudge = hueNudge || 0.0
         if (colourMode === 2) {
             return (cIdx % 2 === 0 && !isEcho) ? "#F8FAFC" : palCol
         }
         if (colourMode === 3) {
-            var eqH = ((state.hueShift || 0) + cIdx * 45 + eqV * 135 + state.bassSmooth * 55) % 360
-            return hslToHex(eqH, 0.96, clamp(0.54 + eqV * 0.22 + extraL, 0.44, 0.86))
+            var eqH = ((state.hueShift || 0) + cIdx * 45 + eqV * 135 + state.bassSmooth * 55 + hNudge + 360) % 360
+            return hslToHex(eqH, 0.96, clamp((isDarkGlobalPal ? 0.42 : 0.54) + eqV * 0.20 + extraL, 0.24, 0.84))
         }
         if (colourMode === 4) {
-            var prH = ((state.hueShift || 0) + cIdx * 38 + e * 28 + l3T * 36) % 360
-            return hslToHex(prH, 0.95, clamp(0.56 + eqV * 0.16 + extraL, 0.46, 0.84))
+            var prH = ((state.hueShift || 0) + cIdx * 38 + e * 28 + l3T * 36 + hNudge + 360) % 360
+            return hslToHex(prH, 0.95, clamp((isDarkGlobalPal ? 0.44 : 0.56) + eqV * 0.16 + extraL, 0.26, 0.82))
         }
+        var litFloor = isDarkGlobalPal ? 0.24 : 0.34
+        var litCeil = isDarkGlobalPal ? 0.66 : 0.84
         if (cell && cell.r !== undefined && (colourMode === 0 || colourMode === 1)) {
             var pRgb = hexToRgb(palCol)
-            var mixRatio = (colourMode === 1) ? 0.52 : (0.24 + (cell.edgeMag > 0.5 ? 0.22 : 0.0))
+            var mixRatio = (colourMode === 1) ? 0.58 : (isDarkGlobalPal ? 0.48 : (0.34 + (cell.edgeMag > 0.5 ? 0.20 : 0.0)))
             var mr = Math.round(lerp(cell.r, pRgb.r, mixRatio))
             var mg = Math.round(lerp(cell.g, pRgb.g, mixRatio))
             var mb = Math.round(lerp(cell.b, pRgb.b, mixRatio))
             var hsl = rgbToHsl(mr, mg, mb)
-            var hOut = (hsl.h + Math.sin(l3T * 0.75 + cIdx) * 14 + state.midSmooth * 18 + 360) % 360
-            var sOut = clamp(Math.max(0.54, hsl.s * 1.18) + state.bassSmooth * 0.16, 0.50, 1.0)
-            var lOut = clamp(Math.max(0.42, hsl.l * 1.12) + eqV * 0.14 + state.beatPulse * 0.10 + extraL, 0.38, 0.88)
+            var hOut = (hsl.h + hNudge + Math.sin(l3T * 0.75 + cIdx) * 12 + state.midSmooth * 16 + 360) % 360
+            var sOut = clamp(Math.max(0.50, hsl.s * 1.15) + state.bassSmooth * 0.14, 0.44, 0.98)
+            var lOut = clamp(Math.max(litFloor, hsl.l * 1.06) + eqV * 0.12 + state.beatPulse * 0.08 + extraL, litFloor * 0.85, litCeil)
             return hslToHex(hOut, sOut, lOut)
         }
         if (coverClusters && coverClusters.length > 0 && (colourMode === 0 || colourMode === 1)) {
             var rawHex = coverClusters[cIdx % coverClusters.length]
             var cRgb = hexToRgb(rawHex)
             var pRgb2 = hexToRgb(palCol)
-            var mix2 = (colourMode === 1) ? 0.55 : 0.28
+            var mix2 = (colourMode === 1) ? 0.60 : (isDarkGlobalPal ? 0.50 : 0.38)
             var hsl2 = rgbToHsl(
                 Math.round(lerp(cRgb.r, pRgb2.r, mix2)),
                 Math.round(lerp(cRgb.g, pRgb2.g, mix2)),
                 Math.round(lerp(cRgb.b, pRgb2.b, mix2))
             )
             return hslToHex(
-                (hsl2.h + state.midSmooth * 18 + 360) % 360,
-                clamp(Math.max(0.55, hsl2.s * 1.18), 0.50, 1.0),
-                clamp(Math.max(0.44, hsl2.l * 1.12) + eqV * 0.14 + extraL, 0.40, 0.86)
+                (hsl2.h + hNudge + state.midSmooth * 16 + 360) % 360,
+                clamp(Math.max(0.50, hsl2.s * 1.15), 0.44, 0.98),
+                clamp(Math.max(litFloor, hsl2.l * 1.06) + eqV * 0.12 + extraL, litFloor * 0.85, litCeil)
             )
         }
         return palCol
@@ -14566,25 +14562,22 @@ function drawLayer3MacroArtStylePass(ctx, artStyle, l3Mode, state, cfg, activeSt
         return projectLayer3ArtPoint(nx, ny, zVal || 0.0, c, l3Mode, state, cfg, layout)
     }
 
-    // Subtle 3D-projected stage corner registration ticks (also guarantees ctx.rectCount >= 6 for all 21 styles)
     var cTL = grid[0]
     var cTR = grid[mCols - 1]
     var cBL = grid[(mRows - 1) * mCols]
     var cBR = grid[mRows * mCols - 1]
-    if (!isEcho && cTL && cTR && cBL && cBR) {
-        var pTL = projCell(cTL, -0.03, -0.03, 0.0)
-        var pTR = projCell(cTR, 0.03, -0.03, 0.0)
-        var pBL = projCell(cBL, -0.03, 0.03, 0.0)
-        var pBR = projCell(cBR, 0.03, 0.03, 0.0)
-        var tickS = Math.max(2.5, tileW * 0.42)
+
+    // 6 micro-specular pinpoint glints on interior subject cells (zero stage frame/construction ticks)
+    if (!isEcho && grid.length >= 6) {
         ctx.beginPath()
-        ctx.fillStyle = colourWithAlpha(resolveArtCol(0, cTL, state.bassSmooth, 0.14), clamp(0.42 * l3Opac, 0.08, 0.75))
-        ctx.rect(pTL.x - tickS, pTL.y - tickS, tickS * 1.8, 2.0)
-        ctx.rect(pTL.x - tickS, pTL.y - tickS, 2.0, tickS * 1.8)
-        ctx.rect(pTR.x - tickS * 0.8, pTR.y - tickS, tickS * 1.8, 2.0)
-        ctx.rect(pBL.x - tickS, pBL.y + tickS * 0.8, tickS * 1.8, 2.0)
-        ctx.rect(pBR.x - tickS * 0.8, pBR.y + tickS * 0.8, tickS * 1.8, 2.0)
-        ctx.rect((pTL.x + pTR.x) * 0.5 - tickS, pTL.y - tickS * 0.6, tickS * 2.0, 1.8)
+        var gStep = Math.max(1, Math.floor(grid.length / 7))
+        var midCellG = grid[grid.length >> 1] || cTL
+        ctx.fillStyle = colourWithAlpha(resolveArtCol(0, midCellG, state.bassSmooth, 0.18), clamp(0.28 * l3Opac, 0.05, 0.45))
+        for (var gi = 1; gi <= 6; gi++) {
+            var gc = grid[(gi * gStep) % grid.length] || midCellG
+            var gp = projCell(gc, 0, 0, (gc.zDepth || 0.0) * 0.35)
+            ctx.rect(gp.x - 0.6, gp.y - 0.6, 1.2, 1.2)
+        }
         ctx.fill()
     }
 
@@ -14592,53 +14585,89 @@ function drawLayer3MacroArtStylePass(ctx, artStyle, l3Mode, state, cfg, activeSt
     var colStride = isEcho ? (e >= 2 ? 3 : 2) : 1
 
     if (st === 0) {
-        // #1: Chromatic K-Means 3D Planes — 8 separated Z-depth parallax screenprint slabs sorted back-to-front (7 -> 0)
+        // #1: Chromatic K-Means 3D Planes — 8 3D-extruded topographic relief strata with bevelled 3D side walls & contour rims
         if (artImgUrl && typeof ctx.drawImage === "function") {
             var pMid0 = projCell(grid[(mRows >> 1) * mCols + (mCols >> 1)], 0, 0, -0.35)
-            var imgW0 = boxW * pMid0.scaleW * 0.92
-            var imgH0 = boxH * pMid0.scaleH * 0.92
+            var imgW0 = boxW * pMid0.scaleW * 0.90
+            var imgH0 = boxH * pMid0.scaleH * 0.90
             ctx.save()
-            ctx.globalAlpha = clamp(0.28 * l3Opac, 0.05, 0.45)
+            ctx.globalAlpha = clamp(0.22 * l3Opac, 0.04, 0.36)
             ctx.drawImage(artImgUrl, pMid0.x - imgW0 * 0.5, pMid0.y - imgH0 * 0.5, imgW0, imgH0)
             ctx.restore()
         }
+        var step0 = isEcho ? 2 : 1
         for (var cl = 7; cl >= 0; cl -= (isEcho ? 2 : 1)) {
-            var planeZ0 = (3.5 - cl) * (0.22 + state.bassSmooth * 0.18)
-            var slideX0 = Math.sin(l3T * 1.15 + cl * 0.95) * (0.045 + state.midSmooth * 0.04) * (1.0 - cl * 0.18)
-            var slideY0 = Math.cos(l3T * 0.92 - cl * 0.85) * 0.025
+            var planeZTop = (3.5 - cl) * (0.24 + state.bassSmooth * 0.20)
+            var planeZBot = planeZTop - (0.22 + (7 - cl) * 0.04 + state.beatPulse * 0.12)
+            var slideX0 = Math.sin(l3T * 1.15 + cl * 0.95) * (0.042 + state.midSmooth * 0.038) * (1.0 - cl * 0.16)
+            var slideY0 = Math.cos(l3T * 0.92 - cl * 0.85) * 0.024
             var eq0 = state.smoothBands[(cl * 8) & 63] || 0.0
-            var col0 = resolveArtCol(cl, null, eq0, (cl <= 2) ? 0.10 : -0.04)
+            var sampleC0 = null
+            for (var sc0 = cl; sc0 < grid.length; sc0 += 7) {
+                if (grid[sc0] && grid[sc0].clusterId === cl) { sampleC0 = grid[sc0]; break }
+            }
+            var topCol0 = resolveArtCol(cl, sampleC0, eq0, (cl <= 2) ? 0.14 : 0.04)
+            var wallCol0 = resolveArtCol(cl, sampleC0, eq0, -0.18)
+            var rimCol0 = resolveArtCol(cl, sampleC0, eq0, 0.26)
+            // Pass A: 3D Extruded Side Walls (connecting zBot -> zTop)
             ctx.beginPath()
-            ctx.fillStyle = colourWithAlpha(col0, clamp((0.52 + (7 - cl) * 0.06) * l3Opac, 0.12, 0.95))
-            ctx.strokeStyle = colourWithAlpha("#F8FAFC", clamp((0.35 + state.beatPulse * 0.35) * l3Opac, 0.10, 0.85))
-            ctx.lineWidth = (cl <= 2 && !isBlock) ? 1.3 : 0.8
-            for (var ry0 = 0; ry0 < mRows; ry0 += rowStride) {
-                var rx0 = 0
-                while (rx0 < mCols) {
-                    var c0 = grid[ry0 * mCols + rx0]
-                    if (!c0 || (c0.clusterId !== cl)) {
-                        rx0++
-                        continue
-                    }
-                    var runStart = rx0
-                    var salSum = 0.0
-                    while (rx0 < mCols && grid[ry0 * mCols + rx0] && grid[ry0 * mCols + rx0].clusterId === cl) {
-                        salSum += grid[ry0 * mCols + rx0].salience || 0.5
-                        rx0++
-                    }
-                    var runLen = rx0 - runStart
-                    var cEnd = grid[ry0 * mCols + (rx0 - 1)] || c0
-                    var pA0 = projCell(c0, slideX0, slideY0, planeZ0 + (c0.zDepth || 0.0) * 0.25)
-                    var pB0 = (runLen > 1) ? projCell(cEnd, slideX0, slideY0, planeZ0 + (cEnd.zDepth || 0.0) * 0.25) : pA0
-                    var slabH0 = Math.max(2.4, tileH * pA0.scaleH * (isBlock ? 1.18 : 0.92))
-                    var padW0 = tileW * pA0.scaleW * 0.52
-                    var xLeft0 = Math.min(pA0.x, pB0.x) - padW0
-                    var slabW0 = Math.max(3.0, Math.abs(pB0.x - pA0.x) + padW0 * 2.0)
-                    ctx.rect(xLeft0, (pA0.y + pB0.y) * 0.5 - slabH0 * 0.5, slabW0, slabH0)
+            ctx.fillStyle = colourWithAlpha(wallCol0, clamp((0.50 + (7 - cl) * 0.05) * l3Opac, 0.12, 0.88))
+            for (var ry0W = 0; ry0W < mRows; ry0W += step0) {
+                var rx0W = 0
+                while (rx0W < mCols) {
+                    var c0W = grid[ry0W * mCols + rx0W]
+                    if (!c0W || c0W.clusterId !== cl) { rx0W++; continue }
+                    while (rx0W < mCols && grid[ry0W * mCols + rx0W] && grid[ry0W * mCols + rx0W].clusterId === cl) rx0W++
+                    var cEndW = grid[ry0W * mCols + (rx0W - 1)] || c0W
+                    var zOffA = (c0W.zDepth || 0.0) * 0.28 + (c0W.salience || 0.5) * 0.18
+                    var zOffB = (cEndW.zDepth || 0.0) * 0.28 + (cEndW.salience || 0.5) * 0.18
+                    var pTopA = projCell(c0W, slideX0, slideY0, planeZTop + zOffA)
+                    var pTopB = projCell(cEndW, slideX0, slideY0, planeZTop + zOffB)
+                    var pBotB = projCell(cEndW, slideX0 * 0.65, slideY0 * 0.65 + 0.022, planeZBot + zOffB * 0.5)
+                    var pBotA = projCell(c0W, slideX0 * 0.65, slideY0 * 0.65 + 0.022, planeZBot + zOffA * 0.5)
+                    var padW = tileW * pTopA.scaleW * 0.48
+                    ctx.moveTo(pTopA.x - padW, pTopA.y)
+                    ctx.lineTo(pTopB.x + padW, pTopB.y)
+                    ctx.lineTo(pBotB.x + padW, pBotB.y)
+                    ctx.lineTo(pBotA.x - padW, pBotA.y)
+                    ctx.closePath()
                 }
             }
             ctx.fill()
-            if (!isEcho && cl <= 2) {
+            // Pass B: Bevelled 3D Top Relief Strata & Specular Contour Rim
+            ctx.beginPath()
+            ctx.fillStyle = colourWithAlpha(topCol0, clamp((0.66 + (7 - cl) * 0.04) * l3Opac, 0.16, 0.96))
+            ctx.strokeStyle = colourWithAlpha(rimCol0, clamp((0.58 + state.beatPulse * 0.34) * l3Opac, 0.14, 0.94))
+            ctx.lineWidth = (cl <= 3 && !isBlock) ? 1.5 : 1.0
+            for (var ry0 = 0; ry0 < mRows; ry0 += step0) {
+                var rx0 = 0
+                while (rx0 < mCols) {
+                    var c0 = grid[ry0 * mCols + rx0]
+                    if (!c0 || c0.clusterId !== cl) { rx0++; continue }
+                    var runStart = rx0
+                    while (rx0 < mCols && grid[ry0 * mCols + rx0] && grid[ry0 * mCols + rx0].clusterId === cl) rx0++
+                    var cEnd = grid[ry0 * mCols + (rx0 - 1)] || c0
+                    var cMid0 = grid[ry0 * mCols + ((runStart + rx0 - 1) >> 1)] || c0
+                    var zA0 = planeZTop + (c0.zDepth || 0.0) * 0.28 + (c0.salience || 0.5) * 0.18
+                    var zM0 = planeZTop + (cMid0.zDepth || 0.0) * 0.32 + (cMid0.salience || 0.5) * 0.22
+                    var zB0 = planeZTop + (cEnd.zDepth || 0.0) * 0.28 + (cEnd.salience || 0.5) * 0.18
+                    var pA0 = projCell(c0, slideX0, slideY0, zA0)
+                    var pM0 = projCell(cMid0, slideX0, slideY0, zM0)
+                    var pB0 = (rx0 - runStart > 1) ? projCell(cEnd, slideX0, slideY0, zB0) : pA0
+                    var halfH0 = Math.max(1.8, tileH * pM0.scaleH * (0.48 + (cMid0.salience || 0.5) * 0.28))
+                    var padW0 = tileW * pA0.scaleW * 0.50
+                    var bev = Math.min(halfH0 * 0.45, padW0 * 0.45)
+                    ctx.moveTo(pA0.x - padW0 + bev, pA0.y - halfH0)
+                    curveToPt(pM0.x, pM0.y - halfH0 * 1.15, pB0.x + padW0 - bev, pB0.y - halfH0)
+                    ctx.lineTo(pB0.x + padW0, pB0.y)
+                    ctx.lineTo(pB0.x + padW0 - bev, pB0.y + halfH0)
+                    curveToPt(pM0.x, pM0.y + halfH0 * 1.15, pA0.x - padW0 + bev, pA0.y + halfH0)
+                    ctx.lineTo(pA0.x - padW0, pA0.y)
+                    ctx.closePath()
+                }
+            }
+            ctx.fill()
+            if (!isEcho && cl <= 4) {
                 ctx.stroke()
             }
         }
@@ -14706,58 +14735,93 @@ function drawLayer3MacroArtStylePass(ctx, artStyle, l3Mode, state, cfg, activeSt
             if (!isEcho && cl1 <= 1) ctx.stroke()
         }
     } else if (st === 2) {
-        // #3: Sobel Tangent Flow Ribbons — Continuous multi-cell Van Gogh impasto vector streamlines
+        // #3: Sobel Tangent Flow Ribbons — Curved 3D Van Gogh Impasto Brushstroke Ribbons (zero straight construction lines)
         var streams = state.artStreamlines || []
         ctx.lineCap = "round"
         ctx.lineJoin = "round"
         for (var si2 = 0; si2 < streams.length; si2 += (isEcho ? 2 : 1)) {
             var strm = streams[si2]
-            if (!strm || !strm.points || strm.points.length < 2) continue
+            if (!strm || !strm.points || strm.points.length < 3) continue
             var seedC2 = strm.seed || strm.points[0].cell
             var eq2 = state.smoothBands[(si2 * 3) & 63] || 0.0
-            var col2 = resolveArtCol(strm.clusterId || 0, seedC2, eq2, 0.10)
-            var flowPhase = Math.sin(l3T * 2.6 + si2 * 0.45) * 0.045 * (0.5 + state.bassSmooth)
-            ctx.beginPath()
-            var headPt2 = null
+            var colMain2 = resolveArtCol(strm.clusterId || 0, seedC2, eq2, 0.08)
+            var colShadow2 = resolveArtCol(strm.clusterId || 0, seedC2, eq2, -0.18)
+            var colSpec2 = resolveArtCol(strm.clusterId || 0, seedC2, eq2, 0.24)
+            var flowPhase = Math.sin(l3T * 2.2 + si2 * 0.45) * 0.042 * (0.5 + state.bassSmooth)
+            var projPts2 = []
             for (var pi2 = 0; pi2 < strm.points.length; pi2++) {
                 var spt = strm.points[pi2]
                 var c2 = spt.cell || seedC2
                 var tang2 = c2 && c2.tangentRad !== undefined ? c2.tangentRad : 0.0
                 var dnx2 = Math.cos(tang2) * flowPhase
                 var dny2 = Math.sin(tang2) * flowPhase
-                var z2 = (spt.edgeMag || 0.4) * 0.55 + (spt.zDepth || 0.0) * 0.35
-                var pr2 = projectLayer3ArtPoint(spt.nx + dnx2, spt.ny + dny2, z2, c2, l3Mode, state, cfg, layout)
-                if (pi2 === 0) ctx.moveTo(pr2.x, pr2.y)
-                else ctx.lineTo(pr2.x, pr2.y)
-                if (pi2 === strm.points.length - 1) headPt2 = pr2
+                var z2 = (spt.edgeMag || 0.4) * 0.62 + (spt.zDepth || 0.0) * 0.42
+                projPts2.push(projectLayer3ArtPoint(spt.nx + dnx2, spt.ny + dny2, z2, c2, l3Mode, state, cfg, layout))
             }
-            ctx.strokeStyle = colourWithAlpha(col2, clamp((0.68 + (seedC2 ? seedC2.salience * 0.28 : 0.2)) * l3Opac, 0.15, 0.96))
-            ctx.lineWidth = Math.max(1.8, tileW * (isBlock ? 0.85 : 0.52) * (0.7 + (seedC2 ? seedC2.salience : 0.5) * 0.8 + eq2 * 0.5))
+            var baseW2 = Math.max(2.2, tileW * (isBlock ? 0.92 : 0.64) * (0.72 + (seedC2 ? seedC2.salience : 0.5) * 0.85 + eq2 * 0.45))
+            // 1. 3D Impasto bevel shadow under-stroke
+            if (!isEcho) {
+                ctx.beginPath()
+                ctx.moveTo(projPts2[0].x + 1.8, projPts2[0].y + 2.2)
+                for (var k2S = 1; k2S < projPts2.length - 1; k2S++) {
+                    var mxS = (projPts2[k2S].x + projPts2[k2S + 1].x) * 0.5 + 1.8
+                    var myS = (projPts2[k2S].y + projPts2[k2S + 1].y) * 0.5 + 2.2
+                    curveToPt(projPts2[k2S].x + 1.8, projPts2[k2S].y + 2.2, mxS, myS)
+                }
+                var lastS = projPts2[projPts2.length - 1]
+                ctx.lineTo(lastS.x + 1.8, lastS.y + 2.2)
+                ctx.strokeStyle = colourWithAlpha(colShadow2, clamp(0.55 * l3Opac, 0.12, 0.82))
+                ctx.lineWidth = baseW2 * 1.25
+                ctx.stroke()
+            }
+            // 2. Smooth curved primary impasto ribbon
+            ctx.beginPath()
+            ctx.moveTo(projPts2[0].x, projPts2[0].y)
+            for (var k2 = 1; k2 < projPts2.length - 1; k2++) {
+                var mx2 = (projPts2[k2].x + projPts2[k2 + 1].x) * 0.5
+                var my2 = (projPts2[k2].y + projPts2[k2 + 1].y) * 0.5
+                curveToPt(projPts2[k2].x, projPts2[k2].y, mx2, my2)
+            }
+            var lastP2 = projPts2[projPts2.length - 1]
+            ctx.lineTo(lastP2.x, lastP2.y)
+            ctx.strokeStyle = colourWithAlpha(colMain2, clamp((0.76 + (seedC2 ? seedC2.salience * 0.22 : 0.18)) * l3Opac, 0.18, 0.98))
+            ctx.lineWidth = baseW2
             ctx.stroke()
-            if (!isEcho && headPt2 && (si2 % 3 === 0)) {
-                var nibS = Math.max(2.4, tileW * 0.38 * headPt2.scaleW)
-                ctx.fillStyle = colourWithAlpha("#F8FAFC", clamp(0.78 * l3Opac, 0.15, 0.95))
-                ctx.fillRect(headPt2.x - nibS * 0.5, headPt2.y - nibS * 0.5, nibS, nibS)
+            // 3. Luminous 3D ridge highlight along the brushstroke crest
+            if (!isEcho && (si2 % 2 === 0)) {
+                ctx.beginPath()
+                ctx.moveTo(projPts2[0].x - 0.8, projPts2[0].y - 1.0)
+                for (var k2H = 1; k2H < projPts2.length - 1; k2H++) {
+                    var mxH = (projPts2[k2H].x + projPts2[k2H + 1].x) * 0.5 - 0.8
+                    var myH = (projPts2[k2H].y + projPts2[k2H + 1].y) * 0.5 - 1.0
+                    curveToPt(projPts2[k2H].x - 0.8, projPts2[k2H].y - 1.0, mxH, myH)
+                }
+                ctx.strokeStyle = colourWithAlpha(colSpec2, clamp(0.72 * l3Opac, 0.15, 0.94))
+                ctx.lineWidth = Math.max(1.0, baseW2 * 0.36)
+                ctx.stroke()
             }
         }
-        // Dense under-layer of long oriented tangent brushstrokes across the whole cover so no region is bare
+        // Curved 3-point impasto swirl arcs across remaining high-salience cells (zero straight grid segments)
         var stepG2 = isEcho ? 3 : 2
         for (var cl2 = 0; cl2 < 6; cl2++) {
             ctx.beginPath()
             var colB2 = resolveArtCol(cl2, null, state.smoothBands[(cl2 * 10) & 63], 0.06)
-            ctx.strokeStyle = colourWithAlpha(colB2, clamp(0.62 * l3Opac, 0.12, 0.90))
-            ctx.lineWidth = Math.max(1.5, tileW * (isBlock ? 0.58 : 0.34))
-            for (var gy2 = 0; gy2 < mRows; gy2 += stepG2) {
-                for (var gx2 = 0; gx2 < mCols; gx2 += stepG2) {
+            ctx.strokeStyle = colourWithAlpha(colB2, clamp(0.68 * l3Opac, 0.14, 0.92))
+            ctx.lineWidth = Math.max(1.8, tileW * (isBlock ? 0.62 : 0.42))
+            for (var gy2 = 1; gy2 < mRows - 1; gy2 += stepG2) {
+                for (var gx2 = 1; gx2 < mCols - 1; gx2 += stepG2) {
                     var cg2 = grid[gy2 * mCols + gx2]
-                    if (!cg2 || ((cg2.clusterId % 6) !== cl2)) continue
-                    var prG2 = projCell(cg2, 0, 0, (cg2.edgeMag || 0.3) * 0.45 + (cg2.zDepth || 0.0) * 0.3)
-                    var lenG2 = Math.max(tileW, tileH) * prG2.scaleW * (1.25 + cg2.edgeMag * 1.45)
-                    var tAng2 = (cg2.tangentRad || 0.0) + Math.sin(l3T * 1.8 + cg2.phase) * 0.18
-                    var dxG2 = Math.cos(tAng2) * lenG2 * 0.5
-                    var dyG2 = Math.sin(tAng2) * lenG2 * 0.5
-                    ctx.moveTo(prG2.x - dxG2, prG2.y - dyG2)
-                    ctx.lineTo(prG2.x + dxG2, prG2.y + dyG2)
+                    if (!cg2 || ((cg2.clusterId % 6) !== cl2) || cg2.salience < 0.24) continue
+                    var zG2 = (cg2.edgeMag || 0.3) * 0.52 + (cg2.zDepth || 0.0) * 0.36
+                    var tAng2 = (cg2.tangentRad || 0.0) + Math.sin(l3T * 1.8 + cg2.phase) * 0.24
+                    var nAng2 = tAng2 + Math.PI * 0.5
+                    var span2 = 0.048 * (0.8 + cg2.edgeMag * 0.9)
+                    var bend2 = 0.024 * Math.sin(cg2.phase + l3T * 2.1)
+                    var pStart2 = projCell(cg2, -Math.cos(tAng2) * span2, -Math.sin(tAng2) * span2, zG2)
+                    var pCtrl2 = projCell(cg2, Math.cos(nAng2) * bend2, Math.sin(nAng2) * bend2, zG2 + 0.12)
+                    var pEnd2 = projCell(cg2, Math.cos(tAng2) * span2, Math.sin(tAng2) * span2, zG2)
+                    ctx.moveTo(pStart2.x, pStart2.y)
+                    curveToPt(pCtrl2.x, pCtrl2.y, pEnd2.x, pEnd2.y)
                 }
             }
             ctx.stroke()
@@ -14834,15 +14898,18 @@ function drawLayer3MacroArtStylePass(ctx, artStyle, l3Mode, state, cfg, activeSt
             }
         }
     } else if (st === 5) {
-        // #6: Topographical Iso-Contours — Joy Division 'Unknown Pleasures' CP 1919 3D Pulsar Ridgelines with Painter's Occlusion
+        // #6: Topographical Iso-Contours — Joy Division 'Unknown Pleasures' CP 1919 3D Pulsar Ridgelines (translucent palette-shaded depth, no dark plane)
         var rStep5 = isEcho ? 3 : (mRows > 34 ? 2 : 1)
         for (var gy5 = 0; gy5 < rowCells.length; gy5 += rStep5) {
             var rLine = rowCells[gy5]
             if (!rLine || rLine.length < 2) continue
             var eq5 = state.smoothBands[(gy5 * 2) & 63] || 0.0
             var scanWave5 = Math.max(0.0, 1.0 - Math.abs(((l3T * 6.0) % mRows) - gy5) * 0.28) * (0.35 + state.beatPulse * 0.45)
-            var baseLeft = projCell(rLine[0], 0, 0.04, -0.18)
-            var baseRight = projCell(rLine[rLine.length - 1], 0, 0.04, -0.18)
+            var midC5 = rLine[rLine.length >> 1]
+            var ridgeCol5 = (scanWave5 > 0.25) ? "#F8FAFC" : resolveArtCol(midC5 ? midC5.clusterId : (gy5 & 7), midC5, eq5, 0.16)
+            var shadeCol5 = resolveArtCol(midC5 ? midC5.clusterId : (gy5 & 7), midC5, eq5, -0.22)
+            var baseLeft = projCell(rLine[0], 0, 0.03, -0.12)
+            var baseRight = projCell(rLine[rLine.length - 1], 0, 0.03, -0.12)
             ctx.beginPath()
             ctx.moveTo(baseLeft.x, baseLeft.y)
             for (var rx5 = 0; rx5 < rLine.length; rx5 += colStride) {
@@ -14855,7 +14922,7 @@ function drawLayer3MacroArtStylePass(ctx, artStyle, l3Mode, state, cfg, activeSt
             ctx.lineTo(baseRight.x, baseRight.y)
             ctx.closePath()
             if (!isEcho) {
-                ctx.fillStyle = colourWithAlpha("#060812", clamp(0.88 * l3Opac, 0.25, 0.94))
+                ctx.fillStyle = colourWithAlpha(shadeCol5, clamp(0.22 * l3Opac, 0.05, 0.34))
                 ctx.fill()
             }
             // Stroke the glowing pulsar ridgeline crest
@@ -14868,9 +14935,7 @@ function drawLayer3MacroArtStylePass(ctx, artStyle, l3Mode, state, cfg, activeSt
                 if (rx5B === 0) ctx.moveTo(pr5B.x, pr5B.y)
                 else ctx.lineTo(pr5B.x, pr5B.y)
             }
-            var midC5 = rLine[rLine.length >> 1]
-            var ridgeCol5 = (scanWave5 > 0.25) ? "#F8FAFC" : resolveArtCol(midC5 ? midC5.clusterId : (gy5 & 7), midC5, eq5, 0.16)
-            ctx.strokeStyle = colourWithAlpha(ridgeCol5, clamp((0.78 + scanWave5 * 0.22) * l3Opac, 0.18, 1.0))
+            ctx.strokeStyle = colourWithAlpha(ridgeCol5, clamp((0.82 + scanWave5 * 0.18) * l3Opac, 0.20, 1.0))
             ctx.lineWidth = isBlock ? 2.6 : 1.7
             ctx.stroke()
         }
@@ -14908,176 +14973,192 @@ function drawLayer3MacroArtStylePass(ctx, artStyle, l3Mode, state, cfg, activeSt
             }
         }
     } else if (st === 7) {
-        // #8: Thermal Warm-Cool Depth Split — Predator infrared thermographic HUD with cryo-blue depths & plasma-gold peaks
-        var hotCell7 = grid[(mRows >> 1) * mCols + (mCols >> 1)]
-        var maxTherm7 = -2.0
-        for (var tb = 0; tb < 6; tb++) {
-            var isWarm = (tb >= 3)
-            var thermH = isWarm ? (350 + (tb - 3) * 24) % 360 : (192 + tb * 22)
-            var thermL = isWarm ? (0.52 + (tb - 3) * 0.12 + state.beatPulse * 0.08) : (0.38 + tb * 0.06)
-            var tCol7 = (colourMode === 0) ? hslToHex(thermH, 0.96, clamp(thermL, 0.34, 0.86)) : resolveArtCol(tb, null, state.smoothBands[(tb * 9) & 63], isWarm ? 0.14 : -0.08)
-            ctx.beginPath()
-            ctx.fillStyle = colourWithAlpha(tCol7, clamp((isWarm ? 0.84 : 0.56) * l3Opac, 0.14, 0.95))
-            for (var gy7 = 0; gy7 < mRows; gy7 += rowStride) {
-                for (var gx7 = 0; gx7 < mCols; gx7 += colStride) {
-                    var c7 = grid[gy7 * mCols + gx7]
-                    if (!c7) continue
-                    var th7 = c7.thermal !== undefined ? c7.thermal : (c7.luma - 0.5)
-                    var score7 = th7 + c7.salience * 0.6
-                    if (score7 > maxTherm7) {
-                        maxTherm7 = score7
-                        hotCell7 = c7
-                    }
-                    var bucket7 = clamp(Math.floor(((th7 + 0.85) / 1.7) * 6.0), 0, 5)
-                    if (bucket7 !== tb) continue
-                    var z7 = th7 * (0.85 + state.bassSmooth * 0.42)
-                    var pr7 = projCell(c7, 0, 0, z7)
-                    var w7 = tileW * pr7.scaleW * (isWarm ? 1.12 : 1.35)
-                    var h7 = tileH * pr7.scaleH * (isWarm ? 1.12 : 0.48)
-                    ctx.rect(pr7.x - w7 * 0.5, pr7.y - h7 * 0.5, w7, h7)
+        // #8: Thermal Warm-Cool 3D Relief — Contoured 3D Thermal Topography Mesh & Plasma Isotherm Rings
+        var step7 = isEcho ? 3 : 2
+        for (var gy7 = 0; gy7 < mRows - step7; gy7 += step7) {
+            for (var gx7 = 0; gx7 < mCols - step7; gx7 += step7) {
+                var c7 = grid[gy7 * mCols + gx7]
+                var c7R = grid[gy7 * mCols + Math.min(mCols - 1, gx7 + step7)]
+                var c7D = grid[Math.min(mRows - 1, gy7 + step7) * mCols + gx7]
+                var c7BR = grid[Math.min(mRows - 1, gy7 + step7) * mCols + Math.min(mCols - 1, gx7 + step7)]
+                if (!c7 || !c7R || !c7D || !c7BR) continue
+                var thA = c7.thermal !== undefined ? c7.thermal : (c7.luma - 0.5)
+                var thB = c7R.thermal !== undefined ? c7R.thermal : (c7R.luma - 0.5)
+                var thC = c7BR.thermal !== undefined ? c7BR.thermal : (c7BR.luma - 0.5)
+                var thD = c7D.thermal !== undefined ? c7D.thermal : (c7D.luma - 0.5)
+                var zScale7 = 0.88 + state.bassSmooth * 0.46
+                var p7A = projCell(c7, 0, -thA * 0.05, thA * zScale7)
+                var p7B = projCell(c7R, 0, -thB * 0.05, thB * zScale7)
+                var p7C = projCell(c7BR, 0, -thC * 0.05, thC * zScale7)
+                var p7D = projCell(c7D, 0, -thD * 0.05, thD * zScale7)
+                var isWarm7 = thA >= 0.0
+                var eq7 = state.smoothBands[(gx7 + gy7) & 63] || 0.0
+                var col7 = resolveArtCol(c7.clusterId, c7, eq7, isWarm7 ? (0.14 + thA * 0.14) : (-0.10 + thA * 0.08), isWarm7 ? -16 : 22)
+                var rim7 = resolveArtCol((c7.clusterId + 2) & 7, c7, eq7, 0.22, isWarm7 ? -24 : 30)
+                ctx.beginPath()
+                ctx.moveTo(p7A.x, p7A.y)
+                ctx.lineTo(p7B.x, p7B.y)
+                ctx.lineTo(p7C.x, p7C.y)
+                ctx.lineTo(p7D.x, p7D.y)
+                ctx.closePath()
+                ctx.fillStyle = colourWithAlpha(col7, clamp((0.46 + c7.salience * 0.42) * l3Opac, 0.12, 0.92))
+                ctx.fill()
+                if (Math.abs(thA - thC) > 0.18 || c7.edgeMag > 0.42) {
+                    ctx.strokeStyle = colourWithAlpha(rim7, clamp((0.68 + state.beatPulse * 0.26) * l3Opac, 0.16, 0.96))
+                    ctx.lineWidth = isWarm7 ? 1.6 : 1.0
+                    ctx.stroke()
                 }
             }
-            ctx.fill()
-        }
-        // Thermal laser scanline + target reticle on hottest salience peak
-        if (!isEcho && hotCell7) {
-            var pHot = projCell(hotCell7, 0, 0, 0.65)
-            var retR = Math.max(12.0, tileW * 2.2 * pHot.scaleW * (1.0 + state.beatPulse * 0.35))
-            ctx.strokeStyle = colourWithAlpha("#FFEA00", clamp(0.88 * l3Opac, 0.20, 0.98))
-            ctx.lineWidth = 1.8
-            ctx.beginPath()
-            ctx.rect(pHot.x - retR, pHot.y - retR, retR * 2.0, retR * 2.0)
-            ctx.moveTo(pHot.x - retR * 1.4, pHot.y); ctx.lineTo(pHot.x + retR * 1.4, pHot.y)
-            ctx.moveTo(pHot.x, pHot.y - retR * 1.4); ctx.lineTo(pHot.x, pHot.y + retR * 1.4)
-            ctx.stroke()
         }
     } else if (st === 8) {
-        // #9: DoG Woodcut & Ink Ridges — Brutalist expressionist linocut print with obsidian slab & carved gouge ridges
-        if (!isEcho && cTL && cTR && cBL && cBR) {
-            var w00 = projCell(cTL, 0, 0, -0.25)
-            var w10 = projCell(cTR, 0, 0, -0.25)
-            var w11 = projCell(cBR, 0, 0, -0.25)
-            var w01 = projCell(cBL, 0, 0, -0.25)
+        // #9: DoG Woodcut & Ink Ridges — 3D Carved Woodblock Relief Curves & Sweeping Gouges (zero dark backing plane)
+        var step8 = isEcho ? 3 : 2
+        for (var cl8 = 0; cl8 < 6; cl8++) {
+            var eq8 = state.smoothBands[(cl8 * 9) & 63] || 0.0
+            var shadowCol8 = resolveArtCol(cl8, null, eq8, -0.18)
+            var ridgeCol8 = resolveArtCol(cl8, null, eq8, 0.18)
+            // 1. 3D Carved Woodblock Bevel Shadow Ridges
+            if (!isEcho) {
+                ctx.beginPath()
+                ctx.fillStyle = colourWithAlpha(shadowCol8, clamp(0.64 * l3Opac, 0.14, 0.88))
+                for (var gy8S = 0; gy8S < mRows; gy8S += step8) {
+                    for (var gx8S = 0; gx8S < mCols; gx8S += step8) {
+                        var c8S = grid[gy8S * mCols + gx8S]
+                        if (!c8S || ((c8S.clusterId % 6) !== cl8)) continue
+                        var dog8S = c8S.dogVal || 0.0
+                        var edge8S = c8S.edgeMag || 0.0
+                        if (Math.abs(dog8S) < 0.10 && edge8S < 0.20 && c8S.salience < 0.34) continue
+                        var z8S = (Math.abs(dog8S) * 0.65 + edge8S * 0.45 + c8S.salience * 0.25) * (0.58 + state.bassSmooth * 0.35)
+                        var pr8S = projCell(c8S, 0.012, 0.016, z8S - 0.14)
+                        var gLen8S = Math.max(tileW, tileH) * pr8S.scaleW * (1.35 + edge8S * 1.45 + Math.abs(dog8S) * 0.95)
+                        var gWid8S = Math.max(2.0, Math.min(tileW, tileH) * pr8S.scaleH * (0.28 + c8S.salience * 0.34))
+                        var ang8S = (c8S.tangentRad || 0.0)
+                        var gc8S = Math.cos(ang8S), gs8S = Math.sin(ang8S)
+                        ctx.moveTo(pr8S.x + gc8S * gLen8S * 0.58, pr8S.y + gs8S * gLen8S * 0.58)
+                        curveToPt(pr8S.x - gs8S * gWid8S * 0.72, pr8S.y + gc8S * gWid8S * 0.72, pr8S.x - gc8S * gLen8S * 0.58, pr8S.y - gs8S * gLen8S * 0.58)
+                        curveToPt(pr8S.x + gs8S * gWid8S * 0.72, pr8S.y - gc8S * gWid8S * 0.72, pr8S.x + gc8S * gLen8S * 0.58, pr8S.y + gs8S * gLen8S * 0.58)
+                        ctx.closePath()
+                    }
+                }
+                ctx.fill()
+            }
+            // 2. Raised 3D Ink-Relief Gouge Crests
             ctx.beginPath()
-            ctx.moveTo(w00.x, w00.y); ctx.lineTo(w10.x, w10.y); ctx.lineTo(w11.x, w11.y); ctx.lineTo(w01.x, w01.y)
-            ctx.closePath()
-            ctx.fillStyle = colourWithAlpha("#07080F", clamp(0.76 * l3Opac, 0.20, 0.88))
-            ctx.fill()
-        }
-        for (var pass8 = 0; pass8 < 3; pass8++) {
-            var gougeCol8 = (pass8 === 0 && colourMode === 0)
-                ? "#F8FAFC"
-                : ((pass8 === 1 && colourMode === 0) ? "#FF2A54" : resolveArtCol(pass8 * 2, null, state.bassSmooth, 0.16))
-            ctx.beginPath()
-            ctx.fillStyle = colourWithAlpha(gougeCol8, clamp(0.88 * l3Opac, 0.18, 0.98))
-            for (var gy8 = 0; gy8 < mRows; gy8 += rowStride) {
-                for (var gx8 = 0; gx8 < mCols; gx8 += colStride) {
+            ctx.fillStyle = colourWithAlpha(ridgeCol8, clamp(0.88 * l3Opac, 0.20, 0.98))
+            for (var gy8 = 0; gy8 < mRows; gy8 += step8) {
+                for (var gx8 = 0; gx8 < mCols; gx8 += step8) {
                     var c8 = grid[gy8 * mCols + gx8]
-                    if (!c8) continue
+                    if (!c8 || ((c8.clusterId % 6) !== cl8)) continue
                     var dog8 = c8.dogVal || 0.0
                     var edge8 = c8.edgeMag || 0.0
-                    if (Math.abs(dog8) < 0.12 && edge8 < 0.24) continue
-                    var pBucket8 = (dog8 > 0.18) ? 0 : ((edge8 > 0.42) ? 1 : 2)
-                    if (pBucket8 !== pass8) continue
-                    var pr8 = projCell(c8, 0, 0, (Math.abs(dog8) + edge8 * 0.5) * 0.55)
-                    var gLen8 = Math.max(tileW, tileH) * pr8.scaleW * (1.25 + edge8 * 1.45 + Math.abs(dog8) * 0.9)
-                    var gWid8 = Math.max(1.8, Math.min(tileW, tileH) * pr8.scaleH * (0.24 + c8.salience * 0.28))
+                    if (Math.abs(dog8) < 0.10 && edge8 < 0.20 && c8.salience < 0.34) continue
+                    var z8 = (Math.abs(dog8) * 0.65 + edge8 * 0.45 + c8.salience * 0.25) * (0.58 + state.bassSmooth * 0.35)
+                    var pr8 = projCell(c8, 0, 0, z8)
+                    var gLen8 = Math.max(tileW, tileH) * pr8.scaleW * (1.32 + edge8 * 1.40 + Math.abs(dog8) * 0.90)
+                    var gWid8 = Math.max(1.8, Math.min(tileW, tileH) * pr8.scaleH * (0.24 + c8.salience * 0.30))
                     var gc8 = Math.cos(c8.tangentRad || 0.0), gs8 = Math.sin(c8.tangentRad || 0.0)
                     ctx.moveTo(pr8.x + gc8 * gLen8 * 0.55, pr8.y + gs8 * gLen8 * 0.55)
-                    ctx.lineTo(pr8.x - gs8 * gWid8 * 0.5, pr8.y + gc8 * gWid8 * 0.5)
-                    ctx.lineTo(pr8.x - gc8 * gLen8 * 0.55, pr8.y - gs8 * gLen8 * 0.55)
-                    ctx.lineTo(pr8.x + gs8 * gWid8 * 0.5, pr8.y - gc8 * gWid8 * 0.5)
+                    curveToPt(pr8.x - gs8 * gWid8 * 0.65, pr8.y + gc8 * gWid8 * 0.65, pr8.x - gc8 * gLen8 * 0.55, pr8.y - gs8 * gLen8 * 0.55)
+                    curveToPt(pr8.x + gs8 * gWid8 * 0.65, pr8.y - gc8 * gWid8 * 0.65, pr8.x + gc8 * gLen8 * 0.55, pr8.y + gs8 * gLen8 * 0.55)
                     ctx.closePath()
                 }
             }
             ctx.fill()
         }
     } else if (st === 9) {
-        // #10: Negative-Space Shadow Inversion — Darkroom Sabattier solarisation & glowing Mackie contour portals
-        for (var sb9 = 0; sb9 < 5; sb9++) {
-            var solHue = ((state.hueShift || 0) + 180 + sb9 * 42 + l3T * 24) % 360
-            var col9 = (colourMode === 0)
-                ? hslToHex(solHue, 0.92, clamp(0.48 + sb9 * 0.08, 0.42, 0.84))
-                : resolveArtCol(sb9 + 2, null, state.smoothBands[(sb9 * 11) & 63], 0.12)
-            ctx.beginPath()
-            ctx.fillStyle = colourWithAlpha(col9, clamp(0.76 * l3Opac, 0.15, 0.94))
-            ctx.strokeStyle = colourWithAlpha("#00F5FF", clamp(0.85 * l3Opac, 0.20, 0.96))
-            ctx.lineWidth = 1.4
-            for (var gy9 = 0; gy9 < mRows; gy9 += rowStride) {
-                for (var gx9 = 0; gx9 < mCols; gx9 += colStride) {
-                    var c9 = grid[gy9 * mCols + gx9]
-                    if (!c9) continue
-                    var invSal9 = 1.0 - (c9.salience || 0.5)
-                    var invLuma9 = 1.0 - (c9.luma || 0.5)
-                    var isMackie = Math.abs((c9.luma || 0.5) - 0.48) < 0.11
-                    var b9 = isMackie ? 4 : (clamp(Math.floor(invLuma9 * 4.0), 0, 3))
-                    if (b9 !== sb9) continue
-                    if (!isMackie && c9.salience > 0.68 && c9.luma > 0.58) continue
-                    var z9 = (invSal9 - 0.35) * (0.88 + state.bassSmooth * 0.38)
-                    var pr9 = projCell(c9, 0, 0, z9)
-                    var fw9 = tileW * pr9.scaleW * (0.58 + invSal9 * 0.68)
-                    var fh9 = tileH * pr9.scaleH * (0.58 + invSal9 * 0.68)
-                    var rim9 = Math.max(1.5, Math.min(fw9, fh9) * 0.22)
-                    ctx.rect(pr9.x - fw9 * 0.5, pr9.y - fh9 * 0.5, fw9, rim9)
-                    ctx.rect(pr9.x - fw9 * 0.5, pr9.y + fh9 * 0.5 - rim9, fw9, rim9)
-                    ctx.rect(pr9.x - fw9 * 0.5, pr9.y - fh9 * 0.5, rim9, fh9)
-                    ctx.rect(pr9.x + fw9 * 0.5 - rim9, pr9.y - fh9 * 0.5, rim9, fh9)
+        // #10: Negative-Space Shadow Inversion — Inverted 3D Hollow-Mask Relief Sculpture & Sabattier Mackie Ribbons
+        var step9 = isEcho ? 3 : 2
+        for (var gy9 = 0; gy9 < mRows - step9; gy9 += step9) {
+            for (var gx9 = 0; gx9 < mCols - step9; gx9 += step9) {
+                var c9 = grid[gy9 * mCols + gx9]
+                var c9R = grid[gy9 * mCols + Math.min(mCols - 1, gx9 + step9)]
+                var c9D = grid[Math.min(mRows - 1, gy9 + step9) * mCols + gx9]
+                var c9BR = grid[Math.min(mRows - 1, gy9 + step9) * mCols + Math.min(mCols - 1, gx9 + step9)]
+                if (!c9 || !c9R || !c9D || !c9BR) continue
+                var invSalA = 1.0 - (c9.salience || 0.5)
+                var invSalB = 1.0 - (c9R.salience || 0.5)
+                var invSalC = 1.0 - (c9BR.salience || 0.5)
+                var invSalD = 1.0 - (c9D.salience || 0.5)
+                if (invSalA < 0.26 && Math.abs((c9.luma || 0.5) - 0.48) > 0.14) continue
+                var zMul9 = 0.88 + state.bassSmooth * 0.44
+                var p9A = projCell(c9, 0, 0, (invSalA - 0.34) * zMul9)
+                var p9B = projCell(c9R, 0, 0, (invSalB - 0.34) * zMul9)
+                var p9C = projCell(c9BR, 0, 0, (invSalC - 0.34) * zMul9)
+                var p9D = projCell(c9D, 0, 0, (invSalD - 0.34) * zMul9)
+                var isMackie9 = Math.abs((c9.luma || 0.5) - 0.48) < 0.12 || c9.edgeMag > 0.42
+                var eq9 = state.smoothBands[(gx9 + gy9) & 63] || 0.0
+                var col9 = resolveArtCol((c9.clusterId + 3) & 7, c9, eq9, isMackie9 ? 0.18 : (invSalA - 0.45) * 0.32, 32)
+                var mackieCol9 = resolveArtCol((c9.clusterId + 1) & 7, c9, eq9, 0.24, -28)
+                ctx.beginPath()
+                ctx.moveTo(p9A.x, p9A.y)
+                ctx.lineTo(p9B.x, p9B.y)
+                ctx.lineTo(p9C.x, p9C.y)
+                ctx.lineTo(p9D.x, p9D.y)
+                ctx.closePath()
+                ctx.fillStyle = colourWithAlpha(col9, clamp((0.38 + invSalA * 0.48) * l3Opac, 0.10, 0.88))
+                ctx.fill()
+                if (isMackie9) {
+                    ctx.strokeStyle = colourWithAlpha(mackieCol9, clamp((0.74 + state.beatPulse * 0.24) * l3Opac, 0.18, 0.96))
+                    ctx.lineWidth = isBlock ? 2.0 : 1.35
+                    ctx.stroke()
                 }
             }
-            ctx.fill()
-            if (sb9 === 4 && !isEcho) ctx.stroke()
         }
     } else if (st === 10) {
-        // #11: Hue-Angle Spiral Vortex — Continuous 45-RPM Vinyl Groove Spirograph modulated by album art colours & salience
-        var totalSteps10 = isEcho ? 140 : 260
-        var maxTurns10 = 13.5
-        var spinPhase10 = l3T * 1.65
-        for (var band10 = 0; band10 < 6; band10++) {
-            var segLen = Math.ceil(totalSteps10 / 6)
-            var sStart = band10 * segLen
-            var sEnd = Math.min(totalSteps10, (band10 + 1) * segLen)
-            var col10 = resolveArtCol(band10, null, state.smoothBands[(band10 * 10) & 63], 0.12)
-            ctx.beginPath()
-            for (var s10 = sStart; s10 <= sEnd; s10++) {
-                var u10 = s10 / totalSteps10
-                var theta10 = u10 * maxTurns10 * Math.PI * 2.0 + spinPhase10
-                var rNorm10 = 0.08 + u10 * 0.90
-                var snx10 = Math.cos(theta10) * rNorm10
-                var sny10 = Math.sin(theta10) * rNorm10
-                var gx10 = clamp(Math.floor(((snx10 + 1.0) * 0.5) * (mCols - 1)), 0, mCols - 1)
-                var gy10 = clamp(Math.floor(((sny10 + 1.0) * 0.5) * (mRows - 1)), 0, mRows - 1)
+        // #11: Hue-Angle Spiral Vortex — 3D Differential-Twisted Gravitational Vortex Funnel of Cover-Coloured Ribbons
+        var arms10 = isEcho ? 6 : 10
+        var stepsPerArm10 = isEcho ? 18 : 28
+        var spinPhase10 = l3T * 1.55
+        ctx.lineCap = "round"
+        ctx.lineJoin = "round"
+        for (var arm = 0; arm < arms10; arm++) {
+            var armBaseAng = (arm / arms10) * Math.PI * 2.0
+            for (var seg10 = 0; seg10 < stepsPerArm10; seg10++) {
+                var uA = seg10 / stepsPerArm10
+                var uB = (seg10 + 1) / stepsPerArm10
+                var rA = 0.06 + uA * 0.92
+                var rB = 0.06 + uB * 0.92
+                var twistA = armBaseAng + (1.0 - uA) * (3.6 + state.bassSmooth * 1.8) + spinPhase10
+                var twistB = armBaseAng + (1.0 - uB) * (3.6 + state.bassSmooth * 1.8) + spinPhase10
+                var nxA10 = Math.cos(twistA) * rA
+                var nyA10 = Math.sin(twistA) * rA
+                var nxB10 = Math.cos(twistB) * rB
+                var nyB10 = Math.sin(twistB) * rB
+                var gx10 = clamp(Math.floor(((nxA10 + 1.0) * 0.5) * (mCols - 1)), 0, mCols - 1)
+                var gy10 = clamp(Math.floor(((nyA10 + 1.0) * 0.5) * (mRows - 1)), 0, mRows - 1)
                 var c10 = grid[gy10 * mCols + gx10]
                 var sal10 = c10 ? c10.salience : 0.5
-                var luma10 = c10 ? c10.luma : 0.5
-                var eq10 = state.smoothBands[(s10 >> 2) & 63] || 0.0
-                var grooveMod = (sal10 * 0.055 + (luma10 - 0.5) * 0.04 + eq10 * 0.035) * (1.0 + state.bassSmooth * 0.8)
-                var mx10 = Math.cos(theta10) * (rNorm10 + grooveMod)
-                var my10 = Math.sin(theta10) * (rNorm10 + grooveMod)
-                var mz10 = (sal10 - 0.4) * 0.68 + Math.sin(u10 * 18.0 - l3T * 3.0) * 0.18
-                var pr10 = projectLayer3ArtPoint(mx10, my10, mz10, c10, l3Mode, state, cfg, layout)
-                if (s10 === sStart) ctx.moveTo(pr10.x, pr10.y)
-                else ctx.lineTo(pr10.x, pr10.y)
+                var eq10 = state.smoothBands[(arm * 5 + seg10) & 63] || 0.0
+                var funnelZ_A = (sal10 - 0.38) * 0.72 - (1.0 - uA) * (0.45 + state.bassSmooth * 0.35) + Math.sin(uA * 10.0 - l3T * 2.8) * 0.14
+                var funnelZ_B = (sal10 - 0.38) * 0.72 - (1.0 - uB) * (0.45 + state.bassSmooth * 0.35) + Math.sin(uB * 10.0 - l3T * 2.8) * 0.14
+                var pA10 = projectLayer3ArtPoint(nxA10, nyA10, funnelZ_A, c10, l3Mode, state, cfg, layout)
+                var pB10 = projectLayer3ArtPoint(nxB10, nyB10, funnelZ_B, c10, l3Mode, state, cfg, layout)
+                var col10 = resolveArtCol(c10 ? c10.clusterId : (arm & 7), c10, eq10, (sal10 - 0.4) * 0.25)
+                ctx.beginPath()
+                ctx.moveTo(pA10.x, pA10.y)
+                ctx.lineTo(pB10.x, pB10.y)
+                ctx.strokeStyle = colourWithAlpha(col10, clamp((0.56 + sal10 * 0.38) * l3Opac, 0.14, 0.96))
+                ctx.lineWidth = Math.max(1.8, tileW * pA10.scaleW * (0.38 + sal10 * 0.65 + eq10 * 0.35))
+                ctx.stroke()
             }
-            ctx.strokeStyle = colourWithAlpha(col10, clamp(0.86 * l3Opac, 0.18, 0.98))
-            ctx.lineWidth = isBlock ? 3.2 : 2.1
-            ctx.stroke()
         }
-        // Phyllotaxis golden-angle cover colour petals across high-salience nodes
+        // 3D Swirling Vortex Ribbons anchored to high-salience cover features
         for (var cl10 = 0; cl10 < 6; cl10++) {
             ctx.beginPath()
-            ctx.fillStyle = colourWithAlpha(resolveArtCol(cl10, null, state.bassSmooth, 0.10), clamp(0.78 * l3Opac, 0.15, 0.94))
-            for (var i10 = cl10; i10 < grid.length; i10 += (isEcho ? 18 : 12)) {
+            var colP10 = resolveArtCol(cl10, null, state.smoothBands[(cl10 * 9) & 63], 0.14)
+            ctx.fillStyle = colourWithAlpha(colP10, clamp(0.80 * l3Opac, 0.16, 0.95))
+            for (var i10 = cl10; i10 < grid.length; i10 += (isEcho ? 14 : 9)) {
                 var cp10 = grid[i10]
-                if (!cp10 || cp10.salience < 0.36) continue
-                var hueRad10 = ((cp10.hue || 0.0) * Math.PI) / 180.0 + spinPhase10
-                var prP10 = projCell(cp10, Math.cos(hueRad10) * 0.03, Math.sin(hueRad10) * 0.03, (cp10.sat - 0.4) * 0.65)
-                var hLen10 = Math.max(tileW, tileH) * prP10.scaleW * (0.65 + cp10.salience * 0.75)
-                var hWid10 = Math.min(tileW, tileH) * prP10.scaleH * 0.42
-                var hc10 = Math.cos(hueRad10), hs10 = Math.sin(hueRad10)
+                if (!cp10 || cp10.salience < 0.34) continue
+                var rad10 = Math.sqrt(cp10.homeX * cp10.homeX + cp10.homeY * cp10.homeY)
+                var vAng10 = Math.atan2(cp10.homeY, cp10.homeX) + Math.PI * 0.5 + spinPhase10 * (1.2 - rad10 * 0.4)
+                var prP10 = projCell(cp10, Math.cos(vAng10) * 0.028, Math.sin(vAng10) * 0.028, (cp10.salience - 0.35) * 0.78)
+                var hLen10 = Math.max(tileW, tileH) * prP10.scaleW * (0.75 + cp10.salience * 0.85)
+                var hWid10 = Math.min(tileW, tileH) * prP10.scaleH * 0.36
+                var hc10 = Math.cos(vAng10), hs10 = Math.sin(vAng10)
                 ctx.moveTo(prP10.x + hc10 * hLen10, prP10.y + hs10 * hLen10)
-                ctx.lineTo(prP10.x - hs10 * hWid10, prP10.y + hc10 * hWid10)
-                ctx.lineTo(prP10.x - hc10 * hLen10 * 0.45, prP10.y - hs10 * hLen10 * 0.45)
-                ctx.lineTo(prP10.x + hs10 * hWid10, prP10.y - hc10 * hWid10)
+                curveToPt(prP10.x - hs10 * hWid10 * 1.2, prP10.y + hc10 * hWid10 * 1.2, prP10.x - hc10 * hLen10 * 0.55, prP10.y - hs10 * hLen10 * 0.55)
+                curveToPt(prP10.x + hs10 * hWid10 * 1.2, prP10.y - hc10 * hWid10 * 1.2, prP10.x + hc10 * hLen10, prP10.y + hs10 * hLen10)
                 ctx.closePath()
             }
             ctx.fill()
@@ -15114,110 +15195,150 @@ function drawLayer3MacroArtStylePass(ctx, artStyle, l3Mode, state, cfg, activeSt
             ctx.stroke()
         }
     } else if (st === 12) {
-        // #13: 3D Point-Cloud Sculpture — Volumetric LiDAR Plexus Triangulation Constellation
+        // #13: 3D Point-Cloud Sculpture — Pure Volumetric Depth-Sorted Bokeh Spheres & 3D Specular Highlights (zero wireframe grid lines)
         var step12 = isEcho ? 3 : 2
         for (var cl12 = 0; cl12 < 6; cl12++) {
-            var col12 = resolveArtCol(cl12, null, state.smoothBands[(cl12 * 10) & 63], 0.14)
-            ctx.beginPath()
-            ctx.strokeStyle = colourWithAlpha(col12, clamp(0.62 * l3Opac, 0.14, 0.90))
-            ctx.lineWidth = isBlock ? 1.8 : 1.1
-            for (var gy12 = 0; gy12 < mRows - step12; gy12 += step12) {
-                for (var gx12 = 0; gx12 < mCols - step12; gx12 += step12) {
-                    var c12 = grid[gy12 * mCols + gx12]
-                    if (!c12 || ((c12.clusterId % 6) !== cl12) || c12.salience < 0.22) continue
-                    var zMul12 = 0.95 + state.bassSmooth * 0.48
-                    var p12 = projCell(c12, 0, 0, c12.zDepth * zMul12)
-                    var c12R = grid[gy12 * mCols + gx12 + step12]
-                    var c12D = grid[(gy12 + step12) * mCols + gx12]
-                    if (c12R && c12R.salience >= 0.22) {
-                        var p12R = projCell(c12R, 0, 0, c12R.zDepth * zMul12)
-                        ctx.moveTo(p12.x, p12.y); ctx.lineTo(p12R.x, p12R.y)
-                    }
-                    if (c12D && c12D.salience >= 0.22) {
-                        var p12D = projCell(c12D, 0, 0, c12D.zDepth * zMul12)
-                        ctx.moveTo(p12.x, p12.y); ctx.lineTo(p12D.x, p12D.y)
+            var eq12 = state.smoothBands[(cl12 * 10) & 63] || 0.0
+            var colAura12 = resolveArtCol(cl12, null, eq12, -0.06)
+            var colBody12 = resolveArtCol(cl12, null, eq12, 0.10)
+            var colSpec12 = resolveArtCol(cl12, null, eq12, 0.30)
+            var zMul12 = 0.98 + state.bassSmooth * 0.52
+            // 1. Soft 3D Volumetric Bokeh Aura Pass
+            if (!isEcho) {
+                ctx.beginPath()
+                ctx.fillStyle = colourWithAlpha(colAura12, clamp(0.28 * l3Opac, 0.06, 0.44))
+                for (var gy12A = 0; gy12A < mRows; gy12A += step12) {
+                    for (var gx12A = 0; gx12A < mCols; gx12A += step12) {
+                        var c12A = grid[gy12A * mCols + gx12A]
+                        if (!c12A || ((c12A.clusterId % 6) !== cl12) || c12A.salience < 0.20) continue
+                        var p12A = projCell(c12A, 0, 0, c12A.zDepth * zMul12)
+                        var r12A = Math.max(3.2, Math.min(tileW, tileH) * p12A.scaleW * (0.48 + c12A.salience * 0.72))
+                        ctx.moveTo(p12A.x + r12A, p12A.y)
+                        ctx.arc(p12A.x, p12A.y, r12A, 0, Math.PI * 2.0)
                     }
                 }
+                ctx.fill()
             }
-            ctx.stroke()
-            // Glowing 3D constellation spheres at vertices
+            // 2. True Cover+Palette 3D Sphere Body Pass
             ctx.beginPath()
-            ctx.fillStyle = colourWithAlpha(col12, clamp(0.90 * l3Opac, 0.20, 0.98))
+            ctx.fillStyle = colourWithAlpha(colBody12, clamp(0.88 * l3Opac, 0.20, 0.98))
             for (var gy12B = 0; gy12B < mRows; gy12B += step12) {
                 for (var gx12B = 0; gx12B < mCols; gx12B += step12) {
                     var c12B = grid[gy12B * mCols + gx12B]
-                    if (!c12B || ((c12B.clusterId % 6) !== cl12) || c12B.salience < 0.22) continue
-                    var p12B = projCell(c12B, 0, 0, c12B.zDepth * (0.95 + state.bassSmooth * 0.48))
-                    var r12 = Math.max(2.0, Math.min(tileW, tileH) * p12B.scaleW * (0.28 + c12B.salience * 0.45))
+                    if (!c12B || ((c12B.clusterId % 6) !== cl12) || c12B.salience < 0.20) continue
+                    var p12B = projCell(c12B, 0, 0, c12B.zDepth * zMul12)
+                    var r12 = Math.max(2.2, Math.min(tileW, tileH) * p12B.scaleW * (0.30 + c12B.salience * 0.48))
                     ctx.moveTo(p12B.x + r12, p12B.y)
                     ctx.arc(p12B.x, p12B.y, r12, 0, Math.PI * 2.0)
                 }
             }
             ctx.fill()
+            // 3. Off-Centre 3D Directional Specular Glint Pass
+            if (!isEcho) {
+                ctx.beginPath()
+                ctx.fillStyle = colourWithAlpha(colSpec12, clamp(0.92 * l3Opac, 0.22, 1.0))
+                for (var gy12C = 0; gy12C < mRows; gy12C += step12) {
+                    for (var gx12C = 0; gx12C < mCols; gx12C += step12) {
+                        var c12C = grid[gy12C * mCols + gx12C]
+                        if (!c12C || ((c12C.clusterId % 6) !== cl12) || c12C.salience < 0.30) continue
+                        var p12C = projCell(c12C, 0, 0, c12C.zDepth * zMul12)
+                        var rBase12 = Math.max(2.2, Math.min(tileW, tileH) * p12C.scaleW * (0.30 + c12C.salience * 0.48))
+                        var rSpec12 = Math.max(1.0, rBase12 * 0.36)
+                        var spX12 = p12C.x + layout.lightX * rBase12 * 0.38
+                        var spY12 = p12C.y - layout.lightY * rBase12 * 0.38
+                        ctx.moveTo(spX12 + rSpec12, spY12)
+                        ctx.arc(spX12, spY12, rSpec12, 0, Math.PI * 2.0)
+                    }
+                }
+                ctx.fill()
+            }
         }
     } else if (st === 13) {
-        // #14: Gabor Oriented Cross-Hatch — Copperplate Guilloché Banknote Engraving (multi-cell intersecting hatch lines)
-        var step13 = isEcho ? 3 : 2
-        for (var cl13 = 0; cl13 < 6; cl13++) {
-            var col13 = resolveArtCol(cl13, null, state.smoothBands[(cl13 * 9) & 63], 0.12)
+        // #14: Gabor Oriented Cross-Hatch — Continuous Sinusoidal Guilloché Banknote Engraving Ribbons
+        var rStep13 = isEcho ? 3 : 2
+        ctx.lineCap = "round"
+        ctx.lineJoin = "round"
+        for (var gy13 = 0; gy13 < rowCells.length; gy13 += rStep13) {
+            var rWave13 = rowCells[gy13]
+            if (!rWave13 || rWave13.length < 3) continue
+            var eq13 = state.smoothBands[(gy13 * 3) & 63] || 0.0
+            var midC13 = rWave13[rWave13.length >> 1]
+            var col13A = resolveArtCol(midC13 ? midC13.clusterId : (gy13 & 7), midC13, eq13, 0.12)
+            var col13B = resolveArtCol(midC13 ? ((midC13.clusterId + 2) & 7) : ((gy13 + 2) & 7), midC13, eq13, -0.04)
+            // Primary harmonic Guilloché wave ribbon
             ctx.beginPath()
-            ctx.strokeStyle = colourWithAlpha(col13, clamp(0.82 * l3Opac, 0.18, 0.96))
-            ctx.lineWidth = isBlock ? 2.0 : 1.25
-            for (var gy13 = 0; gy13 < mRows; gy13 += step13) {
-                for (var gx13 = 0; gx13 < mCols; gx13 += step13) {
-                    var c13 = grid[gy13 * mCols + gx13]
-                    if (!c13 || ((c13.clusterId % 6) !== cl13)) continue
-                    var pr13 = projCell(c13, 0, 0, (c13.zDepth || 0.0) * 0.48)
-                    var span13 = Math.max(tileW, tileH) * pr13.scaleW * (1.45 + c13.edgeMag * 1.15)
-                    var qAng13 = Math.round((c13.tangentRad || 0.0) / (Math.PI * 0.25)) * (Math.PI * 0.25)
-                    var cA13 = Math.cos(qAng13) * span13 * 0.5
-                    var sA13 = Math.sin(qAng13) * span13 * 0.5
-                    // Primary hatch stroke
-                    ctx.moveTo(pr13.x - cA13, pr13.y - sA13)
-                    ctx.lineTo(pr13.x + cA13, pr13.y + sA13)
-                    // Perpendicular counter-hatch stroke in midtones & shadows
-                    if ((c13.luma || 0.5) < 0.62 || c13.salience > 0.52) {
-                        ctx.moveTo(pr13.x + sA13 * 0.85, pr13.y - cA13 * 0.85)
-                        ctx.lineTo(pr13.x - sA13 * 0.85, pr13.y + cA13 * 0.85)
-                    }
-                    // Third diagonal engraving hatch in deep shadows/edges
-                    if ((c13.luma || 0.5) < 0.36 || c13.edgeMag > 0.52) {
-                        ctx.moveTo(pr13.x - (cA13 - sA13) * 0.65, pr13.y - (sA13 + cA13) * 0.65)
-                        ctx.lineTo(pr13.x + (cA13 - sA13) * 0.65, pr13.y + (sA13 + cA13) * 0.65)
-                    }
-                }
+            for (var rx13 = 0; rx13 < rWave13.length; rx13 += colStride) {
+                var c13 = rWave13[rx13]
+                var gaborPhase = rx13 * (0.85 + c13.edgeMag * 0.65) + (c13.tangentRad || 0.0) * 2.0 + l3T * 2.6
+                var amp13 = (0.018 + c13.salience * 0.038 + eq13 * 0.022) * Math.sin(gaborPhase)
+                var z13 = (c13.zDepth || 0.0) * 0.58 + c13.salience * 0.28
+                var pr13 = projCell(c13, 0, amp13, z13)
+                if (rx13 === 0) ctx.moveTo(pr13.x, pr13.y)
+                else ctx.lineTo(pr13.x, pr13.y)
             }
+            ctx.strokeStyle = colourWithAlpha(col13A, clamp(0.84 * l3Opac, 0.18, 0.96))
+            ctx.lineWidth = isBlock ? 2.2 : 1.45
             ctx.stroke()
+            // Counter-phase interwoven Guilloché engraving wave in high-salience / shadow zones
+            if (!isEcho) {
+                ctx.beginPath()
+                for (var rx13B = 0; rx13B < rWave13.length; rx13B += colStride) {
+                    var c13B = rWave13[rx13B]
+                    var gaborPhaseB = rx13B * (0.85 + c13B.edgeMag * 0.65) - (c13B.tangentRad || 0.0) * 2.0 - l3T * 2.6
+                    var amp13B = -(0.016 + c13B.salience * 0.034 + eq13 * 0.020) * Math.sin(gaborPhaseB)
+                    var pr13B = projCell(c13B, 0, amp13B, (c13B.zDepth || 0.0) * 0.52)
+                    if (rx13B === 0) ctx.moveTo(pr13B.x, pr13B.y)
+                    else ctx.lineTo(pr13B.x, pr13B.y)
+                }
+                ctx.strokeStyle = colourWithAlpha(col13B, clamp(0.66 * l3Opac, 0.14, 0.88))
+                ctx.lineWidth = isBlock ? 1.6 : 1.05
+                ctx.stroke()
+            }
         }
     } else if (st === 14) {
-        // #15: Chromatic RGB Prism Split — Misregistered Warhol / Risograph 3-Plate Overprint (Cyan / Magenta / Acid-Yellow + Key contour)
-        var prismPlates = [
-            { col: "#00F0FF", dx: -1.0, dy: -0.45, dz: -0.36, ch: "r" },
-            { col: "#FF006E", dx: 0.15, dy: 0.75, dz: 0.0, ch: "g" },
-            { col: "#FFEA00", dx: 1.0, dy: -0.35, dz: 0.36, ch: "b" }
+        // #15: Chromatic RGB Prism Split — 3D Refractive Crystal Prism Facets & Dispersion Beams (true cover R/G/B + active palette)
+        var prismPlanes14 = [
+            { dx: -1.0, dy: -0.45, dz: -0.38, hueNudge: -24, boost: 0.08 },
+            { dx: 0.15, dy: 0.72, dz: 0.0, hueNudge: 0, boost: 0.14 },
+            { dx: 1.0, dy: -0.35, dz: 0.38, hueNudge: 24, boost: 0.20 }
         ]
-        var spread14 = (0.045 + state.bassSmooth * 0.055 + state.beatPulse * 0.075) * warpIntensity
+        var spread14 = (0.042 + state.bassSmooth * 0.052 + state.beatPulse * 0.068) * warpIntensity
         var step14 = isEcho ? 3 : 2
         for (var pl = 0; pl < 3; pl++) {
-            var plate = prismPlates[pl]
-            var pCol14 = (colourMode <= 1) ? plate.col : resolveArtCol(pl * 2, null, state.smoothBands[(pl * 16) & 63], 0.14)
+            var plate = prismPlanes14[pl]
             var pdx = plate.dx * spread14
             var pdy = plate.dy * spread14
-            ctx.beginPath()
-            ctx.fillStyle = colourWithAlpha(pCol14, clamp(0.62 * l3Opac, 0.14, 0.86))
-            for (var gy14 = 0; gy14 < mRows; gy14 += step14) {
-                for (var gx14 = 0; gx14 < mCols; gx14 += step14) {
-                    var c14 = grid[gy14 * mCols + gx14]
-                    if (!c14 || c14.salience < 0.22) continue
-                    var chVal = (pl === 0 ? c14.r : (pl === 1 ? c14.g : c14.b)) / 255.0
-                    if (chVal < 0.28 && c14.edgeMag < 0.35) continue
-                    var pr14 = projCell(c14, pdx, pdy, plate.dz + c14.zDepth * 0.35)
-                    var w14 = tileW * pr14.scaleW * (0.75 + chVal * 0.85)
-                    var h14 = tileH * pr14.scaleH * (0.75 + c14.salience * 0.75)
-                    ctx.rect(pr14.x - w14 * 0.5, pr14.y - h14 * 0.5, w14, h14)
+            var eq14 = state.smoothBands[(pl * 16) & 63] || 0.0
+            for (var cl14 = 0; cl14 < 4; cl14++) {
+                var sample14 = grid[((cl14 * 9 + pl * 3) * 17) % grid.length]
+                var pCol14 = resolveArtCol(cl14 * 2 + pl, sample14, eq14, plate.boost, plate.hueNudge)
+                var rimCol14 = resolveArtCol(cl14 * 2 + pl, sample14, eq14, plate.boost + 0.18, plate.hueNudge)
+                ctx.beginPath()
+                ctx.fillStyle = colourWithAlpha(pCol14, clamp(0.64 * l3Opac, 0.14, 0.88))
+                ctx.strokeStyle = colourWithAlpha(rimCol14, clamp(0.76 * l3Opac, 0.16, 0.94))
+                ctx.lineWidth = 1.05
+                for (var gy14 = 0; gy14 < mRows; gy14 += step14) {
+                    for (var gx14 = 0; gx14 < mCols; gx14 += step14) {
+                        var c14 = grid[gy14 * mCols + gx14]
+                        if (!c14 || ((c14.clusterId & 3) !== cl14) || c14.salience < 0.20) continue
+                        var chVal = (pl === 0 ? c14.r : (pl === 1 ? c14.g : c14.b)) / 255.0
+                        if (chVal < 0.24 && c14.edgeMag < 0.30) continue
+                        var pr14 = projCell(c14, pdx, pdy, plate.dz + c14.zDepth * 0.42)
+                        var rad14 = Math.max(2.6, Math.max(tileW, tileH) * pr14.scaleW * (0.58 + chVal * 0.72 + c14.salience * 0.45))
+                        var ang14 = (c14.tangentRad || 0.0) + pl * (Math.PI / 3.0)
+                        var cs14 = Math.cos(ang14) * rad14, sn14 = Math.sin(ang14) * rad14
+                        var nx14 = -sn14 * 0.58, ny14 = cs14 * 0.58
+                        // 3D Faceted Crystal Prism Shard
+                        ctx.moveTo(pr14.x + cs14, pr14.y + sn14)
+                        ctx.lineTo(pr14.x + nx14, pr14.y + ny14)
+                        ctx.lineTo(pr14.x - cs14 * 0.75, pr14.y - sn14 * 0.75)
+                        ctx.lineTo(pr14.x - nx14, pr14.y - ny14)
+                        ctx.closePath()
+                    }
                 }
+                ctx.fill()
+                if (!isEcho && pl === 2) ctx.stroke()
             }
-            ctx.fill()
         }
     } else if (st === 15) {
         // #16: Poisson Organic Stipple Swarm — Bioluminescent Bokeh Spore Cloud & Mycelial Tendrils
@@ -15244,61 +15365,77 @@ function drawLayer3MacroArtStylePass(ctx, artStyle, l3Mode, state, cfg, activeSt
             ctx.fill()
         }
     } else if (st === 16) {
-        // #17: Turing Reaction-Diffusion — Warhol 2x2 Acid Pop-Art Screenprint Quadrant Grid + Coral Labyrinth Contours
-        var warholQuads = [
-            { ox: -0.50, oy: -0.50, bg: "#1A0526", fg1: "#FF007F", fg2: "#00F5FF", rim: "#FFEA00" },
-            { ox: 0.50, oy: -0.50, bg: "#041E1C", fg1: "#00FF9D", fg2: "#FF5500", rim: "#E066FF" },
-            { ox: -0.50, oy: 0.50, bg: "#1F0D04", fg1: "#FFB800", fg2: "#00D4FF", rim: "#FF1E56" },
-            { ox: 0.50, oy: 0.50, bg: "#070B24", fg1: "#B388FF", fg2: "#CCFF00", rim: "#00F5D4" }
-        ]
-        var qStep16 = isEcho ? 4 : 3
-        for (var q16 = 0; q16 < 4; q16++) {
-            var wq = warholQuads[q16]
-            var fgColA = (colourMode === 0) ? wq.fg1 : resolveArtCol(q16 * 2, null, state.bassSmooth, 0.14)
-            var fgColB = (colourMode === 0) ? wq.fg2 : resolveArtCol(q16 * 2 + 1, null, state.midSmooth, 0.08)
-            // Quadrant backing tile
+        // #17: Turing Reaction-Diffusion — Full-Cover 3D Bioluminescent Turing Brain-Coral Reef (true cover + palette colours, zero dark quads)
+        var step16 = isEcho ? 3 : 2
+        ctx.lineCap = "round"
+        ctx.lineJoin = "round"
+        for (var cl16 = 0; cl16 < 6; cl16++) {
+            var eq16 = state.smoothBands[(cl16 * 9) & 63] || 0.0
+            var sample16 = grid[(cl16 * 31) % grid.length]
+            var baseCol16 = resolveArtCol(cl16, sample16, eq16, -0.14)
+            var ridgeCol16 = resolveArtCol(cl16, sample16, eq16, 0.12)
+            var polypCol16 = resolveArtCol((cl16 + 1) & 7, sample16, eq16, 0.26)
+            // 1. Deep 3D Coral Reef Shadow Labyrinth
             if (!isEcho) {
-                var qp00 = projectLayer3ArtPoint(wq.ox - 0.47, wq.oy - 0.47, -0.15, cTL, l3Mode, state, cfg, layout)
-                var qp10 = projectLayer3ArtPoint(wq.ox + 0.47, wq.oy - 0.47, -0.15, cTR, l3Mode, state, cfg, layout)
-                var qp11 = projectLayer3ArtPoint(wq.ox + 0.47, wq.oy + 0.47, -0.15, cBR, l3Mode, state, cfg, layout)
-                var qp01 = projectLayer3ArtPoint(wq.ox - 0.47, wq.oy + 0.47, -0.15, cBL, l3Mode, state, cfg, layout)
                 ctx.beginPath()
-                ctx.moveTo(qp00.x, qp00.y); ctx.lineTo(qp10.x, qp10.y); ctx.lineTo(qp11.x, qp11.y); ctx.lineTo(qp01.x, qp01.y)
-                ctx.closePath()
-                ctx.fillStyle = colourWithAlpha(wq.bg, clamp(0.74 * l3Opac, 0.18, 0.88))
+                ctx.strokeStyle = colourWithAlpha(baseCol16, clamp(0.62 * l3Opac, 0.14, 0.88))
+                ctx.lineWidth = Math.max(2.8, tileW * (isBlock ? 1.05 : 0.78))
+                for (var gy16S = 1; gy16S < mRows - 1; gy16S += step16) {
+                    for (var gx16S = 1; gx16S < mCols - 1; gx16S += step16) {
+                        var c16S = grid[gy16S * mCols + gx16S]
+                        if (!c16S || ((c16S.clusterId % 6) !== cl16) || c16S.salience < 0.20) continue
+                        var z16S = (c16S.salience * 0.55 + (c16S.zDepth || 0.0) * 0.45) * (0.68 + state.bassSmooth * 0.42) - 0.12
+                        var tAng16S = (c16S.tangentRad || 0.0) + Math.sin(c16S.homeX * 6.0 + c16S.homeY * 6.0 + l3T * 1.4) * 0.85
+                        var nAng16S = tAng16S + Math.PI * 0.5
+                        var span16S = 0.046 * (0.75 + c16S.salience * 0.85)
+                        var curl16S = 0.032 * Math.cos(c16S.phase + l3T * 1.8)
+                        var pA16S = projCell(c16S, -Math.cos(tAng16S) * span16S, -Math.sin(tAng16S) * span16S, z16S)
+                        var pM16S = projCell(c16S, Math.cos(nAng16S) * curl16S, Math.sin(nAng16S) * curl16S, z16S + 0.10)
+                        var pB16S = projCell(c16S, Math.cos(tAng16S) * span16S, Math.sin(tAng16S) * span16S, z16S)
+                        ctx.moveTo(pA16S.x + 1.5, pA16S.y + 2.0)
+                        curveToPt(pM16S.x + 1.5, pM16S.y + 2.0, pB16S.x + 1.5, pB16S.y + 2.0)
+                    }
+                }
+                ctx.stroke()
+            }
+            // 2. Raised 3D Turing Meander Coral Ridges
+            ctx.beginPath()
+            ctx.strokeStyle = colourWithAlpha(ridgeCol16, clamp(0.86 * l3Opac, 0.20, 0.98))
+            ctx.lineWidth = Math.max(2.0, tileW * (isBlock ? 0.78 : 0.54))
+            for (var gy16 = 1; gy16 < mRows - 1; gy16 += step16) {
+                for (var gx16 = 1; gx16 < mCols - 1; gx16 += step16) {
+                    var c16 = grid[gy16 * mCols + gx16]
+                    if (!c16 || ((c16.clusterId % 6) !== cl16) || c16.salience < 0.20) continue
+                    var z16 = (c16.salience * 0.55 + (c16.zDepth || 0.0) * 0.45) * (0.68 + state.bassSmooth * 0.42)
+                    var tAng16 = (c16.tangentRad || 0.0) + Math.sin(c16.homeX * 6.0 + c16.homeY * 6.0 + l3T * 1.4) * 0.85
+                    var nAng16 = tAng16 + Math.PI * 0.5
+                    var span16 = 0.046 * (0.75 + c16.salience * 0.85)
+                    var curl16 = 0.032 * Math.cos(c16.phase + l3T * 1.8)
+                    var pA16 = projCell(c16, -Math.cos(tAng16) * span16, -Math.sin(tAng16) * span16, z16)
+                    var pM16 = projCell(c16, Math.cos(nAng16) * curl16, Math.sin(nAng16) * curl16, z16 + 0.14)
+                    var pB16 = projCell(c16, Math.cos(tAng16) * span16, Math.sin(tAng16) * span16, z16)
+                    ctx.moveTo(pA16.x, pA16.y)
+                    curveToPt(pM16.x, pM16.y, pB16.x, pB16.y)
+                }
+            }
+            ctx.stroke()
+            // 3. Glowing Bioluminescent Coral Polyp Nodes
+            if (!isEcho) {
+                ctx.beginPath()
+                ctx.fillStyle = colourWithAlpha(polypCol16, clamp(0.88 * l3Opac, 0.20, 0.98))
+                for (var gy16P = 1; gy16P < mRows - 1; gy16P += step16) {
+                    for (var gx16P = 1; gx16P < mCols - 1; gx16P += step16) {
+                        var c16P = grid[gy16P * mCols + gx16P]
+                        if (!c16P || ((c16P.clusterId % 6) !== cl16) || (c16P.salience < 0.44 && c16P.edgeMag < 0.38)) continue
+                        var z16P = (c16P.salience * 0.55 + (c16P.zDepth || 0.0) * 0.45) * (0.68 + state.bassSmooth * 0.42) + 0.12
+                        var pr16P = projCell(c16P, 0, 0, z16P)
+                        var rad16P = Math.max(1.8, Math.min(tileW, tileH) * pr16P.scaleW * (0.24 + c16P.salience * 0.34))
+                        ctx.moveTo(pr16P.x + rad16P, pr16P.y)
+                        ctx.arc(pr16P.x, pr16P.y, rad16P, 0, Math.PI * 2.0)
+                    }
+                }
                 ctx.fill()
             }
-            // High-contrast Warhol screenprint + Turing coral bridges inside each quadrant
-            ctx.beginPath()
-            ctx.fillStyle = colourWithAlpha(fgColA, clamp(0.86 * l3Opac, 0.18, 0.96))
-            for (var gy16 = 0; gy16 < mRows; gy16 += qStep16) {
-                for (var gx16 = 0; gx16 < mCols; gx16 += qStep16) {
-                    var c16 = grid[gy16 * mCols + gx16]
-                    if (!c16 || c16.salience < 0.30) continue
-                    var qnx16 = wq.ox + c16.homeX * 0.45
-                    var qny16 = wq.oy + c16.homeY * 0.45
-                    var pr16 = projectLayer3ArtPoint(qnx16, qny16, c16.salience * 0.35, c16, l3Mode, state, cfg, layout)
-                    var rw16 = Math.max(2.2, tileW * pr16.scaleW * 0.82 * (0.6 + c16.salience * 0.7))
-                    var rh16 = Math.max(2.2, tileH * pr16.scaleH * 0.38)
-                    var dir16 = (c16.clusterId + c16.contourLvl + q16) & 3
-                    ctx.rect(pr16.x - rw16 * 0.5, pr16.y - rh16 * 0.5, rw16 * (dir16 & 1 ? 1.0 : -1.0), rh16)
-                    ctx.rect(pr16.x - rh16 * 0.5, pr16.y - rw16 * 0.5, rh16, rw16 * (dir16 & 2 ? 1.0 : -1.0))
-                }
-            }
-            ctx.fill()
-            // Secondary highlight silkscreen pass
-            ctx.beginPath()
-            ctx.fillStyle = colourWithAlpha(fgColB, clamp(0.84 * l3Opac, 0.18, 0.96))
-            for (var gy16B = 1; gy16B < mRows; gy16B += qStep16) {
-                for (var gx16B = 1; gx16B < mCols; gx16B += qStep16) {
-                    var c16B = grid[gy16B * mCols + gx16B]
-                    if (!c16B || (c16B.edgeMag < 0.32 && c16B.luma < 0.58)) continue
-                    var pr16B = projectLayer3ArtPoint(wq.ox + c16B.homeX * 0.45, wq.oy + c16B.homeY * 0.45, 0.42, c16B, l3Mode, state, cfg, layout)
-                    var s16B = Math.max(2.0, tileW * pr16B.scaleW * 0.52)
-                    ctx.rect(pr16B.x - s16B * 0.5, pr16B.y - s16B * 0.5, s16B, s16B)
-                }
-            }
-            ctx.fill()
         }
     } else if (st === 17) {
         // #18: Isometric Cityscape Extrude — Full-cover (0%..100%) 3-Face 3D Isometric Voxel Skyscrapers sorted back-to-front
@@ -15349,70 +15486,96 @@ function drawLayer3MacroArtStylePass(ctx, artStyle, l3Mode, state, cfg, activeSt
             }
         }
     } else if (st === 18) {
-        // #19: CMYK Rosette Halftone Press — Roy Lichtenstein Macro Pop-Art Ben-Day Dot Press (2x macro discs + rotated screens)
-        var cmykPlates = [
-            { col: "#00E5FF", ang: 0.2618, ox: -0.012, oy: -0.010 },
-            { col: "#FF007F", ang: 1.3090, ox: 0.012, oy: -0.008 },
-            { col: "#FFEA00", ang: 0.0, ox: -0.006, oy: 0.012 },
-            { col: "#F8FAFC", ang: 0.7854, ox: 0.008, oy: 0.008 }
+        // #19: CMYK Rosette Halftone Press — Rich Satin-Ink 3D Offset Lithograph Rosette Rings (true cover + palette, never overly bright)
+        var cmykScreens18 = [
+            { ang: 0.2618, ox: -0.010, oy: -0.008, hueNudge: -18, litAdj: -0.16 },
+            { ang: 1.3090, ox: 0.010, oy: -0.007, hueNudge: 16, litAdj: -0.14 },
+            { ang: 0.0, ox: -0.005, oy: 0.010, hueNudge: 32, litAdj: -0.12 },
+            { ang: 0.7854, ox: 0.007, oy: 0.007, hueNudge: -8, litAdj: -0.22 }
         ]
         var step18 = isEcho ? 3 : 2
         for (var cp = 0; cp < 4; cp++) {
-            var cpl = cmykPlates[cp]
-            var col18 = (colourMode === 0) ? cpl.col : resolveArtCol(cp * 2, null, state.smoothBands[(cp * 14) & 63], 0.12)
+            var cpl = cmykScreens18[cp]
+            var eq18 = state.smoothBands[(cp * 14) & 63] || 0.0
+            var sample18 = grid[((cp * 2 + 1) * 29) % grid.length]
+            var inkCol18 = resolveArtCol(cp * 2, sample18, eq18 * 0.5, cpl.litAdj, cpl.hueNudge)
+            var coreCol18 = resolveArtCol(cp * 2 + 1, sample18, eq18 * 0.4, cpl.litAdj - 0.10, cpl.hueNudge)
             ctx.beginPath()
-            ctx.fillStyle = colourWithAlpha(col18, clamp(0.80 * l3Opac, 0.16, 0.95))
+            ctx.fillStyle = colourWithAlpha(inkCol18, clamp(0.68 * l3Opac, 0.14, 0.86))
+            ctx.strokeStyle = colourWithAlpha(coreCol18, clamp(0.78 * l3Opac, 0.16, 0.92))
+            ctx.lineWidth = isBlock ? 1.8 : 1.3
             for (var gy18 = 0; gy18 < mRows; gy18 += step18) {
                 for (var gx18 = 0; gx18 < mCols; gx18 += step18) {
                     var c18 = grid[gy18 * mCols + gx18]
                     if (!c18) continue
-                    if (((c18.clusterId + cp) & 3) !== cp && c18.salience < 0.42) continue
-                    var pr18 = projCell(c18, cpl.ox * (1.0 + state.beatPulse), cpl.oy * (1.0 + state.beatPulse), c18.zDepth * 0.42)
-                    var dotR18 = Math.max(2.4, Math.min(tileW, tileH) * pr18.scaleW * step18 * (0.24 + c18.salience * 0.36 + (c18.sat || 0.5) * 0.16))
-                    if (isBlock) {
-                        var cs18 = Math.cos(cpl.ang) * dotR18, sn18 = Math.sin(cpl.ang) * dotR18
-                        ctx.moveTo(pr18.x + cs18, pr18.y + sn18)
-                        ctx.lineTo(pr18.x - sn18, pr18.y + cs18)
-                        ctx.lineTo(pr18.x - cs18, pr18.y - sn18)
-                        ctx.lineTo(pr18.x + sn18, pr18.y - cs18)
-                        ctx.closePath()
-                    } else {
-                        ctx.moveTo(pr18.x + dotR18, pr18.y)
-                        ctx.arc(pr18.x, pr18.y, dotR18, 0, Math.PI * 2.0)
-                    }
+                    if (((c18.clusterId + cp) & 3) !== cp && c18.salience < 0.38) continue
+                    var pr18 = projCell(c18, cpl.ox * (1.0 + state.bassSmooth * 0.6), cpl.oy * (1.0 + state.bassSmooth * 0.6), c18.zDepth * 0.48 + (3 - cp) * 0.06)
+                    var dotR18 = Math.max(2.2, Math.min(tileW, tileH) * pr18.scaleW * step18 * (0.20 + c18.salience * 0.30 + (1.0 - (c18.luma || 0.5)) * 0.16))
+                    ctx.moveTo(pr18.x + dotR18, pr18.y)
+                    ctx.arc(pr18.x, pr18.y, dotR18, 0, Math.PI * 2.0)
                 }
             }
             ctx.fill()
+            if (!isEcho) ctx.stroke()
         }
     } else if (st === 19) {
-        // #20: Magnetic Dipole Vector Field — Maxwell electromagnetic flux curves + long torqued compass needles
+        // #20: Magnetic Dipole Vector Field — Continuous 3D Arched Magnetic Flux Aurora Ribbons & 3D Ferrofluid Spikes
+        var streams19 = state.artStreamlines || []
+        ctx.lineCap = "round"
+        ctx.lineJoin = "round"
+        for (var si19 = 0; si19 < streams19.length; si19 += (isEcho ? 2 : 1)) {
+            var strm19 = streams19[si19]
+            if (!strm19 || !strm19.points || strm19.points.length < 3) continue
+            var seed19 = strm19.seed || strm19.points[0].cell
+            var eq19 = state.smoothBands[(si19 * 5) & 63] || 0.0
+            var fluxCol19 = resolveArtCol(strm19.clusterId || 0, seed19, eq19, 0.12)
+            var nPts19 = strm19.points.length
+            ctx.beginPath()
+            for (var pi19 = 0; pi19 < nPts19; pi19++) {
+                var spt19 = strm19.points[pi19]
+                var u19 = pi19 / Math.max(1, nPts19 - 1)
+                // 3D Parabolic Magnetic Flux Arch (rises high in 3D Z at mid-arc between magnetic poles)
+                var archZ19 = Math.sin(u19 * Math.PI) * (0.65 + state.bassSmooth * 0.55 + eq19 * 0.35) + (spt19.zDepth || 0.0) * 0.35
+                var pr19A = projectLayer3ArtPoint(spt19.nx, spt19.ny, archZ19, spt19.cell || seed19, l3Mode, state, cfg, layout)
+                if (pi19 === 0) ctx.moveTo(pr19A.x, pr19A.y)
+                else ctx.lineTo(pr19A.x, pr19A.y)
+            }
+            ctx.strokeStyle = colourWithAlpha(fluxCol19, clamp(0.78 * l3Opac, 0.16, 0.96))
+            ctx.lineWidth = Math.max(1.6, tileW * (isBlock ? 0.68 : 0.46) * (0.7 + eq19 * 0.5))
+            ctx.stroke()
+        }
+        // 3D Conical Ferrofluid Spikes rising along magnetic field lines
         var step19 = isEcho ? 3 : 2
         for (var cl19 = 0; cl19 < 6; cl19++) {
-            var col19 = resolveArtCol(cl19, null, state.smoothBands[(cl19 * 10) & 63], 0.12)
+            var eq19B = state.smoothBands[(cl19 * 10) & 63] || 0.0
+            var coneCol19 = resolveArtCol(cl19, null, eq19B, 0.16)
+            var baseCol19 = resolveArtCol(cl19, null, eq19B, -0.14)
             ctx.beginPath()
-            ctx.fillStyle = colourWithAlpha(col19, clamp(0.84 * l3Opac, 0.18, 0.96))
-            ctx.strokeStyle = colourWithAlpha(col19, clamp(0.55 * l3Opac, 0.12, 0.86))
-            ctx.lineWidth = 1.3
+            ctx.fillStyle = colourWithAlpha(coneCol19, clamp(0.84 * l3Opac, 0.18, 0.96))
+            ctx.strokeStyle = colourWithAlpha(baseCol19, clamp(0.68 * l3Opac, 0.14, 0.90))
+            ctx.lineWidth = 1.1
             for (var gy19 = 0; gy19 < mRows; gy19 += step19) {
                 for (var gx19 = 0; gx19 < mCols; gx19 += step19) {
                     var c19 = grid[gy19 * mCols + gx19]
-                    if (!c19 || ((c19.clusterId % 6) !== cl19)) continue
-                    var pr19 = projCell(c19, 0, 0, c19.zDepth * 0.55)
-                    var dipAng = (c19.tangentRad || 0.0) + Math.sin(l3T * 2.4 + (c19.hue || 0.0) * 0.025) * (0.42 + state.bassSmooth * 0.65)
-                    var nLen19 = Math.max(tileW, tileH) * pr19.scaleW * (1.15 + c19.edgeMag * 1.25 + c19.salience * 0.65)
-                    var nWid19 = Math.max(1.8, Math.min(tileW, tileH) * pr19.scaleH * 0.28)
-                    var dc19 = Math.cos(dipAng), ds19 = Math.sin(dipAng)
-                    ctx.moveTo(pr19.x + dc19 * nLen19 * 0.65, pr19.y + ds19 * nLen19 * 0.65)
-                    ctx.lineTo(pr19.x - ds19 * nWid19 * 0.5, pr19.y + dc19 * nWid19 * 0.5)
-                    ctx.lineTo(pr19.x - dc19 * nLen19 * 0.40, pr19.y - ds19 * nLen19 * 0.40)
-                    ctx.lineTo(pr19.x + ds19 * nWid19 * 0.5, pr19.y - dc19 * nWid19 * 0.5)
+                    if (!c19 || ((c19.clusterId % 6) !== cl19) || c19.salience < 0.26) continue
+                    var dipAng = (c19.tangentRad || 0.0) + Math.sin(l3T * 2.2 + (c19.hue || 0.0) * 0.025) * (0.38 + state.bassSmooth * 0.55)
+                    var zBase19 = (c19.zDepth || 0.0) * 0.45
+                    var zTip19 = zBase19 + (0.38 + c19.salience * 0.58 + state.bassSmooth * 0.35)
+                    var pBase19 = projCell(c19, 0, 0, zBase19)
+                    var pTip19 = projCell(c19, Math.cos(dipAng) * 0.038, Math.sin(dipAng) * 0.038, zTip19)
+                    var wBase19 = Math.max(2.0, Math.min(tileW, tileH) * pBase19.scaleW * (0.32 + c19.salience * 0.34))
+                    var nx19 = -Math.sin(dipAng) * wBase19, ny19 = Math.cos(dipAng) * wBase19
+                    ctx.moveTo(pTip19.x, pTip19.y)
+                    ctx.lineTo(pBase19.x + nx19, pBase19.y + ny19)
+                    curveToPt(pBase19.x, pBase19.y + wBase19 * 0.45, pBase19.x - nx19, pBase19.y - ny19)
                     ctx.closePath()
                 }
             }
             ctx.fill()
+            if (!isEcho) ctx.stroke()
         }
     } else {
-        // #21: Holographic Slice Tomography — 3D Slit-Scan MRI Ribbon Terrain & Vertical Laser Drop-Curtains
+        // #21: Holographic Slice Tomography — 3D Slit-Scan MRI Ribbon Terrain & Translucent Depth Curtains (true cover + palette)
         var rStep20 = isEcho ? 3 : 2
         var scanRow20 = (l3T * 8.5) % mRows
         for (var gy20 = 0; gy20 < rowCells.length; gy20 += rStep20) {
@@ -15420,24 +15583,29 @@ function drawLayer3MacroArtStylePass(ctx, artStyle, l3Mode, state, cfg, activeSt
             if (!rSlice || rSlice.length < 2) continue
             var eq20 = state.smoothBands[(gy20 * 2) & 63] || 0.0
             var isScanSlice = Math.abs(gy20 - scanRow20) < 1.8
-            var holoHue20 = ((state.hueShift || 0) + gy20 * 9 + l3T * 42) % 360
+            var midC20 = rSlice[rSlice.length >> 1]
             var sliceCol20 = isScanSlice
                 ? "#FFFDF0"
-                : ((colourMode === 0) ? hslToHex(holoHue20, 0.92, clamp(0.50 + eq20 * 0.22, 0.44, 0.84)) : resolveArtCol(gy20 & 7, rSlice[rSlice.length >> 1], eq20, 0.12))
-            // Vertical holographic drop-curtain pillars to slice floor
+                : resolveArtCol(midC20 ? midC20.clusterId : (gy20 & 7), midC20, eq20, 0.14)
+            var curtainCol20 = resolveArtCol(midC20 ? midC20.clusterId : (gy20 & 7), midC20, eq20, -0.12)
+            // Translucent 3D MRI cross-section curtain polygon
+            var pFloorL = projCell(rSlice[0], 0, 0.02, -0.16)
+            var pFloorR = projCell(rSlice[rSlice.length - 1], 0, 0.02, -0.16)
             ctx.beginPath()
-            ctx.fillStyle = colourWithAlpha(sliceCol20, clamp((isScanSlice ? 0.65 : 0.36) * l3Opac, 0.08, 0.85))
-            for (var rx20 = 0; rx20 < rSlice.length; rx20 += (colStride * 2)) {
+            ctx.moveTo(pFloorL.x, pFloorL.y)
+            for (var rx20 = 0; rx20 < rSlice.length; rx20 += colStride) {
                 var c20 = rSlice[rx20]
-                if (c20.salience < 0.30) continue
                 var lift20 = (c20.zDepth * 0.65 + c20.salience * 0.45) * (0.14 + state.bassSmooth * 0.10)
                 var pTop20 = projCell(c20, 0, -lift20, c20.zDepth * 0.78)
-                var pBot20 = projCell(c20, 0, 0.02, -0.20)
-                var curH20 = Math.max(2.0, pBot20.y - pTop20.y)
-                ctx.rect(pTop20.x - 1.2, pTop20.y, 2.4, curH20)
+                ctx.lineTo(pTop20.x, pTop20.y)
             }
-            ctx.fill()
-            // Continuous 3D MRI cross-section ribbon
+            ctx.lineTo(pFloorR.x, pFloorR.y)
+            ctx.closePath()
+            if (!isEcho) {
+                ctx.fillStyle = colourWithAlpha(curtainCol20, clamp((isScanSlice ? 0.36 : 0.18) * l3Opac, 0.04, 0.44))
+                ctx.fill()
+            }
+            // Continuous 3D MRI cross-section crest ribbon
             ctx.beginPath()
             for (var rx20B = 0; rx20B < rSlice.length; rx20B += colStride) {
                 var c20B = rSlice[rx20B]
@@ -15446,8 +15614,8 @@ function drawLayer3MacroArtStylePass(ctx, artStyle, l3Mode, state, cfg, activeSt
                 if (rx20B === 0) ctx.moveTo(pTop20B.x, pTop20B.y)
                 else ctx.lineTo(pTop20B.x, pTop20B.y)
             }
-            ctx.strokeStyle = colourWithAlpha(sliceCol20, clamp((isScanSlice ? 0.98 : 0.82) * l3Opac, 0.20, 1.0))
-            ctx.lineWidth = isScanSlice ? 3.0 : (isBlock ? 2.4 : 1.6)
+            ctx.strokeStyle = colourWithAlpha(sliceCol20, clamp((isScanSlice ? 0.98 : 0.84) * l3Opac, 0.20, 1.0))
+            ctx.lineWidth = isScanSlice ? 2.8 : (isBlock ? 2.3 : 1.6)
             ctx.stroke()
         }
     }
@@ -15791,9 +15959,10 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer2Opacity: c.layer2Opacity !== undefined ? clamp(Number(c.layer2Opacity), 0.05, 1.0) : 1.0,
         layer3Enabled: c.layer3Enabled !== undefined ? Boolean(c.layer3Enabled) : true,
         layer3IterationPaused: Boolean(c.layer3IterationPaused),
-        layer3TransitionPauseSec: c.layer3TransitionPauseSec !== undefined ? clamp(Number(c.layer3TransitionPauseSec), 1.0, 45.0) : (c.layer3PauseSec !== undefined ? clamp(Number(c.layer3PauseSec), 1.0, 45.0) : 5.0),
-        layer3PauseSec: c.layer3TransitionPauseSec !== undefined ? clamp(Number(c.layer3TransitionPauseSec), 1.0, 45.0) : (c.layer3PauseSec !== undefined ? clamp(Number(c.layer3PauseSec), 1.0, 45.0) : 5.0),
-        layer3AutoRandomise: Boolean(c.layer3AutoRandomise),
+        layer3TransitionPauseSec: c.layer3TransitionPauseSec !== undefined ? clamp(Number(c.layer3TransitionPauseSec), 0.0, 30.0) : (c.layer3PauseSec !== undefined ? clamp(Number(c.layer3PauseSec), 0.0, 30.0) : 5.0),
+        layer3PauseSec: c.layer3TransitionPauseSec !== undefined ? clamp(Number(c.layer3TransitionPauseSec), 0.0, 30.0) : (c.layer3PauseSec !== undefined ? clamp(Number(c.layer3PauseSec), 0.0, 30.0) : 5.0),
+        layer3RandomMode: c.layer3RandomMode !== undefined ? clamp(Math.round(Number(c.layer3RandomMode)), 0, 2) : (c.layer3AutoRandomise ? 2 : 0),
+        layer3AutoRandomise: c.layer3RandomMode !== undefined ? (Math.round(Number(c.layer3RandomMode)) > 0) : Boolean(c.layer3AutoRandomise),
         autoCycle: Boolean(c.autoCycle),
         layer3Mode: c.layer3Mode !== undefined ? clamp(Math.round(Number(c.layer3Mode)), 0, LAYER3_MODES.length - 1) : 0,
         layer3TextStyle: c.layer3TextStyle !== undefined ? clamp(Math.round(Number(c.layer3TextStyle)), 0, LAYER3_TEXT_STYLES.length - 1) : 0,

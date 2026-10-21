@@ -240,8 +240,34 @@ FocusScope {
     readonly property var shortL3ColourLabels: Engine.SHORT_LAYER3_COLOUR_MODES
     readonly property var layer3FontPresets: Engine.LAYER3_FONT_PRESETS
     readonly property var shortL3FontLabels: Engine.SHORT_LAYER3_FONT_PRESETS
+    readonly property var layer3RandomModes: Engine.LAYER3_RANDOM_MODES
+    readonly property var shortL3RandomModes: Engine.SHORT_LAYER3_RANDOM_MODES
     property bool layer3Enabled: true
+    property int layer3RandomMode: 0 // 0 = No Randomise, 1 = Selected Only (Art or Words), 2 = Art ⟷ Words (With Timing)
     property bool layer3AutoRandomise: false
+    property bool _syncingLayer3RandState: false
+    onLayer3RandomModeChanged: {
+        if (!root._syncingLayer3RandState) {
+            root._syncingLayer3RandState = true
+            root.layer3AutoRandomise = (root.layer3RandomMode > 0)
+            root._syncingLayer3RandState = false
+        }
+        syncAutoCycleFromLayers()
+        scheduleSaveVisualiserConfig()
+    }
+    onLayer3AutoRandomiseChanged: {
+        if (!root._syncingLayer3RandState) {
+            root._syncingLayer3RandState = true
+            if (!root.layer3AutoRandomise) {
+                root.layer3RandomMode = 0
+            } else if (root.layer3RandomMode === 0) {
+                root.layer3RandomMode = 2
+            }
+            root._syncingLayer3RandState = false
+        }
+        syncAutoCycleFromLayers()
+        scheduleSaveVisualiserConfig()
+    }
     property int layer3Mode: 0
     property int layer3TextStyle: 0 // 0..20 in Engine.LAYER3_TEXT_STYLES
     property int layer3FontPreset: 0 // 0..15 in Engine.LAYER3_FONT_PRESETS (0 = Style Default)
@@ -781,29 +807,7 @@ FocusScope {
         "Sonic Lens"
     ]
 
-    readonly property var shortL3StyleLabels: [
-        "Techno",
-        "Liquid",
-        "Laser",
-        "Chrome",
-        "LED Wall",
-        "Acid Glitch",
-        "UV Glow",
-        "Brutalist",
-        "Holo HUD",
-        "Oscillo XY",
-        "Iso 3D",
-        "Tesla Arc",
-        "Y2K Metal",
-        "Copperbar",
-        "Bio Spore",
-        "Quantum",
-        "ASCII Black Block",
-        "ASCII White Block",
-        "ASCII Transparent",
-        "ASCII Colour Knockout",
-        "ASCII Cell Matrix"
-    ]
+    readonly property var shortL3StyleLabels: Engine.SHORT_LAYER3_TEXT_STYLES
     readonly property var shortL3TextStyleLabels: root.shortL3StyleLabels
     readonly property var shortL3ArtStyleLabels: Engine.SHORT_LAYER3_ART_STYLES
 
@@ -867,6 +871,20 @@ FocusScope {
         if (root._inKeybindingDispatch || (!root._inHudPillInteraction && !root._internalLayerChange)) {
             root.showKeybindingFeedback(message)
         }
+    }
+    function toggleKeybindingToast() {
+        root.keybindingToastEnabled = !root.keybindingToastEnabled
+        if (root._hasSavedToastBeforeVj) {
+            root._savedToastBeforeVj = root.keybindingToastEnabled
+        }
+        if (root.keybindingToastEnabled) {
+            root.showKeybindingFeedback("Key Toast Notifications: ON")
+        } else {
+            root.keybindingToastText = ""
+            root.keybindingToastOpacity = 0.0
+            keybindingToastTimer.stop()
+        }
+        scheduleSaveVisualiserConfig()
     }
     function runAsKeybinding(fn) {
         root._inKeybindingDispatch = true
@@ -987,10 +1005,6 @@ FocusScope {
         scheduleSaveVisualiserConfig()
     }
     onLayer2AutoRandomiseChanged: {
-        syncAutoCycleFromLayers()
-        scheduleSaveVisualiserConfig()
-    }
-    onLayer3AutoRandomiseChanged: {
         syncAutoCycleFromLayers()
         scheduleSaveVisualiserConfig()
     }
@@ -2240,6 +2254,7 @@ FocusScope {
             layer2FillOpacity: root.layer2FillOpacity,
             layer2Opacity: root.layer2Opacity,
             layer3Enabled: root.layer3Enabled,
+            layer3RandomMode: root.layer3RandomMode,
             layer3AutoRandomise: root.layer3AutoRandomise,
             layer3Mode: root.layer3Mode,
             layer3TextStyle: root.layer3TextStyle,
@@ -2409,7 +2424,13 @@ FocusScope {
         if (cfg.layer2Opacity !== undefined) root.layer2Opacity = Math.max(0.05, Math.min(1.00, Number(cfg.layer2Opacity)))
 
         if (cfg.layer3Enabled !== undefined) root.layer3Enabled = Boolean(cfg.layer3Enabled)
-        if (cfg.layer3AutoRandomise !== undefined) root.layer3AutoRandomise = Boolean(cfg.layer3AutoRandomise)
+        if (cfg.layer3RandomMode !== undefined) {
+            root.layer3RandomMode = Math.max(0, Math.min(2, Math.round(Number(cfg.layer3RandomMode)) || 0))
+            root.layer3AutoRandomise = (root.layer3RandomMode > 0)
+        } else if (cfg.layer3AutoRandomise !== undefined) {
+            root.layer3AutoRandomise = Boolean(cfg.layer3AutoRandomise)
+            root.layer3RandomMode = root.layer3AutoRandomise ? 2 : 0
+        }
         if (cfg.layer3Mode !== undefined) root.layer3Mode = Number(cfg.layer3Mode) % Engine.LAYER3_MODES.length
         if (cfg.layer3TextStyle !== undefined) root.layer3TextStyle = Number(cfg.layer3TextStyle) % Engine.LAYER3_TEXT_STYLES.length
         if (cfg.layer3FontPreset !== undefined) root.layer3FontPreset = Number(cfg.layer3FontPreset) % Engine.LAYER3_FONT_PRESETS.length
@@ -2442,7 +2463,10 @@ FocusScope {
         if (cfg.layer3Scale !== undefined) root.layer3Scale = Number(cfg.layer3Scale)
         if (cfg.layer3Tracers !== undefined) root.layer3Tracers = Number(cfg.layer3Tracers)
         if (cfg.layer3Opacity !== undefined) root.layer3Opacity = Math.max(0.05, Math.min(1.00, Number(cfg.layer3Opacity)))
-        if (cfg.layer3TransitionPauseSec !== undefined) root.layer3TransitionPauseSec = Math.max(1.0, Math.min(45.0, Number(cfg.layer3TransitionPauseSec) || 5.0))
+        if (cfg.layer3TransitionPauseSec !== undefined) {
+            var pSec = Number(cfg.layer3TransitionPauseSec)
+            root.layer3TransitionPauseSec = Math.max(0.0, Math.min(30.0, isNaN(pSec) ? 5.0 : pSec))
+        }
         if (cfg.turntableRpm !== undefined) {
             root.turntableRpm = Math.max(16.0, Math.min(78.0, Number(cfg.turntableRpm) || 33.3))
             stageTurntable.rpm = root.turntableRpm
@@ -2573,11 +2597,13 @@ FocusScope {
         root.layer3ShowStatements = false
         root.layer3Tracers = 3
         root.layer3Opacity = 1.00
+        root.layer3TransitionPauseSec = 5.0
         root.autoCycle = false
         root.layer1AutoRandomise = false
         root.layerEqAutoRandomise = false
         root.layerVectorsAutoRandomise = false
         root.layer2AutoRandomise = false
+        root.layer3RandomMode = 0
         root.layer3AutoRandomise = false
         root.layer4AutoRandomise = false
         clearCanvasImmediate()
@@ -2836,6 +2862,7 @@ FocusScope {
             l3Opacity: root.layer3Opacity,
             l3TransitionPauseSec: root.layer3TransitionPauseSec,
             trackArcMode: root.trackArcMode,
+            l3RandomMode: root.layer3RandomMode,
             l3AutoRandomise: root.layer3AutoRandomise
         }
         copy.push(item)
@@ -2880,9 +2907,18 @@ FocusScope {
         if (item.l3Scale !== undefined) root.layer3Scale = Number(item.l3Scale)
         if (item.l3Tracers !== undefined) root.layer3Tracers = Number(item.l3Tracers)
         if (item.l3Opacity !== undefined) root.layer3Opacity = Math.max(0.05, Math.min(1.00, Number(item.l3Opacity)))
-        if (item.l3TransitionPauseSec !== undefined) root.layer3TransitionPauseSec = Math.max(1.0, Math.min(45.0, Number(item.l3TransitionPauseSec) || 5.0))
+        if (item.l3TransitionPauseSec !== undefined) {
+            var pSecItem = Number(item.l3TransitionPauseSec)
+            root.layer3TransitionPauseSec = Math.max(0.0, Math.min(30.0, isNaN(pSecItem) ? 5.0 : pSecItem))
+        }
         if (item.trackArcMode !== undefined) root.trackArcMode = Number(item.trackArcMode) % Engine.TRACK_ARC_MODES.length
-        if (item.l3AutoRandomise !== undefined) root.layer3AutoRandomise = Boolean(item.l3AutoRandomise)
+        if (item.l3RandomMode !== undefined) {
+            root.layer3RandomMode = Math.max(0, Math.min(2, Math.round(Number(item.l3RandomMode)) || 0))
+            root.layer3AutoRandomise = (root.layer3RandomMode > 0)
+        } else if (item.l3AutoRandomise !== undefined) {
+            root.layer3AutoRandomise = Boolean(item.l3AutoRandomise)
+            root.layer3RandomMode = root.layer3AutoRandomise ? 2 : 0
+        }
         if (root.layer3Mode === 5) {
             root.requestSelectTtfxEffect("random")
         }
@@ -3278,6 +3314,7 @@ FocusScope {
             layer3Tracers: root.layer3Tracers,
             layer3Opacity: root.layer3Opacity,
             layer3TransitionPauseSec: root.layer3TransitionPauseSec,
+            layer3RandomMode: root.layer3RandomMode,
             layer3AutoRandomise: root.layer3AutoRandomise,
             autoCycle: root.autoCycle,
             photoMotionRenderCallback: function(ctx, w, h, engState, palette, cfgObj) {
@@ -3676,9 +3713,9 @@ FocusScope {
         }
         vizCanvas.requestPaint()
         if (root.useAlbumArt) {
-            root.suppressActionFeedback("Art Style: " + Engine.LAYER3_ART_STYLES[root.layer3TextStyle])
+            root.suppressActionFeedback("Art Style #" + (root.layer3TextStyle + 1) + ": " + Engine.LAYER3_ART_STYLES[root.layer3TextStyle])
         } else {
-            root.suppressActionFeedback("Text Style: " + Engine.LAYER3_TEXT_STYLES[root.layer3TextStyle])
+            root.suppressActionFeedback("Text Style #" + (root.layer3TextStyle + 1) + ": " + Engine.LAYER3_TEXT_STYLES[root.layer3TextStyle])
         }
     }
 
@@ -3966,11 +4003,22 @@ FocusScope {
             scheduleSaveVisualiserConfig()
             root.suppressActionFeedback("5: Vortex Random: " + (root.layer4AutoRandomise ? "ON" : "OFF"))
         } else if (layerNum === 6) {
-            root.layer3AutoRandomise = !root.layer3AutoRandomise
-            if (root.layer3AutoRandomise) root.randomiseLayer3()
-            scheduleSaveVisualiserConfig()
-            root.suppressActionFeedback("6: Typography Random: " + (root.layer3AutoRandomise ? "ON" : "OFF"))
+            root.cycleLayer3RandomMode(1)
         }
+    }
+
+    function cycleLayer3RandomMode(delta) {
+        var step = (delta !== undefined && delta < 0) ? -1 : 1
+        var nextMode = ((root.layer3RandomMode + step) % 3 + 3) % 3
+        root.layer3RandomMode = nextMode
+        root.layer3AutoRandomise = (nextMode > 0)
+        if (nextMode > 0) {
+            root.layer3Enabled = true
+            root.randomiseLayer3()
+        }
+        scheduleSaveVisualiserConfig()
+        var label = (Engine.LAYER3_RANDOM_MODES && Engine.LAYER3_RANDOM_MODES[nextMode]) || (nextMode === 0 ? "No Randomise" : (nextMode === 1 ? "Selected Only (Art or Words)" : "Art ⟷ Words (With Timing)"))
+        root.suppressActionFeedback("6: Typography Random: " + label)
     }
 
     function toggleLayer3TextField(field) {
@@ -4272,8 +4320,10 @@ FocusScope {
     }
 
     function randomiseLayer1() {
-        if (root.layer1PinnedByUser && !root.layer1FieldEnabled && !root.layer1AutoRandomise) {
-            return
+        if (root.layer1PinnedByUser && !root.layer1FieldEnabled) {
+            if (!root.layer1AutoRandomise) {
+                return
+            }
         }
         var pSt = root.syncPhotoStateFromRoot()
         var nowSec = root.engineState ? (Number(root.engineState.t) || 0.0) : 0.0
@@ -4488,9 +4538,9 @@ FocusScope {
             return
         }
         var total = Engine.LAYER3_MODES.length
-        var roll3 = Math.floor(Math.random() * (root.layer6PinnedByUser ? total : (total + 1)))
+        var roll3 = Math.floor(Math.random() * ((root.layer6PinnedByUser || root.layer3RandomMode > 0) ? total : (total + 1)))
         root._internalLayerChange = true
-        if (!root.layer6PinnedByUser && roll3 === total && root.hasOtherActiveLayer(3)) {
+        if (!root.layer6PinnedByUser && root.layer3RandomMode === 0 && roll3 === total && root.hasOtherActiveLayer(3)) {
             root.layer3Enabled = false
             root._internalLayerChange = false
             root.rebalanceRandomLayerOpacities()
@@ -4501,6 +4551,10 @@ FocusScope {
         root.layer3IterationPaused = false
         root.layer3Enabled = true
         root._internalLayerChange = false
+        if (root.layer3RandomMode === 2) {
+            var nextUseArt = (Math.random() < 0.5) ? !root.useAlbumArt : root.useAlbumArt
+            root.selectL3SourceOrGlyph(nextUseArt ? "art" : "words")
+        }
         var nextM = roll3 < total ? roll3 : ((root.layer3Mode + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total)
         root.layer3Mode = nextM
         var totalStyles = root.useAlbumArt ? Engine.LAYER3_ART_STYLES.length : Engine.LAYER3_TEXT_STYLES.length
@@ -4513,7 +4567,9 @@ FocusScope {
         root.layer3Rebuild = Math.round((0.40 + Math.random() * 1.60) * 100) / 100
         root.layer3Scale = Math.round((0.55 + Math.random() * 2.45) * 100) / 100
         root.layer3Opacity = Math.round((0.55 + Math.random() * 0.45) * 100) / 100
-        root.layer3TransitionPauseSec = Math.round((1.0 * Math.pow(45.0 / 1.0, Math.random())) * 100) / 100
+        if (root.layer3RandomMode === 2 || !root.layer3AutoRandomise) {
+            root.layer3TransitionPauseSec = Math.round((Math.random() * 30.0) * 100) / 100
+        }
         root.pickRandomStatement()
         if (root.engineState) {
             root.engineState.l3FormFactor = 0.25
@@ -4594,6 +4650,7 @@ FocusScope {
         root.layerEqAutoRandomise = nextState
         root.layerVectorsAutoRandomise = nextState
         root.layer2AutoRandomise = nextState
+        root.layer3RandomMode = nextState ? (root.layer3RandomMode > 0 ? root.layer3RandomMode : 2) : 0
         root.layer3AutoRandomise = nextState
         root.layer4AutoRandomise = nextState
         if (nextState) {
@@ -5042,6 +5099,22 @@ FocusScope {
                 root.suppressActionFeedback("Studio Control Panel [L]: " + (showLayerDrawer ? "OPEN" : "CLOSED"))
                 event.accepted = true
             }
+            else if (event.key === Qt.Key_U) {
+                root.toggleKeybindingToast()
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_I) {
+                root.cyclePaletteRandomMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_J) {
+                root.cycleSelectedPreset((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+                event.accepted = true
+            }
+            else if (event.key === Qt.Key_O) {
+                root.cycleLayer4Mode((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+                event.accepted = true
+            }
             else if (event.key === Qt.Key_H) {
                 if (event.modifiers & Qt.ShiftModifier) {
                     root.toggleHudVisibility()
@@ -5203,6 +5276,25 @@ FocusScope {
                         root.toggleLayerRandomByNumber(6); event.accepted = true
                     } else if (root.stageMode === "visualiser" && (event.modifiers === Qt.NoModifier) && event.key >= Qt.Key_1 && event.key <= Qt.Key_6) {
                         root.toggleVisualiserLayerByNumber((event.key - Qt.Key_1) + 1)
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_X) {
+                        root.toggleAllRandomisations()
+                        root.suppressActionFeedback("Auto-Morph: " + (root.allRandomisationsActive ? "ON" : "OFF"))
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_Y) {
+                        root.randomiseVisuals()
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_U) {
+                        root.toggleKeybindingToast()
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_I) {
+                        root.cyclePaletteRandomMode((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_J) {
+                        root.cycleSelectedPreset((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_O) {
+                        root.cycleLayer4Mode((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
                         event.accepted = true
                     } else if (event.key === Qt.Key_BraceLeft || event.text === "{") {
                         root.stepPhotoCategoryByKey(-1)
@@ -5627,16 +5719,17 @@ FocusScope {
         }
     }
 
-    // Independent 6: Typography Statements Rotation Timer (with configurable 1–45s exponential pause between iterations)
+    // Independent 6: Typography Statements Rotation Timer (with configurable 0–30s pause between iterations)
     Timer {
         id: statementCycleTimer
         interval: 9000
-        running: root.visible && root.stageMode === "visualiser" && root.layer3Enabled && root.layer3ShowStatements && !root.layer3AutoRandomise
+        running: root.visible && root.stageMode === "visualiser" && root.layer3Enabled && root.layer3ShowStatements && root.layer3RandomMode === 0
         repeat: true
         onTriggered: {
-            if (!root.layer3IterationPaused) {
+            var pauseSec = Math.max(0.0, Math.min(30.0, isNaN(Number(root.layer3TransitionPauseSec)) ? 5.0 : Number(root.layer3TransitionPauseSec)))
+            if (!root.layer3IterationPaused && pauseSec >= 0.05) {
                 root.layer3IterationPaused = true
-                interval = Math.max(1000, Math.min(45000, Math.round((Number(root.layer3TransitionPauseSec) || 5.0) * 1000)))
+                interval = Math.max(50, Math.min(30000, Math.round(pauseSec * 1000)))
                 root.clearCanvasImmediate()
             } else {
                 root.layer3IterationPaused = false
@@ -5657,18 +5750,21 @@ FocusScope {
         }
     }
 
-    // Independent 6: Typography Auto-Randomise Timer (with 1–45s exponential randomisable pause between each text/art iteration)
+    // Independent 6: Typography Auto-Randomise Timer (3 modes: OFF, Selected Only, Art ⟷ Words with 0–30s timing pause)
     Timer {
         id: l3RandomiseTimer
         interval: 9000
-        running: root.visible && root.stageMode === "visualiser" && root.layer3AutoRandomise
+        running: root.visible && root.stageMode === "visualiser" && root.layer3RandomMode > 0
         repeat: true
         onTriggered: {
-            if (!root.layer3IterationPaused) {
+            var pauseSec = Math.max(0.0, Math.min(30.0, isNaN(Number(root.layer3TransitionPauseSec)) ? 5.0 : Number(root.layer3TransitionPauseSec)))
+            if (root.layer3RandomMode === 2) {
+                pauseSec = Math.round((Math.random() * 30.0) * 100) / 100
+                root.layer3TransitionPauseSec = pauseSec
+            }
+            if (!root.layer3IterationPaused && pauseSec >= 0.05) {
                 root.layer3IterationPaused = true
-                var randPauseSec = Math.round((1.0 * Math.pow(45.0 / 1.0, Math.random())) * 100) / 100
-                root.layer3TransitionPauseSec = randPauseSec
-                interval = Math.max(1000, Math.min(45000, Math.round(randPauseSec * 1000)))
+                interval = Math.max(50, Math.min(30000, Math.round(pauseSec * 1000)))
                 root.clearCanvasImmediate()
             } else {
                 root.layer3IterationPaused = false
@@ -6417,6 +6513,15 @@ FocusScope {
                     fontSize: 9
                     horizontalPad: 6
                     onClicked: root.launchExternalTteTerminal()
+                }
+
+                // Key Toast ON/OFF toggle (U)
+                VizPillButton {
+                    text: root.keybindingToastEnabled ? "⌨ Toast:ON" : "⌨ Toast:OFF"
+                    fontSize: 9
+                    active: root.keybindingToastEnabled
+                    horizontalPad: 5
+                    onClicked: root.toggleKeybindingToast()
                 }
 
                 // Keybinding Reference Sheet toggle (?)
@@ -8393,20 +8498,14 @@ FocusScope {
                     pillHeight: 22
                     fontSize: 9
                     horizontalPad: 4
-                    text: root.layer3AutoRandomise ? "󰒟 Rand:AUTO" : "󰒟 Rand:OFF"
-                    active: root.layer3AutoRandomise
-                    onClicked: {
-                        root.layer3AutoRandomise = !root.layer3AutoRandomise
-                        if (root.layer3AutoRandomise) {
-                            root.layer3Enabled = true
-                            root.randomiseLayer3()
-                        }
-                        scheduleSaveVisualiserConfig()
-                    }
+                    text: "󰒟 Rand:" + (root.shortL3RandomModes[root.layer3RandomMode % 3] || "OFF")
+                    active: root.layer3RandomMode > 0
+                    onClicked: root.cycleLayer3RandomMode(1)
                     onRightClicked: {
                         root.layer3Enabled = true
                         root.randomiseLayer3()
                     }
+                    onWheelScrolled: delta => root.cycleLayer3RandomMode(delta > 0 ? 1 : -1)
                 }
             }
         }
@@ -8834,67 +8933,30 @@ FocusScope {
                                     columnSpacing: 16
                                     rowSpacing: 5
 
-                                    LayerSlider {
-                                        label: "World Flight Speed"
-                                        value: root.layer1Speed
-                                        minValue: 0.05
-                                        maxValue: 4.00
-                                        unitSuffix: "x"
-                                        onValueEdited: v => {
-                                            root.layer1Speed = v
-                                            vizCanvas.requestPaint()
-                                            scheduleSaveVisualiserConfig()
-                                        }
-                                    }
-
-                                    LayerSlider {
-                                        label: "Trail Persistence"
-                                        value: root.layer1Persistence
-                                        minValue: 0.20
-                                        maxValue: 0.96
-                                        onValueEdited: v => {
-                                            root.layer1Persistence = v
-                                            vizCanvas.requestPaint()
-                                            scheduleSaveVisualiserConfig()
-                                        }
-                                    }
-
-                                    LayerSlider {
-                                        label: "Field Object Density"
-                                        value: root.layer1Density
-                                        minValue: 0.25
-                                        maxValue: 2.50
-                                        unitSuffix: "x"
-                                        onValueEdited: v => {
-                                            root.layer1Density = v
-                                            vizCanvas.requestPaint()
-                                            scheduleSaveVisualiserConfig()
-                                        }
-                                    }
-
-                                    LayerSlider {
-                                        label: "Backdrop Dim"
-                                        value: root.layer1Dim
-                                        minValue: 0.04
-                                        maxValue: 0.65
-                                        onValueEdited: v => {
-                                            root.layer1Dim = v
-                                            vizCanvas.requestPaint()
-                                            scheduleSaveVisualiserConfig()
-                                        }
-                                    }
-
-                                    LayerSlider {
-                                        label: "Layer 1 Opacity"
-                                        value: Math.round(root.layer1Opacity * 100)
-                                        minValue: 5
-                                        maxValue: 100
-                                        integerSteps: true
-                                        unitSuffix: "%"
-                                        onValueEdited: v => {
-                                            root.layer1Opacity = Math.max(0.05, Math.min(1.0, Math.round(v) / 100.0))
-                                            vizCanvas.requestPaint()
-                                            scheduleSaveVisualiserConfig()
+                                    Repeater {
+                                        model: layerDrawer.visible ? [
+                                            { label: "World Flight Speed", prop: "layer1Speed", min: 0.05, max: 4.00, unit: "x" },
+                                            { label: "Trail Persistence", prop: "layer1Persistence", min: 0.20, max: 0.96, unit: "" },
+                                            { label: "Field Object Density", prop: "layer1Density", min: 0.25, max: 2.50, unit: "x" },
+                                            { label: "Backdrop Dim", prop: "layer1Dim", min: 0.04, max: 0.65, unit: "" },
+                                            { label: "Layer 1 Opacity", prop: "layer1Opacity", min: 5, max: 100, unit: "%", integerSteps: true, pct: true }
+                                        ] : []
+                                        delegate: LayerSlider {
+                                            required property var modelData
+                                            Layout.fillWidth: true
+                                            label: modelData.label
+                                            integerSteps: Boolean(modelData.integerSteps)
+                                            value: modelData.pct ? Math.round(root[modelData.prop] * 100) : root[modelData.prop]
+                                            minValue: modelData.min
+                                            maxValue: modelData.max
+                                            unitSuffix: modelData.unit || ""
+                                            onValueEdited: v => {
+                                                root[modelData.prop] = modelData.pct
+                                                    ? Math.max(0.05, Math.min(1.0, Math.round(v) / 100.0))
+                                                    : v
+                                                vizCanvas.requestPaint()
+                                                scheduleSaveVisualiserConfig()
+                                            }
                                         }
                                     }
                                 }
@@ -9364,7 +9426,7 @@ FocusScope {
                                         spacing: 4
 
                                         Repeater {
-                                            model: PhotoMotion.PHOTO_MOTION_MODES.length
+                                            model: root.showLayerDrawer ? PhotoMotion.PHOTO_MOTION_MODES.length : 0
                                             delegate: VizPillButton {
                                                 required property int index
                                                 readonly property var modeEntry: PhotoMotion.PHOTO_MOTION_MODES[index]
@@ -9415,7 +9477,7 @@ FocusScope {
                                     }
 
                                     Repeater {
-                                        model: PhotoMotion.STAGE1_EFFECT_IDS.length
+                                        model: root.showLayerDrawer ? PhotoMotion.STAGE1_EFFECT_IDS.length : 0
                                         delegate: VizPillButton {
                                             required property int index
                                             readonly property string effId: PhotoMotion.STAGE1_EFFECT_IDS[index]
@@ -9953,7 +10015,7 @@ FocusScope {
                                     spacing: 5
 
                                     Repeater {
-                                        model: Engine.LAYER1_SHAPE_STYLES.length
+                                        model: root.showLayerDrawer ? Engine.LAYER1_SHAPE_STYLES.length : 0
                                         delegate: VizPillButton {
                                             required property int index
                                             text: (index + 1) + ". " + Engine.LAYER1_SHAPE_STYLES[index]
@@ -10217,7 +10279,7 @@ FocusScope {
                             rowSpacing: 5
 
                             Repeater {
-                                model: root.modeNames.length
+                                model: root.showLayerDrawer ? root.modeNames.length : 0
                                 delegate: VizPillButton {
                                     required property int index
                                     Layout.fillWidth: true
@@ -10543,7 +10605,7 @@ FocusScope {
                             }
 
                             Repeater {
-                                model: Engine.LAYER4_WALL_PATTERNS.length
+                                model: root.showLayerDrawer ? Engine.LAYER4_WALL_PATTERNS.length : 0
                                 delegate: VizPillButton {
                                     required property int index
                                     text: Engine.LAYER4_WALL_PATTERNS[index]
@@ -10575,7 +10637,7 @@ FocusScope {
                             spacing: 5
 
                             Repeater {
-                                model: Engine.LAYER4_MODES.length
+                                model: root.showLayerDrawer ? Engine.LAYER4_MODES.length : 0
                                 delegate: VizPillButton {
                                     required property int index
                                     text: (index + 1) + ". " + Engine.LAYER4_MODES[index]
@@ -10617,7 +10679,7 @@ FocusScope {
                             }
 
                             Repeater {
-                                model: Engine.LAYER4_MODES.length
+                                model: root.showLayerDrawer ? Engine.LAYER4_MODES.length : 0
                                 delegate: VizPillButton {
                                     required property int index
                                     text: (index + 1) + ". " + Engine.LAYER4_MODES[index]
@@ -10807,14 +10869,7 @@ FocusScope {
                             VizPillButton {
                                 text: root.layer3AutoRandomise ? "󰒟 Rand L3 (Auto: ON)" : "󰒟 Rand L3"
                                 active: root.layer3AutoRandomise
-                                onClicked: {
-                                    root.layer3AutoRandomise = !root.layer3AutoRandomise
-                                    if (root.layer3AutoRandomise) {
-                                        root.layer3Enabled = true
-                                        root.randomiseLayer3()
-                                    }
-                                    scheduleSaveVisualiserConfig()
-                                }
+                                onClicked: root.cycleLayer3RandomMode(1)
                                 onRightClicked: {
                                     root.layer3Enabled = true
                                     root.randomiseLayer3()
@@ -10831,6 +10886,42 @@ FocusScope {
                                 active: root.layer3Enabled && root.layer3Mode === 5
                                 onClicked: root.activateAndCycleTteInCanvas()
                             }
+                        }
+
+                        // 3-Mode Layer 6 Randomiser Selector (0 = No Randomise, 1 = Selected Only, 2 = Art ⟷ Words)
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 5
+
+                            Text {
+                                text: "Randomise Mode (Shift+6):"
+                                textFormat: Text.PlainText
+                                font.family: "JetBrainsMono Nerd Font"
+                                font.pixelSize: 9
+                                font.bold: true
+                                color: root.accentColour
+                            }
+
+                            Repeater {
+                                model: root.layer3RandomModes.length
+                                delegate: VizPillButton {
+                                    required property int index
+                                    text: root.layer3RandomModes[index]
+                                    active: root.layer3RandomMode === index
+                                    pillHeight: 22
+                                    horizontalPad: 7
+                                    onClicked: {
+                                        root.layer3RandomMode = index
+                                        if (index > 0) {
+                                            root.layer3Enabled = true
+                                            root.randomiseLayer3()
+                                        }
+                                        scheduleSaveVisualiserConfig()
+                                    }
+                                }
+                            }
+
+                            Item { Layout.fillWidth: true }
                         }
 
                         // Selectable Text Fields (Artist / Track / Album / Statements)
@@ -11296,10 +11387,10 @@ FocusScope {
                             }
 
                             Repeater {
-                                model: root.useAlbumArt ? Engine.LAYER3_ART_STYLES.length : Engine.LAYER3_TEXT_STYLES.length
+                                model: root.showLayerDrawer ? (root.useAlbumArt ? Engine.LAYER3_ART_STYLES.length : Engine.LAYER3_TEXT_STYLES.length) : 0
                                 delegate: VizPillButton {
                                     required property int index
-                                    text: (index + 1) + ". " + (root.useAlbumArt ? Engine.LAYER3_ART_STYLES[index] : Engine.LAYER3_TEXT_STYLES[index])
+                                    text: "#" + (index + 1) + ": " + (root.useAlbumArt ? Engine.LAYER3_ART_STYLES[index] : Engine.LAYER3_TEXT_STYLES[index])
                                     active: root.layer3TextStyle === index
                                     horizontalPad: 7
                                     onClicked: {
@@ -11330,7 +11421,7 @@ FocusScope {
                             }
 
                             Repeater {
-                                model: Engine.LAYER3_FONT_PRESETS.length
+                                model: root.showLayerDrawer ? Engine.LAYER3_FONT_PRESETS.length : 0
                                 delegate: VizPillButton {
                                     required property int index
                                     text: (index + 1) + ". " + Engine.LAYER3_FONT_PRESETS[index]
@@ -11361,7 +11452,7 @@ FocusScope {
                             }
 
                             Repeater {
-                                model: Engine.LAYER3_COLOUR_MODES.length
+                                model: root.showLayerDrawer ? Engine.LAYER3_COLOUR_MODES.length : 0
                                 delegate: VizPillButton {
                                     required property int index
                                     text: (index + 1) + ". " + Engine.LAYER3_COLOUR_MODES[index]
@@ -11394,7 +11485,7 @@ FocusScope {
                             }
 
                             Repeater {
-                                model: Engine.LAYER3_CYLINDER_DIRS.length
+                                model: root.showLayerDrawer ? Engine.LAYER3_CYLINDER_DIRS.length : 0
                                 delegate: VizPillButton {
                                     required property int index
                                     text: Engine.LAYER3_CYLINDER_DIRS[index]
@@ -11426,7 +11517,7 @@ FocusScope {
                             }
 
                             Repeater {
-                                model: Engine.TRACK_ARC_MODES.length
+                                model: root.showLayerDrawer ? Engine.TRACK_ARC_MODES.length : 0
                                 delegate: VizPillButton {
                                     required property int index
                                     text: Engine.TRACK_ARC_MODES[index]
@@ -11448,7 +11539,7 @@ FocusScope {
                             spacing: 5
 
                             Repeater {
-                                model: Engine.LAYER3_MODES.length
+                                model: root.showLayerDrawer ? Engine.LAYER3_MODES.length : 0
                                 delegate: VizPillButton {
                                     required property int index
                                     text: (index + 1) + ". " + Engine.LAYER3_MODES[index]
@@ -11551,13 +11642,13 @@ FocusScope {
                             }
 
                             LayerSlider {
-                                label: "Transition Pause (1–45s)"
-                                exponentialScale: true
+                                label: "Transition Pause (0–30s)"
+                                exponentialScale: false
                                 value: root.layer3TransitionPauseSec
-                                minValue: 1.0
-                                maxValue: 45.0
+                                minValue: 0.0
+                                maxValue: 30.0
                                 unitSuffix: "s"
-                                onValueEdited: v => { root.layer3TransitionPauseSec = Math.max(1.0, Math.min(45.0, v)); scheduleSaveVisualiserConfig() }
+                                onValueEdited: v => { root.layer3TransitionPauseSec = Math.max(0.0, Math.min(30.0, v)); scheduleSaveVisualiserConfig() }
                             }
 
                             LayerSlider {
@@ -11766,7 +11857,7 @@ FocusScope {
                                     }
 
                                     Repeater {
-                                        model: Engine.PALETTE_RANDOM_MODES.length
+                                        model: root.showLayerDrawer ? Engine.PALETTE_RANDOM_MODES.length : 0
                                         delegate: VizPillButton {
                                             required property int index
                                             text: (index + 1) + ". " + Engine.PALETTE_RANDOM_MODES[index]
@@ -11806,7 +11897,7 @@ FocusScope {
                                     spacing: 4
 
                                     Repeater {
-                                        model: Engine.PALETTE_COLLECTIONS.length
+                                        model: root.showLayerDrawer ? Engine.PALETTE_COLLECTIONS.length : 0
                                         delegate: VizPillButton {
                                             required property int index
                                             readonly property var colItem: Engine.PALETTE_COLLECTIONS[index]
@@ -11834,7 +11925,7 @@ FocusScope {
                                     spacing: 4
 
                                     Repeater {
-                                        model: Engine.PALETTE_NAMES.length
+                                        model: root.showLayerDrawer ? Engine.PALETTE_NAMES.length : 0
                                         delegate: VizPillButton {
                                             required property int index
                                             readonly property bool inActiveCollection: root.paletteRandomMode === 1
@@ -12182,7 +12273,7 @@ FocusScope {
                             Layout.fillWidth: true
                             text: (root.trackArtist ? root.trackArtist : "Bandarchy") +
                                   (root.trackAlbum ? (" · " + root.trackAlbum) : "") +
-                                  "  [1–6: Layers · Shift+1–6: Rand · L: Studio · G: Worlds · M: Geom · A/T: Type · ?: Keys]"
+                                  "  [1–6: Layers · Shift+1–6: Rand · X/Y: Rand All · U: Toast · L: Studio · ?: Keys]"
                             textFormat: Text.PlainText
                             font.family: "JetBrainsMono Nerd Font"
                             font.pixelSize: 9
@@ -12213,18 +12304,18 @@ FocusScope {
                     radius: 5
                     color: Qt.rgba(1, 1, 1, 0.05)
                     border.width: 1
-                    border.color: root.liveBeat > 0.35 ? root.urgentColour : Qt.rgba(1, 1, 1, 0.14)
+                    border.color: root.liveBeat > 0.35 ? Qt.rgba(root.accentColour.r, root.accentColour.g, root.accentColour.b, 0.55) : Qt.rgba(1, 1, 1, 0.14)
 
                     Spectrum {
                         anchors.fill: parent
                         anchors.margins: 3
                         visible: bottomMeterBox.showSpectrumMeter
                         bands: root.bands
-                        active: root.playing && root.showHud && root.isFullscreen && bottomMeterBox.showSpectrumMeter
+                        active: root.playing && bottomHud.visible && bottomMeterBox.showSpectrumMeter
                         barCount: 24
                         accentColour: root.accentColour
                         secondaryColour: "#38bdf8"
-                        peakColour: root.urgentColour
+                        peakColour: "#c084fc"
                     }
 
                     RowLayout {
@@ -12240,7 +12331,7 @@ FocusScope {
                                 required property int index
                                 readonly property string barTag: index === 0 ? "B" : (index === 1 ? "M" : (index === 2 ? "H" : "!"))
                                 readonly property real barVal: index === 0 ? root.liveBass : (index === 1 ? root.liveMid : (index === 2 ? root.liveHigh : root.liveBeat))
-                                readonly property color barCol: index === 0 ? root.accentColour : (index === 1 ? "#38bdf8" : (index === 2 ? "#c084fc" : root.urgentColour))
+                                readonly property color barCol: index === 0 ? root.accentColour : (index === 1 ? "#38bdf8" : (index === 2 ? "#c084fc" : "#34d399"))
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 spacing: 1
@@ -12462,20 +12553,24 @@ FocusScope {
                                     title: "1. Layers, Randomisation & Palettes",
                                     items: [
                                         "1 .. 6          : Toggle Layers 1–6 ON / OFF",
-                                        "Shift + 1 .. 6  : Toggle Per-Layer Rand:AUTO (Layers 1–6)",
-                                        "X               : Toggle RANDOM:ALL Auto-Morph",
-                                        "Y               : One-Shot Randomise Active Layers",
+                                        "Shift + 1 .. 5  : Toggle Per-Layer Rand:AUTO (Layers 1–5)",
+                                        "Shift + 6       : Cycle Layer 6 Rand (OFF / Selected / Art⟷Words)",
+                                        "X               : Toggle RANDOM:ALL Auto-Morph ON / OFF",
+                                        "Y               : Instant One-Shot Randomise Active Layers",
                                         "L               : Open / Close Studio Control Panel",
-                                        "C / Shift + C   : Next / Previous Colour Palette (30)"
+                                        "C / Shift + C   : Next / Previous Colour Palette (30)",
+                                        "I / Shift + I   : Cycle Palette Random Scope (All / Fav / Cur)"
                                     ]
                                 },
                                 {
-                                    title: "2. Visualiser Effect Cyclers",
+                                    title: "2. Visualiser Effect & Preset Cyclers",
                                     items: [
                                         "G / Shift + G   : Next / Previous 1: Worlds (20 Worlds)",
                                         "M / Shift + M   : Next / Previous 4: Geometry (20 Modes)",
+                                        "O / Shift + O   : Next / Previous 5: Vortex Mode",
+                                        "J / Shift + J   : Next / Previous Collective Scene Preset",
                                         "K / Shift + K   : Cycle 3D History Tracers (OFF..16x)",
-                                        "A / Shift + A   : Next / Previous 6: Type Motion Mode",
+                                        "A / Shift + A   : Next / Previous 6: Type Style (#1..#21)",
                                         "S               : Trigger Beat Shatter Impulse",
                                         "+ / -           : Increase / Decrease Audio Reactivity"
                                     ]
@@ -12503,11 +12598,12 @@ FocusScope {
                                     ]
                                 },
                                 {
-                                    title: "5. Stage, Display & Transport",
+                                    title: "5. Stage, Display, Toast & Transport",
                                     items: [
                                         "Space           : Play / Pause (or Replay Finished Album)",
                                         "N / → · P / ←   : Next Track / Previous Track",
                                         "PgUp / PgDn     : Volume Up (+5%) / Volume Down (-5%)",
+                                        "U               : Toggle Keypress Feedback Toast ON / OFF",
                                         "F / V           : Toggle Fullscreen Stage",
                                         "Z / Shift + F   : Toggle Zen Fullscreen (HUD Hidden)",
                                         "Shift + H       : Toggle Top & Bottom HUD Bars",

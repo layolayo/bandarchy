@@ -10,8 +10,8 @@ Item {
     property bool active: false
     property int barCount: 32
     property color accentColour: "#6ee7b7"
-    property color secondaryColour: "#a78bfa"
-    property color peakColour: "#f472b6"
+    property color secondaryColour: "#38bdf8"
+    property color peakColour: "#c084fc"
     property real sensitivity: 1.0
 
     property var smoothValues: []
