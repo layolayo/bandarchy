@@ -77,11 +77,13 @@ FocusScope {
         "Jungle", "Strobe", "Amethyst", "Copper", "Abalone",
         "Isotope", "Quasar", "Crimson", "Oceanic", "Prismatic",
         "DarkHorror", "GrittyDrama", "NoirThrill", "GialloSlash", "PsychDread", "Eldritch",
-        "AshWasteland", "NordicNoir", "OccultRitual", "MorgueSteel", "CyberThrill", "VampireCrypt"
+        "AshWasteland", "NordicNoir", "OccultRitual", "MorgueSteel", "CyberThrill", "VampireCrypt",
+        "Shoegaze", "Techno313", "UKGarage", "BlackMetal", "IndEBM", "BlueNote",
+        "GoaFluoro", "Grunge90s", "ItaloDisco", "Mallsoft", "DubReggae", "WitchHouse"
     ]
     readonly property var trackArcModes: Engine.TRACK_ARC_MODES
-    property int paletteRandomMode: 0 // 0 = Full Random (All 42), 1 = Within Collection, 2 = Fixed to Selection
-    property int paletteCollectionIndex: 0 // 0..7 in Engine.PALETTE_COLLECTIONS
+    property int paletteRandomMode: 0 // 0 = Full Random (All 54), 1 = Within Collection, 2 = Fixed to Selection
+    property int paletteCollectionIndex: 0 // 0..9 in Engine.PALETTE_COLLECTIONS
     onPaletteRandomModeChanged: scheduleSaveVisualiserConfig()
     onPaletteCollectionIndexChanged: scheduleSaveVisualiserConfig()
 
@@ -292,6 +294,8 @@ FocusScope {
     property real layer3Dismantle: 1.15
     property real layer3Rebuild: 1.0
     property real layer3Evolution: 0.90
+    property real layer3CharSwap: 0.35
+    onLayer3CharSwapChanged: { vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
     property real layer3Scale: 1.0
     property int layer3Tracers: 3
     property real layer3Opacity: 1.0
@@ -628,8 +632,13 @@ FocusScope {
         "23:ShdTempest",
         "24:3DWarpTrench",
         "25:RaveMan",
-        "26:3DVector",
-        "27:Invaders"
+        "26:SumerTardis",
+        "27:Invaders",
+        "28:Turret",
+        "29:Pinball",
+        "30:FairyGlen",
+        "31:Marble",
+        "32:OutRun"
     ]
 
     readonly property var photoMotionModes: PhotoMotion.PHOTO_MOTION_MODES
@@ -701,30 +710,34 @@ FocusScope {
     })
 
     readonly property var shortEqLabels: [
-        "1:Skyline",
-        "2:LED Bars",
-        "3:Mirror",
-        "4:3D Ridges",
-        "5:Sun",
-        "6:TwinWave",
-        "7:Spotlights",
-        "8:3D Orb",
-        "9:3D Torus",
-        "10:Cymatics",
-        "11:3D Helix",
-        "12:Tesla Arcs",
-        "13:Tralis City",
-        "14:Aurora",
-        "15:DNA Beam",
-        "16:Ferrofluid",
-        "17:3D Tubes",
-        "18:HyperRibbon",
-        "19:CyberSpine",
-        "20:HoloPrisms",
-        "21:WarpRings",
-        "22:MercuryWave",
-        "23:LaserHarp",
-        "24:SynthValley"
+        "1/28:Skyline",
+        "2/28:LED Bars",
+        "3/28:Mirror",
+        "4/28:3D Ridges",
+        "5/28:Sun",
+        "6/28:TwinWave",
+        "7/28:Spotlights",
+        "8/28:3D Orb",
+        "9/28:3D Torus",
+        "10/28:Cymatics",
+        "11/28:3D Helix",
+        "12/28:Tesla Arcs",
+        "13/28:Tralis City",
+        "14/28:Aurora",
+        "15/28:DNA Beam",
+        "16/28:Ferrofluid",
+        "17/28:3D Tubes",
+        "18/28:HyperRibbon",
+        "19/28:CyberSpine",
+        "20/28:HoloPrisms",
+        "21/28:WarpRings",
+        "22/28:MercuryWave",
+        "23/28:LaserHarp",
+        "24/28:SynthValley",
+        "25/28:SoloSpot",
+        "26/28:WarpWave",
+        "27/28:CloudEQ",
+        "28/28:MistClouds"
     ]
     readonly property var shortVectorLabels: Engine.SHORT_LAYER1_SHAPE_STYLES
 
@@ -787,7 +800,8 @@ FocusScope {
         "18:BlochSphere",
         "19:KleinBottle",
         "20:Quasicrystal",
-        "21:3DTetris"
+        "21:3DTetris",
+        "22:Seagulls"
     ]
 
     property bool layer3IterationPaused: false
@@ -2271,6 +2285,7 @@ FocusScope {
             layer3Dismantle: root.layer3Dismantle,
             layer3Rebuild: root.layer3Rebuild,
             layer3Evolution: root.layer3Evolution,
+            layer3CharSwap: root.layer3CharSwap,
             layer3Scale: root.layer3Scale,
             layer3Tracers: root.layer3Tracers,
             layer3Opacity: root.layer3Opacity,
@@ -2460,6 +2475,7 @@ FocusScope {
         if (cfg.layer3Dismantle !== undefined) root.layer3Dismantle = Number(cfg.layer3Dismantle)
         if (cfg.layer3Rebuild !== undefined) root.layer3Rebuild = Number(cfg.layer3Rebuild)
         if (cfg.layer3Evolution !== undefined) root.layer3Evolution = Number(cfg.layer3Evolution)
+        if (cfg.layer3CharSwap !== undefined) root.layer3CharSwap = Math.max(0.0, Math.min(1.0, Number(cfg.layer3CharSwap)))
         if (cfg.layer3Scale !== undefined) root.layer3Scale = Number(cfg.layer3Scale)
         if (cfg.layer3Tracers !== undefined) root.layer3Tracers = Number(cfg.layer3Tracers)
         if (cfg.layer3Opacity !== undefined) root.layer3Opacity = Math.max(0.05, Math.min(1.00, Number(cfg.layer3Opacity)))
@@ -2596,6 +2612,7 @@ FocusScope {
         root.layer3ShowAlbum = true
         root.layer3ShowStatements = false
         root.layer3Tracers = 3
+        root.layer3CharSwap = 0.35
         root.layer3Opacity = 1.00
         root.layer3TransitionPauseSec = 5.0
         root.autoCycle = false
@@ -2891,10 +2908,6 @@ FocusScope {
         if (item.l3FontPreset !== undefined) root.layer3FontPreset = Number(item.l3FontPreset) % Engine.LAYER3_FONT_PRESETS.length
         if (item.l3ColourMode !== undefined) root.layer3ColourMode = Number(item.l3ColourMode) % Engine.LAYER3_COLOUR_MODES.length
         if (item.l3CylinderDir !== undefined) root.layer3CylinderDir = Number(item.l3CylinderDir) % Engine.LAYER3_CYLINDER_DIRS.length
-        if (item.l3ShowArtist !== undefined) root.layer3ShowArtist = Boolean(item.l3ShowArtist)
-        if (item.l3ShowTrack !== undefined) root.layer3ShowTrack = Boolean(item.l3ShowTrack)
-        if (item.l3ShowAlbum !== undefined) root.layer3ShowAlbum = Boolean(item.l3ShowAlbum)
-        if (item.l3ShowStatements !== undefined) root.layer3ShowStatements = Boolean(item.l3ShowStatements)
         if (item.useAlbumArt !== undefined) {
             root.selectL3SourceOrGlyph(item.useAlbumArt ? "art" : "words")
         }
@@ -3310,6 +3323,7 @@ FocusScope {
             layer3Dismantle: root.layer3Dismantle,
             layer3Rebuild: root.layer3Rebuild,
             layer3Evolution: root.layer3Evolution,
+            layer3CharSwap: root.layer3CharSwap,
             layer3Scale: root.layer3Scale,
             layer3Tracers: root.layer3Tracers,
             layer3Opacity: root.layer3Opacity,
@@ -3673,7 +3687,7 @@ FocusScope {
         root.syncLayer1MasterFromSubs()
         root.layer1EqStyle = (root.layer1EqStyle + step + count) % count
         vizCanvas.requestPaint()
-        root.suppressActionFeedback("2: Equaliser: " + (root.layer1EqStyle + 1) + ". " + root.layer1EqStyles[root.layer1EqStyle])
+        root.suppressActionFeedback("2: Equaliser: " + (root.layer1EqStyle + 1) + "/" + count + " " + root.layer1EqStyles[root.layer1EqStyle])
     }
 
     function cycleLayer1EqBandOrder(delta) {
@@ -4565,12 +4579,12 @@ FocusScope {
         root.layer3Tracers = l3TrChoices[Math.floor(Math.random() * l3TrChoices.length)]
         root.layer3Dismantle = Math.round((0.35 + Math.random() * 1.65) * 100) / 100
         root.layer3Rebuild = Math.round((0.40 + Math.random() * 1.60) * 100) / 100
+        root.layer3CharSwap = root.useAlbumArt ? 0.0 : Engine.pickRandomLayer3CharSwap(root.layer3TextStyle)
         root.layer3Scale = Math.round((0.55 + Math.random() * 2.45) * 100) / 100
         root.layer3Opacity = Math.round((0.55 + Math.random() * 0.45) * 100) / 100
         if (root.layer3RandomMode === 2 || !root.layer3AutoRandomise) {
             root.layer3TransitionPauseSec = Math.round((Math.random() * 30.0) * 100) / 100
         }
-        root.pickRandomStatement()
         if (root.engineState) {
             root.engineState.l3FormFactor = 0.25
             root.engineState.artInterpretationSeed = ((root.engineState.artInterpretationSeed || 0) + 1)
@@ -5447,6 +5461,32 @@ FocusScope {
                     targetCol2 = Qt.vector4d(0.22, 0.74, 0.97, 1.0)
                 }
                 var colBlend = Math.min(1.0, dt * 4.5)
+                var eqWaveWarpActive = Boolean(root.layer1Enabled && root.layer1EqEnabled && root.layer1EqStyle === 25)
+                var eqWarpDX = 0.0
+                var eqWarpDY = 0.0
+                var eqWarpTwist = 0.0
+                var eqWarpRoll = 0.0
+                var eqWarpShear = 0.0
+                if (eqWaveWarpActive && st) {
+                    var wTime = st.t || 0.0
+                    var wSpinT = st.eqSpinTime !== undefined ? st.eqSpinTime : (wTime * root.layer1EqSpin)
+                    var wStrength = (0.45 + root.layer1EqGain * 0.75) * Math.min(2.0, Math.max(0.25, root.layer1EqScale)) * root.layer1EqOpacity
+                    var wAng0 = wSpinT * 0.31 + 0.28 * Math.sin(wTime * 0.19)
+                    var wAng1 = -wSpinT * 0.47 + 1.18 + 0.32 * Math.cos(wTime * 0.23)
+                    var wAng2 = wSpinT * 0.61 + 2.41 + 0.26 * Math.sin(wTime * 0.29)
+                    var wAng3 = -wSpinT * 0.83 + 3.82 + 0.22 * Math.cos(wTime * 0.37)
+
+                    var wWave0 = Math.sin(wTime * 2.6 + (st.bassSmooth || 0.0) * 2.2) * (0.018 + (st.bassSmooth || 0.0) * 0.042) * wStrength
+                    var wWave1 = Math.cos(wTime * 3.9 + (st.midSmooth || 0.0) * 2.5)  * (0.014 + (st.midSmooth  || 0.0) * 0.034) * wStrength
+                    var wWave2 = Math.sin(wTime * 5.4 + (st.mid || 0.0) * 2.8)        * (0.011 + (st.mid        || 0.0) * 0.026) * wStrength
+                    var wWave3 = Math.cos(wTime * 7.8 + (st.highSmooth || 0.0) * 3.1) * (0.009 + ((st.highSmooth || 0.0) + (st.beatPulse || 0.0) * 0.5) * 0.024) * wStrength
+
+                    eqWarpDX = Math.cos(wAng0) * wWave0 + Math.cos(wAng1) * wWave1 + Math.cos(wAng2) * wWave2 + Math.cos(wAng3) * wWave3
+                    eqWarpDY = Math.sin(wAng0) * wWave0 + Math.sin(wAng1) * wWave1 + Math.sin(wAng2) * wWave2 + Math.sin(wAng3) * wWave3
+                    eqWarpTwist = (wWave0 * 3.2 - wWave1 * 4.1 + wWave2 * 5.0) * 1.35
+                    eqWarpRoll  = (wWave0 * 1.4 - wWave1 * 1.8 + wWave2 * 1.2) * 1.6
+                    eqWarpShear = (wWave1 * 3.5 - wWave2 * 3.8 + wWave3 * 2.6) * 2.2
+                }
 
                 if (l1WorldGpu || (root.backdropEnabled && (root.layer1Enabled || root.layer2Enabled)) || root.layer4Enabled || l2FractalGpu) {
                     var bT = st.backdropTime !== undefined ? st.backdropTime : (st.t || 0.0)
@@ -5459,8 +5499,9 @@ FocusScope {
                     gpuShaderStage.uMid = st.midSmooth || 0.0
                     gpuShaderStage.uHigh = st.highSmooth || 0.0
                     gpuShaderStage.uBeat = st.beatPulse || 0.0
-                    gpuShaderStage.uDriftX = Math.sin(bT * 0.27) * 0.16 * root.tracerDrift
-                    gpuShaderStage.uDriftY = Math.cos(bT * 0.21) * 0.12 * root.tracerDrift
+                    gpuShaderStage.uDriftX = Math.sin(bT * 0.27) * 0.16 * root.tracerDrift + eqWarpDX
+                    gpuShaderStage.uDriftY = Math.cos(bT * 0.21) * 0.12 * root.tracerDrift + eqWarpDY
+                    gpuShaderStage.uL4Twist = root.layer4Twist + eqWarpTwist
                     gpuShaderStage.uCol0 = root.lerpVec4(gpuShaderStage.uCol0, targetCol0, colBlend)
                     gpuShaderStage.uCol1 = root.lerpVec4(gpuShaderStage.uCol1, targetCol1, colBlend)
                     gpuShaderStage.uCol2 = root.lerpVec4(gpuShaderStage.uCol2, targetCol2, colBlend)
@@ -5536,20 +5577,20 @@ FocusScope {
                     gpuPhotoStage.uMotionSpeed = (stepInfo && stepInfo.effectiveMotionActivity !== undefined) ? stepInfo.effectiveMotionActivity : root.photoMotionActivity
                     gpuPhotoStage.uMotionDepth = (stepInfo && stepInfo.effectiveWarpIntensity !== undefined) ? stepInfo.effectiveWarpIntensity : root.photoWarpIntensity
                     gpuPhotoStage.uMotionSpread = (stepInfo && stepInfo.effectiveZoomPunch !== undefined) ? stepInfo.effectiveZoomPunch : root.photoZoomPunch
-                    gpuPhotoStage.uPanX = (pSt.viewportPanX !== undefined) ? pSt.viewportPanX : 0.0
-                    gpuPhotoStage.uPanY = (pSt.viewportPanY !== undefined) ? pSt.viewportPanY : 0.0
+                    gpuPhotoStage.uPanX = ((pSt.viewportPanX !== undefined) ? pSt.viewportPanX : 0.0) + eqWarpDX * 1.35
+                    gpuPhotoStage.uPanY = ((pSt.viewportPanY !== undefined) ? pSt.viewportPanY : 0.0) + eqWarpDY * 1.35
                     gpuPhotoStage.uZoom = (pSt.viewportZoom !== undefined) ? pSt.viewportZoom : 1.0
                     gpuPhotoStage.uMacroSlide = Math.sqrt(slideX * slideX + slideY * slideY)
                     gpuPhotoStage.uMacroSlideX = slideX
                     gpuPhotoStage.uMacroSlideY = slideY
                     gpuPhotoStage.uMacroScale = (pSt.macroScale !== undefined) ? pSt.macroScale : 1.0
                     gpuPhotoStage.uMacroRoll = (pSt.macroRollRad !== undefined) ? pSt.macroRollRad : 0.0
-                    gpuPhotoStage.uPitch = (pSt.pitchRad !== undefined) ? pSt.pitchRad : 0.0
-                    gpuPhotoStage.uYaw = (pSt.yawRad !== undefined) ? pSt.yawRad : 0.0
-                    gpuPhotoStage.uRoll = (pSt.rollRad !== undefined) ? pSt.rollRad : 0.0
-                    gpuPhotoStage.uPlaneShear = (stepInfo && stepInfo.effectivePlaneShear !== undefined)
+                    gpuPhotoStage.uPitch = ((pSt.pitchRad !== undefined) ? pSt.pitchRad : 0.0) + eqWarpDY * 1.8
+                    gpuPhotoStage.uYaw = ((pSt.yawRad !== undefined) ? pSt.yawRad : 0.0) + eqWarpDX * 1.8
+                    gpuPhotoStage.uRoll = ((pSt.rollRad !== undefined) ? pSt.rollRad : 0.0) + eqWarpRoll
+                    gpuPhotoStage.uPlaneShear = ((stepInfo && stepInfo.effectivePlaneShear !== undefined)
                         ? stepInfo.effectivePlaneShear
-                        : (root.photoPlaneShearEnabled ? root.photoPlaneShear : 0.0)
+                        : (root.photoPlaneShearEnabled ? root.photoPlaneShear : 0.0)) + eqWarpShear
                     gpuPhotoStage.uPhotoOpacity = root.photoOpacity * root.layer1Opacity * (1.0 - Math.min(0.85, root.layer1Dim * 0.75))
                     gpuPhotoStage.uBlackOpacity = root.photoBlackOpacity
                     gpuPhotoStage.uMidOpacity = root.photoMidOpacity
@@ -8304,6 +8345,7 @@ FocusScope {
                     horizontalPad: 3
                     text: "Artist"
                     active: root.layer3ShowArtist
+                    notBoundToRand: true
                     onClicked: root.toggleLayer3TextField("artist")
                 }
 
@@ -8313,6 +8355,7 @@ FocusScope {
                     horizontalPad: 3
                     text: "Track"
                     active: root.layer3ShowTrack
+                    notBoundToRand: true
                     onClicked: root.toggleLayer3TextField("track")
                 }
 
@@ -8322,6 +8365,7 @@ FocusScope {
                     horizontalPad: 3
                     text: "Album"
                     active: root.layer3ShowAlbum
+                    notBoundToRand: true
                     onClicked: root.toggleLayer3TextField("album")
                 }
 
@@ -8331,6 +8375,7 @@ FocusScope {
                     horizontalPad: 3
                     text: "Statements"
                     active: root.layer3ShowStatements
+                    notBoundToRand: true
                     onClicked: root.toggleLayer3TextField("statements")
                     onRightClicked: {
                         root.layer3ShowStatements = true
@@ -8348,6 +8393,7 @@ FocusScope {
                     horizontalPad: 3
                     text: "󰏫"
                     active: root.showStatementsEditor && root.showLayerDrawer && root.activeConfigLayer === 6
+                    notBoundToRand: true
                     onClicked: root.openStatementsEditorDrawer()
                 }
 
@@ -8453,6 +8499,27 @@ FocusScope {
                         root.layer3Evolution = Math.max(0.20, Math.min(2.50, Math.round((root.layer3Evolution + delta * 0.12) * 100) / 100))
                         vizCanvas.requestPaint()
                         scheduleSaveVisualiserConfig()
+                    }
+                }
+
+                VizPillButton {
+                    pillHeight: 22
+                    fontSize: 8
+                    horizontalPad: 3
+                    text: "Swap:" + Math.round(root.layer3CharSwap * 100) + "%"
+                    active: root.layer3CharSwap > 0.02
+                    onClicked: {
+                        var swSteps = [0.00, 0.20, 0.35, 0.60, 0.85, 1.00]
+                        var nextSw = 0.00
+                        for (var i = 0; i < swSteps.length; i++) {
+                            if (swSteps[i] > root.layer3CharSwap + 0.04) { nextSw = swSteps[i]; break }
+                            if (i === swSteps.length - 1) nextSw = swSteps[0]
+                        }
+                        root.layer3CharSwap = nextSw
+                    }
+                    onRightClicked: root.layer3CharSwap = 0.35
+                    onWheelScrolled: delta => {
+                        root.layer3CharSwap = Math.max(0.00, Math.min(1.00, Math.round((root.layer3CharSwap + (delta > 0 ? 0.05 : -0.05)) * 100) / 100))
                     }
                 }
 
@@ -9748,7 +9815,7 @@ FocusScope {
                                         model: root.layer1EqStyles.length
                                         delegate: VizPillButton {
                                             required property int index
-                                            text: (index + 1) + ". " + root.layer1EqStyles[index]
+                                            text: (index + 1) + "/" + root.layer1EqStyles.length + " " + root.layer1EqStyles[index]
                                             active: root.layer1EqEnabled && root.layer1EqStyle === index
                                             horizontalPad: 7
                                             onClicked: {
@@ -10977,6 +11044,7 @@ FocusScope {
                             VizPillButton {
                                 text: "󰒟 Next Statement"
                                 active: root.layer3ShowStatements
+                                notBoundToRand: true
                                 horizontalPad: 7
                                 onClicked: {
                                     root.layer3ShowStatements = true
@@ -10987,6 +11055,7 @@ FocusScope {
                             VizPillButton {
                                 text: root.showStatementsEditor ? "󰄬 Statements Editor: OPEN" : "󰏫 Statements Editor"
                                 active: root.showStatementsEditor
+                                notBoundToRand: true
                                 horizontalPad: 7
                                 onClicked: {
                                     root.showStatementsEditor = !root.showStatementsEditor
@@ -10998,12 +11067,14 @@ FocusScope {
 
                             VizPillButton {
                                 text: "󰏫 External File"
+                                notBoundToRand: true
                                 horizontalPad: 7
                                 onClicked: root.requestOpenStatementsFile()
                             }
 
                             VizPillButton {
                                 text: "󰑐 Reload File"
+                                notBoundToRand: true
                                 horizontalPad: 7
                                 onClicked: root.requestReloadStatementsFile()
                             }
@@ -11620,6 +11691,16 @@ FocusScope {
                                 maxValue: 2.50
                                 unitSuffix: "x"
                                 onValueEdited: v => { root.layer3Evolution = v; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
+                            }
+
+                            LayerSlider {
+                                label: "Character Swap"
+                                exponentialScale: false
+                                value: root.layer3CharSwap
+                                minValue: 0.00
+                                maxValue: 1.00
+                                unitSuffix: ""
+                                onValueEdited: v => { root.layer3CharSwap = v; vizCanvas.requestPaint(); scheduleSaveVisualiserConfig() }
                             }
 
                             LayerSlider {
@@ -12484,7 +12565,7 @@ FocusScope {
         id: keybindingsSheetModal
         anchors.centerIn: parent
         width: Math.min(parent.width - 36, 780)
-        height: Math.min(parent.height - 64, 520)
+        height: Math.min(parent.height - 48, 560)
         visible: root.showKeybindingsSheet
         z: 95
         radius: 10
@@ -12499,8 +12580,8 @@ FocusScope {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 14
-                spacing: 10
+                anchors.margins: 12
+                spacing: 8
 
                 RowLayout {
                     Layout.fillWidth: true
@@ -12536,7 +12617,7 @@ FocusScope {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     contentWidth: width
-                    contentHeight: keySheetGrid.implicitHeight + 12
+                    contentHeight: keySheetGrid.implicitHeight + 6
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
 
@@ -12544,8 +12625,8 @@ FocusScope {
                         id: keySheetGrid
                         width: parent.width
                         columns: 2
-                        columnSpacing: 16
-                        rowSpacing: 12
+                        columnSpacing: 12
+                        rowSpacing: 8
 
                         Repeater {
                             model: [
@@ -12565,8 +12646,8 @@ FocusScope {
                                 {
                                     title: "2. Visualiser Effect & Preset Cyclers",
                                     items: [
-                                        "G / Shift + G   : Next / Previous 1: Worlds (20 Worlds)",
-                                        "M / Shift + M   : Next / Previous 4: Geometry (20 Modes)",
+                                        "G / Shift + G   : Next / Previous 1: Worlds (28 Worlds)",
+                                        "M / Shift + M   : Next / Previous 4: Geometry (21 Modes)",
                                         "O / Shift + O   : Next / Previous 5: Vortex Mode",
                                         "J / Shift + J   : Next / Previous Collective Scene Preset",
                                         "K / Shift + K   : Cycle 3D History Tracers (OFF..16x)",
@@ -12614,9 +12695,11 @@ FocusScope {
 
                             delegate: Rectangle {
                                 required property var modelData
+                                required property int index
                                 Layout.fillWidth: true
+                                Layout.columnSpan: index === 4 ? 2 : 1
                                 Layout.alignment: Qt.AlignTop
-                                implicitHeight: catCol.implicitHeight + 16
+                                implicitHeight: catCol.implicitHeight + 14
                                 radius: 7
                                 color: Qt.rgba(1, 1, 1, 0.04)
                                 border.width: 1
@@ -12625,8 +12708,8 @@ FocusScope {
                                 ColumnLayout {
                                     id: catCol
                                     anchors.fill: parent
-                                    anchors.margins: 8
-                                    spacing: 4
+                                    anchors.margins: 7
+                                    spacing: 3
 
                                     Text {
                                         text: modelData.title
@@ -12637,17 +12720,24 @@ FocusScope {
                                         color: root.accentColour
                                     }
 
-                                    Repeater {
-                                        model: modelData.items
-                                        delegate: Text {
-                                            required property string modelData
-                                            Layout.fillWidth: true
-                                            text: modelData
-                                            textFormat: Text.PlainText
-                                            font.family: "JetBrainsMono Nerd Font"
-                                            font.pixelSize: 9
-                                            color: root.foregroundColour
-                                            elide: Text.ElideRight
+                                    GridLayout {
+                                        Layout.fillWidth: true
+                                        columns: index === 4 ? 2 : 1
+                                        columnSpacing: 16
+                                        rowSpacing: 3
+
+                                        Repeater {
+                                            model: modelData.items
+                                            delegate: Text {
+                                                required property string modelData
+                                                Layout.fillWidth: true
+                                                text: modelData
+                                                textFormat: Text.PlainText
+                                                font.family: "JetBrainsMono Nerd Font"
+                                                font.pixelSize: 9
+                                                color: root.foregroundColour
+                                                elide: Text.ElideRight
+                                            }
                                         }
                                     }
                                 }

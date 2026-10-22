@@ -4692,14 +4692,54 @@ def sanitise_m3u_target(target: str) -> str:
     return real_path
 
 
+def _is_stream_url_expired(url: str) -> bool:
+    """Return True if a Bandcamp `bcbits.com` or `stream_redirect` URL contains an expired `ts=` token."""
+    if not url or "ts=" not in url:
+        return False
+    m = re.search(r"[?&]ts=(\d+)", url)
+    if not m:
+        return False
+    try:
+        ts_val = int(m.group(1))
+    except ValueError:
+        return False
+    if ts_val <= 1000000000:
+        return False
+    now = int(time.time())
+    if "bcbits.com" in url:
+        return ts_val <= (now + 300)
+    if "stream_redirect" in url:
+        return (now - ts_val) > 36000
+    return False
+
+
+def _match_track_from_details(entry: dict, det_tracks: list[dict]) -> dict | None:
+    if not det_tracks:
+        return None
+    matched = next(
+        (dt for dt in det_tracks if fold(dt.get("title")) == fold(entry.get("title")) and dt.get("streamUrl")),
+        None,
+    )
+    if not matched:
+        idx_1 = max(0, int(entry.get("index") or 1) - 1)
+        if idx_1 < len(det_tracks) and det_tracks[idx_1].get("streamUrl"):
+            matched = det_tracks[idx_1]
+        elif det_tracks[0].get("streamUrl"):
+            matched = det_tracks[0]
+    return matched
+
+
 def _resolve_direct_stream_targets(playable: list[dict], api_base: str = "https://bandcamp.com") -> list[dict]:
     """Resolve Bandcamp stream_redirect or album/track page URLs to direct bcbits.com MP3 URLs
-    so mpv can stream without hitting Bandcamp SNI resets."""
+    so mpv can stream without hitting Bandcamp SNI resets or expired HTTP 410 tokens."""
     to_resolve = [
         entry for entry in playable
         if entry.get("playSource") == "stream"
         and str(entry.get("target") or "").startswith("https://")
-        and "bcbits.com" not in str(entry.get("target") or "")
+        and (
+            "bcbits.com" not in str(entry.get("target") or "")
+            or _is_stream_url_expired(str(entry.get("target") or ""))
+        )
     ]
     if not to_resolve:
         return playable
@@ -4707,22 +4747,19 @@ def _resolve_direct_stream_targets(playable: list[dict], api_base: str = "https:
     page_details_cache: dict[str, dict | None] = {}
     for entry in to_resolve:
         tgt = str(entry.get("target") or "")
+        page_url = ""
         if "stream_redirect" not in tgt and ("/album/" in tgt or "/track/" in tgt):
-            if tgt not in page_details_cache:
-                page_details_cache[tgt] = fetch_album_details(tgt, api_base=api_base)
-            det = page_details_cache.get(tgt)
+            page_url = tgt
+        elif _is_stream_url_expired(tgt):
+            cand_page = str(entry.get("itemUrl") or entry.get("albumUrl") or "")
+            if "/album/" in cand_page or "/track/" in cand_page:
+                page_url = cand_page
+        if page_url:
+            if page_url not in page_details_cache:
+                page_details_cache[page_url] = fetch_album_details(page_url, api_base=api_base)
+            det = page_details_cache.get(page_url)
             if det and det.get("tracks"):
-                det_tracks = det["tracks"]
-                matched = next(
-                    (dt for dt in det_tracks if fold(dt.get("title")) == fold(entry.get("title")) and dt.get("streamUrl")),
-                    None,
-                )
-                if not matched:
-                    idx_1 = max(0, int(entry.get("index") or 1) - 1)
-                    if idx_1 < len(det_tracks) and det_tracks[idx_1].get("streamUrl"):
-                        matched = det_tracks[idx_1]
-                    elif det_tracks[0].get("streamUrl"):
-                        matched = det_tracks[0]
+                matched = _match_track_from_details(entry, det["tracks"])
                 if matched and matched.get("streamUrl"):
                     entry["streamUrl"] = matched["streamUrl"]
                     entry["target"] = matched["streamUrl"]
@@ -4734,17 +4771,49 @@ def _resolve_direct_stream_targets(playable: list[dict], api_base: str = "https:
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         list(pool.map(_resolve_one, to_resolve))
+
+    for entry in to_resolve:
+        if _is_stream_url_expired(str(entry.get("target") or "")):
+            cand_page = str(entry.get("itemUrl") or entry.get("albumUrl") or "")
+            if "/album/" in cand_page or "/track/" in cand_page:
+                if cand_page not in page_details_cache:
+                    page_details_cache[cand_page] = fetch_album_details(cand_page, api_base=api_base)
+                det = page_details_cache.get(cand_page)
+                if det and det.get("tracks"):
+                    matched = _match_track_from_details(entry, det["tracks"])
+                    if matched and matched.get("streamUrl"):
+                        fresh_url = matched["streamUrl"]
+                        if "stream_redirect" in fresh_url and "bandcamp.com" in fresh_url:
+                            fresh_url = resolve_stream_redirect(fresh_url)
+                        entry["streamUrl"] = fresh_url
+                        entry["target"] = fresh_url
     return playable
 
 
 def resolve_playable_tracks(album: dict, mode: str = "auto", api_base: str = "https://bandcamp.com") -> list[dict]:
     tracks = list(album.get("tracks") or [])
-    need_remote = (mode == "stream") or not album.get("isLocal") or all(not t.get("localPath") for t in tracks)
+    need_remote = (mode == "stream") or not album.get("isLocal") or any(not (t.get("localPath") and os.path.exists(str(t.get("localPath")))) for t in tracks)
     if need_remote and album.get("url"):
-        if len(tracks) <= 1 or any(not t.get("streamUrl") for t in tracks):
+        if (
+            len(tracks) <= 1
+            or any(not t.get("streamUrl") or _is_stream_url_expired(str(t.get("streamUrl") or "")) for t in tracks)
+        ):
             det = fetch_album_details(album["url"], api_base=api_base)
             if det and det.get("tracks"):
-                tracks = det["tracks"]
+                if tracks:
+                    by_title = {fold(dt.get("title")): dt for dt in det["tracks"] if dt.get("title")}
+                    merged_tracks = []
+                    for idx_t, orig_t in enumerate(tracks):
+                        dt = by_title.get(fold(orig_t.get("title"))) or (det["tracks"][idx_t] if idx_t < len(det["tracks"]) else None)
+                        mt = dict(orig_t)
+                        if dt and dt.get("streamUrl"):
+                            mt["streamUrl"] = dt["streamUrl"]
+                        if dt and dt.get("duration") and not mt.get("duration"):
+                            mt["duration"] = dt["duration"]
+                        merged_tracks.append(mt)
+                    tracks = merged_tracks if len(merged_tracks) >= len(det["tracks"]) else det["tracks"]
+                else:
+                    tracks = det["tracks"]
 
     playable: list[dict] = []
     for idx, t in enumerate(tracks, start=1):
@@ -4769,6 +4838,7 @@ def resolve_playable_tracks(album: dict, mode: str = "auto", api_base: str = "ht
         entry["album"] = album.get("title") or t.get("album") or ""
         entry["artist"] = t.get("artist") or album.get("artist") or ""
         entry["artPath"] = album.get("artPath") or t.get("artPath") or ""
+        entry["itemUrl"] = t.get("itemUrl") or album.get("url") or ""
         entry["purchased"] = bool(album.get("purchased", t.get("purchased", False)))
         entry["isLocal"] = bool(album.get("isLocal", t.get("isLocal", play_source == "local")))
         entry["index"] = t.get("index") or idx
@@ -4778,27 +4848,54 @@ def resolve_playable_tracks(album: dict, mode: str = "auto", api_base: str = "ht
 
 def resolve_track_list(raw_tracks: list[dict], idx: dict, mode: str = "auto", api_base: str = "https://bandcamp.com") -> list[dict]:
     albums_by_id = {a.get("id"): a for a in (idx.get("albums") or []) if a.get("id")}
+    albums_by_title = {fold(a.get("title")): a for a in (idx.get("albums") or []) if a.get("title")}
     playable: list[dict] = []
     for i, t in enumerate(raw_tracks, start=1):
-        alb = albums_by_id.get(t.get("albumId") or "") or {}
+        alb = albums_by_id.get(t.get("albumId") or "") or albums_by_title.get(fold(t.get("album"))) or {}
+        alb_track = None
+        if alb.get("tracks"):
+            alb_track = next(
+                (
+                    at for at in alb["tracks"]
+                    if (t.get("id") and at.get("id") == t.get("id"))
+                    or (t.get("title") and fold(at.get("title")) == fold(t.get("title")))
+                ),
+                None,
+            )
         target = ""
         play_source = "local"
-        lpath = t.get("localPath") or ""
+        lpath = (alb_track or {}).get("localPath") or t.get("localPath") or ""
+        fresh_stream = (alb_track or {}).get("streamUrl") or t.get("streamUrl") or ""
+        if _is_stream_url_expired(fresh_stream) and t.get("streamUrl") and not _is_stream_url_expired(str(t.get("streamUrl"))):
+            fresh_stream = t["streamUrl"]
         if mode != "stream" and lpath and os.path.exists(str(lpath)):
             target = lpath
             play_source = "local"
         else:
-            target = t.get("streamUrl") or t.get("itemUrl") or alb.get("url") or lpath or ""
-            play_source = "local" if (target and os.path.exists(str(target))) else "stream"
+            cand_target = str(t.get("target") or "")
+            if mode != "stream" and cand_target and os.path.exists(cand_target):
+                target = cand_target
+                play_source = "local"
+            elif cand_target.startswith("https://") and not _is_stream_url_expired(cand_target):
+                target = cand_target
+                play_source = "stream"
+            else:
+                target = fresh_stream or t.get("itemUrl") or alb.get("url") or lpath or cand_target or ""
+                play_source = "local" if (target and os.path.exists(str(target))) else "stream"
         if not target:
             continue
         entry = dict(t)
+        if lpath and os.path.exists(str(lpath)):
+            entry["localPath"] = lpath
+        if fresh_stream:
+            entry["streamUrl"] = fresh_stream
         entry["target"] = target
         entry["playSource"] = play_source
         entry["albumId"] = t.get("albumId") or alb.get("id") or ""
         entry["album"] = t.get("album") or alb.get("title") or ""
         entry["artist"] = t.get("artist") or alb.get("artist") or ""
         entry["artPath"] = t.get("artPath") or alb.get("artPath") or ""
+        entry["itemUrl"] = t.get("itemUrl") or (alb_track or {}).get("itemUrl") or alb.get("url") or ""
         entry["index"] = i
         playable.append(entry)
     return _resolve_direct_stream_targets(playable, api_base=api_base)
@@ -4924,19 +5021,27 @@ def resume_last_playback(
                 target_idx = 0
                 target_pos = 0.0
 
+    settings = load_settings()
+    api_base = settings.get("apiBase") or "https://bandcamp.com"
+    idx = ensure_index()
+
     if q_tracks:
-        usable_q_tracks: list[dict] = []
-        for t in q_tracks:
-            cand = str(t.get("target") or t.get("localPath") or t.get("streamUrl") or "")
-            if not cand:
-                continue
-            try:
-                safe_t = sanitise_m3u_target(cand)
-                tc = dict(t)
-                tc["target"] = safe_t
-                usable_q_tracks.append(tc)
-            except Exception:
-                continue
+        src_obj = queue.get("source") if isinstance(queue, dict) else {}
+        src_mode = (src_obj.get("mode") if isinstance(src_obj, dict) else None) or "auto"
+        usable_q_tracks: list[dict] = resolve_track_list(q_tracks, idx, mode=src_mode, api_base=api_base)
+        if not usable_q_tracks:
+            for t in q_tracks:
+                lp = str(t.get("localPath") or "")
+                cand = lp if (lp and os.path.isfile(lp)) else str(t.get("target") or t.get("streamUrl") or "")
+                if not cand or _is_stream_url_expired(cand):
+                    continue
+                try:
+                    safe_t = sanitise_m3u_target(cand)
+                    tc = dict(t)
+                    tc["target"] = safe_t
+                    usable_q_tracks.append(tc)
+                except Exception:
+                    continue
         if usable_q_tracks:
             clamped_idx = min(max(0, target_idx), len(usable_q_tracks) - 1)
             return start_queue(
@@ -4948,9 +5053,6 @@ def resume_last_playback(
                 start_position=target_pos,
                 emit_output=False,
             )
-
-    settings = load_settings()
-    api_base = settings.get("apiBase") or "https://bandcamp.com"
 
     if last.get("title"):
         cand_direct = str(last.get("localPath") or last.get("target") or "")
@@ -4971,7 +5073,6 @@ def resume_last_playback(
             except Exception:
                 pass
 
-    idx = ensure_index()
     albums = list(idx.get("albums") or [])
     target_album = None
     matched_track_idx = 0
@@ -5229,7 +5330,7 @@ def download_album_to_local(album: dict, preferred_format: str, settings: dict) 
                         files = safe_extract_zip(tmp_dl, dest_dir)
                     else:
                         out_file = os.path.join(dest_dir, f"{artist} - {title} - 01 {title}.mp3")
-                        os.replace(tmp_dl, out_file)
+                        shutil.move(tmp_dl, out_file)
                         tmp_dl = ""
                         files = [out_file]
                 finally:

@@ -246,7 +246,7 @@ class BandarchyTestSuite(unittest.TestCase):
         if orig_rt and os.path.isdir(orig_rt):
             try:
                 for entry in os.listdir(orig_rt):
-                    if entry.startswith("wayland-"):
+                    if entry.startswith(("wayland-", "pipewire-", "pulse")):
                         src_sock = os.path.join(orig_rt, entry)
                         dst_sock = os.path.join(cls.run_dir, entry)
                         if not os.path.exists(dst_sock):
@@ -2594,17 +2594,17 @@ const vm = require('vm');
 let code = fs.readFileSync('PsychedelicEngine.js', 'utf8').replace(/^\.pragma\s+library\s*$/m, '');
 vm.runInThisContext(code);
 
-if (ALL_LAYER1_MODES.length !== 27 || SHORT_LAYER1_MODES.length !== 27) {
-    throw new Error('Expected 27 ALL_LAYER1_MODES and 27 SHORT_LAYER1_MODES, got ' + ALL_LAYER1_MODES.length);
+if (ALL_LAYER1_MODES.length !== 32 || SHORT_LAYER1_MODES.length !== 32) {
+    throw new Error('Expected 32 ALL_LAYER1_MODES and 32 SHORT_LAYER1_MODES, got ' + ALL_LAYER1_MODES.length);
 }
-if (PALETTE_COLLECTIONS.length !== 8 || PALETTE_RANDOM_MODES.length !== 3) {
-    throw new Error('Expected 8 PALETTE_COLLECTIONS and 3 PALETTE_RANDOM_MODES');
+if (PALETTE_COLLECTIONS.length !== 10 || PALETTE_RANDOM_MODES.length !== 3 || PALETTES.length !== 54) {
+    throw new Error('Expected 10 PALETTE_COLLECTIONS, 3 PALETTE_RANDOM_MODES, and 54 PALETTES');
 }
-if (ALL_LAYER1_EQ_STYLES.length !== 24) {
-    throw new Error('Expected 24 ALL_LAYER1_EQ_STYLES, got ' + ALL_LAYER1_EQ_STYLES.length);
+if (ALL_LAYER1_EQ_STYLES.length !== 28 || SHORT_LAYER1_EQ_STYLES.length !== 28) {
+    throw new Error('Expected 28 ALL_LAYER1_EQ_STYLES, got ' + ALL_LAYER1_EQ_STYLES.length);
 }
-if (LAYER1_SHAPE_STYLES.length !== 17) {
-    throw new Error('Expected 17 LAYER1_SHAPE_STYLES, got ' + LAYER1_SHAPE_STYLES.length);
+if (LAYER1_SHAPE_STYLES.length !== 18) {
+    throw new Error('Expected 18 LAYER1_SHAPE_STYLES, got ' + LAYER1_SHAPE_STYLES.length);
 }
 
 function makeTrackCtx() {
@@ -2661,8 +2661,8 @@ function makeTrackCtx() {
 const bands = new Array(64).fill(520);
 const theme = { background: '#07090e', foreground: '#e2e8f0', accent: '#6ee7b7', urgent: '#f472b6' };
 
-// 1. Verify all 27 L1 Worlds normalise and render (0..10 and 24..26 on CPU canvas when gpuL1Active=false; 12..23 map to CPU fallback when gpuShaderEnabled=false)
-for (let m = 0; m < 27; m++) {
+// 1. Verify all 32 L1 Worlds normalise and render (0..10 and 24..31 on CPU canvas when gpuL1Active=false; 12..23 map to CPU fallback when gpuShaderEnabled=false)
+for (let m = 0; m < 32; m++) {
     const st = createState();
     const cfg = normaliseConfig({
         gpuShaderEnabled: false,
@@ -2723,8 +2723,8 @@ for (const dirVal of [1, -1, 0]) {
     }
 }
 
-// 2. Verify all 24 Equaliser styles (including 16..23 3D Shader-Inspired Equalisers) render across all 4 orientations (0..3)
-for (let eq = 0; eq < 24; eq++) {
+// 2. Verify all 26 Equaliser styles (including 24: Singular Xenon Follow-Spot & 25: Multi-Angle Layer Wave-Warp) render across all 4 orientations (0..3)
+for (let eq = 0; eq < 26; eq++) {
     for (let lay = 0; lay < 4; lay++) {
         const st = createState();
         const cfg = normaliseConfig({
@@ -2857,11 +2857,11 @@ for (let sh = 0; sh < 14; sh++) {
     }
 }
 
-// 5. Verify all 21 Layer 4 Geometry modes (0..20) apply 3D tubular shading with round caps/joins
-if (ALL_MODE_NAMES.length !== 21) {
-    throw new Error('Expected 21 Layer 4 Geometry modes in ALL_MODE_NAMES, got ' + ALL_MODE_NAMES.length);
+// 5. Verify all 22 Layer 4 Geometry modes (0..21, including 21: Jonathan Livingston Seagulls) apply 3D tubular shading with round caps/joins
+if (ALL_MODE_NAMES.length !== 22 || SHORT_MODE_NAMES.length !== 22) {
+    throw new Error('Expected 22 Layer 4 Geometry modes in ALL_MODE_NAMES, got ' + ALL_MODE_NAMES.length);
 }
-for (let vmIdx = 0; vmIdx < 21; vmIdx++) {
+for (let vmIdx = 0; vmIdx < 22; vmIdx++) {
     const st = createState();
     const cfg = normaliseConfig({
         layer1Enabled: false,
@@ -2878,11 +2878,11 @@ for (let vmIdx = 0; vmIdx < 21; vmIdx++) {
     }
 }
 
-// 5b. Verify all 24 Equaliser styles are numbered 1..24 and support all 3 EQ Band Orders (Low->High, Centre-Out, Stereo Mirror)
+// 5b. Verify all 27 Equaliser styles are numbered 1..27 and support all 3 EQ Band Orders (Low->High, Centre-Out, Stereo Mirror)
 if (LAYER1_EQ_BAND_ORDERS.length !== 3) {
     throw new Error('Expected 3 LAYER1_EQ_BAND_ORDERS, got ' + LAYER1_EQ_BAND_ORDERS.length);
 }
-for (let eq = 0; eq < 24; eq++) {
+for (let eq = 0; eq < 27; eq++) {
     if (!SHORT_LAYER1_EQ_STYLES[eq].startsWith((eq + 1) + ':')) {
         throw new Error('Expected SHORT_LAYER1_EQ_STYLES[' + eq + '] to start with "' + (eq + 1) + ':", got: ' + SHORT_LAYER1_EQ_STYLES[eq]);
     }
@@ -3421,13 +3421,372 @@ for (let stIdx = 0; stIdx < 21; stIdx++) {
         throw new Error(`Art style #${stIdx + 1} (${SHORT_LAYER3_ART_STYLES[stIdx]}) did not respond to active palette change`);
     }
 }
+
+// 3. Verify Layer 4 Mode #22 ("Jonathan Livingston Seagulls", m = 21)
+if (ALL_MODE_NAMES[21] !== 'Jonathan Livingston Seagulls' || SHORT_MODE_NAMES[21] !== '22:Seagulls') {
+    throw new Error('Expected Mode #22 Jonathan Livingston Seagulls at index 21');
+}
+const ctxGulls = makeInspectCtx();
+const cfgGulls = normaliseConfig({
+    layer1Enabled: false, layer2Enabled: true, layer2Mode: 21, layer2Complexity: 1.2,
+    layer4Enabled: false, layer3Enabled: false
+}, 0, []);
+stepState(state, bands, true, cfgGulls, 0.04);
+renderFrame(ctxGulls, 800, 450, state, 21, theme, [], [], [], cfgGulls, null);
+if (ctxGulls.fillCount < 10 || ctxGulls.strokeCount < 10) {
+    throw new Error('Expected Jonathan Livingston Seagulls (mode 21) to render 3D gull silhouettes & wing strokes');
+}
+
+// 4. Verify Layer 1 Mode #29 ("3D Cyber-Pinball Playfield", l1Mode = 28) & Mode #30 ("Cottingley Paper-Theatre Glen", l1Mode = 29)
+if (ALL_LAYER1_MODES[28] !== '3D Cyber-Pinball Playfield' || SHORT_LAYER1_MODES[28] !== '29:Pinball') {
+    throw new Error('Expected 3D Cyber-Pinball Playfield at index 28');
+}
+if (ALL_LAYER1_MODES[29] !== 'Bioluminescent Fairy Hollow' || SHORT_LAYER1_MODES[29] !== '30:FairyGlen') {
+    throw new Error('Expected Bioluminescent Fairy Hollow at index 29');
+}
+const stPin = createState();
+const cfgPin = normaliseConfig({
+    layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: 28,
+    layer1EqEnabled: false, layer1ShapesEnabled: false,
+    layer2Enabled: false, layer4Enabled: false, layer3Enabled: false
+}, 0, []);
+for (let step = 0; step < 5; step++) {
+    stepState(stPin, bands, true, cfgPin, 0.02);
+    const ctxPin = makeInspectCtx();
+    renderFrame(ctxPin, 800, 450, stPin, 0, theme, [], [], [], cfgPin, null);
+    if (ctxPin.fillCount < 25 || ctxPin.strokeCount < 25 || !stPin.pinballState) {
+        throw new Error('3D Cyber-Pinball Playfield failed to render full table & multiballs');
+    }
+}
+
+for (const palIdx of [0, 32]) {
+    const stGlen = createState();
+    const cfgGlen = normaliseConfig({
+        layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: 29, palette: palIdx,
+        layer1EqEnabled: false, layer1ShapesEnabled: false,
+        layer2Enabled: false, layer4Enabled: false, layer3Enabled: false
+    }, palIdx, []);
+    stepState(stGlen, bands, true, cfgGlen, 0.02);
+    const ctxGlen = makeInspectCtx();
+    renderFrame(ctxGlen, 800, 450, stGlen, 0, theme, [], [], [], cfgGlen, null);
+    if (ctxGlen.fillCount < 20 || ctxGlen.strokeCount < 20) {
+        throw new Error(`Cottingley Paper-Theatre Glen failed to render opaque card flats for palette ${palIdx}`);
+    }
+}
+
+// 5. Verify Layer 3 Style #18 ("Cottingley Paper Elves & Fairies", shapeStyle = 17)
+//    scales quantity (2..6) with density, floats gently like paper, and curls paper edges in 3D
+if (LAYER1_SHAPE_STYLES[17] !== 'Cottingley Paper Elves & Fairies' || SHORT_LAYER1_SHAPE_STYLES[17] !== 'PaperElves') {
+    throw new Error('Expected Cottingley Paper Elves & Fairies at index 17');
+}
+function makeCoordCtx() {
+    const base = makeInspectCtx();
+    base.coords = [];
+    base.quadCount = 0;
+    base.moveTo = function(x, y) { this.coords.push(x.toFixed(2) + ',' + y.toFixed(2)); };
+    base.lineTo = function(x, y) { this.coords.push(x.toFixed(2) + ',' + y.toFixed(2)); };
+    base.quadraticCurveTo = function(cx, cy, x, y) {
+        this.quadCount++;
+        this.coords.push(cx.toFixed(2) + ',' + cy.toFixed(2) + ',' + x.toFixed(2) + ',' + y.toFixed(2));
+    };
+    return base;
+}
+const stElves = createState();
+const cfgElvesLow = normaliseConfig({
+    layer1Enabled: true, layer1FieldEnabled: false, layer1EqEnabled: false,
+    layer1ShapesEnabled: true, layer1ShapeStyle: 17, layer1ShapeSpeed: 1.0, layer1ShapeDensity: 0.4,
+    layer2Enabled: false, layer4Enabled: false, layer3Enabled: false
+}, 0, []);
+const cfgElvesHigh = normaliseConfig(Object.assign({}, cfgElvesLow, { layer1ShapeDensity: 2.5 }), 0, []);
+stElves.t = 1.0;
+const ctxLow = makeCoordCtx();
+renderFrame(ctxLow, 800, 450, stElves, 0, theme, [], [], [], cfgElvesLow, null);
+const ctxHigh = makeCoordCtx();
+renderFrame(ctxHigh, 800, 450, stElves, 0, theme, [], [], [], cfgElvesHigh, null);
+if (ctxLow.quadCount < 40 || ctxHigh.fillCount < ctxLow.fillCount * 2.5) {
+    throw new Error(`Expected PaperElves to curl edges via quadraticCurveTo (${ctxLow.quadCount}) and scale 2->6 with density (${ctxLow.fillCount} vs ${ctxHigh.fillCount})`);
+}
+stElves.t = 1.25;
+const ctxFloat = makeCoordCtx();
+renderFrame(ctxFloat, 800, 450, stElves, 0, theme, [], [], [], cfgElvesLow, null);
+if (ctxLow.coords.join('|') === ctxFloat.coords.join('|')) {
+    throw new Error('Expected PaperElves to float and curl continuously on air currents');
+}
+
+// Verify kind === 2 (Wingless Dark Mischievous Feminine Pixie) renders directly with dagger & fanged smirk
+const ctxPixie = makeCoordCtx();
+drawOpaquePaperElfOrFairy(ctxPixie, 2, 400, 225, 95, 1.0, 0.1, 0.5, 3, PALETTES[0], 0, 1.0, 1.2, 0.25, 0.30);
+if (ctxPixie.fillCount < 8 || ctxPixie.quadCount < 10) {
+    throw new Error('Expected kind===2 Wingless Dark Mischievous Pixie to render body, dagger & 3D cylindrical rolled edges');
+}
+
+// Verify PaperElves/Fairies/Pixies (shapeStyle === 17) size cap prevents sprites from getting too large even at layer1ShapeScale=2.5
+const cfgElvesMaxScale = normaliseConfig(Object.assign({}, cfgElvesHigh, { layer1ShapeScale: 2.5 }), 0, []);
+for (let eStep = 0; eStep < 6; eStep++) {
+    stElves.t = 2.0 + eStep * 1.35;
+    const ctxCap = makeInspectCtx();
+    let curXs = [], curYs = [], maxPieceSpan = 0;
+    ctxCap.beginPath = function() {
+        if (curXs.length > 1) {
+            const sp = Math.max(Math.max(...curXs) - Math.min(...curXs), Math.max(...curYs) - Math.min(...curYs));
+            if (sp > maxPieceSpan) maxPieceSpan = sp;
+        }
+        curXs = []; curYs = [];
+    };
+    ctxCap.moveTo = function(x, y) { curXs.push(x); curYs.push(y); };
+    ctxCap.lineTo = function(x, y) { curXs.push(x); curYs.push(y); };
+    ctxCap.quadraticCurveTo = function(cx, cy, x, y) { curXs.push(x); curYs.push(y); };
+    renderFrame(ctxCap, 800, 450, stElves, 0, theme, [], [], [], cfgElvesMaxScale, null);
+    if (maxPieceSpan <= 5 || maxPieceSpan > 450 * 0.16) {
+        throw new Error(`PaperElves piece span exceeded dainty size cap at step ${eStep}: maxPieceSpan=${maxPieceSpan.toFixed(2)}px`);
+    }
+}
+
+
+// 6. Verify 3D Spotlight (eqStyle === 24, "25:3DSpot") keeps canister stationary while beam roams across X, Y, Z
+const spotHeadX = [], spotHeadY = [], spotCanisterX = [], spotCanisterY = [], spotRadii = [];
+const stSpot = createState();
+const cfgSpot = normaliseConfig({
+    layer1Enabled: true, layer1FieldEnabled: false,
+    layer1EqEnabled: true, layer1EqStyle: 24, layer1EqSpin: 1.5,
+    layer1ShapesEnabled: false, layer2Enabled: false, layer3Enabled: false
+}, 0, []);
+for (let step = 0; step < 12; step++) {
+    stSpot.t = step * 0.75;
+    stSpot.eqSpinTime = step * 1.125;
+    stepState(stSpot, bands, true, cfgSpot, 0.04);
+    const ctxSpot = makeInspectCtx();
+    const arcs = [];
+    ctxSpot.arc = function(x, y, r) { arcs.push({x, y, r}); };
+    renderFrame(ctxSpot, 800, 450, stSpot, 0, theme, [], [], [], cfgSpot, null);
+    if (arcs.length > 1) {
+        spotHeadX.push(arcs[0].x);
+        spotHeadY.push(arcs[0].y);
+        spotCanisterX.push(arcs[arcs.length - 1].x);
+        spotCanisterY.push(arcs[arcs.length - 1].y);
+        spotRadii.push(Math.max(...arcs.map(a => a.r)));
+    }
+}
+const spanX = Math.max(...spotHeadX) - Math.min(...spotHeadX);
+const spanY = Math.max(...spotHeadY) - Math.min(...spotHeadY);
+const canSpanX = Math.max(...spotCanisterX) - Math.min(...spotCanisterX);
+const canSpanY = Math.max(...spotCanisterY) - Math.min(...spotCanisterY);
+const spanR = Math.max(...spotRadii) / Math.max(1e-3, Math.min(...spotRadii));
+if (spanX < 40 || spanY < 25 || spanR < 1.15 || canSpanX > 25 || canSpanY > 25) {
+    throw new Error(`Expected 25:3DSpot (eqStyle=24) beam to roam in 3D while canister remains fixed: spanX=${spanX}, spanY=${spanY}, spanR=${spanR}, canSpan=(${canSpanX},${canSpanY})`);
+}
+
+// 6b. Verify EQ #27 (eqStyle === 26, "27:CloudEQ") and EQ #28 (eqStyle === 27, "28:MistClouds")
+if (ALL_LAYER1_EQ_STYLES.length !== 28 || ALL_LAYER1_EQ_STYLES[26] !== '3D Cumulonimbus Storm Clouds' || SHORT_LAYER1_EQ_STYLES[26] !== '27:CloudEQ' || ALL_LAYER1_EQ_STYLES[27] !== '3D Mist & Vapour Clouds' || SHORT_LAYER1_EQ_STYLES[27] !== '28:MistClouds') {
+    throw new Error(`Expected 28 EQ styles ending in 27:CloudEQ and 28:MistClouds, got ${ALL_LAYER1_EQ_STYLES.length}: ${SHORT_LAYER1_EQ_STYLES[26]} / ${SHORT_LAYER1_EQ_STYLES[27]}`);
+}
+for (const eqIdx of [26, 27]) {
+    const stCloud = createState();
+    const cfgCloud = normaliseConfig({
+        layer1Enabled: true, layer1FieldEnabled: false,
+        layer1EqEnabled: true, layer1EqStyle: eqIdx, layer1EqBars: 24, layer1EqSpin: 1.2,
+        layer1ShapesEnabled: false, layer2Enabled: false, layer3Enabled: false
+    }, 0, []);
+    stepState(stCloud, bands, true, cfgCloud, 0.04);
+    const ctxCloud = makeInspectCtx();
+    renderFrame(ctxCloud, 800, 450, stCloud, 0, theme, [], [], [], cfgCloud, null);
+    if (ctxCloud.fillCount < 18 || ctxCloud.strokeCount < 18) {
+        throw new Error(`Expected EQ style ${eqIdx} (${SHORT_LAYER1_EQ_STYLES[eqIdx]}) to render clouds/mist: fills=${ctxCloud.fillCount}, strokes=${ctxCloud.strokeCount}`);
+    }
+}
+
+// 6c. Verify exponential CharSwap curve and randomiser bias
+if (evalExponentialCharSwap(0) !== 0 || Math.abs(evalExponentialCharSwap(1) - 1) > 1e-6 || evalExponentialCharSwap(0.5) >= 0.22) {
+    throw new Error(`Expected evalExponentialCharSwap to be exponential with f(0.5) < 0.22, got ${evalExponentialCharSwap(0.5)}`);
+}
+for (let s = 0; s < 28; s++) {
+    const pick = pickRandomLayer3CharSwap(s);
+    if (!(pick >= 0 && pick <= 1.0)) {
+        throw new Error(`pickRandomLayer3CharSwap(${s}) out of range: ${pick}`);
+    }
+}
+
+// 7. Verify remaining 3D-CRT Retro Game Worlds (30: 31:Marble, 31: 32:OutRun)
+const expectedRetro = [
+    [30, 'Marble Madness Escher Chute', '31:Marble'],
+    [31, 'OutRun Super-Scaler Highway', '32:OutRun']
+];
+for (const [mIdx, fullName, shortName] of expectedRetro) {
+    if (ALL_LAYER1_MODES[mIdx] !== fullName || SHORT_LAYER1_MODES[mIdx] !== shortName) {
+        throw new Error(`Mismatch at L1 mode ${mIdx}: got ${ALL_LAYER1_MODES[mIdx]} / ${SHORT_LAYER1_MODES[mIdx]}`);
+    }
+    const stRetro = createState();
+    const cfgRetro = normaliseConfig({
+        layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: mIdx,
+        layer1EqEnabled: false, layer1ShapesEnabled: false,
+        layer2Enabled: false, layer4Enabled: false, layer3Enabled: false
+    }, 0, []);
+    stepState(stRetro, bands, true, cfgRetro, 0.04);
+    const ctxRetro = makeInspectCtx();
+    renderFrame(ctxRetro, 800, 450, stRetro, 0, theme, [], [], [], cfgRetro, null);
+    if (ctxRetro.fillCount < 8 || ctxRetro.strokeCount < 8) {
+        throw new Error(`Retro world ${shortName} (mode ${mIdx}) failed to render sufficient geometry`);
+    }
+}
+
+// 7b. Verify 31:Marble (l1Mode === 30) extends BOTH ends of the chute outside the viewport across all roll angles
+for (let rStep = 0; rStep < 16; rStep++) {
+    const stM = createState();
+    stM.l1Time = rStep * 1.45;
+    const cfgM = normaliseConfig({
+        layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: 30,
+        layer1EqEnabled: false, layer1ShapesEnabled: false,
+        layer2Enabled: false, layer4Enabled: false, layer3Enabled: false
+    }, 0, []);
+    const ctxM = makeInspectCtx();
+    const movePts = [];
+    ctxM.moveTo = function(x, y) { movePts.push({x, y}); };
+    renderFrame(ctxM, 800, 450, stM, 0, theme, [], [], [], cfgM, null);
+    const farTilePt = movePts[0];
+    const nearTilePt = movePts[(22 + 16 + 10) * 6];
+    const farOutside = farTilePt.x < 0 || farTilePt.x > 800 || farTilePt.y < 0 || farTilePt.y > 450;
+    const nearOutside = nearTilePt.x < 0 || nearTilePt.x > 800 || nearTilePt.y < 0 || nearTilePt.y > 450;
+    if (!farOutside || !nearOutside) {
+        throw new Error(`31:Marble chute failed to extend both ends off-screen at step ${rStep}: far=(${farTilePt.x.toFixed(1)},${farTilePt.y.toFixed(1)}), near=(${nearTilePt.x.toFixed(1)},${nearTilePt.y.toFixed(1)})`);
+    }
+}
+
+// 7c. Verify 32:OutRun (l1Mode === 31) 3-tier motion parallax: strictly fixed half-sun (Math.PI..2*Math.PI), slow-parallax intermediate horizon ridges, and full-sweep far road X
+const outRunFarXs = [], outRunFarRidgeXs = [], outRunNearRidgeXs = [];
+const horizY33Expected = 225 - 450 * 0.04;
+const sunR33Expected = 450 * 0.19;
+for (let oStep = 0; oStep < 8; oStep++) {
+    const stO = createState();
+    stO.l1Time = oStep * 0.9;
+    stO.bassSmooth = (oStep & 1) ? 0.9 : 0.1;
+    const cfgO = normaliseConfig({
+        layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: 31,
+        layer1EqEnabled: false, layer1ShapesEnabled: false,
+        layer2Enabled: false, layer4Enabled: false, layer3Enabled: false
+    }, 0, []);
+    const ctxO = makeInspectCtx();
+    const arcsO = [], movesO = [], linesO = [], opsOrderO = [];
+    ctxO.arc = function(x, y, r, a0, a1) { arcsO.push({x, y, r, a0, a1}); opsOrderO.push('arc'); };
+    ctxO.fillRect = function() { opsOrderO.push('scanline'); };
+    ctxO.moveTo = function(x, y) { movesO.push({x, y}); opsOrderO.push('moveTo'); };
+    ctxO.lineTo = function(x, y) { linesO.push({x, y}); };
+    renderFrame(ctxO, 800, 450, stO, 0, theme, [], [], [], cfgO, null);
+    if (arcsO.length < 2 || Math.abs(arcsO[1].a0 - Math.PI) > 1e-4 || Math.abs(arcsO[1].a1 - Math.PI * 2.0) > 1e-4) {
+        throw new Error(`32:OutRun sun is not an upper half-sun (Math.PI..2*Math.PI)`);
+    }
+    if (Math.abs(arcsO[1].x - 400) > 1e-4 || Math.abs(arcsO[1].y - horizY33Expected) > 1e-4 || Math.abs(arcsO[1].r - sunR33Expected) > 1e-4) {
+        throw new Error(`32:OutRun half-sun did not stay strictly fixed on horizon: (${arcsO[1].x}, ${arcsO[1].y}, r=${arcsO[1].r})`);
+    }
+    // Verify draw order: sun arcs and scanlines precede all ridge/horizon/highway moveTo calls
+    const lastScanlineIdx = opsOrderO.lastIndexOf('scanline');
+    const firstMoveIdx = opsOrderO.indexOf('moveTo');
+    if (lastScanlineIdx < 0 || firstMoveIdx <= lastScanlineIdx) {
+        throw new Error(`32:OutRun intermediate ridge must be drawn after the fixed half-sun scanlines`);
+    }
+    // movesO[0] is the distant mountain ridge start on horizY33; movesO[2] is the nearer mesa ridge start on horizY33
+    const horizLineIdx = movesO.findIndex(m => Math.abs(m.x) < 1e-4 && Math.abs(m.y - horizY33Expected) < 1e-4);
+    if (horizLineIdx < 3) {
+        throw new Error(`32:OutRun expected intermediate ridge paths before the fixed horizon line, got horizLineIdx=${horizLineIdx}`);
+    }
+    // Verify ridge vertices rise above horizY33 to partially occlude the lower half-sun without dipping below horizY33
+    const ridgeVertices = linesO.slice(0, 58);
+    const minRidgeY = Math.min(...ridgeVertices.map(p => p.y));
+    const maxRidgeY = Math.max(...ridgeVertices.map(p => p.y));
+    if (!(minRidgeY < horizY33Expected - sunR33Expected * 0.18 && minRidgeY > horizY33Expected - sunR33Expected * 0.50 && maxRidgeY <= horizY33Expected + 1e-4)) {
+        throw new Error(`32:OutRun ridge heights out of expected lower-sun occlusion band: minRidgeY=${minRidgeY}, maxRidgeY=${maxRidgeY}, horizY=${horizY33Expected}`);
+    }
+    outRunFarRidgeXs.push(movesO[0].x);
+    outRunNearRidgeXs.push(movesO[2].x);
+    outRunFarXs.push(movesO[horizLineIdx + 1].x);
+}
+const roadSweepSpan = Math.max(...outRunFarXs) - Math.min(...outRunFarXs);
+const nearRidgeSweepSpan = Math.max(...outRunNearRidgeXs) - Math.min(...outRunNearRidgeXs);
+const farRidgeSweepSpan = Math.max(...outRunFarRidgeXs) - Math.min(...outRunFarRidgeXs);
+if (roadSweepSpan < 80) {
+    throw new Error(`32:OutRun far road terminus failed to sweep L<->R along the horizon: span=${roadSweepSpan}`);
+}
+if (!(farRidgeSweepSpan > 4 && nearRidgeSweepSpan > farRidgeSweepSpan && nearRidgeSweepSpan < roadSweepSpan * 0.25)) {
+    throw new Error(`32:OutRun intermediate ridges failed slow-parallax hierarchy: farRidge=${farRidgeSweepSpan}, nearRidge=${nearRidgeSweepSpan}, road=${roadSweepSpan}`);
+}
+
+// 8. Verify buildPalette preserves bright saturation/lightness on bright genre palettes 42..52 (isDarkMoodPalette vs >= 30)
+const goaPal = buildPalette(theme, 45, 48); // 48: Psytrance Goa Fluoro (bright genre palette)
+const maxGoaDerivedL = Math.max(...goaPal.slice(6).map(hex => rgbToHsl(hex)[2]));
+if (maxGoaDerivedL <= 0.55) {
+    throw new Error(`Expected bright genre palette 48 derived slots to exceed dark mood lightness cap 0.54, got ${maxGoaDerivedL}`);
+}
+// Verify eqStyle === 24 stays within screen bounds and canister stays strictly stationary on screen even at eqScale != 1.0 as driftTime varies
+for (const eqSc of [0.25, 1.0, 1.8, 2.25]) {
+    const cfgSc = normaliseConfig(Object.assign({}, cfgSpot, { layer1EqScale: eqSc }), 0, []);
+    const canScreenXs = [];
+    for (let step = 0; step < 16; step++) {
+        stSpot.t = step * 0.6;
+        stSpot.driftTime = step * 0.85;
+        stSpot.eqSpinTime = step * 0.9;
+        stepState(stSpot, bands, true, cfgSc, 0.04);
+        const ctxSc = makeInspectCtx();
+        let ctmX = 0, ctmScaleX = 1;
+        const arcsSc = [];
+        ctxSc.translate = function(tx, ty) { ctmX += tx * ctmScaleX; };
+        ctxSc.scale = function(sx, sy) { ctmScaleX *= sx; };
+        ctxSc.arc = function(x, y, r) { arcsSc.push({x, y, r, screenX: ctmX + x * ctmScaleX}); };
+        renderFrame(ctxSc, 800, 450, stSpot, 0, theme, [], [], [], cfgSc, null);
+        const lensScreenX = arcsSc[0].screenX;
+        const lensScreenY = 450 * 0.94 + (arcsSc[0].y - 225) * eqSc;
+        canScreenXs.push(arcsSc[arcsSc.length - 1].screenX);
+        if (lensScreenX < 0 || lensScreenX > 800 || lensScreenY < 0 || lensScreenY > 450) {
+            throw new Error(`eqStyle=24 lens went off-screen at eqScale=${eqSc}: (${lensScreenX}, ${lensScreenY})`);
+        }
+    }
+    const canDriftPx = Math.max(...canScreenXs) - Math.min(...canScreenXs);
+    if (canDriftPx > 1e-4) {
+        throw new Error(`eqStyle=24 canister drifted horizontally by ${canDriftPx}px at eqScale=${eqSc}`);
+    }
+}
+
+// 9. Verify zero ghost tracers (clearRect called) when PaperElves (shapeStyle=17) or 3D worlds (l1Mode>=28) run with gpuShaderEnabled=false
+for (const cfgNoGpu of [
+    normaliseConfig({ gpuShaderEnabled: false, layer1Enabled: true, layer1FieldEnabled: false, layer1ShapesEnabled: true, layer1ShapeStyle: 17 }, 0, []),
+    normaliseConfig({ gpuShaderEnabled: false, layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: 30, layer1ShapesEnabled: false }, 0, [])
+]) {
+    const ctxClear = makeInspectCtx();
+    let clearRectCount = 0;
+    ctxClear.clearRect = function() { clearRectCount++; };
+    renderFrame(ctxClear, 800, 450, state, 0, theme, [], [], [], cfgNoGpu, null);
+    if (clearRectCount < 1) {
+        throw new Error('Expected clearRect to be called when PaperElves or 3D retro world runs with gpuShaderEnabled=false');
+    }
+}
+
+// 10. Verify kind===2 (Wingless Dark Pixie) uses distinct gothic-fae colours (#e9d5ff, #12081c, #ef233c) vs kind===0 and kind===1
+const ctxElf0 = makeInspectCtx();
+const ctxFairy1 = makeInspectCtx();
+const ctxPixie2 = makeInspectCtx();
+drawOpaquePaperElfOrFairy(ctxElf0, 0, 400, 225, 95, 1.0, 0.1, 0.5, 3, PALETTES[0], 0, 1.0, 1.2, 0.25, 0.30);
+drawOpaquePaperElfOrFairy(ctxFairy1, 1, 400, 225, 95, 1.0, 0.1, 0.5, 3, PALETTES[0], 0, 1.0, 1.2, 0.25, 0.30);
+drawOpaquePaperElfOrFairy(ctxPixie2, 2, 400, 225, 95, 1.0, 0.1, 0.5, 3, PALETTES[0], 0, 1.0, 1.2, 0.25, 0.30);
+if (!ctxPixie2.fillStyles.includes('#e9d5ff') || !ctxPixie2.fillStyles.includes('#12081c') || ctxElf0.fillStyles.includes('#e9d5ff') || ctxFairy1.fillStyles.includes('#e9d5ff')) {
+    throw new Error('Expected kind===2 Dark Pixie to have distinct gothic-fae skin/velvet colours (#e9d5ff, #12081c) not shared with kind 0/1');
+}
+
 console.log('OK');
 """
             res = subprocess.run(["node", "-e", node_script], cwd=REPO_ROOT, capture_output=True, text=True, timeout=25)
             self.assertEqual(res.returncode, 0, f"Node test_22 failed: {res.stderr}")
+            for req in (
+                '"31:Marble"', '"32:OutRun"',
+                '"1/28:Skyline"', '"27/28:CloudEQ"', '"28/28:MistClouds"',
+                '(root.layer1EqStyle + 1) + "/" + count + " " + root.layer1EqStyles[root.layer1EqStyle]',
+                '(index + 1) + "/" + root.layer1EqStyles.length + " " + root.layer1EqStyles[index]',
+                "property real layer3CharSwap: 0.35", 'text: "Swap:"',
+                "Engine.pickRandomLayer3CharSwap(root.layer3TextStyle)",
+                '"Shoegaze", "Techno313", "UKGarage", "BlackMetal", "IndEBM", "BlueNote"',
+            ):
+                self.assertIn(req, viz_src, f"Missing {req} in Visualiser.qml")
 
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
 
 
