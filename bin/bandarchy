@@ -83,6 +83,46 @@ STATEMENTS_FILE = os.path.join(CONFIG_DIR, "statements.txt")
 DEFAULT_STATEMENTS_FILE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "share", "statements.txt"
 )
+EXTERNAL_TRACKS_FILE = os.path.join(CONFIG_DIR, "external-tracks.txt")
+DEFAULT_EXTERNAL_TRACKS_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "share", "external-tracks.txt"
+)
+DEFAULT_CAVA_CONF_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "share", "cava.conf"
+)
+def _pick_existing_or_default_bandarchy_subdir(pics_dir: str) -> str:
+    lower_cand = os.path.join(pics_dir, "bandarchy")
+    if os.path.exists(lower_cand):
+        return lower_cand
+    upper_cand = os.path.join(pics_dir, "Bandarchy")
+    if os.path.exists(upper_cand):
+        return upper_cand
+    try:
+        for entry in os.listdir(pics_dir):
+            if entry.lower() == "bandarchy":
+                full = os.path.join(pics_dir, entry)
+                if os.path.isdir(full):
+                    return full
+    except OSError:
+        pass
+    return lower_cand
+
+
+def _resolve_photo_base_dir(explicit_base_dir: str | None = None) -> str:
+    if explicit_base_dir:
+        return os.path.abspath(os.path.expanduser(str(explicit_base_dir)))
+    env_override = (os.environ.get("BANDARCHY_PICTURES_DIR") or "").strip()
+    if env_override:
+        return os.path.abspath(os.path.expanduser(env_override))
+    xdg_pics = (os.environ.get("XDG_PICTURES_DIR") or "").strip()
+    if xdg_pics:
+        return _pick_existing_or_default_bandarchy_subdir(os.path.abspath(os.path.expanduser(xdg_pics)))
+    home_dir = (os.environ.get("HOME") or HOME).strip()
+    return _pick_existing_or_default_bandarchy_subdir(os.path.join(home_dir, "Pictures"))
+
+
+EXTERNAL_ART_DIR = os.path.join(_resolve_photo_base_dir(), "external_art")
+DEFAULT_EXTERNAL_ART_DIR = EXTERNAL_ART_DIR
 
 INDEX_FILE = os.path.join(DATA_DIR, "collection.json")
 HISTORY_FILE = os.path.join(DATA_DIR, "history.json")
@@ -153,6 +193,7 @@ def _resolve_runtime_dir() -> str:
 
 
 RUNTIME_DIR = _resolve_runtime_dir()
+RUNTIME_CAVA_CONF = os.path.join(RUNTIME_DIR, "cava-runtime.conf")
 IPC_SOCKET = os.environ.get("BANDARCHY_MPV_SOCKET") or os.path.join(
     RUNTIME_DIR, "bandarchy.sock"
 )
@@ -1771,16 +1812,40 @@ def transcode_image_to_ascii(
     return []
 
 
-def _resolve_best_art_image_for_analysis(image_path: str, seed_text: str = "") -> str:
+def _resolve_best_art_image_for_analysis(
+    image_path: str,
+    seed_text: str = "",
+    allow_catalogue_fallback: bool = True,
+) -> str:
     """Return a full-colour raster image path for mathematical art analysis.
+    If `image_path` is a directory, select an image from that directory.
     If `image_path` is missing or is a synthetic SVG placeholder (`cover_*.svg`),
-    select a deterministic or rotating original cover from `~/Pictures/bandarchy/imported/album-art/`
-    (or `~/.cache/bandarchy/art/`).
+    only fall back to `~/Pictures/bandarchy/imported/album-art/` or `~/.cache/bandarchy/art/`
+    when `allow_catalogue_fallback` is True (i.e. never when using an external audio source).
     """
-    if image_path and os.path.isfile(image_path):
-        low = image_path.lower()
-        if low.endswith((".jpg", ".jpeg", ".png", ".webp")):
-            return os.path.abspath(image_path)
+    clean_p = os.path.expanduser(str(image_path or "").strip())
+    if clean_p and os.path.isfile(clean_p):
+        low = clean_p.lower()
+        if low.endswith((".jpg", ".jpeg", ".png", ".webp", ".bmp")):
+            return os.path.abspath(clean_p)
+    elif clean_p and os.path.isdir(clean_p):
+        dir_imgs: list[str] = []
+        try:
+            for fn in sorted(os.listdir(clean_p)):
+                if fn.lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".bmp")):
+                    fp = os.path.join(clean_p, fn)
+                    if os.path.isfile(fp):
+                        dir_imgs.append(os.path.abspath(fp))
+        except OSError:
+            pass
+        if dir_imgs:
+            if seed_text:
+                idx = int(hashlib.sha256(seed_text.encode("utf-8")).hexdigest()[:8], 16) % len(dir_imgs)
+                return dir_imgs[idx]
+            return dir_imgs[0]
+
+    if not allow_catalogue_fallback:
+        return ""
 
     imported_art_dir = os.path.join(HOME, "Pictures", "bandarchy", "imported", "album-art")
     candidates: list[str] = []
@@ -1803,7 +1868,7 @@ def _resolve_best_art_image_for_analysis(image_path: str, seed_text: str = "") -
         except OSError:
             pass
     if not candidates:
-        return image_path if (image_path and os.path.isfile(image_path)) else ""
+        return clean_p if (clean_p and os.path.isfile(clean_p)) else ""
     if seed_text:
         idx = int(hashlib.sha256(seed_text.encode("utf-8")).hexdigest()[:8], 16) % len(candidates)
         return candidates[idx]
@@ -1814,6 +1879,7 @@ def extract_mathematical_art_model(
     image_path: str,
     width: int = 44,
     height: int = 44,
+    allow_catalogue_fallback: bool = True,
 ) -> dict:
     """Scan an original album cover image on a 1:1 square grid and compute a
     multi-model mathematical feature representation:
@@ -1831,10 +1897,13 @@ def extract_mathematical_art_model(
     width = bounded_int(width, 44, 24, 72)
     height = bounded_int(height, 44, 24, 72)
 
-    resolved_path = _resolve_best_art_image_for_analysis(image_path)
+    resolved_path = _resolve_best_art_image_for_analysis(
+        image_path,
+        allow_catalogue_fallback=allow_catalogue_fallback,
+    )
     if not resolved_path or not os.path.isfile(resolved_path):
         return {}
-    if not resolved_path.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+    if not resolved_path.lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".bmp")):
         return {}
 
     abs_image = os.path.abspath(resolved_path)
@@ -6195,32 +6264,67 @@ def cmd_ascii_art(args) -> None:
     image_path = args.image or ""
     banner_text = args.text or ""
     target_album = None
+    external_source = bool(getattr(args, "external_source", False))
 
-    if args.album:
-        target_album = next((a for a in albums if a.get("id") == args.album or a.get("url") == args.album), None)
-        if target_album:
-            image_path = image_path or target_album.get("artPath") or ""
-            banner_text = banner_text or target_album.get("artist") or target_album.get("title") or ""
+    if not external_source:
+        if args.album:
+            target_album = next((a for a in albums if a.get("id") == args.album or a.get("url") == args.album), None)
+            if target_album:
+                image_path = image_path or target_album.get("artPath") or ""
+                banner_text = banner_text or target_album.get("artist") or target_album.get("title") or ""
 
-    if not image_path and not banner_text:
-        pb = get_playback_state()
-        if pb.get("playing"):
-            image_path = pb.get("artPath") or ""
-            banner_text = pb.get("artist") or pb.get("title") or ""
         if not image_path and not banner_text:
-            hist = read_json(HISTORY_FILE, {}) or {}
-            last = hist.get("lastPlayedTrack") or {}
-            image_path = last.get("artPath") or ""
-            banner_text = last.get("artist") or last.get("title") or ""
+            pb = get_playback_state()
+            if pb.get("playing"):
+                image_path = pb.get("artPath") or ""
+                banner_text = pb.get("artist") or pb.get("title") or ""
+            if not image_path and not banner_text:
+                hist = read_json(HISTORY_FILE, {}) or {}
+                last = hist.get("lastPlayedTrack") or {}
+                image_path = last.get("artPath") or ""
+                banner_text = last.get("artist") or last.get("title") or ""
 
-    if not image_path and use_album_art and albums:
-        first_art = next((a for a in albums if a.get("artPath") and os.path.isfile(str(a.get("artPath")))), albums[0])
-        image_path = first_art.get("artPath") or ""
-        banner_text = banner_text or first_art.get("artist") or first_art.get("title") or "BANDARCHY"
+        if not image_path and use_album_art and albums:
+            first_art = next((a for a in albums if a.get("artPath") and os.path.isfile(str(a.get("artPath")))), albums[0])
+            image_path = first_art.get("artPath") or ""
+            banner_text = banner_text or first_art.get("artist") or first_art.get("title") or "BANDARCHY"
+    else:
+        vis_cfg = read_json(VISUALISER_CONFIG_FILE, {})
+        if not isinstance(vis_cfg, dict):
+            vis_cfg = {}
+        ext_artist = str(vis_cfg.get("externalArtist") or "").strip()
+        ext_track = str(vis_cfg.get("externalTrack") or "").strip()
+        ext_album = str(vis_cfg.get("externalAlbum") or "").strip()
+        exp_img = os.path.expanduser(str(image_path or "").strip())
+        if exp_img and os.path.isdir(exp_img) and not _collect_images_in_folder(exp_img):
+            # Preserve an explicit existing empty directory (e.g. test isolation)
+            image_path = exp_img
+        else:
+            ext_p = str(image_path or vis_cfg.get("externalArtPath") or "").strip()
+            ext_d = str(vis_cfg.get("externalArtDir") or DEFAULT_EXTERNAL_ART_DIR).strip()
+            resolved_target, cand_imgs = scan_external_art_candidates(
+                ext_p,
+                ext_d,
+                artist=ext_artist,
+                track=ext_track,
+                album=ext_album,
+            )
+            if cand_imgs:
+                if banner_text:
+                    idx = int(hashlib.sha256(banner_text.encode("utf-8")).hexdigest()[:8], 16) % len(cand_imgs)
+                    image_path = cand_imgs[idx]
+                else:
+                    image_path = cand_imgs[0]
+            else:
+                image_path = resolved_target
 
     banner_lines = render_omarchy_ascii_banner(banner_text or "BANDARCHY", max_width=min(width, 68))
     art_lines: list[str] = []
-    resolved_art_image = _resolve_best_art_image_for_analysis(image_path, banner_text)
+    resolved_art_image = _resolve_best_art_image_for_analysis(
+        image_path,
+        banner_text,
+        allow_catalogue_fallback=not external_source,
+    )
     if resolved_art_image and os.path.isfile(resolved_art_image):
         img_mode = "block" if mode == "block" else "braille"
         art_lines = transcode_image_to_ascii(
@@ -6231,7 +6335,12 @@ def cmd_ascii_art(args) -> None:
             threshold=threshold,
             invert=bool(args.invert),
         )
-    art_model = extract_mathematical_art_model(resolved_art_image or image_path, width=44, height=44)
+    art_model = extract_mathematical_art_model(
+        resolved_art_image or image_path,
+        width=44,
+        height=44,
+        allow_catalogue_fallback=not external_source,
+    )
 
     lines: list[str] = []
     source_kind = "omarchy-ascii"
@@ -7153,6 +7262,798 @@ def reset_statements() -> list[str]:
     return load_statements()
 
 
+DEFAULT_EXTERNAL_TRACKS_FALLBACK = [
+    {"artist": "The Black Dog", "track": "Cost II", "album": "Music for Real Airports", "artPath": "black_dog", "raw": "The Black Dog | Cost II | Music for Real Airports | black_dog"},
+    {"artist": "Boards of Canada", "track": "Roygbiv", "album": "Music Has the Right to Children", "artPath": "boards_of_canada", "raw": "Boards of Canada | Roygbiv | Music Has the Right to Children | boards_of_canada"},
+    {"artist": "Porcupine Tree", "track": "Voyage 34 (Phase I)", "album": "Voyage 34: The Complete Trip", "artPath": "porcupine_tree", "raw": "Porcupine Tree | Voyage 34 (Phase I) | Voyage 34: The Complete Trip | porcupine_tree"},
+    {"artist": "Aphex Twin", "track": "Xtal", "album": "Selected Ambient Works 85-92", "artPath": "aphex_twin", "raw": "Aphex Twin | Xtal | Selected Ambient Works 85-92 | aphex_twin"},
+    {"artist": "Autechre", "track": "Nil", "album": "Amber", "artPath": "autechre", "raw": "Autechre | Nil | Amber | autechre"},
+    {"artist": "King Gizzard & The Lizard Wizard", "track": "Robot Stop", "album": "Nonagon Infinity", "artPath": "king_gizzard", "raw": "King Gizzard & The Lizard Wizard | Robot Stop | Nonagon Infinity | king_gizzard"},
+    {"artist": "Max Richter", "track": "On the Nature of Daylight", "album": "The Blue Notebooks", "artPath": "max_richter", "raw": "Max Richter | On the Nature of Daylight | The Blue Notebooks | max_richter"},
+    {"artist": "Plaid", "track": "Eyen", "album": "Rest Proof Clockwork", "artPath": "plaid", "raw": "Plaid | Eyen | Rest Proof Clockwork | plaid"},
+]
+
+_EXTERNAL_ART_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
+
+
+def _ensure_external_art_dir() -> str:
+    """Ensure ~/Pictures/bandarchy/external_art exists and non-destructively migrate any legacy external-art files."""
+    base_dir = _resolve_photo_base_dir()
+    ext_root = os.path.join(base_dir, "external_art")
+    try:
+        os.makedirs(ext_root, exist_ok=True)
+    except OSError:
+        pass
+    legacy_dir = os.path.join(base_dir, "external-art")
+    if os.path.isdir(legacy_dir) and os.path.abspath(legacy_dir) != os.path.abspath(ext_root):
+        try:
+            for entry in os.listdir(legacy_dir):
+                if entry.startswith("."):
+                    continue
+                src_p = os.path.join(legacy_dir, entry)
+                dst_p = os.path.join(ext_root, entry)
+                if os.path.isfile(src_p) and not os.path.exists(dst_p):
+                    shutil.copy2(src_p, dst_p)
+                elif os.path.isdir(src_p):
+                    os.makedirs(dst_p, exist_ok=True)
+                    for sub_e in os.listdir(src_p):
+                        if sub_e.startswith("."):
+                            continue
+                        s_file = os.path.join(src_p, sub_e)
+                        d_file = os.path.join(dst_p, sub_e)
+                        if os.path.isfile(s_file) and not os.path.exists(d_file):
+                            shutil.copy2(s_file, d_file)
+        except OSError:
+            pass
+    return ext_root
+
+
+def normalise_external_art_branch(raw_path: str) -> str:
+    """Normalise an external art filename or subfolder into a relative branch under ~/Pictures/bandarchy/external_art/."""
+    clean = str(raw_path or "").strip().replace("\\", "/")
+    if not clean or "\0" in clean or "\r" in clean or "\n" in clean:
+        return ""
+    norm_parts = clean.split("/")
+    if ".." in norm_parts:
+        return ""
+    base_dir = _resolve_photo_base_dir()
+    ext_root = os.path.join(base_dir, "external_art").replace("\\", "/").rstrip("/")
+    legacy_root = os.path.join(base_dir, "external-art").replace("\\", "/").rstrip("/")
+    expanded = os.path.expanduser(clean).replace("\\", "/").rstrip("/")
+    if (
+        clean.startswith("/")
+        and os.path.exists(expanded)
+        and expanded.lower() not in (ext_root.lower(), legacy_root.lower())
+        and not expanded.lower().startswith((ext_root.lower() + "/", legacy_root.lower() + "/"))
+        and not clean.lower().startswith(("/external_art", "/external-art"))
+    ):
+        return clean
+    for root_prefix in (ext_root, legacy_root):
+        if root_prefix and expanded.lower() == root_prefix.lower():
+            return ""
+        if root_prefix and expanded.lower().startswith(root_prefix.lower() + "/"):
+            clean = expanded[len(root_prefix) + 1:]
+            break
+    else:
+        lower_clean = clean.lower().rstrip("/")
+        if lower_clean in (
+            "~/pictures/bandarchy/external_art",
+            "~/pictures/bandarchy/external-art",
+            "pictures/bandarchy/external_art",
+            "pictures/bandarchy/external-art",
+            "/external_art",
+            "external_art",
+            "/external-art",
+            "external-art",
+            ".",
+            "/",
+        ):
+            return ""
+        for marker in (
+            "/pictures/bandarchy/external_art/",
+            "/pictures/bandarchy/external-art/",
+            "/external_art/",
+            "external_art/",
+            "/external-art/",
+            "external-art/",
+        ):
+            idx = clean.lower().find(marker)
+            if idx >= 0:
+                clean = clean[idx + len(marker):]
+                break
+        else:
+            home_prefix = ((os.environ.get("HOME") or HOME).strip().replace("\\", "/").rstrip("/"))
+            if home_prefix and expanded.lower().startswith(home_prefix.lower() + "/"):
+                clean = expanded[len(home_prefix) + 1:]
+    while clean.startswith(("./", "/", "~/")):
+        if clean.startswith("./") or clean.startswith("~/"):
+            clean = clean[2:]
+        else:
+            clean = clean[1:]
+    clean = clean.rstrip("/")
+    if not clean or clean in (".", ".."):
+        return ""
+    parts = [p for p in clean.split("/") if p and p != "."]
+    if not parts or ".." in parts:
+        return ""
+    return "/".join(parts)
+
+
+def parse_external_track_entry(item) -> dict[str, str] | None:
+    """Parse a dict or 'Artist | Track | Album | ArtSubfolderOrFile' line into a normalised external track dict."""
+    if isinstance(item, dict):
+        artist = bounded_text(item.get("artist") or "", 120).strip()
+        track = bounded_text(item.get("track") or item.get("title") or "", 120).strip()
+        album = bounded_text(item.get("album") or "", 120).strip()
+        raw_art = bounded_text(
+            item.get("artPath") or item.get("art") or item.get("artDir") or item.get("artFolder") or "",
+            260,
+        ).strip()
+    else:
+        line = bounded_text(str(item or ""), 640).strip()
+        if not line or line.startswith("#"):
+            return None
+        if "|" in line:
+            parts = [p.strip() for p in line.split("|", 3)]
+        elif " — " in line:
+            parts = [p.strip() for p in line.split(" — ", 3)]
+        elif " - " in line:
+            parts = [p.strip() for p in line.split(" - ", 3)]
+        else:
+            parts = ["", line, "", ""]
+        artist = bounded_text(parts[0] if len(parts) > 0 else "", 120)
+        track = bounded_text(parts[1] if len(parts) > 1 else "", 120)
+        album = bounded_text(parts[2] if len(parts) > 2 else "", 120)
+        raw_art = bounded_text(parts[3] if len(parts) > 3 else "", 260)
+    art_path = normalise_external_art_branch(raw_art)
+    if not (artist or track or album or art_path):
+        return None
+    if art_path:
+        raw = f"{artist} | {track} | {album} | {art_path}"
+    else:
+        raw = " | ".join([artist, track, album]).strip(" |")
+    return {
+        "artist": artist,
+        "track": track,
+        "album": album,
+        "artPath": art_path,
+        "raw": raw,
+    }
+
+
+def _default_external_tracks_seed_text() -> str:
+    seed_txt = safe_read_text(DEFAULT_EXTERNAL_TRACKS_FILE, max_bytes=256 * 1024)
+    if seed_txt and seed_txt.strip():
+        return seed_txt
+    header = (
+        "# Bandarchy — External Audio Track & Album Art Metadata\n"
+        "# Format: Artist | Track | Album | ArtSubfolderOrFile   (4th field optional relative to ~/Pictures/bandarchy/external_art/; '#' comments ignored)\n"
+        "# Canonical external art folder: ~/Pictures/bandarchy/external_art/\n"
+        "# Your personal copy lives at: ~/.config/bandarchy/external-tracks.txt\n\n"
+    )
+    return header + "\n".join(item["raw"] for item in DEFAULT_EXTERNAL_TRACKS_FALLBACK) + "\n"
+
+
+def load_external_tracks() -> list[dict[str, str]]:
+    ensure_private_dir(CONFIG_DIR)
+    if not os.path.exists(EXTERNAL_TRACKS_FILE):
+        seed_txt = _default_external_tracks_seed_text()
+        safe_write_bytes(EXTERNAL_TRACKS_FILE, seed_txt.encode("utf-8"), mode=0o600, fatal=False)
+    raw = safe_read_text(EXTERNAL_TRACKS_FILE, max_bytes=256 * 1024)
+    if not raw:
+        raw = _default_external_tracks_seed_text()
+    entries: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for line in raw.splitlines():
+        parsed = parse_external_track_entry(line)
+        if not parsed:
+            continue
+        key = (
+            parsed["artist"].casefold(),
+            parsed["track"].casefold(),
+            parsed["album"].casefold(),
+            parsed.get("artPath", "").casefold(),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        entries.append(parsed)
+        if len(entries) >= 500:
+            break
+    # Upgrade unmodified legacy 3-column default file to the 4-column external_art seed
+    if (
+        entries
+        and "ArtSubfolderOrFile" not in raw
+        and all(not e.get("artPath") for e in entries)
+        and [(e["artist"], e["track"], e["album"]) for e in entries]
+        == [(d["artist"], d["track"], d["album"]) for d in DEFAULT_EXTERNAL_TRACKS_FALLBACK]
+    ):
+        seed_txt = _default_external_tracks_seed_text()
+        safe_write_bytes(EXTERNAL_TRACKS_FILE, seed_txt.encode("utf-8"), mode=0o600, fatal=False)
+        return list(DEFAULT_EXTERNAL_TRACKS_FALLBACK)
+    return entries if entries else list(DEFAULT_EXTERNAL_TRACKS_FALLBACK)
+
+
+def save_external_tracks(raw_entries: list | str) -> list[dict[str, str]]:
+    ensure_private_dir(CONFIG_DIR)
+    if isinstance(raw_entries, str):
+        candidates = raw_entries.splitlines()
+    elif isinstance(raw_entries, list):
+        candidates = []
+        for item in raw_entries:
+            if isinstance(item, str):
+                candidates.extend(item.splitlines())
+            else:
+                candidates.append(item)
+    else:
+        candidates = []
+    cleaned: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for item in candidates:
+        parsed = parse_external_track_entry(item)
+        if not parsed:
+            continue
+        key = (
+            parsed["artist"].casefold(),
+            parsed["track"].casefold(),
+            parsed["album"].casefold(),
+            parsed.get("artPath", "").casefold(),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(parsed)
+        if len(cleaned) >= 500:
+            break
+    if not cleaned:
+        cleaned = list(DEFAULT_EXTERNAL_TRACKS_FALLBACK)
+    header = (
+        "# Bandarchy — External Audio Track & Album Art Metadata\n"
+        "# Used by Layer 6 (6: Typography) Q (Artist), W (Track), E (Album), and Album Art\n"
+        "# when synchronising the visualiser to external audio inputs or overriding metadata.\n"
+        "# Format: Artist | Track | Album | ArtSubfolderOrFile   (4th field optional relative to ~/Pictures/bandarchy/external_art/; '#' comments ignored)\n"
+        "# Canonical external art folder: ~/Pictures/bandarchy/external_art/\n"
+        "# Your personal copy lives at: ~/.config/bandarchy/external-tracks.txt\n\n"
+    )
+    body_lines = []
+    for e in cleaned:
+        if e.get("artPath"):
+            body_lines.append(f"{e['artist']} | {e['track']} | {e['album']} | {e['artPath']}")
+        else:
+            body_lines.append(f"{e['artist']} | {e['track']} | {e['album']}")
+    body = "\n".join(body_lines) + "\n"
+    safe_write_bytes(EXTERNAL_TRACKS_FILE, (header + body).encode("utf-8"), mode=0o600, fatal=False)
+    return load_external_tracks()
+
+
+def reset_external_tracks() -> list[dict[str, str]]:
+    ensure_private_dir(CONFIG_DIR)
+    seed_txt = _default_external_tracks_seed_text()
+    safe_write_bytes(EXTERNAL_TRACKS_FILE, seed_txt.encode("utf-8"), mode=0o600, fatal=False)
+    return load_external_tracks()
+
+
+def _expand_safe_art_path(raw_path: str) -> str:
+    clean = str(raw_path or "").strip()
+    if not clean or "\0" in clean or "\r" in clean or "\n" in clean:
+        return ""
+    expanded = os.path.expanduser(clean)
+    norm_parts = expanded.replace("\\", "/").split("/")
+    if ".." in norm_parts:
+        return ""
+    return os.path.abspath(expanded)
+
+
+def _art_match_slug(val: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(val or "").casefold())
+
+
+def _candidate_slugs_for_text(val: str) -> list[str]:
+    raw = str(val or "").strip()
+    if not raw:
+        return []
+    out: list[str] = []
+    s1 = _art_match_slug(raw)
+    if s1:
+        out.append(s1)
+    low = raw.casefold()
+    if low.startswith("the ") and len(low) > 4:
+        s2 = _art_match_slug(raw[4:])
+        if s2 and s2 not in out:
+            out.append(s2)
+    return out
+
+
+def _collect_images_in_folder(folder_path: str, max_depth: int = 3) -> list[str]:
+    if not folder_path or not os.path.isdir(folder_path):
+        return []
+    found: list[str] = []
+    queue: list[tuple[str, int]] = [(os.path.abspath(folder_path), 0)]
+    while queue:
+        cur_dir, depth = queue.pop(0)
+        try:
+            entries = sorted(os.listdir(cur_dir), key=lambda s: s.lower())
+        except OSError:
+            continue
+        subdirs: list[str] = []
+        for fn in entries:
+            if fn.startswith("."):
+                continue
+            fp = os.path.join(cur_dir, fn)
+            if os.path.isfile(fp) and fn.lower().endswith(_EXTERNAL_ART_EXTS):
+                found.append(os.path.abspath(fp))
+                if len(found) >= 500:
+                    return found
+            elif depth < max_depth and os.path.isdir(fp):
+                subdirs.append(fp)
+        for sub in subdirs:
+            queue.append((sub, depth + 1))
+    return found
+
+
+def _prioritise_images_for_metadata(
+    imgs: list[str],
+    track: str = "",
+    album: str = "",
+) -> list[str]:
+    if not imgs:
+        return []
+    pref_slugs = _candidate_slugs_for_text(track) + _candidate_slugs_for_text(album)
+    if not pref_slugs:
+        return imgs
+    prioritised: list[str] = []
+    rest: list[str] = []
+    for im in imgs:
+        im_slug = _art_match_slug(os.path.splitext(os.path.basename(im))[0])
+        parent_slug = _art_match_slug(os.path.basename(os.path.dirname(im)))
+        if any(
+            ps and (im_slug == ps or parent_slug == ps or (len(ps) >= 3 and (ps in im_slug or ps in parent_slug)))
+            for ps in pref_slugs
+        ):
+            prioritised.append(im)
+        else:
+            rest.append(im)
+    return prioritised + rest
+
+
+def _match_branch_inside_external_art(
+    ext_root: str,
+    rel_branch: str,
+    artist: str = "",
+    track: str = "",
+    album: str = "",
+) -> tuple[str, list[str]] | None:
+    """Resolve a relative subfolder or filename inside ~/Pictures/bandarchy/external_art/."""
+    if not rel_branch:
+        return None
+    cand = os.path.join(ext_root, rel_branch)
+    if os.path.isfile(cand) and cand.lower().endswith(_EXTERNAL_ART_EXTS):
+        abs_c = os.path.abspath(cand)
+        return abs_c, [abs_c]
+    if os.path.isdir(cand):
+        abs_c = os.path.abspath(cand)
+        return abs_c, _prioritise_images_for_metadata(_collect_images_in_folder(abs_c), track=track, album=album)
+
+    # Try matching subfolder or image file by slug / case-insensitive stem inside ext_root
+    parts = [p for p in rel_branch.split("/") if p]
+    if not parts:
+        return None
+    first_slug = _art_match_slug(parts[0])
+    leaf_slug = _art_match_slug(os.path.splitext(parts[-1])[0])
+    try:
+        root_entries = sorted(os.listdir(ext_root), key=lambda s: s.lower())
+    except OSError:
+        root_entries = []
+
+    # 1. Check if parts[0] matches a top-level subdirectory of ext_root
+    matched_subdir = ""
+    for fn in root_entries:
+        if fn.startswith("."):
+            continue
+        sub = os.path.join(ext_root, fn)
+        if os.path.isdir(sub):
+            sub_slug = _art_match_slug(fn)
+            if fn.casefold() == parts[0].casefold() or (first_slug and sub_slug == first_slug):
+                matched_subdir = os.path.abspath(sub)
+                break
+
+    if matched_subdir:
+        # Walk any intermediate subfolder segments (e.g. Artist/Album)
+        cur_dir = matched_subdir
+        for seg in parts[1:]:
+            seg_slug = _art_match_slug(os.path.splitext(seg)[0])
+            try:
+                sub_entries = sorted(os.listdir(cur_dir), key=lambda s: s.lower())
+            except OSError:
+                sub_entries = []
+            next_dir = ""
+            for sfn in sub_entries:
+                if sfn.startswith("."):
+                    continue
+                sfp = os.path.join(cur_dir, sfn)
+                if os.path.isdir(sfp):
+                    if sfn.casefold() == seg.casefold() or (seg_slug and _art_match_slug(sfn) == seg_slug):
+                        next_dir = os.path.abspath(sfp)
+                        break
+            if next_dir:
+                cur_dir = next_dir
+            else:
+                break
+
+        if len(parts) > 1 and cur_dir == matched_subdir and leaf_slug:
+            # Look for matching image file inside matched_subdir (including nested folders)
+            for sfp in _collect_images_in_folder(matched_subdir):
+                sfn = os.path.basename(sfp)
+                stem_slug = _art_match_slug(os.path.splitext(sfn)[0])
+                if sfn.casefold() == parts[-1].casefold() or stem_slug == leaf_slug or (len(leaf_slug) >= 3 and leaf_slug in stem_slug):
+                    return sfp, [sfp]
+        sub_imgs = _prioritise_images_for_metadata(_collect_images_in_folder(cur_dir), track=track, album=album)
+        return cur_dir, sub_imgs
+
+    # 2. Check image files directly in ext_root or nested inside subdirectories by stem slug
+    if leaf_slug:
+        for fp in _collect_images_in_folder(ext_root):
+            fn = os.path.basename(fp)
+            stem_slug = _art_match_slug(os.path.splitext(fn)[0])
+            if fn.casefold() == parts[-1].casefold() or stem_slug == leaf_slug or (len(leaf_slug) >= 3 and leaf_slug in stem_slug):
+                return fp, [fp]
+    return None
+
+
+def _auto_match_metadata_in_external_art(
+    ext_root: str,
+    artist: str = "",
+    track: str = "",
+    album: str = "",
+) -> tuple[str, list[str]] | None:
+    """Automatically match subfolders or image filenames under ~/Pictures/bandarchy/external_art/
+    by normalised Artist, Album, or Track when no explicit art branch is set.
+    """
+    artist_slugs = _candidate_slugs_for_text(artist)
+    album_slugs = _candidate_slugs_for_text(album)
+    track_slugs = _candidate_slugs_for_text(track)
+    if not (artist_slugs or album_slugs or track_slugs):
+        return None
+
+    try:
+        entries = sorted(os.listdir(ext_root), key=lambda s: s.lower())
+    except OSError:
+        return None
+
+    subdirs: list[tuple[str, str]] = []
+    root_files: list[tuple[str, str]] = []
+    for fn in entries:
+        if fn.startswith("."):
+            continue
+        fp = os.path.join(ext_root, fn)
+        if os.path.isdir(fp):
+            subdirs.append((os.path.abspath(fp), _art_match_slug(fn)))
+        elif os.path.isfile(fp) and fn.lower().endswith(_EXTERNAL_ART_EXTS):
+            root_files.append((os.path.abspath(fp), _art_match_slug(os.path.splitext(fn)[0])))
+
+    # Priority 1: Subdirectory matching Artist+Album, Album, Artist, or Track
+    target_dir_slugs: list[str] = []
+    for a_s in artist_slugs:
+        for al_s in album_slugs:
+            target_dir_slugs.append(a_s + al_s)
+    target_dir_slugs.extend(album_slugs)
+    target_dir_slugs.extend(artist_slugs)
+    target_dir_slugs.extend(track_slugs)
+
+    for want_slug in target_dir_slugs:
+        if not want_slug:
+            continue
+        for sub_path, sub_slug in subdirs:
+            if sub_slug == want_slug or (len(want_slug) >= 4 and (want_slug in sub_slug or (len(sub_slug) >= 4 and sub_slug in want_slug))):
+                imgs = _prioritise_images_for_metadata(_collect_images_in_folder(sub_path), track=track, album=album)
+                if imgs:
+                    return sub_path, imgs
+
+    # Priority 2: Image files in ext_root (or subdirectories) matching Track, Album, or Artist
+    all_files: list[tuple[str, str]] = list(root_files)
+    for sub_path, _ in subdirs:
+        for im in _collect_images_in_folder(sub_path):
+            all_files.append((im, _art_match_slug(os.path.splitext(os.path.basename(im))[0])))
+
+    matched_files: list[str] = []
+    for want_slug in (track_slugs + album_slugs + artist_slugs):
+        if len(want_slug) < 3:
+            continue
+        for f_path, f_slug in all_files:
+            if f_slug == want_slug or want_slug in f_slug:
+                if f_path not in matched_files:
+                    matched_files.append(f_path)
+    if matched_files:
+        return (matched_files[0] if len(matched_files) == 1 else ext_root), matched_files
+
+    return None
+
+
+def scan_external_art_candidates(
+    art_target: str = "",
+    fallback_dir: str = "",
+    artist: str = "",
+    track: str = "",
+    album: str = "",
+) -> tuple[str, list[str]]:
+    """Resolve an external album art file or directory branching from ~/Pictures/bandarchy/external_art/
+    and return (resolved_path, list_of_image_files).
+    """
+    ext_root = _ensure_external_art_dir()
+    legacy_root = os.path.join(_resolve_photo_base_dir(), "external-art")
+
+    clean_target = str(art_target or "").strip()
+    if clean_target:
+        target_abs = _expand_safe_art_path(clean_target)
+        if (
+            target_abs
+            and clean_target.startswith("/")
+            and os.path.exists(target_abs)
+            and os.path.abspath(target_abs) not in (os.path.abspath(ext_root), os.path.abspath(legacy_root))
+            and not clean_target.lower().startswith(("/external_art", "/external-art"))
+        ):
+            if os.path.isfile(target_abs) and target_abs.lower().endswith(_EXTERNAL_ART_EXTS):
+                return target_abs, [target_abs]
+            if os.path.isdir(target_abs):
+                return target_abs, _prioritise_images_for_metadata(
+                    _collect_images_in_folder(target_abs), track=track, album=album
+                )
+
+        rel_branch = normalise_external_art_branch(clean_target)
+        if rel_branch:
+            branch_match = _match_branch_inside_external_art(
+                ext_root, rel_branch, artist=artist, track=track, album=album
+            )
+            if branch_match is not None:
+                return branch_match
+
+    # Automatic subfolder / filename matching by Artist, Album, or Track inside ~/Pictures/bandarchy/external_art/
+    auto_match = _auto_match_metadata_in_external_art(ext_root, artist=artist, track=track, album=album)
+    if auto_match is not None:
+        return auto_match
+
+    # Check explicit non-default fallback_dir if it exists on disk (e.g. test override)
+    if fallback_dir:
+        fb_abs = _expand_safe_art_path(fallback_dir)
+        if (
+            fb_abs
+            and os.path.exists(fb_abs)
+            and os.path.abspath(fb_abs) not in (os.path.abspath(ext_root), os.path.abspath(legacy_root))
+        ):
+            if os.path.isfile(fb_abs) and fb_abs.lower().endswith(_EXTERNAL_ART_EXTS):
+                return fb_abs, [fb_abs]
+            if os.path.isdir(fb_abs):
+                imgs = _prioritise_images_for_metadata(_collect_images_in_folder(fb_abs), track=track, album=album)
+                if imgs:
+                    return fb_abs, imgs
+
+    return ext_root, _collect_images_in_folder(ext_root)
+
+
+_SAFE_PULSE_SOURCE_RE = re.compile(r"^[A-Za-z0-9_.\-:@/]+$")
+
+
+def get_pactl_defaults() -> tuple[str, str]:
+    """Query `pactl info` and return (default_sink, default_source)."""
+    pactl_bin = resolve_bin("pactl")
+    if not pactl_bin:
+        return "", ""
+    try:
+        res = subprocess.run(
+            [pactl_bin, "info"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=2.0,
+            check=False,
+            text=True,
+        )
+        out = res.stdout or ""
+    except Exception:
+        return "", ""
+    default_sink = ""
+    default_source = ""
+    for raw_line in out.splitlines():
+        line = raw_line.strip()
+        if line.startswith("Default Sink:"):
+            val = bounded_text(line.split(":", 1)[1].strip(), 240)
+            if _SAFE_PULSE_SOURCE_RE.match(val):
+                default_sink = val
+        elif line.startswith("Default Source:"):
+            val = bounded_text(line.split(":", 1)[1].strip(), 240)
+            if _SAFE_PULSE_SOURCE_RE.match(val):
+                default_source = val
+    return default_sink, default_source
+
+
+def list_audio_sources() -> list[dict[str, str]]:
+    """Query `pactl list sources` and return classified hardware/virtual inputs and output monitors."""
+    pactl_bin = resolve_bin("pactl")
+    if not pactl_bin:
+        return []
+    default_sink, default_source = get_pactl_defaults()
+    default_monitor = f"{default_sink}.monitor" if default_sink else ""
+    try:
+        res = subprocess.run(
+            [pactl_bin, "list", "sources"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=2.5,
+            check=False,
+            text=True,
+        )
+        out = res.stdout or ""
+    except Exception:
+        return []
+
+    sources: list[dict[str, str]] = []
+    cur: dict[str, str] = {}
+    for raw_line in out.splitlines():
+        line = raw_line.strip()
+        if line.startswith("Source #"):
+            if cur.get("name"):
+                sources.append(cur)
+            cur = {"name": "", "description": "", "state": "SUSPENDED", "kind": "input"}
+        elif line.startswith("State:"):
+            cur["state"] = bounded_text(line.split(":", 1)[1].strip().upper(), 32)
+        elif line.startswith("Name:"):
+            name = bounded_text(line.split(":", 1)[1].strip(), 240)
+            if _SAFE_PULSE_SOURCE_RE.match(name):
+                cur["name"] = name
+                if name.endswith(".monitor"):
+                    cur["kind"] = "monitor"
+        elif line.startswith("Description:"):
+            cur["description"] = bounded_text(line.split(":", 1)[1].strip(), 160)
+        elif line.startswith("device.class =") or line.startswith("media.class ="):
+            val = line.split("=", 1)[1].strip().strip('"').lower()
+            if "monitor" in val or "sink" in val:
+                cur["kind"] = "monitor"
+    if cur.get("name"):
+        sources.append(cur)
+
+    for s in sources:
+        if s.get("kind") == "monitor" and default_monitor and s["name"] == default_monitor:
+            s["isDefault"] = "1"
+        elif s.get("kind") == "input" and default_source and s["name"] == default_source:
+            s["isDefault"] = "1"
+
+    def _source_sort_key(item: dict[str, str]) -> tuple[int, int, int]:
+        is_running = 0 if item.get("state") == "RUNNING" else 1
+        is_def = 0 if item.get("isDefault") == "1" else 1
+        is_hw = 0 if item.get("name", "").startswith(("alsa_input.", "alsa_output.")) else 1
+        return (is_running, is_def, is_hw)
+
+    sources.sort(key=_source_sort_key)
+    return sources
+
+
+def resolve_target_audio_source(
+    mode: str,
+    selected_source: str,
+    sources: list[dict[str, str]],
+    mpv_playing: bool = False,
+) -> tuple[str, str]:
+    """Return (cava_source_string, human_label) based on audioInputMode and live source states."""
+    clean_mode = str(mode or "auto").strip().lower()
+    clean_sel = str(selected_source or "auto").strip()
+    norm_sources = []
+    for raw_s in (sources or []):
+        if not isinstance(raw_s, dict):
+            continue
+        s_name = str(raw_s.get("name") or raw_s.get("id") or "").strip()
+        if not s_name:
+            continue
+        s_desc = str(raw_s.get("description") or raw_s.get("label") or s_name).strip()
+        s_is_def = "1" if raw_s.get("isDefault") in (True, "1", 1, "true") else "0"
+        norm_sources.append({
+            "name": s_name,
+            "description": s_desc,
+            "kind": str(raw_s.get("kind") or ("monitor" if s_name.endswith(".monitor") else "input")),
+            "state": str(raw_s.get("state") or "IDLE").upper(),
+            "isDefault": s_is_def,
+        })
+    sources = norm_sources
+    if clean_mode == "player":
+        return "auto", "Bandarchy Player (Default Monitor)"
+    if clean_sel and clean_sel != "auto" and _SAFE_PULSE_SOURCE_RE.match(clean_sel):
+        for s in sources:
+            if s["name"] == clean_sel:
+                return s["name"], (s.get("description") or s["name"])
+        return clean_sel, clean_sel
+
+    default_sink, default_source = get_pactl_defaults()
+    default_monitor = f"{default_sink}.monitor" if default_sink else ""
+
+    inputs = [s for s in sources if s.get("kind") == "input"]
+    monitors = [s for s in sources if s.get("kind") == "monitor"]
+    running_inputs = [s for s in inputs if s.get("state") == "RUNNING"]
+    running_monitors = [s for s in monitors if s.get("state") == "RUNNING"]
+    hw_running_inputs = [s for s in running_inputs if s["name"].startswith("alsa_input.") or s["name"] == default_source]
+    hw_inputs = [s for s in inputs if s["name"].startswith("alsa_input.")]
+    def_inputs = [s for s in inputs if s.get("isDefault") == "1" or (default_source and s["name"] == default_source)]
+    def_monitors = [m for m in monitors if m.get("isDefault") == "1" or (default_monitor and m["name"] == default_monitor)]
+    hw_running_monitors = [m for m in running_monitors if m["name"].startswith("alsa_output.")]
+
+    if clean_mode == "input":
+        pick_in = (
+            hw_running_inputs[0] if hw_running_inputs else (
+                running_inputs[0] if running_inputs else (
+                    def_inputs[0] if def_inputs else (
+                        hw_inputs[0] if hw_inputs else (inputs[0] if inputs else None)
+                    )
+                )
+            )
+        )
+        if pick_in:
+            return pick_in["name"], (pick_in.get("description") or pick_in["name"])
+        return "auto", "Default Audio Input"
+
+    if clean_mode == "monitor":
+        def_running = [m for m in running_monitors if m.get("isDefault") == "1" or (default_monitor and m["name"] == default_monitor)]
+        pick_mon = (
+            def_running[0] if def_running else (
+                hw_running_monitors[0] if hw_running_monitors else (
+                    running_monitors[0] if running_monitors else (
+                        def_monitors[0] if def_monitors else (monitors[0] if monitors else None)
+                    )
+                )
+            )
+        )
+        if pick_mon:
+            return pick_mon["name"], (pick_mon.get("description") or pick_mon["name"])
+        return "auto", "System Output Monitor"
+
+    # Default "auto" mode:
+    # 1. If Bandarchy's internal mpv is not actively playing and a capture input is RUNNING, lock onto that capture input.
+    # 2. Otherwise if a system output monitor is RUNNING (preferring default sink monitor, then hardware alsa_output.*), lock onto that monitor.
+    # 3. Otherwise if default sink monitor exists, prefer it; fallback to "auto".
+    if not mpv_playing and (hw_running_inputs or running_inputs):
+        pick_auto_in = hw_running_inputs[0] if hw_running_inputs else running_inputs[0]
+        return pick_auto_in["name"], (pick_auto_in.get("description") or pick_auto_in["name"])
+    def_running = [m for m in running_monitors if m.get("isDefault") == "1" or (default_monitor and m["name"] == default_monitor)]
+    if def_running:
+        return def_running[0]["name"], (def_running[0].get("description") or def_running[0]["name"])
+    if hw_running_monitors:
+        return hw_running_monitors[0]["name"], (hw_running_monitors[0].get("description") or hw_running_monitors[0]["name"])
+    if running_monitors:
+        return running_monitors[0]["name"], (running_monitors[0].get("description") or running_monitors[0]["name"])
+    if def_monitors:
+        return def_monitors[0]["name"], (def_monitors[0].get("description") or def_monitors[0]["name"])
+    return "auto", "Auto-Sense (Default Monitor / Input)"
+
+
+def write_runtime_cava_conf(source_name: str = "auto") -> str:
+    """Generate a private runtime cava.conf in RUNTIME_DIR pointing at `source_name`."""
+    ensure_private_dir(RUNTIME_DIR)
+    clean_src = str(source_name or "auto").strip()
+    if not clean_src or not _SAFE_PULSE_SOURCE_RE.match(clean_src):
+        clean_src = "auto"
+    base_txt = safe_read_text(DEFAULT_CAVA_CONF_FILE, max_bytes=64 * 1024) or ""
+    if not base_txt.strip():
+        base_txt = (
+            "[general]\nmode = normal\nframerate = 45\nbars = 64\nautosens = 1\nsensitivity = 180\n"
+            "lower_cutoff_freq = 25\nhigher_cutoff_freq = 16500\n\n"
+            "[input]\nmethod = pulse\nsource = auto\n\n"
+            "[output]\nmethod = raw\nraw_target = /dev/stdout\ndata_format = ascii\n"
+            "ascii_max_range = 1000\nbar_delimiter = 59\nframe_delimiter = 10\n"
+            "channels = mono\nmono_option = average\n\n[smoothing]\nnoise_reduction = 20\n"
+        )
+    updated_lines = []
+    replaced = False
+    for line in base_txt.splitlines():
+        if line.strip().startswith("source") and "=" in line:
+            updated_lines.append(f"source = {clean_src}")
+            replaced = True
+        else:
+            updated_lines.append(line)
+    if not replaced:
+        updated_lines.append(f"\n[input]\nsource = {clean_src}")
+    out_txt = "\n".join(updated_lines) + "\n"
+    safe_write_bytes(RUNTIME_CAVA_CONF, out_txt.encode("utf-8"), mode=0o600, fatal=False)
+    return RUNTIME_CAVA_CONF if os.path.exists(RUNTIME_CAVA_CONF) else DEFAULT_CAVA_CONF_FILE
+
+
 def cmd_visualiser_config(args) -> None:
     if getattr(args, "reset_statements", False):
         statements_list = reset_statements()
@@ -7169,19 +8070,46 @@ def cmd_visualiser_config(args) -> None:
     else:
         statements_list = load_statements()
 
+    if getattr(args, "reset_external_tracks", False):
+        external_tracks_list = reset_external_tracks()
+    elif getattr(args, "save_external_tracks", None) is not None:
+        raw_ext = args.save_external_tracks
+        try:
+            parsed_ext = json.loads(raw_ext)
+            if isinstance(parsed_ext, (list, str)):
+                external_tracks_list = save_external_tracks(parsed_ext)
+            else:
+                external_tracks_list = save_external_tracks(str(raw_ext))
+        except Exception:
+            external_tracks_list = save_external_tracks(str(raw_ext))
+    else:
+        external_tracks_list = load_external_tracks()
+
     if getattr(args, "open_statements", False):
-        xdg_open = resolve_bin("xdg-open")
-        if xdg_open:
+        editor_open = resolve_bin("omarchy-launch-editor") or resolve_bin("xdg-open")
+        if editor_open:
             subprocess.Popen(
-                [xdg_open, STATEMENTS_FILE],
+                [editor_open, STATEMENTS_FILE],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
             )
+    if getattr(args, "open_external_tracks", False):
+        editor_open = resolve_bin("omarchy-launch-editor") or resolve_bin("xdg-open")
+        if editor_open:
+            subprocess.Popen(
+                [editor_open, EXTERNAL_TRACKS_FILE],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+
     existing = read_json(VISUALISER_CONFIG_FILE, {})
     if not isinstance(existing, dict):
         existing = {}
+    config_dirty = False
     if getattr(args, "set", None) is not None:
         try:
             incoming = json.loads(args.set)
@@ -7191,17 +8119,125 @@ def cmd_visualiser_config(args) -> None:
             die("--set payload must be a JSON object")
         if "saveStatements" in incoming and isinstance(incoming["saveStatements"], (list, str)):
             statements_list = save_statements(incoming["saveStatements"])
-        incoming_clean = {k: v for k, v in incoming.items() if k not in ("statements", "statementsPath", "saveStatements")}
+        if "saveExternalTracks" in incoming and isinstance(incoming["saveExternalTracks"], (list, str)):
+            external_tracks_list = save_external_tracks(incoming["saveExternalTracks"])
+        transient_keys = (
+            "statements",
+            "statementsPath",
+            "saveStatements",
+            "externalTracks",
+            "externalTracksPath",
+            "saveExternalTracks",
+            "externalArtImages",
+            "externalArtResolvedPath",
+            "audioSources",
+            "activeAudioSource",
+            "activeAudioSourceLabel",
+            "runtimeCavaConfPath",
+        )
+        incoming_clean = {k: v for k, v in incoming.items() if k not in transient_keys}
         existing.update(incoming_clean)
         existing["updatedAt"] = int(time.time())
+        config_dirty = True
+
+    cfg_art_dir = str(existing.get("externalArtDir") or DEFAULT_EXTERNAL_ART_DIR).strip()
+    if cfg_art_dir.rstrip("/").endswith("/external-art"):
+        cfg_art_dir = DEFAULT_EXTERNAL_ART_DIR
+        existing["externalArtDir"] = DEFAULT_EXTERNAL_ART_DIR
+        config_dirty = True
+
+    raw_cfg_art_path = str(existing.get("externalArtPath", "")).strip()
+    if raw_cfg_art_path:
+        norm_cfg_branch = normalise_external_art_branch(raw_cfg_art_path)
+        abs_check = _expand_safe_art_path(raw_cfg_art_path) if raw_cfg_art_path.startswith("/") else ""
+        if not (
+            abs_check
+            and os.path.exists(abs_check)
+            and not raw_cfg_art_path.lower().startswith(("/external_art", "/external-art"))
+        ):
+            if norm_cfg_branch != raw_cfg_art_path:
+                existing["externalArtPath"] = norm_cfg_branch
+                config_dirty = True
+
+    scan_arg = getattr(args, "scan_external_art", None)
+    cfg_art_path = str(scan_arg if scan_arg is not None else existing.get("externalArtPath", "")).strip()
+    resolved_art_target, external_art_images = scan_external_art_candidates(
+        cfg_art_path,
+        cfg_art_dir,
+        artist=str(existing.get("externalArtist") or ""),
+        track=str(existing.get("externalTrack") or ""),
+        album=str(existing.get("externalAlbum") or ""),
+    )
+
+    # Clean stale non-existent leaf suffixes on saved externalArtPath when parent folder resolved inside external_art
+    saved_branch = str(existing.get("externalArtPath", "")).strip()
+    if (
+        saved_branch
+        and "/" in saved_branch
+        and not saved_branch.startswith("/")
+        and resolved_art_target
+        and os.path.isdir(resolved_art_target)
+        and not os.path.exists(os.path.join(EXTERNAL_ART_DIR, saved_branch))
+    ):
+        try:
+            rel_resolved = os.path.relpath(os.path.abspath(resolved_art_target), os.path.abspath(EXTERNAL_ART_DIR)).replace("\\", "/")
+            if rel_resolved and rel_resolved != "." and not rel_resolved.startswith(".."):
+                existing["externalArtPath"] = rel_resolved
+                if scan_arg is None:
+                    cfg_art_path = rel_resolved
+                config_dirty = True
+        except ValueError:
+            pass
+
+    if config_dirty and os.path.exists(VISUALISER_CONFIG_FILE) or getattr(args, "set", None) is not None:
         write_json(VISUALISER_CONFIG_FILE, existing, mode=0o600)
+
+    if getattr(args, "open_external_art_dir", False):
+        open_target = (
+            resolved_art_target
+            if (resolved_art_target and os.path.exists(resolved_art_target))
+            else _ensure_external_art_dir()
+        )
+        if os.path.isfile(open_target):
+            open_target = os.path.dirname(open_target)
+        os.makedirs(open_target, mode=0o700, exist_ok=True)
+        xdg_open = resolve_bin("xdg-open")
+        if xdg_open:
+            subprocess.Popen(
+                [xdg_open, open_target],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+
+    sources = list_audio_sources()
+    active_src, active_label = resolve_target_audio_source(
+        existing.get("audioInputMode", "auto"),
+        existing.get("audioInputSource", "auto"),
+        sources,
+        mpv_playing=False,
+    )
+    cava_conf_path = write_runtime_cava_conf(active_src)
+
     emit({
         "status": "ok",
         "config": existing,
         "statements": statements_list,
         "statementsPath": STATEMENTS_FILE,
+        "externalTracks": external_tracks_list,
+        "externalTracksPath": EXTERNAL_TRACKS_FILE,
+        "externalArtDir": cfg_art_dir,
+        "externalArtPath": str(existing.get("externalArtPath", "")),
+        "externalArtResolvedPath": resolved_art_target,
+        "externalArtImages": external_art_images,
+        "audioSources": sources,
+        "activeAudioSource": active_src,
+        "activeAudioSourceLabel": active_label,
+        "runtimeCavaConfPath": cava_conf_path,
         "path": VISUALISER_CONFIG_FILE,
     })
+
 
 
 def _kill_bandarchy_processes(kill_mpv: bool = True) -> None:
@@ -7248,7 +8284,11 @@ def _kill_bandarchy_processes(kill_mpv: bool = True) -> None:
             is_bandarchy_cava = (
                 exe_name == "cava"
                 and "-p" in parts
-                and any(("bandarchy" in p or "io.github.layolayo.bandarchy" in p) and p.endswith("cava.conf") for p in parts)
+                and any(
+                    ("bandarchy" in p or "io.github.layolayo.bandarchy" in p)
+                    and (p.endswith("cava.conf") or p.endswith("cava-runtime.conf"))
+                    for p in parts
+                )
             )
             is_bandarchy_mpv = (
                 kill_mpv
@@ -7443,36 +8483,6 @@ def _run_photo_import_cli(extra_args: list[str], timeout_sec: int = 180) -> None
     emit({"status": "ok"})
 
 
-def _pick_existing_or_default_bandarchy_subdir(pics_dir: str) -> str:
-    lower_cand = os.path.join(pics_dir, "bandarchy")
-    if os.path.exists(lower_cand):
-        return lower_cand
-    upper_cand = os.path.join(pics_dir, "Bandarchy")
-    if os.path.exists(upper_cand):
-        return upper_cand
-    try:
-        for entry in os.listdir(pics_dir):
-            if entry.lower() == "bandarchy":
-                full = os.path.join(pics_dir, entry)
-                if os.path.isdir(full):
-                    return full
-    except OSError:
-        pass
-    return lower_cand
-
-
-def _resolve_photo_base_dir(explicit_base_dir: str | None = None) -> str:
-    if explicit_base_dir:
-        return os.path.abspath(os.path.expanduser(str(explicit_base_dir)))
-    env_override = (os.environ.get("BANDARCHY_PICTURES_DIR") or "").strip()
-    if env_override:
-        return os.path.abspath(os.path.expanduser(env_override))
-    xdg_pics = (os.environ.get("XDG_PICTURES_DIR") or "").strip()
-    if xdg_pics:
-        return _pick_existing_or_default_bandarchy_subdir(os.path.abspath(os.path.expanduser(xdg_pics)))
-    return _pick_existing_or_default_bandarchy_subdir(os.path.join(HOME, "Pictures"))
-
-
 def cmd_photo_status(args) -> None:
     base_dir = _resolve_photo_base_dir(getattr(args, "base_dir", None))
     bpi = _load_photo_import_module()
@@ -7597,6 +8607,11 @@ def main() -> None:
     p.add_argument("--open-statements", action="store_true", help="open ~/.config/bandarchy/statements.txt in default editor")
     p.add_argument("--save-statements", help="persist JSON array or newline-separated text to ~/.config/bandarchy/statements.txt")
     p.add_argument("--reset-statements", action="store_true", help="reset ~/.config/bandarchy/statements.txt to default collection")
+    p.add_argument("--open-external-tracks", action="store_true", help="open ~/.config/bandarchy/external-tracks.txt in default editor")
+    p.add_argument("--save-external-tracks", default=None, help="persist JSON array or newline-separated text to ~/.config/bandarchy/external-tracks.txt")
+    p.add_argument("--reset-external-tracks", action="store_true", help="reset ~/.config/bandarchy/external-tracks.txt to default collection")
+    p.add_argument("--scan-external-art", default=None, help="scan an external art file or folder and return discovered images")
+    p.add_argument("--open-external-art-dir", action="store_true", help="open the external art directory in file manager")
     p.set_defaults(func=cmd_visualiser_config)
 
     p = sub.add_parser("collection", help="list collection items filtered by scope and query")
@@ -7658,6 +8673,7 @@ def main() -> None:
     p.add_argument("--invert", action="store_true")
     p.add_argument("--use-album-art", choices=["0", "1"], default=None)
     p.add_argument("--effect", default="random", help="ttfx effect to extract keyframes for (defaults to random)")
+    p.add_argument("--external-source", action="store_true", help="external audio source active; do not fall back to Bandarchy catalogue art or tracks")
     p.set_defaults(func=cmd_ascii_art)
 
     p = sub.add_parser("screensaver", help="launch Omarchy ttfx screensaver with transcoded album art")
@@ -7671,6 +8687,7 @@ def main() -> None:
     p.add_argument("--invert", action="store_true")
     p.add_argument("--use-album-art", choices=["0", "1"], default="1")
     p.add_argument("--effect", default="random", help="ttfx effect name or random")
+    p.add_argument("--external-source", action="store_true", help="external audio source active; do not fall back to Bandarchy catalogue art or tracks")
     p.add_argument("--tty-loop", action="store_true", help="internal flag: run ttfx fullscreen loop directly in terminal")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_screensaver)

@@ -42,6 +42,9 @@ package() {
   if [ -f "${startdir}/share/statements.txt" ]; then
     install -m644 "${startdir}/share/statements.txt" "${plugindir}/share/statements.txt"
   fi
+  if [ -f "${startdir}/share/external-tracks.txt" ]; then
+    install -m644 "${startdir}/share/external-tracks.txt" "${plugindir}/share/external-tracks.txt"
+  fi
   install -m755 "${startdir}/share/photo_engine/bandarchy_photo_import.py" "${plugindir}/share/photo_engine/bandarchy_photo_import.py"
   install -m644 "${startdir}/share/photo_engine/"effects_family*.py "${plugindir}/share/photo_engine/"
   install -m644 "${startdir}/share/photo_engine/"photo_motion_group*.py "${plugindir}/share/photo_engine/"

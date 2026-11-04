@@ -3784,6 +3784,319 @@ console.log('OK');
             ):
                 self.assertIn(req, viz_src, f"Missing {req} in Visualiser.qml")
 
+    def test_23_external_audio_input_and_external_tracks(self):
+        # 1. Verify share/external-tracks.txt seed exists and visualiser-config seeds external-tracks.txt separately from statements.txt
+        seed_ext_path = os.path.join(REPO_ROOT, "share", "external-tracks.txt")
+        self.assertTrue(os.path.isfile(seed_ext_path), "share/external-tracks.txt seed file must exist")
+
+        cfg_res = self.run_cli("visualiser-config")
+        self.assertTrue(cfg_res.get("ok"))
+        self.assertIn("externalTracks", cfg_res)
+        self.assertIn("externalTracksPath", cfg_res)
+        self.assertIn("statements", cfg_res)
+        self.assertIn("audioSources", cfg_res)
+        self.assertIn("runtimeCavaConfPath", cfg_res)
+        self.assertGreaterEqual(len(cfg_res["externalTracks"]), 5)
+        orig_statements = list(cfg_res["statements"])
+
+        # Verify default cava-runtime.conf is written with source = auto in player mode
+        rt_cava_path = cfg_res["runtimeCavaConfPath"]
+        self.assertTrue(os.path.isfile(rt_cava_path))
+        with open(rt_cava_path, "r", encoding="utf-8") as f:
+            rt_cava_txt = f.read()
+        self.assertIn("source = auto", rt_cava_txt)
+
+        # 2. Save custom external tracks (including optional 4th field ArtPathOrFolder, hyphen-delimited, and object entries) and verify statements.txt is untouched
+        ext_art_test_dir = os.path.join(self.tmp_root, "Pictures", "bandarchy", "external-art-custom")
+        os.makedirs(ext_art_test_dir, exist_ok=True)
+        # Create two test PNG images in ext_art_test_dir
+        img_a = os.path.join(ext_art_test_dir, "01_cover_alpha.png")
+        img_b = os.path.join(ext_art_test_dir, "02_cover_beta.png")
+        from PIL import Image
+        Image.new("RGB", (48, 48), (220, 40, 90)).save(img_a)
+        Image.new("RGB", (48, 48), (30, 190, 240)).save(img_b)
+
+        custom_entries = [
+            f"Boards of Canada | Roygbiv | Music Has the Right to Children | {ext_art_test_dir}",
+            "Aphex Twin - Xtal",
+            {"artist": "Burial", "track": "Archangel", "album": "Untrue", "artPath": img_b},
+            "Live Modular Patch",
+        ]
+        save_ext_res = self.run_cli("visualiser-config", "--save-external-tracks", json.dumps(custom_entries))
+        self.assertTrue(save_ext_res.get("ok"))
+        saved_tracks = save_ext_res["externalTracks"]
+        self.assertEqual(len(saved_tracks), 4)
+        self.assertEqual(saved_tracks[0]["artist"], "Boards of Canada")
+        self.assertEqual(saved_tracks[0]["track"], "Roygbiv")
+        self.assertEqual(saved_tracks[0]["album"], "Music Has the Right to Children")
+        self.assertEqual(saved_tracks[0]["artPath"], ext_art_test_dir)
+        self.assertEqual(saved_tracks[1]["artist"], "Aphex Twin")
+        self.assertEqual(saved_tracks[1]["track"], "Xtal")
+        self.assertEqual(saved_tracks[1]["artPath"], "")
+        self.assertEqual(saved_tracks[2]["artist"], "Burial")
+        self.assertEqual(saved_tracks[2]["track"], "Archangel")
+        self.assertEqual(saved_tracks[2]["album"], "Untrue")
+        self.assertEqual(saved_tracks[2]["artPath"], img_b)
+        self.assertEqual(saved_tracks[3]["artist"], "")
+        self.assertEqual(saved_tracks[3]["track"], "Live Modular Patch")
+        # Ensure statements.txt was not modified by external-tracks operations
+        self.assertEqual(save_ext_res["statements"], orig_statements)
+
+        # 2b. Verify --scan-external-art discovers images in folder and picks up newly dropped-in images
+        scan_res_1 = self.run_cli("visualiser-config", "--scan-external-art", ext_art_test_dir)
+        self.assertTrue(scan_res_1.get("ok"))
+        self.assertEqual(scan_res_1["externalArtImages"], [img_a, img_b])
+
+        img_c = os.path.join(ext_art_test_dir, "03_cover_gamma.png")
+        Image.new("RGB", (48, 48), (90, 230, 80)).save(img_c)
+        scan_res_2 = self.run_cli("visualiser-config", "--scan-external-art", ext_art_test_dir)
+        self.assertEqual(scan_res_2["externalArtImages"], [img_a, img_b, img_c])
+
+        # Verify scanning an explicit single file path resolves to that specific image file
+        scan_res_file = self.run_cli("visualiser-config", "--scan-external-art", img_b)
+        self.assertEqual(scan_res_file["externalArtImages"], [img_b])
+
+        # 2c. Verify ascii-art --external-source never falls back to Bandarchy catalogue art or text when no external art exists
+        empty_ext_dir = os.path.join(self.tmp_root, "Pictures", "bandarchy", "empty-ext-art")
+        os.makedirs(empty_ext_dir, exist_ok=True)
+        res_ext_empty = self.run_cli(
+            "ascii-art",
+            "--image", empty_ext_dir,
+            "--text", "",
+            "--mode", "braille",
+            "--use-album-art", "1",
+            "--external-source",
+        )
+        self.assertTrue(res_ext_empty.get("ok"))
+        empty_art_lines_joined = "\n".join(res_ext_empty.get("artLines") or [])
+        self.assertNotIn("#ARTMODEL:", empty_art_lines_joined, "External source with empty art folder must not leak catalogue #ARTMODEL:")
+
+        # And when an external art folder has images, ascii-art --external-source resolves from that external folder
+        res_ext_art = self.run_cli(
+            "ascii-art",
+            "--image", ext_art_test_dir,
+            "--text", "Drexciya - Neptune's Lair",
+            "--mode", "braille",
+            "--use-album-art", "1",
+            "--external-source",
+        )
+        self.assertTrue(res_ext_art.get("ok"))
+        ext_art_lines_joined = "\n".join(res_ext_art.get("artLines") or [])
+        self.assertIn("#ARTMODEL:", ext_art_lines_joined)
+        self.assertIn(img_a, ext_art_lines_joined)
+
+        # Reset external tracks back to defaults and verify
+        reset_ext_res = self.run_cli("visualiser-config", "--reset-external-tracks")
+        self.assertTrue(reset_ext_res.get("ok"))
+        self.assertGreaterEqual(len(reset_ext_res["externalTracks"]), 8)
+        self.assertEqual(reset_ext_res["statements"], orig_statements)
+
+        # 3. Verify setting audioInputMode + audioInputSource writes cava-runtime.conf with explicit source and persists external metadata + external art settings
+        set_input_res = self.run_cli(
+            "visualiser-config",
+            "--set",
+            json.dumps({
+                "audioInputMode": "input",
+                "audioInputSource": "alsa_input.usb-Focusrite_Scarlett_2i2-00.analog-stereo",
+                "audioGateThreshold": 45,
+                "externalMetadataMode": "custom",
+                "externalArtist": "Drexciya",
+                "externalTrack": "Andreaen Sand Dunes",
+                "externalAlbum": "Neptune's Lair",
+                "externalArtPath": ext_art_test_dir,
+                "externalArtDir": ext_art_test_dir,
+                "externalArtCycleSeconds": 15,
+                "externalArtPollEnabled": True,
+                "externalTrackIndex": 2,
+                "externalArcDuration": 240.0,
+            }),
+        )
+        self.assertTrue(set_input_res.get("ok"))
+        self.assertEqual(set_input_res["activeAudioSource"], "alsa_input.usb-Focusrite_Scarlett_2i2-00.analog-stereo")
+        self.assertEqual(set_input_res["config"]["audioInputMode"], "input")
+        self.assertEqual(set_input_res["config"]["externalArtist"], "Drexciya")
+        self.assertEqual(set_input_res["config"]["externalTrack"], "Andreaen Sand Dunes")
+        self.assertEqual(set_input_res["config"]["externalAlbum"], "Neptune's Lair")
+        self.assertEqual(set_input_res["config"]["externalArtPath"], ext_art_test_dir)
+        self.assertEqual(set_input_res["config"]["externalArtDir"], ext_art_test_dir)
+        self.assertEqual(set_input_res["config"]["externalArtCycleSeconds"], 15)
+        self.assertEqual(set_input_res["config"]["externalArtPollEnabled"], True)
+        self.assertEqual(set_input_res["externalArtImages"], [img_a, img_b, img_c])
+        with open(rt_cava_path, "r", encoding="utf-8") as f:
+            rt_cava_input_txt = f.read()
+        self.assertIn("source = alsa_input.usb-Focusrite_Scarlett_2i2-00.analog-stereo", rt_cava_input_txt)
+
+        # 4. Verify resolve_target_audio_source prioritises isDefault & hardware ALSA over easyeffects virtual sources
+        import importlib.util
+        import importlib.machinery
+        loader = importlib.machinery.SourceFileLoader("bandarchy_cli_mod", BIN_PATH)
+        spec = importlib.util.spec_from_loader("bandarchy_cli_mod", loader)
+        cli_mod = importlib.util.module_from_spec(spec)
+        loader.exec_module(cli_mod)
+
+        mock_sources = [
+            {"id": "easyeffects_sink.monitor", "label": "Monitor of Easy Effects Sink", "kind": "monitor", "state": "IDLE", "isDefault": False},
+            {"id": "alsa_output.pci-0000_00_1f.3.analog-stereo.monitor", "label": "Built-in Audio Analog Stereo (Monitor)", "kind": "monitor", "state": "SUSPENDED", "isDefault": True},
+            {"id": "easyeffects_source", "label": "Easy Effects Source", "kind": "input", "state": "SUSPENDED", "isDefault": False},
+            {"id": "alsa_input.pci-0000_00_1f.3.analog-stereo", "label": "Built-in Audio Analog Stereo", "kind": "input", "state": "SUSPENDED", "isDefault": True},
+        ]
+        mon_id, mon_lbl = cli_mod.resolve_target_audio_source("monitor", "", mock_sources)
+        self.assertEqual(mon_id, "alsa_output.pci-0000_00_1f.3.analog-stereo.monitor")
+        inp_id, inp_lbl = cli_mod.resolve_target_audio_source("input", "", mock_sources)
+        self.assertEqual(inp_id, "alsa_input.pci-0000_00_1f.3.analog-stereo")
+
+        # When an input source is RUNNING in auto mode, it should be selected automatically
+        mock_sources_running = [
+            {"id": "alsa_output.pci-0000_00_1f.3.analog-stereo.monitor", "label": "Built-in Audio (Monitor)", "kind": "monitor", "state": "IDLE", "isDefault": True},
+            {"id": "alsa_input.usb-interface.stereo", "label": "USB Audio Line-In", "kind": "input", "state": "RUNNING", "isDefault": False},
+        ]
+        auto_id, _ = cli_mod.resolve_target_audio_source("auto", "", mock_sources_running)
+        self.assertEqual(auto_id, "alsa_input.usb-interface.stereo")
+
+        # 4b. Verify ~/Pictures/bandarchy/external_art relative branch resolution, prefix stripping, and automatic Artist/Album matching
+        ext_root_dir = cfg_res["externalArtDir"]
+        self.assertTrue(ext_root_dir.endswith(os.path.join("bandarchy", "external_art")))
+        self.assertTrue(os.path.isdir(ext_root_dir))
+
+        black_dog_sub = os.path.join(ext_root_dir, "black_dog")
+        os.makedirs(black_dog_sub, exist_ok=True)
+        bd_img = os.path.join(black_dog_sub, "spanners_cover.png")
+        boc_img = os.path.join(ext_root_dir, "boc.jpg")
+        Image.new("RGB", (48, 48), (180, 60, 210)).save(bd_img)
+        Image.new("RGB", (48, 48), (40, 200, 170)).save(boc_img)
+
+        self.assertEqual(cli_mod.normalise_external_art_branch("/black_dog/"), "black_dog")
+        self.assertEqual(cli_mod.normalise_external_art_branch("external_art/black_dog"), "black_dog")
+        self.assertEqual(cli_mod.normalise_external_art_branch("~/Pictures/bandarchy/external_art/black_dog/spanners_cover.png"), "black_dog/spanners_cover.png")
+        self.assertEqual(cli_mod.normalise_external_art_branch("boc.jpg"), "boc.jpg")
+
+        scan_rel_sub = self.run_cli("visualiser-config", "--scan-external-art", "black_dog")
+        self.assertEqual(scan_rel_sub["externalArtImages"], [bd_img])
+
+        scan_slash_sub = self.run_cli("visualiser-config", "--scan-external-art", "/black_dog")
+        self.assertEqual(scan_slash_sub["externalArtImages"], [bd_img])
+
+        scan_rel_file = self.run_cli("visualiser-config", "--scan-external-art", "boc.jpg")
+        self.assertEqual(scan_rel_file["externalArtImages"], [boc_img])
+
+        # Verify single-token filename nested inside a subfolder resolves cleanly (e.g. spanners_cover.png inside black_dog/)
+        scan_nested_file = self.run_cli("visualiser-config", "--scan-external-art", "spanners_cover.png")
+        self.assertEqual(scan_nested_file["externalArtImages"], [bd_img])
+
+        # Verify multi-level Artist/Album/cover.png folder structure inside external_art
+        nested_album_dir = os.path.join(ext_root_dir, "boards_of_canada", "music_has_the_right")
+        os.makedirs(nested_album_dir, exist_ok=True)
+        roygbiv_img = os.path.join(nested_album_dir, "roygbiv_cover.png")
+        Image.new("RGB", (48, 48), (20, 140, 220)).save(roygbiv_img)
+        scan_multi_sub = self.run_cli("visualiser-config", "--scan-external-art", "boards_of_canada")
+        self.assertIn(roygbiv_img, scan_multi_sub["externalArtImages"])
+        scan_multi_nested = self.run_cli("visualiser-config", "--scan-external-art", "Boards Of Canada/Music Has The Right")
+        self.assertEqual(scan_multi_nested["externalArtImages"], [roygbiv_img])
+
+        # Verify automatic Artist/Album matching inside external_art when externalArtPath is empty
+        auto_match_res = self.run_cli(
+            "visualiser-config",
+            "--set",
+            json.dumps({
+                "externalMetadataMode": "custom",
+                "externalArtist": "The Black Dog",
+                "externalTrack": "Psil-Cosyin",
+                "externalAlbum": "Spanners",
+                "externalArtPath": "",
+            }),
+        )
+        self.assertEqual(auto_match_res["externalArtImages"], [bd_img])
+
+        # 5. Verify QML bindings, catalogue isolation, and strict keybinding preservation across Service.qml, Visualiser.qml, Panel.qml, App.qml, BarWidget.qml
+        with open(os.path.join(REPO_ROOT, "Service.qml"), "r", encoding="utf-8") as f:
+            svc_src = f.read()
+        with open(os.path.join(REPO_ROOT, "Visualiser.qml"), "r", encoding="utf-8") as f:
+            viz_src = f.read()
+        with open(os.path.join(REPO_ROOT, "Panel.qml"), "r", encoding="utf-8") as f:
+            panel_src = f.read()
+        with open(os.path.join(REPO_ROOT, "App.qml"), "r", encoding="utf-8") as f:
+            app_src = f.read()
+        with open(os.path.join(REPO_ROOT, "BarWidget.qml"), "r", encoding="utf-8") as f:
+            bar_src = f.read()
+
+        # Verify Tab 6 constrains ColumnLayout width to drawerFlick.width and has zero direct child RowLayouts
+        tab6_slice = viz_src.split("TAB 6: 6: TYPOGRAPHY", 1)[1].split("TAB 7:", 1)[0]
+        self.assertIn("Layout.maximumWidth: drawerFlick.width", tab6_slice)
+        self.assertEqual(tab6_slice.count("\n                        RowLayout {"), 0)
+
+        for expected_svc in (
+            "readonly property bool externalAudioSyncEnabled:",
+            "readonly property bool externalAudioActive:",
+            "readonly property bool visualiserPlaying:",
+            "readonly property string effectiveTrackArtist:",
+            "readonly property string effectiveTrackTitle:",
+            "readonly property string effectiveTrackAlbum:",
+            "readonly property string activeExternalArtImage:",
+            "readonly property string effectiveArtPath:",
+            "readonly property real effectivePosition: (!root.usingExternalMetadata && root.playing && root.duration > 0.5)",
+            "readonly property real effectiveDuration: (!root.usingExternalMetadata && root.playing && root.duration > 0.5)",
+            "readonly property real effectiveArcProgress:",
+            "function pollExternalArtFolder(",
+            "function stepExternalArt(",
+            "function openExternalArtFolder()",
+            "function saveExternalTracks(",
+            "function resetExternalTracksFile()",
+            "function openExternalTracksFile()",
+            "function refreshAudioSources()",
+        ):
+            self.assertIn(expected_svc, svc_src, f"Missing {expected_svc} in Service.qml")
+
+        for expected_viz in (
+            "property string audioInputMode:",
+            "property string externalMetadataMode:",
+            "property string externalArtPath:",
+            "property string externalArtDir:",
+            "property var externalArtImages:",
+            "property int externalArtCycleSeconds:",
+            "property bool externalArtPollEnabled:",
+            "property var externalTracksList:",
+            "property real arcProgress: 0.0",
+            "property bool usingExternalMetadata: false",
+            "readonly property bool isExternalTrackDisplay:",
+            "readonly property bool hasValidTrackTime: !root.isExternalTrackDisplay && root.duration > 0.5",
+            "signal requestSaveExternalTracks(",
+            "signal requestResetExternalTracks()",
+            "signal requestOpenExternalTracksFile()",
+            "signal requestScanExternalArt()",
+            "signal requestStepExternalArt(int delta)",
+            "signal requestOpenExternalArtDir()",
+            "signal requestRefreshAudioSources()",
+            "function normaliseExternalArtBranch(",
+            "id: extArtBranchPrefix",
+            "text: \"external_art/\"",
+            "id: externalArtistInput",
+            "id: externalTrackInput",
+            "id: externalAlbumInput",
+            "id: externalArtInput",
+            "id: externalTracksBulkEdit",
+            "Audio Input Synchronisation",
+            "External Art Folder Polling & Cycling",
+            "function onExternalArtPathChanged()",
+        ):
+            self.assertIn(expected_viz, viz_src, f"Missing {expected_viz} in Visualiser.qml")
+
+        self.assertIn("playing: root.service ? root.service.visualiserPlaying : false", panel_src)
+        self.assertIn("trackTitle: root.service ? root.service.effectiveTrackTitle : \"\"", panel_src)
+        self.assertIn("artPath: root.service ? root.service.effectiveArtPath : \"\"", panel_src)
+        self.assertIn("usingExternalMetadata: root.service ? root.service.usingExternalMetadata : false", panel_src)
+        self.assertIn("arcProgress: root.service ? root.service.effectiveArcProgress : 0.0", panel_src)
+        self.assertIn("if (!root.service || root.service.usingExternalMetadata) return \"\"", panel_src)
+        self.assertIn("readonly property bool isCurrentAlbum: Boolean(root.service && root.service.playing && !root.service.usingExternalMetadata && root.service.albumId === modelData.id)", panel_src)
+        self.assertIn("readonly property bool isTrackPlaying: Boolean(root.service && root.service.playing && !root.service.usingExternalMetadata && root.service.trackId === modelData.id)", panel_src)
+        self.assertIn("playing: service.visualiserPlaying", app_src)
+        self.assertIn("trackTitle: service.effectiveTrackTitle", app_src)
+        self.assertIn("artPath: service.effectiveArtPath", app_src)
+        self.assertIn("usingExternalMetadata: service.usingExternalMetadata", app_src)
+        self.assertIn("arcProgress: service.effectiveArcProgress", app_src)
+        self.assertIn("readonly property bool isCurrentAlbum: Boolean(service.playing && !service.usingExternalMetadata && service.albumId === modelData.id)", app_src)
+        self.assertIn("readonly property bool isTrackPlaying: Boolean(service.playing && !service.usingExternalMetadata && service.trackId === modelData.id)", app_src)
+        self.assertIn("root.service.visualiserPlaying", bar_src)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

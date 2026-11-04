@@ -108,6 +108,7 @@ ShellRoot {
         }
 
         function selectPlayingAlbumInCatalog(preserveTab) {
+            if (service.usingExternalMetadata) return false
             var albums = service.albums || []
             if (albums.length === 0) return false
             var targetId = String(service.albumId || service.currentAlbumId || (service.lastPlayedTrack && (service.lastPlayedTrack.albumId || service.lastPlayedTrack.id)) || "")
@@ -1154,7 +1155,7 @@ ShellRoot {
                                             required property var modelData
                                             required property int index
                                             readonly property bool expanded: win.selectedAlbumId === modelData.id
-                                            readonly property bool isCurrentAlbum: service.albumId === modelData.id
+                                            readonly property bool isCurrentAlbum: Boolean(service.playing && !service.usingExternalMetadata && service.albumId === modelData.id)
                                             readonly property bool isKeyboardFocused: win.focusedAlbumIndex === index
                                             readonly property var tracksList: modelData.tracks || []
                                             readonly property bool isAlbumDownloading: Boolean(service.downloading && service.downloadAlbumId === modelData.id)
@@ -1455,7 +1456,7 @@ ShellRoot {
                                                     delegate: Rectangle {
                                                         required property var modelData
                                                         required property int index
-                                                        readonly property bool isTrackPlaying: service.trackId === modelData.id
+                                                        readonly property bool isTrackPlaying: Boolean(service.playing && !service.usingExternalMetadata && service.trackId === modelData.id)
                                                         readonly property bool isTrackFocused: appAlbumCard.isKeyboardFocused && win.focusedTrackIndex === index
                                                         width: ListView.view.width
                                                         height: 24
@@ -2480,14 +2481,17 @@ ShellRoot {
                             focus: win.visualiserMaximised
                             isFullscreen: win.visualiserMaximised
                             bands: service.spectrumBands
-                            playing: service.activelyPlaying
-                            trackTitle: service.trackTitle
-                            trackArtist: service.trackArtist
-                            trackAlbum: service.trackAlbum
-                            artPath: service.artPath
+                            playing: service.visualiserPlaying
+                            trackTitle: service.effectiveTrackTitle
+                            trackArtist: service.effectiveTrackArtist
+                            trackAlbum: service.effectiveTrackAlbum
+                            artPath: service.effectiveArtPath
                             playSource: service.playSource
-                            position: service.position
-                            duration: service.duration
+                            usingExternalMetadata: service.usingExternalMetadata
+                            externalAudioActive: service.externalAudioActive
+                            arcProgress: service.effectiveArcProgress
+                            position: service.effectivePosition
+                            duration: service.effectiveDuration
                             volume: service.volume
                             muted: service.muted
                             asciiLines: service.asciiLines
@@ -2510,6 +2514,9 @@ ShellRoot {
                             photoCustomDir: service.photoCustomDir
                             photoBusy: service.photoBusy
                             photoStatusMessage: service.photoStatusMessage
+                            audioSources: service.audioSources
+                            activeAudioSource: service.activeAudioSource
+                            activeAudioSourceLabel: service.activeAudioSourceLabel
                             accentColour: win.colAccent
                             urgentColour: win.colUrgent
                             foregroundColour: win.colFg
@@ -2556,6 +2563,30 @@ ShellRoot {
                             }
                             onRequestResetStatements: {
                                 service.resetStatementsFile()
+                            }
+                            onRequestOpenExternalTracksFile: {
+                                service.openExternalTracksFile()
+                            }
+                            onRequestReloadExternalTracksFile: {
+                                service.loadVisualiserConfig()
+                            }
+                            onRequestSaveExternalTracks: entriesArr => {
+                                service.saveExternalTracks(entriesArr)
+                            }
+                            onRequestResetExternalTracks: {
+                                service.resetExternalTracksFile()
+                            }
+                            onRequestScanExternalArt: {
+                                service.pollExternalArtFolder(false)
+                            }
+                            onRequestStepExternalArt: delta => {
+                                service.stepExternalArt(delta)
+                            }
+                            onRequestOpenExternalArtDir: {
+                                service.openExternalArtFolder()
+                            }
+                            onRequestRefreshAudioSources: {
+                                service.refreshAudioSources()
                             }
                             onRequestPhotoImport: srcDir => {
                                 service.importPhotos(srcDir)

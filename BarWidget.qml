@@ -37,7 +37,7 @@ BarWidget {
 
     readonly property bool isPlaying: {
         try {
-            return root.service ? Boolean(root.service.activelyPlaying) : false
+            return root.service ? Boolean(root.service.visualiserPlaying || root.service.activelyPlaying) : false
         } catch (e) {
             return false
         }
@@ -59,10 +59,15 @@ BarWidget {
 
     function tooltipText() {
         try {
-            if (root.isPlaying && root.service && root.service.trackTitle) {
-                var t = String(root.service.trackTitle || "")
-                var a = String(root.service.trackArtist || "")
-                return "Bandarchy · " + (a ? (a + " — " + t) : t)
+            if (root.isPlaying && root.service) {
+                var t = String(root.service.effectiveTrackTitle || "")
+                var a = String(root.service.effectiveTrackArtist || "")
+                if (t) {
+                    return "Bandarchy · " + (a ? (a + " — " + t) : t)
+                }
+                if (root.service.activeAudioSourceLabel) {
+                    return "Bandarchy · Sync: " + String(root.service.activeAudioSourceLabel)
+                }
             }
             return "Bandarchy · Click for player & visualiser"
         } catch (e) {

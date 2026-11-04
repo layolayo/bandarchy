@@ -600,7 +600,7 @@ Item {
     property bool _initialAlbumSelected: false
 
     function selectPlayingAlbumInCatalog(preserveTab) {
-        if (!root.service) return false
+        if (!root.service || root.service.usingExternalMetadata) return false
         var albums = root.service.albums || []
         if (albums.length === 0) return false
         var targetId = String(root.service.albumId || root.service.currentAlbumId || (root.service.lastPlayedTrack && (root.service.lastPlayedTrack.albumId || root.service.lastPlayedTrack.id)) || "")
@@ -756,14 +756,17 @@ Item {
                 focus: true
                 isFullscreen: true
                 bands: root.service ? root.service.spectrumBands : []
-                playing: root.service ? root.service.activelyPlaying : false
-                trackTitle: root.service ? root.service.trackTitle : ""
-                trackArtist: root.service ? root.service.trackArtist : ""
-                trackAlbum: root.service ? root.service.trackAlbum : ""
-                artPath: root.service ? root.service.artPath : ""
+                playing: root.service ? root.service.visualiserPlaying : false
+                trackTitle: root.service ? root.service.effectiveTrackTitle : ""
+                trackArtist: root.service ? root.service.effectiveTrackArtist : ""
+                trackAlbum: root.service ? root.service.effectiveTrackAlbum : ""
+                artPath: root.service ? root.service.effectiveArtPath : ""
                 playSource: root.service ? root.service.playSource : "local"
-                position: root.service ? root.service.position : 0.0
-                duration: root.service ? root.service.duration : 0.0
+                usingExternalMetadata: root.service ? root.service.usingExternalMetadata : false
+                externalAudioActive: root.service ? root.service.externalAudioActive : false
+                arcProgress: root.service ? root.service.effectiveArcProgress : 0.0
+                position: root.service ? root.service.effectivePosition : 0.0
+                duration: root.service ? root.service.effectiveDuration : 0.0
                 volume: root.service ? root.service.volume : 100
                 muted: root.service ? root.service.muted : false
                 asciiLines: root.service ? root.service.asciiLines : []
@@ -786,6 +789,9 @@ Item {
                 photoCustomDir: root.service ? root.service.photoCustomDir : ""
                 photoBusy: root.service ? root.service.photoBusy : false
                 photoStatusMessage: root.service ? root.service.photoStatusMessage : ""
+                audioSources: root.service ? root.service.audioSources : []
+                activeAudioSource: root.service ? root.service.activeAudioSource : "auto"
+                activeAudioSourceLabel: root.service ? root.service.activeAudioSourceLabel : ""
                 accentColour: root.colAccent
                 urgentColour: root.colUrgent
                 foregroundColour: root.colFg
@@ -832,6 +838,30 @@ Item {
                 }
                 onRequestResetStatements: {
                     if (root.service) root.service.resetStatementsFile()
+                }
+                onRequestOpenExternalTracksFile: {
+                    if (root.service) root.service.openExternalTracksFile()
+                }
+                onRequestReloadExternalTracksFile: {
+                    if (root.service) root.service.loadVisualiserConfig()
+                }
+                onRequestSaveExternalTracks: tracksArr => {
+                    if (root.service) root.service.saveExternalTracks(tracksArr)
+                }
+                onRequestResetExternalTracks: {
+                    if (root.service) root.service.resetExternalTracksFile()
+                }
+                onRequestScanExternalArt: {
+                    if (root.service) root.service.pollExternalArtFolder(false)
+                }
+                onRequestStepExternalArt: delta => {
+                    if (root.service) root.service.stepExternalArt(delta)
+                }
+                onRequestOpenExternalArtDir: {
+                    if (root.service) root.service.openExternalArtFolder()
+                }
+                onRequestRefreshAudioSources: {
+                    if (root.service) root.service.loadVisualiserConfig()
                 }
                 onRequestPhotoImport: srcDir => {
                     if (root.service) root.service.importPhotos(srcDir)
@@ -1216,7 +1246,7 @@ Item {
                                     required property var modelData
                                     required property int index
                                     readonly property bool expanded: root.selectedAlbumId === modelData.id
-                                    readonly property bool isCurrentAlbum: root.service && root.service.albumId === modelData.id
+                                    readonly property bool isCurrentAlbum: Boolean(root.service && root.service.playing && !root.service.usingExternalMetadata && root.service.albumId === modelData.id)
                                     readonly property bool isKeyboardFocused: root.focusedAlbumIndex === index
                                     readonly property var tracksList: modelData.tracks || []
                                     readonly property bool isAlbumDownloading: Boolean(root.service && root.service.downloading && root.service.downloadAlbumId === modelData.id)
@@ -1521,7 +1551,7 @@ Item {
                                             delegate: Rectangle {
                                                 required property var modelData
                                                 required property int index
-                                                readonly property bool isTrackPlaying: Boolean(root.service && root.service.trackId === modelData.id)
+                                                readonly property bool isTrackPlaying: Boolean(root.service && root.service.playing && !root.service.usingExternalMetadata && root.service.trackId === modelData.id)
                                                 readonly property bool isTrackFocused: albumCard.isKeyboardFocused && root.focusedTrackIndex === index
                                                 width: ListView.view.width
                                                 height: 26
@@ -2222,14 +2252,17 @@ Item {
                         isFullscreen: false
                         showBottomHud: false
                         bands: (visible && root.service) ? root.service.spectrumBands : []
-                        playing: root.service ? root.service.activelyPlaying : false
-                        trackTitle: root.service ? root.service.trackTitle : ""
-                        trackArtist: root.service ? root.service.trackArtist : ""
-                        trackAlbum: root.service ? root.service.trackAlbum : ""
-                        artPath: root.service ? root.service.artPath : ""
+                        playing: root.service ? root.service.visualiserPlaying : false
+                        trackTitle: root.service ? root.service.effectiveTrackTitle : ""
+                        trackArtist: root.service ? root.service.effectiveTrackArtist : ""
+                        trackAlbum: root.service ? root.service.effectiveTrackAlbum : ""
+                        artPath: root.service ? root.service.effectiveArtPath : ""
                         playSource: root.service ? root.service.playSource : "local"
-                        position: root.service ? root.service.position : 0.0
-                        duration: root.service ? root.service.duration : 0.0
+                        usingExternalMetadata: root.service ? root.service.usingExternalMetadata : false
+                        externalAudioActive: root.service ? root.service.externalAudioActive : false
+                        arcProgress: root.service ? root.service.effectiveArcProgress : 0.0
+                        position: root.service ? root.service.effectivePosition : 0.0
+                        duration: root.service ? root.service.effectiveDuration : 0.0
                         volume: root.service ? root.service.volume : 100
                         muted: root.service ? root.service.muted : false
                         asciiLines: root.service ? root.service.asciiLines : []
@@ -2252,6 +2285,9 @@ Item {
                         photoCustomDir: root.service ? root.service.photoCustomDir : ""
                         photoBusy: root.service ? root.service.photoBusy : false
                         photoStatusMessage: root.service ? root.service.photoStatusMessage : ""
+                        audioSources: root.service ? root.service.audioSources : []
+                        activeAudioSource: root.service ? root.service.activeAudioSource : ""
+                        activeAudioSourceLabel: root.service ? root.service.activeAudioSourceLabel : ""
                         accentColour: root.colAccent
                         urgentColour: root.colUrgent
                         foregroundColour: root.colFg
@@ -2299,6 +2335,30 @@ Item {
                         }
                         onRequestResetStatements: {
                             if (root.service) root.service.resetStatementsFile()
+                        }
+                        onRequestOpenExternalTracksFile: {
+                            if (root.service) root.service.openExternalTracksFile()
+                        }
+                        onRequestReloadExternalTracksFile: {
+                            if (root.service) root.service.loadVisualiserConfig()
+                        }
+                        onRequestSaveExternalTracks: entriesArr => {
+                            if (root.service) root.service.saveExternalTracks(entriesArr)
+                        }
+                        onRequestResetExternalTracks: {
+                            if (root.service) root.service.resetExternalTracksFile()
+                        }
+                        onRequestScanExternalArt: {
+                            if (root.service) root.service.pollExternalArtFolder(false)
+                        }
+                        onRequestStepExternalArt: delta => {
+                            if (root.service) root.service.stepExternalArt(delta)
+                        }
+                        onRequestOpenExternalArtDir: {
+                            if (root.service) root.service.openExternalArtFolder()
+                        }
+                        onRequestRefreshAudioSources: {
+                            if (root.service) root.service.refreshAudioSources()
                         }
                         onRequestPhotoImport: srcDir => {
                             if (root.service) root.service.importPhotos(srcDir)
@@ -2632,8 +2692,8 @@ Item {
                         Vinyl {
                             Layout.preferredWidth: 54
                             Layout.preferredHeight: 54
-                            artPath: root.service ? root.service.artPath : ""
-                            spinning: Boolean(root.service && root.service.activelyPlaying && root.activeTab !== 2 && !root.service.fullscreenVisualiserOpen)
+                            artPath: root.service ? root.service.effectiveArtPath : ""
+                            spinning: Boolean(root.service && root.service.visualiserPlaying && root.activeTab !== 2 && !root.service.fullscreenVisualiserOpen)
                             accentColour: root.colAccent
                         }
 
@@ -2647,9 +2707,16 @@ Item {
 
                                 Text {
                                     Layout.fillWidth: true
-                                    text: (root.service && root.service.trackTitle)
-                                        ? root.service.trackTitle
-                                        : "Ready to Play — Select any Bandcamp purchase or local album"
+                                    text: {
+                                        if (!root.service) return "Ready to Play — Select any Bandcamp purchase or local album"
+                                        if (root.service.usingExternalMetadata) {
+                                            return root.service.effectiveTrackTitle || "External Audio Sync Active"
+                                        }
+                                        if (root.service.playing && root.service.trackTitle) {
+                                            return root.service.trackTitle
+                                        }
+                                        return "Ready to Play — Select any Bandcamp purchase or local album"
+                                    }
                                     textFormat: Text.PlainText
                                     font.family: "JetBrainsMono Nerd Font"
                                     font.pixelSize: 12
@@ -2659,9 +2726,14 @@ Item {
                                 }
 
                                 Text {
-                                    text: root.service
-                                        ? (root.formatDuration(root.service.position) + " / " + root.formatDuration(root.service.duration))
-                                        : "0:00 / 0:00"
+                                    visible: text !== ""
+                                    text: {
+                                        if (!root.service || root.service.usingExternalMetadata) return ""
+                                        if (root.service.playing && root.service.effectiveDuration > 0.5) {
+                                            return root.formatDuration(root.service.effectivePosition) + " / " + root.formatDuration(root.service.effectiveDuration)
+                                        }
+                                        return ""
+                                    }
                                     textFormat: Text.PlainText
                                     font.family: "JetBrainsMono Nerd Font"
                                     font.pixelSize: 10
@@ -2671,9 +2743,17 @@ Item {
 
                             Text {
                                 Layout.fillWidth: true
-                                text: (root.service && root.service.trackArtist)
-                                    ? (root.service.trackArtist + (root.service.trackAlbum ? (" — " + root.service.trackAlbum) : ""))
-                                    : "Lossless mpv playback + 4-Stage Turntable & 3-Layer Visualiser"
+                                text: {
+                                    if (!root.service) return "Lossless mpv playback + 4-Stage Turntable & 3-Layer Visualiser"
+                                    if (root.service.usingExternalMetadata) {
+                                        var extArtist = root.service.effectiveTrackArtist || root.service.activeAudioSourceLabel || "External Audio Input"
+                                        return extArtist + (root.service.effectiveTrackAlbum ? (" — " + root.service.effectiveTrackAlbum) : "")
+                                    }
+                                    if (root.service.playing && root.service.trackArtist) {
+                                        return root.service.trackArtist + (root.service.trackAlbum ? (" — " + root.service.trackAlbum) : "")
+                                    }
+                                    return "Lossless mpv playback + 4-Stage Turntable & 3-Layer Visualiser"
+                                }
                                 textFormat: Text.PlainText
                                 font.family: "JetBrainsMono Nerd Font"
                                 font.pixelSize: 10
@@ -2690,8 +2770,8 @@ Item {
 
                                 Rectangle {
                                     width: {
-                                        if (!root.service || root.service.duration <= 0) return 0
-                                        return Math.min(parent.width, (root.service.position / root.service.duration) * parent.width)
+                                        if (!root.service || !root.service.playing || root.service.usingExternalMetadata || root.service.effectiveDuration <= 0.5) return 0
+                                        return Math.min(parent.width, (root.service.effectivePosition / root.service.effectiveDuration) * parent.width)
                                     }
                                     height: parent.height
                                     radius: 3
@@ -2700,10 +2780,11 @@ Item {
 
                                 MouseArea {
                                     anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
+                                    enabled: Boolean(root.service && root.service.playing && !root.service.usingExternalMetadata && root.service.effectiveDuration > 0.5)
+                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                     onClicked: mouse => {
-                                        if (root.service && root.service.duration > 0) {
-                                            var targetSec = (mouse.x / width) * root.service.duration
+                                        if (root.service && root.service.playing && !root.service.usingExternalMetadata && root.service.effectiveDuration > 0.5) {
+                                            var targetSec = (mouse.x / width) * root.service.effectiveDuration
                                             root.service.seekTo(targetSec)
                                         }
                                     }
@@ -2716,7 +2797,7 @@ Item {
                             Layout.preferredWidth: 96
                             Layout.preferredHeight: 38
                             barCount: 24
-                            active: Boolean((root.opened || root.standaloneMode) && root.service && root.service.activelyPlaying && !root.service.fullscreenVisualiserOpen)
+                            active: Boolean((root.opened || root.standaloneMode) && root.service && root.service.visualiserPlaying && !root.service.fullscreenVisualiserOpen)
                             bands: (active && root.service) ? root.service.spectrumBands : []
                             accentColour: root.colAccent
                             secondaryColour: "#38bdf8"

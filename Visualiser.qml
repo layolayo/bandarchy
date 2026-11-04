@@ -34,6 +34,10 @@ FocusScope {
     property string playSource: "local"
     property real position: 0.0
     property real duration: 0.0
+    property real arcProgress: 0.0
+    property bool usingExternalMetadata: false
+    property bool externalAudioActive: false
+    readonly property bool isExternalTrackDisplay: root.usingExternalMetadata || (root.externalMetadataMode === "custom")
     property int volume: 100
     property bool muted: false
 
@@ -288,7 +292,44 @@ FocusScope {
     property bool statementsEditorBulkMode: false
     property int editingStatementIndex: -1
     property string statementEditorStatusText: ""
-    readonly property bool textInputFocused: Boolean(statementSingleInput.activeFocus || statementBulkEdit.activeFocus || customPhotoPathInput.activeFocus)
+
+    // External Audio Input Synchronisation & Separate External Tracks (Artist | Track | Album)
+    property string audioInputMode: "auto" // "auto", "input", "monitor", "player"
+    property string audioInputSource: "auto"
+    property string activeAudioSource: "auto"
+    property string activeAudioSourceLabel: "Auto-Sense"
+    property var audioSources: []
+    property int audioGateThreshold: 35
+    property real externalArcDuration: 240.0
+
+    property string externalMetadataMode: "auto" // "auto" or "custom"
+    property string externalArtist: "The Black Dog"
+    property string externalTrack: "Cost II"
+    property string externalAlbum: "Music for Real Airports"
+    property string externalArtPath: ""
+    property string externalArtDir: "~/Pictures/bandarchy/external_art"
+    property var externalArtImages: []
+    property int externalArtIndex: 0
+    property int externalArtCycleSeconds: 15
+    property bool externalArtPollEnabled: true
+    property var externalTracksList: []
+    property string externalTracksPath: "~/.config/bandarchy/external-tracks.txt"
+    property int externalTrackIndex: 0
+    property bool showExternalTracksEditor: false
+    property bool externalTracksBulkMode: false
+    property int editingExternalTrackIndex: -1
+    property string externalTracksStatusText: ""
+
+    readonly property bool textInputFocused: Boolean(
+        statementSingleInput.activeFocus
+        || statementBulkEdit.activeFocus
+        || customPhotoPathInput.activeFocus
+        || externalArtistInput.activeFocus
+        || externalTrackInput.activeFocus
+        || externalAlbumInput.activeFocus
+        || externalArtInput.activeFocus
+        || externalTracksBulkEdit.activeFocus
+    )
     property alias layer3UseArt: root.useAlbumArt
     property alias layer3AsciiMode: root.asciiMode
     property real layer3Dismantle: 1.15
@@ -866,6 +907,14 @@ FocusScope {
     signal requestReloadStatementsFile()
     signal requestSaveStatements(var statementsArray)
     signal requestResetStatements()
+    signal requestOpenExternalTracksFile()
+    signal requestReloadExternalTracksFile()
+    signal requestSaveExternalTracks(var tracksArray)
+    signal requestResetExternalTracks()
+    signal requestScanExternalArt()
+    signal requestStepExternalArt(int delta)
+    signal requestOpenExternalArtDir()
+    signal requestRefreshAudioSources()
     signal requestPhotoImport(string sourceDir)
     signal requestPhotoRefreshStatus()
     signal requestPhotoPick(string category, string stem)
@@ -1068,6 +1117,16 @@ FocusScope {
     property string _readyAlbumArtCanvasUrl: ""
 
     function resolveAlbumArtRasterUrl() {
+        var ap = String(root.artPath || "")
+        if (ap && ap.indexOf("/") === 0 && ap.indexOf("..") < 0) {
+            var lower = ap.toLowerCase()
+            if (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".webp")) {
+                return "file://" + ap
+            }
+        }
+        if (root.externalMetadataMode === "custom" || (root.audioInputMode !== "player" && !ap)) {
+            return ""
+        }
         var lines = root.artLines || []
         for (var i = lines.length - 1; i >= 0; i--) {
             var line = String(lines[i] || "")
@@ -1080,13 +1139,6 @@ FocusScope {
                     }
                 } catch (e) {}
                 break
-            }
-        }
-        var ap = String(root.artPath || "")
-        if (ap && ap.indexOf("/") === 0 && ap.indexOf("..") < 0) {
-            var lower = ap.toLowerCase()
-            if (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".webp")) {
-                return "file://" + ap
             }
         }
         return ""
@@ -2292,6 +2344,18 @@ FocusScope {
             layer3TransitionPauseSec: root.layer3TransitionPauseSec,
             turntableRpm: root.turntableRpm,
             turntableStyle: root.turntableStyle,
+            audioInputMode: root.audioInputMode,
+            audioInputSource: root.audioInputSource,
+            audioGateThreshold: root.audioGateThreshold,
+            externalArcDuration: root.externalArcDuration,
+            externalMetadataMode: root.externalMetadataMode,
+            externalArtist: root.externalArtist,
+            externalTrack: root.externalTrack,
+            externalAlbum: root.externalAlbum,
+            externalArtPath: root.externalArtPath,
+            externalArtDir: root.externalArtDir,
+            externalArtCycleSeconds: root.externalArtCycleSeconds,
+            externalArtPollEnabled: root.externalArtPollEnabled,
             savedL1Configs: root.savedL1Configs,
             savedL2Configs: root.savedL2Configs,
             savedL3Configs: root.savedL3Configs,
@@ -2466,6 +2530,46 @@ FocusScope {
         }
         if (cfg.statementsPath) root.statementsFilePath = String(cfg.statementsPath)
         if (cfg.statementText) root.currentStatement = String(cfg.statementText)
+        if (Array.isArray(cfg.externalTracks) && cfg.externalTracks.length > 0) {
+            root.externalTracksList = cfg.externalTracks
+            if (!externalTracksBulkEdit.activeFocus) {
+                root.syncExternalTracksBulkTextFromList()
+            }
+        }
+        if (cfg.externalTracksPath) root.externalTracksPath = String(cfg.externalTracksPath)
+        if (Array.isArray(cfg.externalArtImages)) {
+            root.externalArtImages = cfg.externalArtImages
+        }
+        if (cfg.audioInputMode !== undefined) root.audioInputMode = String(cfg.audioInputMode || "auto")
+        if (cfg.audioInputSource !== undefined) root.audioInputSource = String(cfg.audioInputSource || "auto")
+        if (cfg.audioGateThreshold !== undefined) root.audioGateThreshold = Math.max(10, Math.min(250, Math.round(Number(cfg.audioGateThreshold) || 35)))
+        if (cfg.externalArcDuration !== undefined) root.externalArcDuration = Math.max(30.0, Math.min(600.0, Number(cfg.externalArcDuration) || 240.0))
+        if (cfg.externalMetadataMode !== undefined) root.externalMetadataMode = String(cfg.externalMetadataMode || "auto")
+        if (cfg.externalArtist !== undefined) {
+            root.externalArtist = String(cfg.externalArtist || "")
+            if (!externalArtistInput.activeFocus) externalArtistInput.text = root.externalArtist
+        }
+        if (cfg.externalTrack !== undefined) {
+            root.externalTrack = String(cfg.externalTrack || "")
+            if (!externalTrackInput.activeFocus) externalTrackInput.text = root.externalTrack
+        }
+        if (cfg.externalAlbum !== undefined) {
+            root.externalAlbum = String(cfg.externalAlbum || "")
+            if (!externalAlbumInput.activeFocus) externalAlbumInput.text = root.externalAlbum
+        }
+        if (cfg.externalArtPath !== undefined) {
+            root.externalArtPath = root.normaliseExternalArtBranch(cfg.externalArtPath)
+            if (!externalArtInput.activeFocus) externalArtInput.text = root.externalArtPath
+        }
+        if (cfg.externalArtDir !== undefined) {
+            root.externalArtDir = String(cfg.externalArtDir || "~/Pictures/bandarchy/external_art")
+        }
+        if (cfg.externalArtCycleSeconds !== undefined) {
+            root.externalArtCycleSeconds = Math.max(3, Math.min(300, Math.round(Number(cfg.externalArtCycleSeconds) || 15)))
+        }
+        if (cfg.externalArtPollEnabled !== undefined) {
+            root.externalArtPollEnabled = Boolean(cfg.externalArtPollEnabled)
+        }
         if (cfg.useAlbumArt !== undefined) root.useAlbumArt = Boolean(cfg.useAlbumArt)
         if (cfg.asciiMode !== undefined) {
             var am = String(cfg.asciiMode).toLowerCase()
@@ -2540,6 +2644,17 @@ FocusScope {
         root.masterBrightness = 1.00
         root.autoCycleIntervalSec = 18
         root.presetTransitionIntervalSec = 10
+        root.audioInputMode = "auto"
+        root.audioInputSource = "auto"
+        root.audioGateThreshold = 35
+        root.externalArcDuration = 240.0
+        root.externalMetadataMode = "auto"
+        root.externalArtPath = ""
+        if (!externalArtInput.activeFocus) externalArtInput.text = ""
+        root.externalArtDir = "~/Pictures/bandarchy/external_art"
+        root.externalArtCycleSeconds = 15
+        root.externalArtPollEnabled = true
+
         root.musicDrive = true
         root.gpuShaderEnabled = true
         root.backdropEnabled = true
@@ -3210,13 +3325,16 @@ FocusScope {
     }
 
     function currentConfig() {
-        var dur = Number(root.duration) || 0.0
-        var pos = Number(root.position) || 0.0
-        var trackProg = dur > 0.5 ? Math.max(0.0, Math.min(1.0, pos / dur)) : 0.0
+        var hasTrackDur = !root.isExternalTrackDisplay && Number(root.duration) > 0.5
+        var dur = hasTrackDur ? Number(root.duration) : 0.0
+        var pos = hasTrackDur ? (Number(root.position) || 0.0) : 0.0
+        var trackProg = hasTrackDur
+            ? Math.max(0.0, Math.min(1.0, pos / dur))
+            : Math.max(0.0, Math.min(1.0, Number(root.arcProgress) || 0.0))
         return {
             playing: root.playing,
-            position: root.position,
-            duration: root.duration,
+            position: pos,
+            duration: dur,
             trackTitle: root.trackTitle,
             trackArtist: root.trackArtist,
             trackAlbum: root.trackAlbum,
@@ -3925,6 +4043,271 @@ FocusScope {
         root.statementEditorStatusText = "Reset statements.txt to default collection (" + defList.length + " statements)"
         vizCanvas.requestPaint()
         root.requestResetStatements()
+    }
+
+    function defaultExternalTracksFallback() {
+        return [
+            { artist: "The Black Dog", track: "Cost II", album: "Music for Real Airports", artPath: "black_dog", raw: "The Black Dog | Cost II | Music for Real Airports | black_dog" },
+            { artist: "Boards of Canada", track: "Roygbiv", album: "Music Has the Right to Children", artPath: "boards_of_canada", raw: "Boards of Canada | Roygbiv | Music Has the Right to Children | boards_of_canada" },
+            { artist: "Porcupine Tree", track: "Voyage 34 (Phase I)", album: "Voyage 34: The Complete Trip", artPath: "porcupine_tree", raw: "Porcupine Tree | Voyage 34 (Phase I) | Voyage 34: The Complete Trip | porcupine_tree" },
+            { artist: "Aphex Twin", track: "Xtal", album: "Selected Ambient Works 85-92", artPath: "aphex_twin", raw: "Aphex Twin | Xtal | Selected Ambient Works 85-92 | aphex_twin" }
+        ]
+    }
+
+    function normaliseExternalArtBranch(rawPath) {
+        var clean = String(rawPath || "").trim().replace(/\\/g, "/")
+        if (!clean || clean.indexOf("..") >= 0) return ""
+        var lower = clean.toLowerCase().replace(/\/+$/, "")
+        if (lower === "~/pictures/bandarchy/external_art"
+            || lower === "~/pictures/bandarchy/external-art"
+            || lower === "pictures/bandarchy/external_art"
+            || lower === "pictures/bandarchy/external-art"
+            || lower === "/external_art"
+            || lower === "external_art"
+            || lower === "/external-art"
+            || lower === "external-art"
+            || lower === "."
+            || lower === "/") {
+            return ""
+        }
+        var markers = [
+            "/pictures/bandarchy/external_art/",
+            "/pictures/bandarchy/external-art/",
+            "/external_art/",
+            "external_art/",
+            "/external-art/",
+            "external-art/"
+        ]
+        for (var i = 0; i < markers.length; i++) {
+            var idx = clean.toLowerCase().indexOf(markers[i])
+            if (idx >= 0) {
+                clean = clean.slice(idx + markers[i].length)
+                break
+            }
+        }
+        clean = clean.replace(/^(\.\/|~\/|\/)+/, "").replace(/\/+$/, "")
+        return clean.slice(0, 260)
+    }
+
+    function parseExternalTrackItem(item) {
+        var artist = ""
+        var track = ""
+        var album = ""
+        var artPath = ""
+        if (item && typeof item === "object") {
+            artist = String(item.artist || "").trim().slice(0, 120)
+            track = String(item.track || item.title || "").trim().slice(0, 120)
+            album = String(item.album || "").trim().slice(0, 120)
+            artPath = root.normaliseExternalArtBranch(item.artPath || item.art || item.artDir || "")
+        } else {
+            var line = String(item || "").trim().slice(0, 520)
+            if (!line || line.charAt(0) === "#") return null
+            var parts = []
+            if (line.indexOf("|") >= 0) {
+                parts = line.split("|")
+            } else if (line.indexOf(" — ") >= 0) {
+                parts = line.split(" — ")
+            } else if (line.indexOf(" - ") >= 0) {
+                parts = line.split(" - ")
+            } else {
+                parts = ["", line, ""]
+            }
+            artist = String(parts[0] || "").trim().slice(0, 120)
+            track = String(parts[1] || "").trim().slice(0, 120)
+            album = String(parts[2] || "").trim().slice(0, 120)
+            artPath = root.normaliseExternalArtBranch(parts.slice(3).join(" | ") || "")
+        }
+        if (!artist && !track && !album && !artPath) return null
+        var rawLine = artPath
+            ? [artist, track, album, artPath].join(" | ")
+            : [artist, track, album].join(" | ")
+        return {
+            artist: artist,
+            track: track,
+            album: album,
+            artPath: artPath,
+            raw: rawLine
+        }
+    }
+
+    function normaliseExternalTracksArray(rawItems) {
+        var candidates = []
+        if (typeof rawItems === "string") {
+            candidates = rawItems.split(/\r?\n/)
+        } else if (Array.isArray(rawItems)) {
+            for (var i = 0; i < rawItems.length; i++) {
+                if (typeof rawItems[i] === "string") {
+                    var sub = rawItems[i].split(/\r?\n/)
+                    for (var j = 0; j < sub.length; j++) candidates.push(sub[j])
+                } else {
+                    candidates.push(rawItems[i])
+                }
+            }
+        }
+        var cleaned = []
+        var seen = ({})
+        for (var k = 0; k < candidates.length; k++) {
+            var parsed = root.parseExternalTrackItem(candidates[k])
+            if (!parsed) continue
+            var key = (parsed.artist + "|" + parsed.track + "|" + parsed.album + "|" + (parsed.artPath || "")).toLowerCase()
+            if (seen[key]) continue
+            seen[key] = true
+            cleaned.push(parsed)
+            if (cleaned.length >= 500) break
+        }
+        return cleaned
+    }
+
+    function syncExternalTracksBulkTextFromList() {
+        var list = (root.externalTracksList && root.externalTracksList.length > 0)
+            ? root.externalTracksList
+            : root.defaultExternalTracksFallback()
+        var lines = []
+        for (var i = 0; i < list.length; i++) {
+            var e = list[i]
+            if (e && typeof e === "object") {
+                var cleanArt = root.normaliseExternalArtBranch(e.artPath || "")
+                if (cleanArt) {
+                    lines.push([e.artist || "", e.track || "", e.album || "", cleanArt].join(" | "))
+                } else {
+                    lines.push([e.artist || "", e.track || "", e.album || ""].join(" | "))
+                }
+            } else {
+                lines.push(String(e || ""))
+            }
+        }
+        externalTracksBulkEdit.text = lines.join("\n")
+    }
+
+    function applyExternalTrackEntryLive(entry, statusMsg) {
+        var parsed = root.parseExternalTrackItem(entry)
+        if (!parsed) return
+        root.externalMetadataMode = "custom"
+        root.externalArtist = parsed.artist
+        root.externalTrack = parsed.track
+        root.externalAlbum = parsed.album
+        root.externalArtPath = parsed.artPath || ""
+        externalArtistInput.text = parsed.artist
+        externalTrackInput.text = parsed.track
+        externalAlbumInput.text = parsed.album
+        externalArtInput.text = parsed.artPath || ""
+        root.layer3Enabled = true
+        if (root.engineState) {
+            root.engineState.artSourceKey = ""
+        }
+        root.externalTracksStatusText = statusMsg || ("Live Q/W/E: " + parsed.artist + (parsed.track ? (" — " + parsed.track) : "") + (parsed.album ? (" (" + parsed.album + ")") : "") + (parsed.artPath ? (" · Art: external_art/" + parsed.artPath) : " · Art: external_art/ (auto-match)"))
+        vizCanvas.requestPaint()
+        saveConfigDebounceTimer.stop()
+        root.emitSaveVisualiserConfig()
+        root.requestScanExternalArt()
+    }
+
+    function stepExternalTrack(delta) {
+        var list = (root.externalTracksList && root.externalTracksList.length > 0)
+            ? root.externalTracksList
+            : root.defaultExternalTracksFallback()
+        if (!list || list.length === 0) return
+        var len = list.length
+        root.externalTrackIndex = ((root.externalTrackIndex + delta) % len + len) % len
+        root.applyExternalTrackEntryLive(list[root.externalTrackIndex], "Selected track #" + (root.externalTrackIndex + 1) + " of " + len)
+    }
+
+    function commitExternalTracksList(rawList, statusMsg) {
+        var cleaned = root.normaliseExternalTracksArray(rawList)
+        if (cleaned.length === 0) {
+            cleaned = root.defaultExternalTracksFallback()
+        }
+        root.externalTracksList = cleaned
+        if (!externalTracksBulkEdit.activeFocus) {
+            root.syncExternalTracksBulkTextFromList()
+        }
+        if (root.engineState) {
+            root.engineState.artSourceKey = ""
+        }
+        root.externalTracksStatusText = statusMsg || ("Saved " + cleaned.length + " track entries to " + root.externalTracksPath)
+        vizCanvas.requestPaint()
+        root.requestSaveExternalTracks(cleaned)
+        scheduleSaveVisualiserConfig()
+    }
+
+    function submitInlineExternalTrack(saveToFile) {
+        var a = String(externalArtistInput.text || "").trim().slice(0, 120)
+        var t = String(externalTrackInput.text || "").trim().slice(0, 120)
+        var al = String(externalAlbumInput.text || "").trim().slice(0, 120)
+        var ap = root.normaliseExternalArtBranch(externalArtInput.text)
+        if (!a && !t && !al && !ap) return
+        var rawLine = ap ? [a, t, al, ap].join(" | ") : [a, t, al].join(" | ")
+        var entry = { artist: a, track: t, album: al, artPath: ap, raw: rawLine }
+        root.applyExternalTrackEntryLive(entry)
+        if (saveToFile) {
+            var current = ((root.externalTracksList && root.externalTracksList.length > 0)
+                ? root.externalTracksList
+                : root.defaultExternalTracksFallback()).slice()
+            if (root.editingExternalTrackIndex >= 0 && root.editingExternalTrackIndex < current.length) {
+                current[root.editingExternalTrackIndex] = entry
+                var updatedIdx = root.editingExternalTrackIndex
+                root.editingExternalTrackIndex = -1
+                root.commitExternalTracksList(current, "Updated track #" + (updatedIdx + 1) + " & saved to external-tracks.txt")
+            } else {
+                current.unshift(entry)
+                root.commitExternalTracksList(current, "Saved “" + (a || t || al || ap) + "” to external-tracks.txt")
+            }
+        }
+    }
+
+
+    function beginEditExternalTrackAt(idx) {
+        var list = (root.externalTracksList && root.externalTracksList.length > 0)
+            ? root.externalTracksList
+            : root.defaultExternalTracksFallback()
+        if (idx < 0 || idx >= list.length) return
+        var item = root.parseExternalTrackItem(list[idx])
+        if (!item) return
+        root.editingExternalTrackIndex = idx
+        root.externalTracksBulkMode = false
+        externalArtistInput.text = item.artist
+        externalTrackInput.text = item.track
+        externalAlbumInput.text = item.album
+        externalArtInput.text = item.artPath || ""
+        externalArtistInput.forceActiveFocus()
+        externalArtistInput.selectAll()
+        root.externalTracksStatusText = "Editing track #" + (idx + 1) + " — click '+ Save to File' to update"
+    }
+
+    function deleteExternalTrackAt(idx) {
+        var current = ((root.externalTracksList && root.externalTracksList.length > 0)
+            ? root.externalTracksList
+            : root.defaultExternalTracksFallback()).slice()
+        if (idx < 0 || idx >= current.length) return
+        current.splice(idx, 1)
+        if (current.length === 0) {
+            current = root.defaultExternalTracksFallback()
+        }
+        if (root.editingExternalTrackIndex === idx) {
+            root.editingExternalTrackIndex = -1
+        } else if (root.editingExternalTrackIndex > idx) {
+            root.editingExternalTrackIndex = root.editingExternalTrackIndex - 1
+        }
+        root.commitExternalTracksList(current, "Removed track #" + (idx + 1) + " (" + current.length + " remaining)")
+    }
+
+    function saveBulkExternalTracksText() {
+        var cleaned = root.normaliseExternalTracksArray(externalTracksBulkEdit.text)
+        if (cleaned.length === 0) {
+            root.externalTracksStatusText = "Cannot save an empty list — enter at least 1 Artist | Track | Album | ArtPathOrFolder line"
+            return
+        }
+        root.editingExternalTrackIndex = -1
+        root.commitExternalTracksList(cleaned, "Saved " + cleaned.length + " tracks to " + root.externalTracksPath)
+    }
+
+    function resetExternalTracksToDefaults() {
+        root.editingExternalTrackIndex = -1
+        var defList = root.defaultExternalTracksFallback()
+        root.externalTracksList = defList
+        root.syncExternalTracksBulkTextFromList()
+        root.externalTracksStatusText = "Reset external-tracks.txt to default collection"
+        root.requestResetExternalTracks()
     }
 
     function toggleVisualiserLayerByNumber(layerNum) {
@@ -5218,10 +5601,10 @@ FocusScope {
     Timer {
         id: hudAutoHideTimer
         interval: 4000
-        running: root.visible && root.isFullscreen && root.showHud && !root.showLayerDrawer && !root.showKeybindingsSheet && !root.showTracerPopover && !root.showStatementsEditor && !root.textInputFocused
+        running: root.visible && root.isFullscreen && root.showHud && !root.showLayerDrawer && !root.showKeybindingsSheet && !root.showTracerPopover && !root.showStatementsEditor && !root.showExternalTracksEditor && !root.textInputFocused
         repeat: false
         onTriggered: {
-            if (root.isFullscreen && !root.showLayerDrawer && !root.showKeybindingsSheet && !root.showTracerPopover && !root.showStatementsEditor && !root.textInputFocused) {
+            if (root.isFullscreen && !root.showLayerDrawer && !root.showKeybindingsSheet && !root.showTracerPopover && !root.showStatementsEditor && !root.showExternalTracksEditor && !root.textInputFocused) {
                 root.showHud = false
             }
         }
@@ -5920,8 +6303,8 @@ FocusScope {
                 deckMode: true
                 artPath: root.artPath
                 spinning: root.playing
-                position: root.position
-                duration: root.duration
+                position: (!root.isExternalTrackDisplay && root.duration > 0.5) ? root.position : 0.0
+                duration: (!root.isExternalTrackDisplay && root.duration > 0.5) ? root.duration : 0.0
                 rpm: root.turntableRpm
                 vinylStyle: root.turntableStyle
                 accentColour: root.accentColour
@@ -5943,7 +6326,7 @@ FocusScope {
                     root.requestPlayPause()
                 }
                 onRequestSeekRatio: ratio => {
-                    if (root.duration > 0) {
+                    if (!root.isExternalTrackDisplay && root.duration > 0.5) {
                         var targetSec = Math.max(0, Math.min(root.duration, ratio * root.duration))
                         root.requestSeek(targetSec)
                     }
@@ -10831,6 +11214,7 @@ FocusScope {
                     // =========================================================
                     ColumnLayout {
                         Layout.fillWidth: true
+                        Layout.maximumWidth: drawerFlick.width
                         spacing: 8
                         visible: root.activeConfigLayer === 6
 
@@ -10850,6 +11234,8 @@ FocusScope {
                                 spacing: 5
 
                                 Text {
+                                    height: 22
+                                    verticalAlignment: Text.AlignVCenter
                                     text: "󰆓 Saved Typography & Genre Presets:"
                                     textFormat: Text.PlainText
                                     font.family: "JetBrainsMono Nerd Font"
@@ -10956,11 +11342,13 @@ FocusScope {
                         }
 
                         // 3-Mode Layer 6 Randomiser Selector (0 = No Randomise, 1 = Selected Only, 2 = Art ⟷ Words)
-                        RowLayout {
+                        Flow {
                             Layout.fillWidth: true
                             spacing: 5
 
                             Text {
+                                height: 22
+                                verticalAlignment: Text.AlignVCenter
                                 text: "Randomise Mode (Shift+6):"
                                 textFormat: Text.PlainText
                                 font.family: "JetBrainsMono Nerd Font"
@@ -10987,16 +11375,16 @@ FocusScope {
                                     }
                                 }
                             }
-
-                            Item { Layout.fillWidth: true }
                         }
 
                         // Selectable Text Fields (Artist / Track / Album / Statements)
-                        RowLayout {
+                        Flow {
                             Layout.fillWidth: true
                             spacing: 5
 
                             Text {
+                                height: 22
+                                verticalAlignment: Text.AlignVCenter
                                 text: "Visible Text Fields (Q/W/E/R):"
                                 textFormat: Text.PlainText
                                 font.family: "JetBrainsMono Nerd Font"
@@ -11080,7 +11468,9 @@ FocusScope {
                             }
 
                             Text {
-                                Layout.fillWidth: true
+                                height: 22
+                                width: Math.min(implicitWidth, 320)
+                                verticalAlignment: Text.AlignVCenter
                                 text: root.layer3ShowStatements ? ("“" + root.currentStatement + "”") : ("File: " + root.statementsFilePath)
                                 textFormat: Text.PlainText
                                 font.family: "JetBrainsMono Nerd Font"
@@ -11109,11 +11499,13 @@ FocusScope {
                                 spacing: 6
 
                                 // Editor Header Bar
-                                RowLayout {
+                                Flow {
                                     Layout.fillWidth: true
                                     spacing: 5
 
                                     Text {
+                                        height: 22
+                                        verticalAlignment: Text.AlignVCenter
                                         text: "󰏫 Statements & Words Editor (" + (root.statementsList ? root.statementsList.length : 0) + "):"
                                         textFormat: Text.PlainText
                                         font.family: "JetBrainsMono Nerd Font"
@@ -11178,8 +11570,6 @@ FocusScope {
                                         horizontalPad: 7
                                         onClicked: root.resetStatementsToDefaults()
                                     }
-
-                                    Item { Layout.fillWidth: true }
 
                                     VizPillButton {
                                         text: "✕ Close"
@@ -11399,7 +11789,7 @@ FocusScope {
                                         }
                                     }
 
-                                    RowLayout {
+                                    Flow {
                                         Layout.fillWidth: true
                                         spacing: 6
 
@@ -11420,8 +11810,6 @@ FocusScope {
                                                 root.statementEditorStatusText = "Reverted bulk editor to current statements list"
                                             }
                                         }
-
-                                        Item { Layout.fillWidth: true }
                                     }
                                 }
 
@@ -11436,6 +11824,674 @@ FocusScope {
                                     font.pixelSize: 9
                                     color: root.statementEditorStatusText
                                         ? root.accentColour
+                                        : Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.72)
+                                    elide: Text.ElideRight
+                                }
+                            }
+                        }
+
+                        // Dedicated External / Custom Artist · Track · Album · Art Subfolder/File Metadata Bar (100% separate from statements.txt)
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: 5
+
+                            Text {
+                                height: 22
+                                verticalAlignment: Text.AlignVCenter
+                                text: "External / Custom Metadata (Q/W/E + Art):"
+                                textFormat: Text.PlainText
+                                font.family: "JetBrainsMono Nerd Font"
+                                font.pixelSize: 10
+                                font.bold: true
+                                color: "#38bdf8"
+                            }
+
+                            VizPillButton {
+                                text: root.externalMetadataMode === "custom"
+                                    ? "󰏫 Source: Custom / external-tracks.txt"
+                                    : "󰎆 Source: Auto (Player → External)"
+                                active: root.externalMetadataMode === "custom"
+                                notBoundToRand: true
+                                pillHeight: 22
+                                horizontalPad: 7
+                                onClicked: {
+                                    if (root.externalMetadataMode !== "custom") {
+                                        var a = String(externalArtistInput.text || "").trim().slice(0, 120)
+                                        var t = String(externalTrackInput.text || "").trim().slice(0, 120)
+                                        var al = String(externalAlbumInput.text || "").trim().slice(0, 120)
+                                        var ap = root.normaliseExternalArtBranch(externalArtInput.text)
+                                        if (a) root.externalArtist = a
+                                        if (t) root.externalTrack = t
+                                        if (al) root.externalAlbum = al
+                                        root.externalArtPath = ap
+                                        externalArtInput.text = ap
+                                        root.externalMetadataMode = "custom"
+                                    } else {
+                                        root.externalMetadataMode = "auto"
+                                    }
+                                    if (root.engineState) root.engineState.artSourceKey = ""
+                                    vizCanvas.requestPaint()
+                                    saveConfigDebounceTimer.stop()
+                                    root.emitSaveVisualiserConfig()
+                                }
+                            }
+
+                            Rectangle {
+                                width: 118
+                                height: 22
+                                radius: 4
+                                color: "#0b0f17"
+                                border.width: 1
+                                border.color: externalArtistInput.activeFocus
+                                    ? root.accentColour
+                                    : Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.28)
+
+                                TextInput {
+                                    id: externalArtistInput
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 6
+                                    anchors.rightMargin: 6
+                                    verticalAlignment: Text.AlignVCenter
+                                    font.family: "JetBrainsMono Nerd Font"
+                                    font.pixelSize: 9
+                                    color: root.foregroundColour
+                                    selectByMouse: true
+                                    clip: true
+                                    text: root.externalArtist
+                                    onTextEdited: {
+                                        root.externalArtist = String(externalArtistInput.text || "").slice(0, 120)
+                                        root.externalMetadataMode = "custom"
+                                        if (root.engineState) root.engineState.artSourceKey = ""
+                                        vizCanvas.requestPaint()
+                                        scheduleSaveVisualiserConfig()
+                                    }
+                                    onAccepted: root.submitInlineExternalTrack(false)
+
+                                    Text {
+                                        anchors.fill: parent
+                                        verticalAlignment: Text.AlignVCenter
+                                        text: "Artist (Q)…"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 9
+                                        color: Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.42)
+                                        visible: !externalArtistInput.text && !externalArtistInput.activeFocus
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                width: 118
+                                height: 22
+                                radius: 4
+                                color: "#0b0f17"
+                                border.width: 1
+                                border.color: externalTrackInput.activeFocus
+                                    ? root.accentColour
+                                    : Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.28)
+
+                                TextInput {
+                                    id: externalTrackInput
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 6
+                                    anchors.rightMargin: 6
+                                    verticalAlignment: Text.AlignVCenter
+                                    font.family: "JetBrainsMono Nerd Font"
+                                    font.pixelSize: 9
+                                    color: root.foregroundColour
+                                    selectByMouse: true
+                                    clip: true
+                                    text: root.externalTrack
+                                    onTextEdited: {
+                                        root.externalTrack = String(externalTrackInput.text || "").slice(0, 120)
+                                        root.externalMetadataMode = "custom"
+                                        if (root.engineState) root.engineState.artSourceKey = ""
+                                        vizCanvas.requestPaint()
+                                        scheduleSaveVisualiserConfig()
+                                    }
+                                    onAccepted: root.submitInlineExternalTrack(false)
+
+                                    Text {
+                                        anchors.fill: parent
+                                        verticalAlignment: Text.AlignVCenter
+                                        text: "Track (W)…"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 9
+                                        color: Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.42)
+                                        visible: !externalTrackInput.text && !externalTrackInput.activeFocus
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                width: 118
+                                height: 22
+                                radius: 4
+                                color: "#0b0f17"
+                                border.width: 1
+                                border.color: externalAlbumInput.activeFocus
+                                    ? root.accentColour
+                                    : Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.28)
+
+                                TextInput {
+                                    id: externalAlbumInput
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 6
+                                    anchors.rightMargin: 6
+                                    verticalAlignment: Text.AlignVCenter
+                                    font.family: "JetBrainsMono Nerd Font"
+                                    font.pixelSize: 9
+                                    color: root.foregroundColour
+                                    selectByMouse: true
+                                    clip: true
+                                    text: root.externalAlbum
+                                    onTextEdited: {
+                                        root.externalAlbum = String(externalAlbumInput.text || "").slice(0, 120)
+                                        root.externalMetadataMode = "custom"
+                                        if (root.engineState) root.engineState.artSourceKey = ""
+                                        vizCanvas.requestPaint()
+                                        scheduleSaveVisualiserConfig()
+                                    }
+                                    onAccepted: root.submitInlineExternalTrack(false)
+
+                                    Text {
+                                        anchors.fill: parent
+                                        verticalAlignment: Text.AlignVCenter
+                                        text: "Album (E)…"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 9
+                                        color: Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.42)
+                                        visible: !externalAlbumInput.text && !externalAlbumInput.activeFocus
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                width: 256
+                                height: 22
+                                radius: 4
+                                color: "#0b0f17"
+                                border.width: 1
+                                border.color: externalArtInput.activeFocus
+                                    ? root.accentColour
+                                    : Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.28)
+
+                                Text {
+                                    id: extArtBranchPrefix
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 6
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "external_art/"
+                                    textFormat: Text.PlainText
+                                    font.family: "JetBrainsMono Nerd Font"
+                                    font.pixelSize: 9
+                                    font.bold: true
+                                    color: "#38bdf8"
+                                }
+
+                                TextInput {
+                                    id: externalArtInput
+                                    anchors.left: extArtBranchPrefix.right
+                                    anchors.leftMargin: 2
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 6
+                                    anchors.top: parent.top
+                                    anchors.bottom: parent.bottom
+                                    verticalAlignment: Text.AlignVCenter
+                                    font.family: "JetBrainsMono Nerd Font"
+                                    font.pixelSize: 9
+                                    color: root.foregroundColour
+                                    selectByMouse: true
+                                    clip: true
+                                    property bool editingInProgress: false
+                                    Component.onCompleted: externalArtInput.text = root.externalArtPath
+                                    onTextEdited: {
+                                        externalArtInput.editingInProgress = true
+                                        root.externalArtPath = root.normaliseExternalArtBranch(externalArtInput.text)
+                                        externalArtInput.editingInProgress = false
+                                        root.externalMetadataMode = "custom"
+                                        if (root.engineState) root.engineState.artSourceKey = ""
+                                        vizCanvas.requestPaint()
+                                        scheduleSaveVisualiserConfig()
+                                    }
+                                    onEditingFinished: {
+                                        root.externalArtPath = root.normaliseExternalArtBranch(externalArtInput.text)
+                                        if (externalArtInput.text !== root.externalArtPath) {
+                                            externalArtInput.text = root.externalArtPath
+                                        }
+                                    }
+                                    onAccepted: root.submitInlineExternalTrack(false)
+
+                                    Connections {
+                                        target: root
+                                        function onExternalArtPathChanged() {
+                                            if (!externalArtInput.activeFocus && !externalArtInput.editingInProgress && externalArtInput.text !== root.externalArtPath) {
+                                                externalArtInput.text = root.externalArtPath
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        anchors.fill: parent
+                                        verticalAlignment: Text.AlignVCenter
+                                        text: "subfolder or file (auto-matches Artist)…"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 9
+                                        color: Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.42)
+                                        visible: !externalArtInput.text && !externalArtInput.activeFocus
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+
+                            VizPillButton {
+                                text: "󰄬 Apply Live"
+                                active: true
+                                notBoundToRand: true
+                                pillHeight: 22
+                                horizontalPad: 7
+                                onClicked: root.submitInlineExternalTrack(false)
+                            }
+
+                            VizPillButton {
+                                text: root.editingExternalTrackIndex >= 0
+                                    ? ("󰆓 Update #" + (root.editingExternalTrackIndex + 1))
+                                    : "+ Save to File"
+                                notBoundToRand: true
+                                pillHeight: 22
+                                horizontalPad: 7
+                                onClicked: root.submitInlineExternalTrack(true)
+                            }
+
+                            VizPillButton {
+                                text: "󰒮 Prev"
+                                notBoundToRand: true
+                                pillHeight: 22
+                                horizontalPad: 6
+                                onClicked: root.stepExternalTrack(-1)
+                            }
+
+                            VizPillButton {
+                                text: "󰒭 Next"
+                                notBoundToRand: true
+                                pillHeight: 22
+                                horizontalPad: 6
+                                onClicked: root.stepExternalTrack(1)
+                            }
+
+                            VizPillButton {
+                                text: root.showExternalTracksEditor
+                                    ? ("󰄬 Track List [" + (root.externalTracksList ? root.externalTracksList.length : 0) + "]: OPEN")
+                                    : ("󰏫 Track List [" + (root.externalTracksList ? root.externalTracksList.length : 0) + "]")
+                                active: root.showExternalTracksEditor
+                                notBoundToRand: true
+                                pillHeight: 22
+                                horizontalPad: 7
+                                onClicked: {
+                                    root.showExternalTracksEditor = !root.showExternalTracksEditor
+                                    if (root.showExternalTracksEditor) {
+                                        root.syncExternalTracksBulkTextFromList()
+                                    }
+                                }
+                            }
+
+                            VizPillButton {
+                                text: "󰏫 Open File"
+                                notBoundToRand: true
+                                pillHeight: 22
+                                horizontalPad: 6
+                                onClicked: root.requestOpenExternalTracksFile()
+                            }
+
+                            VizPillButton {
+                                text: "󰑐 Reload"
+                                notBoundToRand: true
+                                pillHeight: 22
+                                horizontalPad: 6
+                                onClicked: root.requestReloadExternalTracksFile()
+                            }
+                        }
+
+                        // External Art Folder Polling & Cycling Bar (always branches from ~/Pictures/bandarchy/external_art/)
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: 5
+
+                            Text {
+                                height: 22
+                                verticalAlignment: Text.AlignVCenter
+                                text: "External Album Art Folder (" + (root.externalArtImages ? root.externalArtImages.length : 0) + " images):"
+                                textFormat: Text.PlainText
+                                font.family: "JetBrainsMono Nerd Font"
+                                font.pixelSize: 10
+                                font.bold: true
+                                color: "#38bdf8"
+                            }
+
+                            VizPillButton {
+                                text: root.externalArtPollEnabled ? "󰉋 Poll Art Folder: ON" : "󰉋 Poll Art Folder: OFF"
+                                active: root.externalArtPollEnabled
+                                notBoundToRand: true
+                                pillHeight: 22
+                                horizontalPad: 7
+                                onClicked: {
+                                    root.externalArtPollEnabled = !root.externalArtPollEnabled
+                                    scheduleSaveVisualiserConfig()
+                                }
+                            }
+
+                            VizPillButton {
+                                text: "󰒮 Art"
+                                notBoundToRand: true
+                                pillHeight: 22
+                                horizontalPad: 6
+                                onClicked: root.requestStepExternalArt(-1)
+                            }
+
+                            VizPillButton {
+                                text: "󰒭 Art"
+                                notBoundToRand: true
+                                pillHeight: 22
+                                horizontalPad: 6
+                                onClicked: root.requestStepExternalArt(1)
+                            }
+
+                            Repeater {
+                                model: [5, 15, 30, 60]
+                                delegate: VizPillButton {
+                                    required property int modelData
+                                    text: modelData + "s"
+                                    active: root.externalArtCycleSeconds === modelData
+                                    notBoundToRand: true
+                                    pillHeight: 22
+                                    horizontalPad: 6
+                                    onClicked: {
+                                        root.externalArtCycleSeconds = modelData
+                                        scheduleSaveVisualiserConfig()
+                                    }
+                                }
+                            }
+
+                            VizPillButton {
+                                text: "󰑐 Scan Art"
+                                notBoundToRand: true
+                                pillHeight: 22
+                                horizontalPad: 7
+                                onClicked: {
+                                    root.externalArtPath = root.normaliseExternalArtBranch(externalArtInput.text)
+                                    externalArtInput.text = root.externalArtPath
+                                    saveConfigDebounceTimer.stop()
+                                    root.emitSaveVisualiserConfig()
+                                    root.requestScanExternalArt()
+                                }
+                            }
+
+                            VizPillButton {
+                                text: "󰉋 Open Art Folder"
+                                notBoundToRand: true
+                                pillHeight: 22
+                                horizontalPad: 7
+                                onClicked: root.requestOpenExternalArtDir()
+                            }
+
+                            Text {
+                                height: 22
+                                width: Math.min(implicitWidth, 340)
+                                verticalAlignment: Text.AlignVCenter
+                                text: "~/Pictures/bandarchy/external_art/" + (root.externalArtPath ? root.externalArtPath : "(auto-matches Artist/Album)")
+                                textFormat: Text.PlainText
+                                font.family: "JetBrainsMono Nerd Font"
+                                font.pixelSize: 9
+                                color: Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.72)
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        // Expandable external-tracks.txt VJ Pads & Bulk Editor
+                        Rectangle {
+                            id: externalTracksEditorBox
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: externalTracksEditorCol.implicitHeight + 16
+                            visible: root.showExternalTracksEditor
+                            radius: 7
+                            color: Qt.rgba(root.backgroundColour.r, root.backgroundColour.g, root.backgroundColour.b, 0.92)
+                            border.width: 1
+                            border.color: Qt.rgba(0.22, 0.74, 0.97, 0.45)
+
+                            ColumnLayout {
+                                id: externalTracksEditorCol
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                spacing: 6
+
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+
+                                    Text {
+                                        height: 22
+                                        verticalAlignment: Text.AlignVCenter
+                                        text: "󰎆 External Track Metadata Editor (" + (root.externalTracksList ? root.externalTracksList.length : 0) + " entries in external-tracks.txt):"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 10
+                                        font.bold: true
+                                        color: "#38bdf8"
+                                    }
+
+                                    VizPillButton {
+                                        text: "󰉹 Track VJ Pads"
+                                        active: !root.externalTracksBulkMode
+                                        pillHeight: 22
+                                        horizontalPad: 7
+                                        onClicked: root.externalTracksBulkMode = false
+                                    }
+
+                                    VizPillButton {
+                                        text: "󰦨 Bulk Text / Paste"
+                                        active: root.externalTracksBulkMode
+                                        pillHeight: 22
+                                        horizontalPad: 7
+                                        onClicked: {
+                                            root.syncExternalTracksBulkTextFromList()
+                                            root.externalTracksBulkMode = true
+                                            externalTracksBulkEdit.forceActiveFocus()
+                                        }
+                                    }
+
+                                    VizPillButton {
+                                        text: "󰆓 Save to external-tracks.txt"
+                                        active: true
+                                        pillHeight: 22
+                                        horizontalPad: 7
+                                        onClicked: {
+                                            if (root.externalTracksBulkMode) {
+                                                root.saveBulkExternalTracksText()
+                                            } else {
+                                                root.commitExternalTracksList(root.externalTracksList, "Saved " + (root.externalTracksList ? root.externalTracksList.length : 0) + " tracks to " + root.externalTracksPath)
+                                            }
+                                        }
+                                    }
+
+                                    VizPillButton {
+                                        text: "󰁯 Reset Defaults"
+                                        pillHeight: 22
+                                        horizontalPad: 7
+                                        onClicked: root.resetExternalTracksToDefaults()
+                                    }
+
+                                    VizPillButton {
+                                        text: "✕ Close"
+                                        pillHeight: 22
+                                        horizontalPad: 6
+                                        onClicked: {
+                                            root.editingExternalTrackIndex = -1
+                                            externalTracksBulkEdit.focus = false
+                                            root.showExternalTracksEditor = false
+                                            root.forceActiveFocus()
+                                        }
+                                    }
+                                }
+
+                                // Interactive Track Pads (Click to push Artist / Track / Album / Art live to Q / W / E + Art)
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 118
+                                    visible: !root.externalTracksBulkMode
+                                    radius: 5
+                                    color: Qt.rgba(0, 0, 0, 0.32)
+                                    border.width: 1
+                                    border.color: Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.16)
+                                    clip: true
+
+                                    Flickable {
+                                        id: externalTracksFlick
+                                        anchors.fill: parent
+                                        anchors.margins: 6
+                                        contentWidth: width
+                                        contentHeight: externalTracksFlow.implicitHeight
+                                        clip: true
+                                        boundsBehavior: Flickable.StopAtBounds
+
+                                        Flow {
+                                            id: externalTracksFlow
+                                            width: externalTracksFlick.width
+                                            spacing: 5
+
+                                            Repeater {
+                                                model: root.externalTracksList ? root.externalTracksList.length : 0
+                                                delegate: RowLayout {
+                                                    required property int index
+                                                    readonly property var trItem: (root.externalTracksList && root.externalTracksList[index]) || ({})
+                                                    readonly property string trArtist: String(trItem.artist || "")
+                                                    readonly property string trTrack: String(trItem.track || "")
+                                                    readonly property string trAlbum: String(trItem.album || "")
+                                                    readonly property string trArt: String(trItem.artPath || "")
+                                                    readonly property string trLabel: (index + 1) + ". " + (trArtist || "Unknown") + (trTrack ? (" — " + trTrack) : "") + (trAlbum ? (" (" + trAlbum + ")") : "") + (trArt ? (" 󰋩 " + trArt) : "")
+                                                    spacing: 2
+
+                                                    VizPillButton {
+                                                        text: trLabel
+                                                        active: root.externalMetadataMode === "custom"
+                                                            && root.externalArtist === trArtist
+                                                            && root.externalTrack === trTrack
+                                                            && root.externalAlbum === trAlbum
+                                                        pillHeight: 22
+                                                        horizontalPad: 7
+                                                        onClicked: {
+                                                            root.externalTrackIndex = index
+                                                            root.applyExternalTrackEntryLive(trItem)
+                                                        }
+                                                        onRightClicked: root.beginEditExternalTrackAt(index)
+                                                    }
+
+                                                    VizPillButton {
+                                                        text: "󰏫"
+                                                        active: root.editingExternalTrackIndex === index
+                                                        pillHeight: 22
+                                                        horizontalPad: 5
+                                                        onClicked: root.beginEditExternalTrackAt(index)
+                                                    }
+
+                                                    VizPillButton {
+                                                        text: "✕"
+                                                        pillHeight: 22
+                                                        horizontalPad: 5
+                                                        onClicked: root.deleteExternalTrackAt(index)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Multi-line Bulk Text Editor for external-tracks.txt
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+                                    visible: root.externalTracksBulkMode
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: "Bulk Edit / Paste (format: Artist | Track | Album | ArtSubfolderOrFile inside ~/Pictures/bandarchy/external_art/ — '#' comments ignored):"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 9
+                                        color: Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.78)
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 118
+                                        radius: 5
+                                        color: "#0b0f17"
+                                        border.width: 1
+                                        border.color: externalTracksBulkEdit.activeFocus
+                                            ? root.accentColour
+                                            : Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.28)
+                                        clip: true
+
+                                        Flickable {
+                                            id: extBulkFlick
+                                            anchors.fill: parent
+                                            anchors.margins: 6
+                                            contentWidth: width
+                                            contentHeight: Math.max(height, externalTracksBulkEdit.paintedHeight + 12)
+                                            clip: true
+                                            boundsBehavior: Flickable.StopAtBounds
+
+                                            TextEdit {
+                                                id: externalTracksBulkEdit
+                                                width: extBulkFlick.width
+                                                height: Math.max(extBulkFlick.height, paintedHeight + 12)
+                                                font.family: "JetBrainsMono Nerd Font"
+                                                font.pixelSize: 10
+                                                color: root.foregroundColour
+                                                selectByMouse: true
+                                                wrapMode: TextEdit.Wrap
+                                                text: ""
+                                            }
+                                        }
+                                    }
+
+                                    Flow {
+                                        Layout.fillWidth: true
+                                        spacing: 6
+
+                                        VizPillButton {
+                                            text: "󰆓 Save All Lines to external-tracks.txt"
+                                            active: true
+                                            pillHeight: 22
+                                            horizontalPad: 8
+                                            onClicked: root.saveBulkExternalTracksText()
+                                        }
+
+                                        VizPillButton {
+                                            text: "󰑐 Revert Unsaved Changes"
+                                            pillHeight: 22
+                                            horizontalPad: 7
+                                            onClicked: {
+                                                root.syncExternalTracksBulkTextFromList()
+                                                root.externalTracksStatusText = "Reverted bulk editor to current external-tracks.txt list"
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: root.externalTracksStatusText
+                                        ? ("󰄬 " + root.externalTracksStatusText)
+                                        : ("Click any track pad to push Artist (Q), Track (W), Album (E), and external_art/ Subfolder or File live onto canvas  •  File: " + root.externalTracksPath)
+                                    textFormat: Text.PlainText
+                                    font.family: "JetBrainsMono Nerd Font"
+                                    font.pixelSize: 9
+                                    color: root.externalTracksStatusText
+                                        ? "#38bdf8"
                                         : Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.72)
                                     elide: Text.ElideRight
                                 }
@@ -11509,11 +12565,13 @@ FocusScope {
                         }
 
                         // Text Colour Mode Selector Row (T key)
-                        RowLayout {
+                        Flow {
                             Layout.fillWidth: true
                             spacing: 5
 
                             Text {
+                                height: 22
+                                verticalAlignment: Text.AlignVCenter
                                 text: "Text Colour Mode (T):"
                                 textFormat: Text.PlainText
                                 font.family: "JetBrainsMono Nerd Font"
@@ -11537,16 +12595,16 @@ FocusScope {
                                     }
                                 }
                             }
-
-                            Item { Layout.fillWidth: true }
                         }
 
                         // 3D Revolving Cylinder & Whole-Word 360° Spin Axis Selector Row
-                        RowLayout {
+                        Flow {
                             Layout.fillWidth: true
                             spacing: 5
 
                             Text {
+                                height: 22
+                                verticalAlignment: Text.AlignVCenter
                                 text: "3D Revolving Cylinder & 360° Word Spin:"
                                 textFormat: Text.PlainText
                                 font.family: "JetBrainsMono Nerd Font"
@@ -11569,16 +12627,16 @@ FocusScope {
                                     }
                                 }
                             }
-
-                            Item { Layout.fillWidth: true }
                         }
 
                         // Song Progress Arc Selector Row (0% -> 100% Song Journey Options)
-                        RowLayout {
+                        Flow {
                             Layout.fillWidth: true
                             spacing: 5
 
                             Text {
+                                height: 22
+                                verticalAlignment: Text.AlignVCenter
                                 text: "Song Progress Arc (0→100%):"
                                 textFormat: Text.PlainText
                                 font.family: "JetBrainsMono Nerd Font"
@@ -11627,11 +12685,13 @@ FocusScope {
                         }
 
                         // Dedicated Ghost Tracers Quick-Select Row (1x..8x)
-                        RowLayout {
+                        Flow {
                             Layout.fillWidth: true
                             spacing: 5
 
                             Text {
+                                height: 22
+                                verticalAlignment: Text.AlignVCenter
                                 text: "Typography Ghost Tracers:"
                                 textFormat: Text.PlainText
                                 font.family: "JetBrainsMono Nerd Font"
@@ -11654,8 +12714,6 @@ FocusScope {
                                     }
                                 }
                             }
-
-                            Item { Layout.fillWidth: true }
                         }
 
                         // 2-Column Parameter Sliders for 6: Typography
@@ -11751,6 +12809,7 @@ FocusScope {
                     // =========================================================
                     ColumnLayout {
                         Layout.fillWidth: true
+                        Layout.maximumWidth: drawerFlick.width
                         spacing: 8
                         visible: root.activeConfigLayer === 7
 
@@ -11924,11 +12983,13 @@ FocusScope {
                                 anchors.margins: 7
                                 spacing: 6
 
-                                RowLayout {
+                                Flow {
                                     Layout.fillWidth: true
                                     spacing: 6
 
                                     Text {
+                                        height: 22
+                                        verticalAlignment: Text.AlignVCenter
                                         text: "󰒟 Palette Randomisation Scope:"
                                         textFormat: Text.PlainText
                                         font.family: "JetBrainsMono Nerd Font"
@@ -11960,8 +13021,6 @@ FocusScope {
                                             }
                                         }
                                     }
-
-                                    Item { Layout.fillWidth: true }
                                 }
 
                                 Text {
@@ -12023,6 +13082,193 @@ FocusScope {
                                                 vizCanvas.requestPaint()
                                                 scheduleSaveVisualiserConfig()
                                             }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Section 2B: External Audio Input Synchronisation (PipeWire / PulseAudio Capture & Loopback Monitors)
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: extAudioCol.implicitHeight + 14
+                            radius: 6
+                            color: Qt.rgba(1, 1, 1, 0.04)
+                            border.width: 1
+                            border.color: Qt.rgba(0.22, 0.74, 0.97, 0.28)
+
+                            ColumnLayout {
+                                id: extAudioCol
+                                anchors.fill: parent
+                                anchors.margins: 7
+                                spacing: 6
+
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: 6
+
+                                    Text {
+                                        height: 22
+                                        verticalAlignment: Text.AlignVCenter
+                                        text: "󰓃 Audio Input Synchronisation:"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 10
+                                        font.bold: true
+                                        color: "#38bdf8"
+                                    }
+
+                                    VizPillButton {
+                                        text: "1. Auto-Sense Any Initiated Audio"
+                                        active: root.audioInputMode === "auto"
+                                        notBoundToRand: true
+                                        pillHeight: 22
+                                        horizontalPad: 7
+                                        onClicked: {
+                                            root.audioInputMode = "auto"
+                                            root.audioInputSource = "auto"
+                                            scheduleSaveVisualiserConfig()
+                                        }
+                                    }
+
+                                    VizPillButton {
+                                        text: "2. Hardware / Capture Input (Line-In / USB / Mic)"
+                                        active: root.audioInputMode === "input"
+                                        notBoundToRand: true
+                                        pillHeight: 22
+                                        horizontalPad: 7
+                                        onClicked: {
+                                            root.audioInputMode = "input"
+                                            root.audioInputSource = "auto"
+                                            scheduleSaveVisualiserConfig()
+                                        }
+                                    }
+
+                                    VizPillButton {
+                                        text: "3. System Output Monitor (Desktop Audio)"
+                                        active: root.audioInputMode === "monitor"
+                                        notBoundToRand: true
+                                        pillHeight: 22
+                                        horizontalPad: 7
+                                        onClicked: {
+                                            root.audioInputMode = "monitor"
+                                            root.audioInputSource = "auto"
+                                            scheduleSaveVisualiserConfig()
+                                        }
+                                    }
+
+                                    VizPillButton {
+                                        text: "4. Bandarchy Internal Player Only"
+                                        active: root.audioInputMode === "player"
+                                        notBoundToRand: true
+                                        pillHeight: 22
+                                        horizontalPad: 7
+                                        onClicked: {
+                                            root.audioInputMode = "player"
+                                            root.audioInputSource = "auto"
+                                            scheduleSaveVisualiserConfig()
+                                        }
+                                    }
+
+                                    VizPillButton {
+                                        text: "󰑐 Scan Audio Inputs"
+                                        notBoundToRand: true
+                                        pillHeight: 22
+                                        horizontalPad: 7
+                                        onClicked: root.requestRefreshAudioSources()
+                                    }
+                                }
+
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: 5
+                                    visible: root.audioInputMode !== "player"
+
+                                    Text {
+                                        text: "PipeWire / PulseAudio Source (" + (root.activeAudioSourceLabel || root.activeAudioSource || "Auto") + "):"
+                                        textFormat: Text.PlainText
+                                        font.family: "JetBrainsMono Nerd Font"
+                                        font.pixelSize: 9
+                                        font.bold: true
+                                        color: Qt.rgba(root.foregroundColour.r, root.foregroundColour.g, root.foregroundColour.b, 0.82)
+                                    }
+
+                                    VizPillButton {
+                                        text: "Auto Select"
+                                        active: root.audioInputSource === "auto"
+                                        notBoundToRand: true
+                                        pillHeight: 20
+                                        fontSize: 9
+                                        horizontalPad: 6
+                                        onClicked: {
+                                            root.audioInputSource = "auto"
+                                            scheduleSaveVisualiserConfig()
+                                        }
+                                    }
+
+                                    Repeater {
+                                        model: root.audioSources ? root.audioSources.length : 0
+                                        delegate: VizPillButton {
+                                            required property int index
+                                            readonly property var srcItem: (root.audioSources && root.audioSources[index]) || ({})
+                                            readonly property string srcName: String(srcItem.name || "")
+                                            readonly property string srcDesc: String(srcItem.description || srcItem.name || "")
+                                            readonly property string srcKind: String(srcItem.kind || "input")
+                                            readonly property string srcState: String(srcItem.state || "SUSPENDED")
+                                            readonly property bool srcIsDefault: String(srcItem.isDefault || "") === "1"
+                                            text: (srcKind === "monitor" ? "󰓃 " : "󰍬 ")
+                                                + srcDesc
+                                                + (srcIsDefault ? " [DEFAULT]" : "")
+                                                + (srcState === "RUNNING" ? " [LIVE]" : "")
+                                            active: root.audioInputSource === srcName || (root.audioInputSource === "auto" && root.activeAudioSource === srcName)
+                                            notBoundToRand: true
+                                            pillHeight: 20
+                                            fontSize: 9
+                                            horizontalPad: 6
+                                            onClicked: {
+                                                root.audioInputSource = srcName
+                                                if (srcKind === "input" && root.audioInputMode === "player") {
+                                                    root.audioInputMode = "input"
+                                                } else if (srcKind === "monitor" && root.audioInputMode === "player") {
+                                                    root.audioInputMode = "monitor"
+                                                }
+                                                scheduleSaveVisualiserConfig()
+                                            }
+                                        }
+                                    }
+                                }
+
+                                GridLayout {
+                                    Layout.fillWidth: true
+                                    columns: 2
+                                    columnSpacing: 16
+                                    rowSpacing: 5
+                                    visible: root.audioInputMode !== "player"
+
+                                    LayerSlider {
+                                        label: "Signal Gate Threshold"
+                                        notBoundToRand: true
+                                        value: root.audioGateThreshold
+                                        minValue: 10
+                                        maxValue: 250
+                                        integerSteps: true
+                                        onValueEdited: v => {
+                                            root.audioGateThreshold = Math.round(v)
+                                            scheduleSaveVisualiserConfig()
+                                        }
+                                    }
+
+                                    LayerSlider {
+                                        label: "External Song Arc Cycle"
+                                        notBoundToRand: true
+                                        value: root.externalArcDuration
+                                        minValue: 60
+                                        maxValue: 600
+                                        integerSteps: true
+                                        unitSuffix: "s"
+                                        onValueEdited: v => {
+                                            root.externalArcDuration = Math.round(v)
+                                            scheduleSaveVisualiserConfig()
                                         }
                                     }
                                 }
@@ -12134,7 +13380,7 @@ FocusScope {
                                     }
                                 }
 
-                                RowLayout {
+                                Flow {
                                     Layout.fillWidth: true
                                     spacing: 6
 
@@ -12151,8 +13397,6 @@ FocusScope {
                                             root.requestSaveVisualiserConfig(root.buildPersistedConfigSnapshot())
                                         }
                                     }
-
-                                    Item { Layout.fillWidth: true }
 
                                     VizPillButton {
                                         text: "󰑐 Reset All Visualiser Defaults"
@@ -12196,7 +13440,8 @@ FocusScope {
             onPositionChanged: root.resetHudAutoHideTimer()
         }
 
-        readonly property real trackRatio: root.duration > 0.5 ? Math.max(0.0, Math.min(1.0, root.position / root.duration)) : 0.0
+        readonly property bool hasValidTrackTime: !root.isExternalTrackDisplay && root.duration > 0.5
+        readonly property real trackRatio: hasValidTrackTime ? Math.max(0.0, Math.min(1.0, root.position / root.duration)) : 0.0
         readonly property int trackPercent: Math.round(trackRatio * 100)
 
         ColumnLayout {
@@ -12213,7 +13458,8 @@ FocusScope {
                 spacing: 8
 
                 Text {
-                    text: root.formatTime(root.position)
+                    visible: bottomHud.hasValidTrackTime
+                    text: bottomHud.hasValidTrackTime ? root.formatTime(root.position) : ""
                     textFormat: Text.PlainText
                     font.family: "JetBrainsMono Nerd Font"
                     font.pixelSize: 10
@@ -12236,6 +13482,7 @@ FocusScope {
                         model: [0.25, 0.50, 0.75]
                         delegate: Rectangle {
                             required property real modelData
+                            visible: bottomHud.hasValidTrackTime
                             x: parent.width * modelData
                             width: 1
                             height: parent.height
@@ -12246,7 +13493,7 @@ FocusScope {
                     }
 
                     Rectangle {
-                        width: parent.width * bottomHud.trackRatio
+                        width: bottomHud.hasValidTrackTime ? (parent.width * bottomHud.trackRatio) : 0
                         height: parent.height
                         radius: 4
                         color: bottomHud.trackRatio >= 0.70 && bottomHud.trackRatio <= 0.85
@@ -12255,6 +13502,7 @@ FocusScope {
                     }
 
                     Rectangle {
+                        visible: bottomHud.hasValidTrackTime
                         x: Math.max(0, Math.min(parent.width - width, parent.width * bottomHud.trackRatio - width * 0.5))
                         anchors.verticalCenter: parent.verticalCenter
                         width: 12
@@ -12270,10 +13518,11 @@ FocusScope {
                         anchors.fill: parent
                         anchors.topMargin: -5
                         anchors.bottomMargin: -5
+                        enabled: bottomHud.hasValidTrackTime
                         hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
+                        cursorShape: bottomHud.hasValidTrackTime ? Qt.PointingHandCursor : Qt.ArrowCursor
                         function seekAtX(mx) {
-                            if (root.duration > 0.5) {
+                            if (bottomHud.hasValidTrackTime) {
                                 var ratio = Math.max(0.0, Math.min(1.0, mx / Math.max(1, seekBarTrack.width)))
                                 var targetSec = ratio * root.duration
                                 root.requestSeek(targetSec)
@@ -12286,7 +13535,10 @@ FocusScope {
                 }
 
                 Text {
-                    text: bottomHud.trackPercent + "% · -" + root.formatTime(Math.max(0, root.duration - root.position)) + " / " + root.formatTime(root.duration)
+                    visible: bottomHud.hasValidTrackTime
+                    text: bottomHud.hasValidTrackTime
+                        ? (bottomHud.trackPercent + "% · -" + root.formatTime(Math.max(0, root.duration - root.position)) + " / " + root.formatTime(root.duration))
+                        : ""
                     textFormat: Text.PlainText
                     font.family: "JetBrainsMono Nerd Font"
                     font.pixelSize: 10
@@ -12465,7 +13717,7 @@ FocusScope {
                     }
 
                     VizPillButton {
-                        text: root.playing ? "󰏤" : "󰐊"
+                        text: (root.playing && !root.isExternalTrackDisplay) ? "󰏤" : "󰐊"
                         active: true
                         fontSize: 14
                         horizontalPad: 10

@@ -19,7 +19,7 @@ Item {
         return u
     }
     readonly property string binPath: baseDir + "/bin/bandarchy"
-    readonly property string cavaConfPath: baseDir + "/share/cava.conf"
+    readonly property string cavaConfPath: root.runtimeCavaConfPath || (baseDir + "/share/cava.conf")
 
     // Playback state
     property bool playing: false
@@ -158,10 +158,76 @@ Item {
     property bool photoBusy: false
     property string photoStatusMessage: ""
 
-    // 60 FPS 64-band Cava spectrum
+    // 60 FPS 64-band Cava spectrum & External Audio Input Synchronisation state
     property var spectrumBands: []
+    property string runtimeCavaConfPath: ""
+    property string audioInputMode: "auto" // "auto", "input", "monitor", "player"
+    property string audioInputSource: "auto" // "auto" or specific PipeWire/PulseAudio source name
+    property string activeAudioSource: "auto"
+    property string activeAudioSourceLabel: "Auto-Sense (Default Monitor / Input)"
+    property var audioSources: []
+    property int audioGateThreshold: 35 // Raw Cava band value (0..1000) required to open signal gate
+    property bool audioSignalActive: false
+
+    // Separate External Track Metadata state (~/.config/bandarchy/external-tracks.txt)
+    property string externalMetadataMode: "auto" // "auto" (Bandarchy player when playing, else external) or "custom" (always external)
+    property string externalArtist: "The Black Dog"
+    property string externalTrack: "Cost II"
+    property string externalAlbum: "Music for Real Airports"
+    property string externalArtPath: ""
+    property string externalArtDir: "~/Pictures/bandarchy/external_art"
+    property var externalArtImages: []
+    property int externalArtIndex: 0
+    property int externalArtCycleSeconds: 15
+    property bool externalArtPollEnabled: true
+    property var externalTracksList: []
+    property string externalTracksPath: "~/.config/bandarchy/external-tracks.txt"
+    property int externalTrackIndex: 0
+
+    // Synthetic Song Progress Arc state when driven by external audio (no local mpv duration)
+    property real externalArcPosition: 0.0
+    property real externalArcDuration: 240.0
 
     readonly property bool activelyPlaying: root.playing && !root.paused
+    readonly property bool externalAudioSyncEnabled: root.audioInputMode !== "player"
+    readonly property bool externalAudioActive: !root.activelyPlaying && root.externalAudioSyncEnabled && root.audioSignalActive
+    readonly property bool visualiserPlaying: root.activelyPlaying || (root.externalAudioSyncEnabled && root.audioSignalActive)
+    readonly property bool usingExternalMetadata: (root.externalMetadataMode === "custom") || (!root.activelyPlaying && root.externalAudioSyncEnabled)
+
+    readonly property string activeExternalArtImage: {
+        var imgs = root.externalArtImages
+        if (Array.isArray(imgs) && imgs.length > 0) {
+            var idx = ((root.externalArtIndex % imgs.length) + imgs.length) % imgs.length
+            return String(imgs[idx] || "")
+        }
+        var raw = String(root.externalArtPath || "").trim()
+        if (raw.indexOf("/") === 0 && /\.(png|jpe?g|webp)$/i.test(raw)) {
+            return raw
+        }
+        return ""
+    }
+
+    readonly property string effectiveArtPath: root.usingExternalMetadata
+        ? root.activeExternalArtImage
+        : root.artPath
+    readonly property string effectiveTrackArtist: root.usingExternalMetadata
+        ? root.externalArtist
+        : root.trackArtist
+    readonly property string effectiveTrackTitle: root.usingExternalMetadata
+        ? root.externalTrack
+        : root.trackTitle
+    readonly property string effectiveTrackAlbum: root.usingExternalMetadata
+        ? root.externalAlbum
+        : root.trackAlbum
+    readonly property real effectivePosition: (!root.usingExternalMetadata && root.playing && root.duration > 0.5)
+        ? root.position
+        : 0.0
+    readonly property real effectiveDuration: (!root.usingExternalMetadata && root.playing && root.duration > 0.5)
+        ? root.duration
+        : 0.0
+    readonly property real effectiveArcProgress: (!root.usingExternalMetadata && root.activelyPlaying && root.duration > 0.5)
+        ? Math.max(0.0, Math.min(1.0, root.position / root.duration))
+        : (root.visualiserPlaying ? Math.max(0.0, Math.min(1.0, root.externalArcPosition / Math.max(30.0, root.externalArcDuration || 240.0))) : 0.0)
 
     Component.onCompleted: {
         loadVisualiserConfig()
@@ -172,11 +238,23 @@ Item {
 
     property bool _batchUpdatingTrack: false
 
-    onAlbumIdChanged: if (!root._batchUpdatingTrack) refreshAsciiArt()
-    onArtPathChanged: if (!root._batchUpdatingTrack) refreshAsciiArt()
-    onTrackArtistChanged: if (!root._batchUpdatingTrack) refreshAsciiArt()
-    onTrackTitleChanged: if (!root._batchUpdatingTrack) refreshAsciiArt()
-    onTrackAlbumChanged: if (!root._batchUpdatingTrack) refreshAsciiArt()
+    onAlbumIdChanged: if (!root._batchUpdatingTrack && !root.usingExternalMetadata) refreshAsciiArt()
+    onArtPathChanged: if (!root._batchUpdatingTrack && !root.usingExternalMetadata) refreshAsciiArt()
+    onTrackArtistChanged: if (!root._batchUpdatingTrack && !root.usingExternalMetadata) refreshAsciiArt()
+    onTrackTitleChanged: if (!root._batchUpdatingTrack && !root.usingExternalMetadata) refreshAsciiArt()
+    onTrackAlbumChanged: if (!root._batchUpdatingTrack && !root.usingExternalMetadata) refreshAsciiArt()
+    onEffectiveArtPathChanged: if (!root._batchUpdatingTrack) refreshAsciiArt()
+    onEffectiveTrackArtistChanged: if (!root._batchUpdatingTrack) refreshAsciiArt()
+    onEffectiveTrackTitleChanged: if (!root._batchUpdatingTrack) refreshAsciiArt()
+    onEffectiveTrackAlbumChanged: if (!root._batchUpdatingTrack) refreshAsciiArt()
+    onUsingExternalMetadataChanged: if (!root._batchUpdatingTrack) refreshAsciiArt()
+
+    Timer {
+        id: audioSignalHoldTimer
+        interval: 1500
+        repeat: false
+        onTriggered: root.audioSignalActive = false
+    }
 
     // Fast status poll during downloads/syncs (450ms), normal poll during playback (1100ms)
     Timer {
@@ -186,16 +264,19 @@ Item {
         onTriggered: root.refreshStatus()
     }
 
-    // Smooth 250ms local playhead interpolation between mpv status polls
+    // Smooth 250ms local playhead interpolation between mpv status polls and synthetic external arc
     Timer {
         id: playheadTickTimer
         interval: 250
-        running: root.activelyPlaying
+        running: root.activelyPlaying || root.visualiserPlaying
         repeat: true
         onTriggered: {
             if (root.activelyPlaying) {
                 var nextPos = root.position + 0.25
                 root.position = (root.duration > 0.5) ? Math.min(root.duration, nextPos) : nextPos
+            } else if (root.visualiserPlaying) {
+                var cycleDur = Math.max(30.0, root.externalArcDuration || 240.0)
+                root.externalArcPosition = (root.externalArcPosition + 0.25) % cycleDur
             }
         }
     }
@@ -321,7 +402,7 @@ Item {
                         root.artPath !== prevArtPath
                     )
                     root.statusLoaded = true
-                    if (metaChanged && (root.trackTitle || root.trackArtist || root.trackAlbum)) {
+                    if (!root.usingExternalMetadata && metaChanged && (root.trackTitle || root.trackArtist || root.trackAlbum)) {
                         root.refreshAsciiArt("", "random")
                     }
                 } else {
@@ -379,12 +460,12 @@ Item {
                             root._batchUpdatingTrack = false
                             if (root.position <= 0 && fb.position) root.position = Number(fb.position) || 0.0
                             if (root.duration <= 0 && fb.duration) root.duration = Number(fb.duration) || 0.0
-                            if (root.trackTitle !== prevT || root.trackArtist !== prevAr || root.trackAlbum !== prevAl || root.artPath !== prevAp) {
+                            if (!root.usingExternalMetadata && (root.trackTitle !== prevT || root.trackArtist !== prevAr || root.trackAlbum !== prevAl || root.artPath !== prevAp)) {
                                 root.refreshAsciiArt()
                             }
                         }
                     }
-                    if (root.asciiLines.length === 0 && root.albums.length > 0) {
+                    if (!root.usingExternalMetadata && root.asciiLines.length === 0 && root.albums.length > 0) {
                         root.refreshAsciiArt()
                     }
                 }
@@ -600,9 +681,60 @@ Item {
                     }
                     if (Array.isArray(d.statements)) cfgObj.statements = d.statements
                     if (typeof d.statementsPath === "string") cfgObj.statementsPath = d.statementsPath
+                    if (Array.isArray(d.externalTracks)) {
+                        cfgObj.externalTracks = d.externalTracks
+                        root.externalTracksList = d.externalTracks
+                    }
+                    if (typeof d.externalTracksPath === "string") {
+                        cfgObj.externalTracksPath = d.externalTracksPath
+                        root.externalTracksPath = d.externalTracksPath
+                    }
+                    if (Array.isArray(d.externalArtImages)) {
+                        cfgObj.externalArtImages = d.externalArtImages
+                        root.externalArtImages = d.externalArtImages
+                        if (root.externalArtIndex >= d.externalArtImages.length) {
+                            root.externalArtIndex = 0
+                        }
+                    }
+                    if (typeof d.externalArtDir === "string" && d.externalArtDir) {
+                        cfgObj.externalArtDir = d.externalArtDir
+                        root.externalArtDir = d.externalArtDir
+                    }
+                    if (Array.isArray(d.audioSources)) {
+                        root.audioSources = d.audioSources
+                    }
+                    var prevActiveSrc = root.activeAudioSource
+                    var prevConfPath = root.runtimeCavaConfPath
+                    if (typeof d.activeAudioSource === "string" && d.activeAudioSource) {
+                        root.activeAudioSource = d.activeAudioSource
+                    }
+                    if (typeof d.activeAudioSourceLabel === "string" && d.activeAudioSourceLabel) {
+                        root.activeAudioSourceLabel = d.activeAudioSourceLabel
+                    }
+                    if (typeof d.runtimeCavaConfPath === "string" && d.runtimeCavaConfPath) {
+                        root.runtimeCavaConfPath = d.runtimeCavaConfPath
+                    }
+                    if (d.config.audioInputMode !== undefined) root.audioInputMode = String(d.config.audioInputMode || "auto")
+                    if (d.config.audioInputSource !== undefined) root.audioInputSource = String(d.config.audioInputSource || "auto")
+                    if (d.config.audioGateThreshold !== undefined) root.audioGateThreshold = Math.max(10, Math.min(250, Math.round(Number(d.config.audioGateThreshold) || 35)))
+                    if (d.config.externalArcDuration !== undefined) root.externalArcDuration = Math.max(30.0, Math.min(600.0, Number(d.config.externalArcDuration) || 240.0))
+                    if (d.config.externalMetadataMode !== undefined) root.externalMetadataMode = String(d.config.externalMetadataMode || "auto")
+                    if (d.config.externalArtist !== undefined) root.externalArtist = String(d.config.externalArtist || "")
+                    if (d.config.externalTrack !== undefined) root.externalTrack = String(d.config.externalTrack || "")
+                    if (d.config.externalAlbum !== undefined) root.externalAlbum = String(d.config.externalAlbum || "")
+                    if (d.config.externalArtPath !== undefined) root.externalArtPath = String(d.config.externalArtPath || "")
+                    if (d.config.externalArtDir !== undefined) root.externalArtDir = String(d.config.externalArtDir || "~/Pictures/bandarchy/external_art")
+                    if (d.config.externalArtCycleSeconds !== undefined) root.externalArtCycleSeconds = Math.max(3, Math.min(300, Math.round(Number(d.config.externalArtCycleSeconds) || 15)))
+                    if (d.config.externalArtPollEnabled !== undefined) root.externalArtPollEnabled = Boolean(d.config.externalArtPollEnabled)
+
                     root.visualiserConfig = cfgObj
                     root.visualiserConfigLoaded = true
                     root.syncScreensaverInhibit()
+
+                    if (prevActiveSrc !== root.activeAudioSource || prevConfPath !== root.runtimeCavaConfPath) {
+                        root.restartCavaProcess()
+                    }
+
                     if (!root._topBarLedChangedLocally) {
                         if (d.config.topBarLedEnabled !== undefined) {
                             root.topBarLedEnabled = Boolean(d.config.topBarLedEnabled)
@@ -626,12 +758,89 @@ Item {
                             changedAscii = true
                         }
                     }
-                    if (changedAscii) {
+                    if (changedAscii || root.usingExternalMetadata) {
                         root.refreshAsciiArt()
                     }
                 }
             } catch (e) {}
         }
+    }
+
+    Process {
+        id: externalArtScanProc
+        property string outBuf: ""
+        property bool advanceOnFinish: false
+        stdout: SplitParser {
+            onRead: line => { externalArtScanProc.outBuf += line }
+        }
+        onExited: {
+            var raw = externalArtScanProc.outBuf.trim()
+            externalArtScanProc.outBuf = ""
+            var shouldAdvance = externalArtScanProc.advanceOnFinish
+            externalArtScanProc.advanceOnFinish = false
+            if (!raw) return
+            try {
+                var d = JSON.parse(raw)
+                if (d && d.ok && Array.isArray(d.externalArtImages)) {
+                    var prevImg = root.activeExternalArtImage
+                    root.externalArtImages = d.externalArtImages
+                    var prevCfg = root.visualiserConfig || ({})
+                    root.visualiserConfig = Object.assign({}, prevCfg, { externalArtImages: d.externalArtImages })
+                    if (shouldAdvance && d.externalArtImages.length > 1) {
+                        root.externalArtIndex = (root.externalArtIndex + 1) % d.externalArtImages.length
+                    } else if (root.externalArtIndex >= d.externalArtImages.length) {
+                        root.externalArtIndex = 0
+                    }
+                    if (root.usingExternalMetadata && root.activeExternalArtImage !== prevImg) {
+                        root.refreshAsciiArt()
+                    }
+                }
+            } catch (e) {}
+        }
+    }
+
+    Timer {
+        id: externalArtPollTimer
+        interval: Math.max(3, root.externalArtCycleSeconds) * 1000
+        repeat: true
+        running: root.usingExternalMetadata && root.externalArtPollEnabled && (root.visualiserActive || root.fullscreenVisualiserOpen || root.visualiserPlaying)
+        onTriggered: root.pollExternalArtFolder(true)
+    }
+
+    function pollExternalArtFolder(advanceIndex) {
+        if (!advanceIndex && visualiserConfigProc.running) {
+            return
+        }
+        if (externalArtScanProc.running) externalArtScanProc.running = false
+        externalArtScanProc.outBuf = ""
+        externalArtScanProc.advanceOnFinish = Boolean(advanceIndex)
+        var target = String(root.externalArtPath || "").trim()
+        externalArtScanProc.command = [
+            root.binPath, "visualiser-config",
+            "--scan-external-art", target
+        ]
+        externalArtScanProc.running = true
+    }
+
+    function stepExternalArt(delta) {
+        var imgs = root.externalArtImages
+        if (Array.isArray(imgs) && imgs.length > 0) {
+            var step = Number(delta) || 1
+            root.externalArtIndex = ((root.externalArtIndex + step) % imgs.length + imgs.length) % imgs.length
+            if (root.usingExternalMetadata) {
+                root.refreshAsciiArt()
+            }
+        } else {
+            root.pollExternalArtFolder(true)
+        }
+    }
+
+
+    function openExternalArtFolder() {
+        Quickshell.execDetached([
+            root.binPath, "visualiser-config",
+            "--open-external-art-dir"
+        ])
     }
 
     property bool _screensaverInhibitedByUs: false
@@ -736,10 +945,111 @@ Item {
         visualiserConfigProc.running = true
     }
 
+    function openExternalTracksFile() {
+        Quickshell.execDetached([
+            root.binPath, "visualiser-config",
+            "--open-external-tracks"
+        ])
+    }
+
+    function saveExternalTracks(tracksArr) {
+        if (!Array.isArray(tracksArr)) return
+        var prevCfg = root.visualiserConfig || ({})
+        var merged = Object.assign({}, prevCfg, { externalTracks: tracksArr })
+        root.externalTracksList = tracksArr
+        root.visualiserConfig = merged
+        root.visualiserConfigLoaded = true
+        if (visualiserConfigProc.running) visualiserConfigProc.running = false
+        visualiserConfigProc.outBuf = ""
+        visualiserConfigProc.command = [
+            root.binPath, "visualiser-config",
+            "--save-external-tracks", JSON.stringify(tracksArr)
+        ]
+        visualiserConfigProc.running = true
+    }
+
+    function resetExternalTracksFile() {
+        if (visualiserConfigProc.running) visualiserConfigProc.running = false
+        visualiserConfigProc.outBuf = ""
+        visualiserConfigProc.command = [
+            root.binPath, "visualiser-config",
+            "--reset-external-tracks"
+        ]
+        visualiserConfigProc.running = true
+    }
+
+    function refreshAudioSources() {
+        loadVisualiserConfig()
+    }
+
+    function setExternalTrackMetadata(artist, track, album, artPath) {
+        root.externalArtist = String(artist || "").trim()
+        root.externalTrack = String(track || "").trim()
+        root.externalAlbum = String(album || "").trim()
+        if (artPath !== undefined) {
+            root.externalArtPath = String(artPath || "").trim()
+        }
+        root.externalArcPosition = 0.0
+        saveVisualiserConfig({
+            externalArtist: root.externalArtist,
+            externalTrack: root.externalTrack,
+            externalAlbum: root.externalAlbum,
+            externalArtPath: root.externalArtPath
+        })
+        root.refreshAsciiArt()
+    }
+
+    function setAudioInputConfig(mode, sourceName) {
+        root.audioInputMode = String(mode || "auto").trim()
+        root.audioInputSource = String(sourceName || "auto").trim()
+        saveVisualiserConfig({
+            audioInputMode: root.audioInputMode,
+            audioInputSource: root.audioInputSource
+        })
+    }
+
+    function restartCavaProcess() {
+        if (!cavaProc.running) return
+        cavaProc.running = false
+        cavaRestartTimer.restart()
+    }
+
+    Timer {
+        id: cavaRestartTimer
+        interval: 50
+        repeat: false
+        onTriggered: {
+            cavaProc.running = Qt.binding(function() {
+                return root.activelyPlaying || root.visualiserActive || root.fullscreenVisualiserOpen || (root.externalAudioSyncEnabled && root.topBarLedEnabled)
+            })
+        }
+    }
+
     function saveVisualiserConfig(cfgObj) {
         if (!cfgObj || typeof cfgObj !== "object") return
         var prevCfg = root.visualiserConfig || ({})
         var merged = Object.assign({}, prevCfg, cfgObj)
+        if (cfgObj.audioInputMode !== undefined) root.audioInputMode = String(cfgObj.audioInputMode || "auto")
+        if (cfgObj.audioInputSource !== undefined) root.audioInputSource = String(cfgObj.audioInputSource || "auto")
+        if (cfgObj.audioGateThreshold !== undefined) root.audioGateThreshold = Math.max(10, Math.min(250, Math.round(Number(cfgObj.audioGateThreshold) || 35)))
+        if (cfgObj.externalArcDuration !== undefined) root.externalArcDuration = Math.max(30.0, Math.min(600.0, Number(cfgObj.externalArcDuration) || 240.0))
+        if (cfgObj.externalMetadataMode !== undefined) root.externalMetadataMode = String(cfgObj.externalMetadataMode || "auto")
+        if (cfgObj.externalArtist !== undefined) root.externalArtist = String(cfgObj.externalArtist || "")
+        if (cfgObj.externalTrack !== undefined) root.externalTrack = String(cfgObj.externalTrack || "")
+        if (cfgObj.externalAlbum !== undefined) root.externalAlbum = String(cfgObj.externalAlbum || "")
+        if (cfgObj.externalArtPath !== undefined) root.externalArtPath = String(cfgObj.externalArtPath || "")
+        if (cfgObj.externalArtDir !== undefined) root.externalArtDir = String(cfgObj.externalArtDir || "~/Pictures/bandarchy/external_art")
+        if (cfgObj.externalArtCycleSeconds !== undefined) root.externalArtCycleSeconds = Math.max(3, Math.min(300, Math.round(Number(cfgObj.externalArtCycleSeconds) || 15)))
+        if (cfgObj.externalArtPollEnabled !== undefined) root.externalArtPollEnabled = Boolean(cfgObj.externalArtPollEnabled)
+
+        var audioInputChanged = (cfgObj.audioInputMode !== undefined && cfgObj.audioInputMode !== prevCfg.audioInputMode)
+            || (cfgObj.audioInputSource !== undefined && cfgObj.audioInputSource !== prevCfg.audioInputSource)
+        var externalArtTargetChanged = (cfgObj.externalArtPath !== undefined && cfgObj.externalArtPath !== prevCfg.externalArtPath)
+            || (cfgObj.externalArtDir !== undefined && cfgObj.externalArtDir !== prevCfg.externalArtDir)
+            || (cfgObj.externalArtist !== undefined && cfgObj.externalArtist !== prevCfg.externalArtist)
+            || (cfgObj.externalTrack !== undefined && cfgObj.externalTrack !== prevCfg.externalTrack)
+            || (cfgObj.externalAlbum !== undefined && cfgObj.externalAlbum !== prevCfg.externalAlbum)
+
         root.visualiserConfig = merged
         root.visualiserConfigLoaded = true
         root.syncScreensaverInhibit()
@@ -747,32 +1057,58 @@ Item {
                 || cfgObj.statementText !== prevCfg.statementText
                 || cfgObj.layer3ShowArtist !== prevCfg.layer3ShowArtist
                 || cfgObj.layer3ShowTrack !== prevCfg.layer3ShowTrack
-                || cfgObj.layer3ShowAlbum !== prevCfg.layer3ShowAlbum) {
+                || cfgObj.layer3ShowAlbum !== prevCfg.layer3ShowAlbum
+                || cfgObj.externalMetadataMode !== prevCfg.externalMetadataMode
+                || cfgObj.externalArtist !== prevCfg.externalArtist
+                || cfgObj.externalTrack !== prevCfg.externalTrack
+                || cfgObj.externalAlbum !== prevCfg.externalAlbum
+                || externalArtTargetChanged) {
             root.refreshAsciiArt()
         }
-        Quickshell.execDetached([
-            root.binPath, "visualiser-config",
-            "--set", JSON.stringify(merged)
-        ])
+        if (externalArtTargetChanged) {
+            root.externalArtIndex = 0
+            if (externalArtScanProc.running) externalArtScanProc.running = false
+        }
+        if (audioInputChanged || externalArtTargetChanged) {
+            if (visualiserConfigProc.running) visualiserConfigProc.running = false
+            visualiserConfigProc.outBuf = ""
+            visualiserConfigProc.command = [
+                root.binPath, "visualiser-config",
+                "--set", JSON.stringify(merged)
+            ]
+            visualiserConfigProc.running = true
+        } else {
+            Quickshell.execDetached([
+                root.binPath, "visualiser-config",
+                "--set", JSON.stringify(merged)
+            ])
+        }
     }
 
     // Cava 60 FPS 64-band live audio spectrum process
     Process {
         id: cavaProc
         command: ["/usr/bin/cava", "-p", root.cavaConfPath]
-        running: root.activelyPlaying || root.visualiserActive || root.fullscreenVisualiserOpen
+        running: root.activelyPlaying || root.visualiserActive || root.fullscreenVisualiserOpen || (root.externalAudioSyncEnabled && root.topBarLedEnabled)
         stdout: SplitParser {
             onRead: line => {
                 var parts = line.trim().split(";")
                 if (parts.length < 16) return
                 var vals = []
+                var maxVal = 0
                 for (var i = 0; i < parts.length; i++) {
                     if (parts[i] === "") continue
                     var n = parseInt(parts[i], 10)
-                    vals.push(isNaN(n) ? 0 : n)
+                    var cleanN = isNaN(n) ? 0 : n
+                    vals.push(cleanN)
+                    if (cleanN > maxVal) maxVal = cleanN
                 }
                 if (vals.length >= 16) {
                     root.spectrumBands = vals
+                    if (maxVal >= Math.max(10, root.audioGateThreshold)) {
+                        root.audioSignalActive = true
+                        audioSignalHoldTimer.restart()
+                    }
                 }
             }
         }
@@ -859,22 +1195,31 @@ Item {
             "--width", "68",
             "--height", "30"
         ]
-        var fb = root.lastPlayedTrack || ((root.albums && root.albums.length > 0) ? root.albums[0] : null)
-        var aid = customAlbumId || root.albumId || (fb ? (fb.albumId || fb.id || "") : "")
-        var apath = root.artPath || (fb ? (fb.artPath || "") : "")
-        if (aid) {
-            cmd.push("--album", aid)
-        } else if (apath) {
-            cmd.push("--image", apath)
+        var useExt = root.usingExternalMetadata && !customAlbumId
+        var fb = useExt ? null : (root.lastPlayedTrack || ((root.albums && root.albums.length > 0) ? root.albums[0] : null))
+        if (useExt) {
+            cmd.push("--external-source")
+            var extImg = root.effectiveArtPath || root.externalArtPath || root.externalArtDir
+            if (extImg) {
+                cmd.push("--image", extImg)
+            }
+        } else {
+            var aid = customAlbumId || root.albumId || (fb ? (fb.albumId || fb.id || "") : "")
+            var apath = root.artPath || (fb ? (fb.artPath || "") : "")
+            if (aid) {
+                cmd.push("--album", aid)
+            } else if (apath) {
+                cmd.push("--image", apath)
+            }
         }
         var vc = root.visualiserConfig || ({})
         var showArtist = vc.layer3ShowArtist !== undefined ? Boolean(vc.layer3ShowArtist) : true
         var showTrack = vc.layer3ShowTrack !== undefined ? Boolean(vc.layer3ShowTrack) : true
         var showAlbum = vc.layer3ShowAlbum !== undefined ? Boolean(vc.layer3ShowAlbum) : true
         var showStatements = vc.layer3ShowStatements !== undefined ? Boolean(vc.layer3ShowStatements) : false
-        var effArtist = root.trackArtist || (fb ? (fb.artist || "") : "")
-        var effTrack = root.trackTitle || (fb ? (fb.title || fb.album || "") : "")
-        var effAlbum = root.trackAlbum || (fb ? (fb.album || fb.title || "") : "")
+        var effArtist = useExt ? root.effectiveTrackArtist : (root.effectiveTrackArtist || (fb ? (fb.artist || "") : ""))
+        var effTrack = useExt ? root.effectiveTrackTitle : (root.effectiveTrackTitle || (fb ? (fb.title || fb.album || "") : ""))
+        var effAlbum = useExt ? root.effectiveTrackAlbum : (root.effectiveTrackAlbum || (fb ? (fb.album || fb.title || "") : ""))
         var effStatement = String(vc.statementText || "").trim()
         var parts = []
         if (showArtist && effArtist) parts.push(effArtist)
@@ -1127,10 +1472,16 @@ Item {
             "--use-album-art", root.useAlbumArt ? "1" : "0",
             "--effect", "random"
         ]
-        if (root.albumId) cmd.push("--album", root.albumId)
-        else if (root.artPath) cmd.push("--image", root.artPath)
-        if (root.trackArtist || root.trackTitle) {
-            cmd.push("--text", root.trackArtist || root.trackTitle)
+        if (root.usingExternalMetadata) {
+            cmd.push("--external-source")
+            var extImg = root.effectiveArtPath || root.externalArtPath || root.externalArtDir
+            if (extImg) cmd.push("--image", extImg)
+        } else {
+            if (root.albumId) cmd.push("--album", root.albumId)
+            else if (root.artPath) cmd.push("--image", root.artPath)
+        }
+        if (root.effectiveTrackArtist || root.effectiveTrackTitle) {
+            cmd.push("--text", root.effectiveTrackArtist || root.effectiveTrackTitle)
         }
         Quickshell.execDetached(cmd)
         root.notifyAction("Launched Omarchy TTE Screensaver (Random Effects)")

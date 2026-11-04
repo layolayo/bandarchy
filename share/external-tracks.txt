@@ -1,0 +1,17 @@
+# Bandarchy — External Audio Track & Album Art Metadata
+# Used by Layer 6 (6: Typography) Q (Artist), W (Track), E (Album), and Album Art
+# when synchronising the visualiser to external audio inputs (Line-In, USB, Monitor)
+# or when overriding metadata in Custom mode.
+# Format: Artist | Track | Album | ArtSubfolderOrFile   (4th field optional relative to ~/Pictures/bandarchy/external_art/; '#' comments ignored)
+# Canonical external art folder: ~/Pictures/bandarchy/external_art/
+# Your personal copy lives at: ~/.config/bandarchy/external-tracks.txt
+
+The Black Dog | Cost II | Music for Real Airports | black_dog
+Boards of Canada | Roygbiv | Music Has the Right to Children | boards_of_canada
+Porcupine Tree | Voyage 34 (Phase I) | Voyage 34: The Complete Trip | porcupine_tree
+Aphex Twin | Xtal | Selected Ambient Works 85-92 | aphex_twin
+Autechre | Nil | Amber | autechre
+King Gizzard & The Lizard Wizard | Robot Stop | Nonagon Infinity | king_gizzard
+Max Richter | On the Nature of Daylight | The Blue Notebooks | max_richter
+Plaid | Eyen | Rest Proof Clockwork | plaid
+
