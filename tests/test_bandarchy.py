@@ -3278,14 +3278,17 @@ const fs = require('fs');
 let code = fs.readFileSync('PsychedelicEngine.js', 'utf8').replace(/^\.pragma library\s*/m, '');
 eval(code);
 
-if (SHORT_LAYER3_ART_STYLES.length !== 21 || SHORT_LAYER3_TEXT_STYLES.length !== 21) {
-    throw new Error('Expected 21 SHORT_LAYER3_ART_STYLES and SHORT_LAYER3_TEXT_STYLES');
+if (SHORT_LAYER3_ART_STYLES.length !== 22 || SHORT_LAYER3_TEXT_STYLES.length !== 21) {
+    throw new Error('Expected 22 SHORT_LAYER3_ART_STYLES and 21 SHORT_LAYER3_TEXT_STYLES');
 }
-for (let i = 0; i < 21; i++) {
+for (let i = 0; i < SHORT_LAYER3_ART_STYLES.length; i++) {
     const prefix = '#' + (i + 1) + ' ';
     if (!SHORT_LAYER3_ART_STYLES[i].startsWith(prefix)) {
         throw new Error(`SHORT_LAYER3_ART_STYLES[${i}] missing "${prefix}": ${SHORT_LAYER3_ART_STYLES[i]}`);
     }
+}
+for (let i = 0; i < SHORT_LAYER3_TEXT_STYLES.length; i++) {
+    const prefix = '#' + (i + 1) + ' ';
     if (!SHORT_LAYER3_TEXT_STYLES[i].startsWith(prefix)) {
         throw new Error(`SHORT_LAYER3_TEXT_STYLES[${i}] missing "${prefix}": ${SHORT_LAYER3_TEXT_STYLES[i]}`);
     }
@@ -3380,7 +3383,7 @@ const artCool = Array.from({length: 14}, (_, r) =>
     '\x1b[38;2;20;' + (140 + r * 6) + ';250m⣿⣷⣯⣟⡿⢿⣻⣽\x1b[0m'.repeat(3)
 );
 
-for (let stIdx = 0; stIdx < 21; stIdx++) {
+for (let stIdx = 0; stIdx < LAYER3_ART_STYLES.length; stIdx++) {
     const ctxWarmP0 = makeInspectCtx();
     const ctxCoolP0 = makeInspectCtx();
     const ctxWarmP5 = makeInspectCtx();

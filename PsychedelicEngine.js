@@ -224,7 +224,8 @@ var LAYER3_ART_STYLES = [
     "Isometric Cityscape Extrude",
     "CMYK Rosette Halftone Press",
     "Magnetic Dipole Vector Field",
-    "Holographic Slice Tomography"
+    "Holographic Slice Tomography",
+    "Direct Cover Canvas (Minimal Translation)"
 ]
 
 var SHORT_LAYER3_ART_STYLES = [
@@ -248,7 +249,8 @@ var SHORT_LAYER3_ART_STYLES = [
     "#18 Iso City",
     "#19 CMYK Press",
     "#20 Dipole Field",
-    "#21 Tomography"
+    "#21 Tomography",
+    "#22 Direct Image"
 ]
 
 var LAYER3_RANDOM_MODES = [
@@ -17699,7 +17701,8 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
     var showAlbum = cfg.layer3ShowAlbum !== undefined ? Boolean(cfg.layer3ShowAlbum) : true
     var showStatements = cfg.layer3ShowStatements !== undefined ? Boolean(cfg.layer3ShowStatements) : false
     var anyTextEnabled = (showArtist || showTrack || showAlbum || showStatements)
-    var textStyle = clamp(Math.round(Number(cfg.layer3TextStyle !== undefined ? cfg.layer3TextStyle : 0)), 0, LAYER3_TEXT_STYLES.length - 1)
+    var maxStyleCount = isWordsSource ? LAYER3_TEXT_STYLES.length : LAYER3_ART_STYLES.length
+    var textStyle = clamp(Math.round(Number(cfg.layer3TextStyle !== undefined ? cfg.layer3TextStyle : 0)), 0, maxStyleCount - 1)
     var colourMode = clamp(Math.round(Number(cfg.layer3ColourMode !== undefined ? cfg.layer3ColourMode : 0)), 0, LAYER3_COLOUR_MODES.length - 1)
     var cylDir = clamp(Math.round(Number(cfg.layer3CylinderDir !== undefined ? cfg.layer3CylinderDir : 0)), 0, LAYER3_CYLINDER_DIRS.length - 1)
 
@@ -19388,7 +19391,8 @@ function drawLayer3AlbumArt(ctx, w, h, state, palette, cfg, asciiLines, ttfxFram
 }
 
 function drawLayer3MacroArtStylePass(ctx, artStyle, l3Mode, state, cfg, activeStylePal, coverClusters, colourMode, l3Opac, passAlpha, layout) {
-    var st = ((artStyle % 21) + 21) % 21
+    var totalArtStyles = LAYER3_ART_STYLES.length
+    var st = ((artStyle % totalArtStyles) + totalArtStyles) % totalArtStyles
     var grid = state.artGrid || []
     var rowCells = state.artRowCells || []
     var mCols = Math.max(8, state.artCols || 44)
@@ -20482,7 +20486,7 @@ function drawLayer3MacroArtStylePass(ctx, artStyle, l3Mode, state, cfg, activeSt
             ctx.fill()
             if (!isEcho) ctx.stroke()
         }
-    } else {
+    } else if (st === 20) {
         // #21: Holographic Slice Tomography — 3D Slit-Scan MRI Ribbon Terrain & Translucent Depth Curtains (true cover + palette)
         var rStep20 = isEcho ? 3 : 2
         var scanRow20 = (l3T * 8.5) % mRows
@@ -20526,6 +20530,48 @@ function drawLayer3MacroArtStylePass(ctx, artStyle, l3Mode, state, cfg, activeSt
             ctx.lineWidth = isScanSlice ? 2.8 : (isBlock ? 2.3 : 1.6)
             ctx.stroke()
         }
+    } else {
+        // #22: Direct Cover Canvas (Minimal Translation) — High-Fidelity True-Image Raster + Contiguous True-RGB Pixel Mosaic
+        var midCell21 = grid[(mRows >> 1) * mCols + (mCols >> 1)] || cTL
+        var pMid21 = projCell(midCell21, 0, 0, 0.0)
+        var imgW21 = boxW * pMid21.scaleW * 0.98
+        var imgH21 = boxH * pMid21.scaleH * 0.98
+        if (artImgUrl && typeof ctx.drawImage === "function") {
+            ctx.save()
+            ctx.globalAlpha = clamp((isEcho ? 0.42 : 0.95) * l3Opac, 0.08, 1.0)
+            ctx.drawImage(artImgUrl, pMid21.x - imgW21 * 0.5, pMid21.y - imgH21 * 0.5, imgW21, imgH21)
+            ctx.restore()
+        }
+        // Contiguous zero-gap true-RGB pixel mosaic (preserves each cell's true RGB with minimal 10% palette tint)
+        var step21 = isEcho ? 3 : 2
+        var imgOverlayAlpha = (artImgUrl && !isEcho) ? 0.16 : 0.95
+        for (var gy21 = 0; gy21 < mRows; gy21 += step21) {
+            var palHex21 = activeStylePal[((gy21 >> 1) + bHueStep) % bPalLen] || "#00F5FF"
+            var palRgb21 = hexToRgb(palHex21)
+            for (var gx21 = 0; gx21 < mCols; gx21 += step21) {
+                var c21 = grid[gy21 * mCols + gx21]
+                if (!c21) continue
+                var cellCol21 = (colourMode === 0 && c21.r !== undefined)
+                    ? rgbToHex(
+                        Math.round(lerp(c21.r, palRgb21.r, 0.10)),
+                        Math.round(lerp(c21.g, palRgb21.g, 0.10)),
+                        Math.round(lerp(c21.b, palRgb21.b, 0.10))
+                    )
+                    : resolveArtCol(c21.clusterId % 8, c21, state.bassSmooth * 0.25, 0.0)
+                var z21 = (c21.zDepth || 0.0) * 0.04
+                var pr21 = projCell(c21, 0, 0, z21)
+                var tw21 = tileW * pr21.scaleW * step21 * 1.03
+                var th21 = tileH * pr21.scaleH * step21 * 1.03
+                ctx.fillStyle = colourWithAlpha(cellCol21, clamp(imgOverlayAlpha * l3Opac, 0.05, 0.98))
+                ctx.fillRect(pr21.x - tw21 * 0.5, pr21.y - th21 * 0.5, tw21, th21)
+            }
+        }
+        if (!isEcho) {
+            var frameCol21 = resolveArtCol(0, midCell21, state.bassSmooth * 0.3, 0.08)
+            ctx.strokeStyle = colourWithAlpha(frameCol21, clamp(0.45 * l3Opac, 0.08, 0.75))
+            ctx.lineWidth = 1.2
+            ctx.strokeRect(pMid21.x - imgW21 * 0.5, pMid21.y - imgH21 * 0.5, imgW21, imgH21)
+        }
     }
 
     // Mode 10 (Chromatic Mirror): Shimmering water-rippled inverted reflection beneath the stage baseline
@@ -20544,7 +20590,7 @@ function drawLayer3MacroArtStylePass(ctx, artStyle, l3Mode, state, cfg, activeSt
     }
 }
 
-// 21 Mathematical Art Interpretation Models for Layer 6 Album Art (`useAlbumArt === true`)
+// 22 Mathematical Art Interpretation Models for Layer 6 Album Art (`useAlbumArt === true`)
 function drawLayer3ArtStyleCell(ctx, artStyle, px, py, szW, szH, p, idx, bVal, l3T, isEcho) {
     var dens = clamp(Number(p.density !== undefined ? p.density : 0.65), 0.15, 1.0)
     var sal = clamp(Number(p.salience !== undefined ? p.salience : dens), 0.10, 1.0)
@@ -20553,7 +20599,7 @@ function drawLayer3ArtStyleCell(ctx, artStyle, px, py, szW, szH, p, idx, bVal, l
     var zDep = clamp(Number(p.zDepth !== undefined ? p.zDepth : 0.0), -1.0, 1.0)
     var dog = clamp(Number(p.dogVal !== undefined ? p.dogVal : 0.3), -1.0, 1.0)
     var mask = p.brailleMask || (((idx * 37 + 13) & 0xFF) | 0x09)
-    var st = ((artStyle % 21) + 21) % 21
+    var st = ((artStyle % LAYER3_ART_STYLES.length) + LAYER3_ART_STYLES.length) % LAYER3_ART_STYLES.length
 
     if (st === 0) {
         // 0: Chromatic K-Means 3D Planes — layered relief plate + depth shadow offset by cluster plane
@@ -20764,7 +20810,7 @@ function drawLayer3ArtStyleCell(ctx, artStyle, px, py, szW, szH, p, idx, bVal, l
         ctx.lineTo(px - dc * nLen * 0.35, py - ds * nLen * 0.35)
         ctx.lineTo(px + ds * nWid * 0.5, py - dc * nWid * 0.5)
         ctx.closePath()
-    } else {
+    } else if (st === 20) {
         // 20: Holographic Slice Tomography — horizontal topographic ribbon segment elevated by zDepth & salience
         var sliceW = szW * (0.95 + sal * 0.35)
         var sliceH = Math.max(1.6, szH * (0.18 + edge * 0.24))
@@ -20773,6 +20819,9 @@ function drawLayer3ArtStyleCell(ctx, artStyle, px, py, szW, szH, p, idx, bVal, l
         if (!isEcho && sal > 0.60) {
             ctx.rect(px - 1.0, ridgeY, 2.0, Math.max(2.0, (py - ridgeY)))
         }
+    } else {
+        // 21: Direct Cover Canvas (Minimal Translation) — contiguous 1:1 true-pixel block with minimal distortion
+        ctx.rect(px - szW * 0.51, py - szH * 0.51, szW * 1.02, szH * 1.02)
     }
 }
 
@@ -20878,7 +20927,7 @@ function normaliseConfig(cfg, mode, asciiLines) {
         layer3AutoRandomise: c.layer3RandomMode !== undefined ? (Math.round(Number(c.layer3RandomMode)) > 0) : Boolean(c.layer3AutoRandomise),
         autoCycle: Boolean(c.autoCycle),
         layer3Mode: c.layer3Mode !== undefined ? clamp(Math.round(Number(c.layer3Mode)), 0, LAYER3_MODES.length - 1) : 0,
-        layer3TextStyle: c.layer3TextStyle !== undefined ? clamp(Math.round(Number(c.layer3TextStyle)), 0, LAYER3_TEXT_STYLES.length - 1) : 0,
+        layer3TextStyle: c.layer3TextStyle !== undefined ? clamp(Math.round(Number(c.layer3TextStyle)), 0, Math.max(LAYER3_TEXT_STYLES.length, LAYER3_ART_STYLES.length) - 1) : 0,
         layer3CharSwap: c.layer3CharSwap !== undefined ? clamp(Number(c.layer3CharSwap), 0.0, 1.0) : 0.50,
         layer3FontPreset: c.layer3FontPreset !== undefined ? clamp(Math.round(Number(c.layer3FontPreset)), 0, LAYER3_FONT_PRESETS.length - 1) : 0,
         layer3CustomPalette: Array.isArray(c.layer3CustomPalette) ? c.layer3CustomPalette : [],

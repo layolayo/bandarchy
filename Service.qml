@@ -945,6 +945,8 @@ Item {
         visualiserConfigProc.running = true
     }
 
+    property int _externalTracksSaveSeq: 0
+
     function openExternalTracksFile() {
         Quickshell.execDetached([
             root.binPath, "visualiser-config",
@@ -954,16 +956,32 @@ Item {
 
     function saveExternalTracks(tracksArr) {
         if (!Array.isArray(tracksArr)) return
+        root._externalTracksSaveSeq = root._externalTracksSaveSeq + 1
         var prevCfg = root.visualiserConfig || ({})
-        var merged = Object.assign({}, prevCfg, { externalTracks: tracksArr })
+        var merged = Object.assign({}, prevCfg, {
+            externalTracks: tracksArr,
+            saveExternalTracks: tracksArr,
+            externalArtist: root.externalArtist,
+            externalTrack: root.externalTrack,
+            externalAlbum: root.externalAlbum,
+            externalArtPath: root.externalArtPath,
+            externalMetadataMode: root.externalMetadataMode
+        })
         root.externalTracksList = tracksArr
         root.visualiserConfig = merged
         root.visualiserConfigLoaded = true
-        if (visualiserConfigProc.running) visualiserConfigProc.running = false
+        if (visualiserConfigProc.running) {
+            visualiserConfigProc.running = false
+        }
         visualiserConfigProc.outBuf = ""
-        visualiserConfigProc.command = [
+        Quickshell.execDetached([
             root.binPath, "visualiser-config",
             "--save-external-tracks", JSON.stringify(tracksArr)
+        ])
+        visualiserConfigProc.command = [
+            root.binPath, "visualiser-config",
+            "--save-external-tracks", JSON.stringify(tracksArr),
+            "--set", JSON.stringify(merged)
         ]
         visualiserConfigProc.running = true
     }
@@ -1029,6 +1047,10 @@ Item {
         if (!cfgObj || typeof cfgObj !== "object") return
         var prevCfg = root.visualiserConfig || ({})
         var merged = Object.assign({}, prevCfg, cfgObj)
+        if (Array.isArray(root.externalTracksList) && root.externalTracksList.length > 0 && merged.saveExternalTracks === undefined) {
+            merged.saveExternalTracks = root.externalTracksList
+            merged.externalTracks = root.externalTracksList
+        }
         if (cfgObj.audioInputMode !== undefined) root.audioInputMode = String(cfgObj.audioInputMode || "auto")
         if (cfgObj.audioInputSource !== undefined) root.audioInputSource = String(cfgObj.audioInputSource || "auto")
         if (cfgObj.audioGateThreshold !== undefined) root.audioGateThreshold = Math.max(10, Math.min(250, Math.round(Number(cfgObj.audioGateThreshold) || 35)))

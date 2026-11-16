@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""
+bandarchy-audio-bridge — Ultra-low-latency (<10ms) real-time 64-band Cava FFT
+and track metadata streamer from local laptop (omarchy) to penguinplex.
+
+Uses fixed gain (`autosens = 0`) and a strict silence gate: when no music is
+playing on the laptop, ZERO UDP packets are sent so the remote stage immediately
+shows no audio input instead of amplifying background noise or running a synth.
+"""
+
+import argparse
+import json
+import os
+import socket
+import subprocess
+import threading
+import time
+import urllib.request
+from pathlib import Path
+
+LOW_LATENCY_CAVA_CONF = Path("/tmp/bandarchy-bridge-cava.conf")
+
+CAVA_CONF_TEXT = """[general]
+mode = normal
+framerate = 60
+bars = 64
+autosens = 0
+sensitivity = 260
+lower_cutoff_freq = 25
+higher_cutoff_freq = 16500
+
+[input]
+method = pulse
+source = auto
+
+[output]
+method = raw
+raw_target = /dev/stdout
+data_format = ascii
+ascii_max_range = 1000
+bar_delimiter = 59
+frame_delimiter = 10
+channels = mono
+mono_option = average
+
+[smoothing]
+noise_reduction = 8
+"""
+
+NOISE_GATE_THRESHOLD = 12
+
+
+def is_Real_Audio_Stream_Uncorked() -> bool:
+    """Return True if at least one real audio stream (Chrome, mpv, Spotify, etc.) is uncorked in PipeWire."""
+    try:
+        res = subprocess.run(
+            ["pactl", "list", "sink-inputs"],
+            capture_output=True, text=True, timeout=1.0
+        )
+        if res.returncode != 0:
+            return True
+        blocks = res.stdout.split("Sink Input #")
+        for blk in blocks[1:]:
+            if "Corked: no" in blk and 'media.name = "quickshell"' not in blk:
+                return True
+        return False
+    except Exception:
+        return True
+
+
+STREAM_GATE = {"uncorked": True}
+
+
+def stream_state_loop():
+    while True:
+        STREAM_GATE["uncorked"] = is_Real_Audio_Stream_Uncorked()
+        time.sleep(0.35)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Stream local Cava 64-band FFT to remote Bandarchy server")
+    parser.add_argument("--target-host", default="192.168.86.44", help="Remote Bandarchy server IP/hostname")
+    parser.add_argument("--target-port", type=int, default=8766, help="Remote UDP port (default: 8766)")
+    parser.add_argument("--http-port", type=int, default=8765, help="Remote HTTP port (default: 8765)")
+    args = parser.parse_args()
+
+    LOW_LATENCY_CAVA_CONF.write_text(CAVA_CONF_TEXT, encoding="utf-8")
+
+    t = threading.Thread(target=stream_state_loop, daemon=True)
+    t.start()
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    target = (args.target_host, args.target_port)
+
+    while True:
+        proc = None
+        try:
+            proc = subprocess.Popen(
+                ["stdbuf", "-oL", "cava", "-p", str(LOW_LATENCY_CAVA_CONF)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                bufsize=0,
+            )
+            fd = proc.stdout.fileno()
+            rem = b""
+            while True:
+                chunk = os.read(fd, 8192)
+                if not chunk:
+                    break
+                data = rem + chunk
+                lines = data.split(b"\n")
+                rem = lines.pop()
+                if not lines or not STREAM_GATE["uncorked"]:
+                    continue
+                latest = lines[-1].strip()
+                if not latest:
+                    continue
+                # Check noise gate: if all bands are below NOISE_GATE_THRESHOLD, send NOTHING
+                parts = [p for p in latest.split(b";") if p]
+                if not parts:
+                    continue
+                max_val = max(int(p) for p in parts if p.isdigit())
+                if max_val >= NOISE_GATE_THRESHOLD:
+                    sock.sendto(latest, target)
+        except Exception:
+            time.sleep(1.0)
+        finally:
+            if proc is not None:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+
+
+if __name__ == "__main__":
+    main()
