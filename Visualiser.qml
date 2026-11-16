@@ -4952,6 +4952,15 @@ FocusScope {
             var nextUseArt = (Math.random() < 0.5) ? !root.useAlbumArt : root.useAlbumArt
             root.selectL3SourceOrGlyph(nextUseArt ? "art" : "words")
         }
+        var stmtList = (root.statementsList && root.statementsList.length > 0) ? root.statementsList : Engine.DEFAULT_STATEMENTS
+        if (stmtList && stmtList.length > 0) {
+            var stmtCands = []
+            for (var si = 0; si < stmtList.length; si++) {
+                if (stmtList[si] !== root.currentStatement) stmtCands.push(stmtList[si])
+            }
+            var stmtPool = stmtCands.length > 0 ? stmtCands : stmtList
+            root.currentStatement = stmtPool[Math.floor(Math.random() * stmtPool.length)]
+        }
         var nextM = roll3 < total ? roll3 : ((root.layer3Mode + 1 + Math.floor(Math.random() * Math.max(1, total - 1))) % total)
         root.layer3Mode = nextM
         var totalStyles = root.useAlbumArt ? Engine.LAYER3_ART_STYLES.length : Engine.LAYER3_TEXT_STYLES.length

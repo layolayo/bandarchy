@@ -2549,8 +2549,120 @@ ShellRoot {
                                 service.setStageMode(newStageMode)
                             }
                             onRequestActionFeedback: message => {}
+                            property double lastWebUpdatedAt: -1.0
+                            property int lastWebActionSeq: 0
+                            property int lastWebPhotoSeq: -1
+                            property bool busyWebPolling: false
+                            property bool _applyingRemoteWebConfig: false
+
+                            function dispatchWebAction(name, arg) {
+                                if (name === "randomiseAll") appVisualiser.randomiseVisuals()
+                                else if (name === "toggleAllRand") appVisualiser.toggleAllRandomisations()
+                                else if (name === "shatter") appVisualiser.triggerShatterImpulse()
+                                else if (name === "randL1") appVisualiser.randomiseLayer1()
+                                else if (name === "randEq") appVisualiser.randomiseLayerEq()
+                                else if (name === "randVectors") appVisualiser.randomiseLayerVectors()
+                                else if (name === "randL2") appVisualiser.randomiseLayer2()
+                                else if (name === "randL4") appVisualiser.randomiseLayer4()
+                                else if (name === "randL3") appVisualiser.randomiseLayer3()
+                                else if (name === "applyPreset") appVisualiser.applyCollectivePreset(Number(arg || 0), true)
+                                else if (name === "applyL3Preset") appVisualiser.applySavedL3Config(Number(arg || 0))
+                                else if (name === "photoHold") appVisualiser.triggerPhotoHoldByKey()
+                                else if (name === "photoRandFx") appVisualiser.syncPhotoStateFromRoot()
+                            }
+
+                            function fetchWebControllerState() {
+                                var xhr = new XMLHttpRequest()
+                                xhr.open("GET", "http://127.0.0.1:8765/api/state")
+                                xhr.onreadystatechange = function() {
+                                    if (xhr.readyState === XMLHttpRequest.DONE && xhr.status === 200) {
+                                        try {
+                                            var data = JSON.parse(xhr.responseText)
+                                            var cfg = data.config || ({})
+                                            var srvUpd = Number(cfg.updatedAt || 0.0)
+                                            var cfgChanged = Math.abs(srvUpd - appVisualiser.lastWebUpdatedAt) > 0.0001
+                                            appVisualiser.lastWebUpdatedAt = srvUpd
+                                            if (data.photo && typeof data.photo === "object") {
+                                                var p = data.photo
+                                                var pSeq = Number(p.seq || 0)
+                                                if (pSeq !== appVisualiser.lastWebPhotoSeq) {
+                                                    var isInitialPhotoSync = (appVisualiser.lastWebPhotoSeq < 0)
+                                                    appVisualiser.lastWebPhotoSeq = pSeq
+                                                    if (!isInitialPhotoSync && p.activeStem) {
+                                                        service.pickPhoto(String(p.activeCategory || "all"), String(p.activeStem))
+                                                    }
+                                                }
+                                            }
+                                            if (cfgChanged) {
+                                                appVisualiser._applyingRemoteWebConfig = true
+                                                if (cfg.stageMode !== undefined && ["off", "art", "turntable", "visualiser"].indexOf(String(cfg.stageMode)) >= 0) {
+                                                    service.setStageMode(String(cfg.stageMode))
+                                                }
+                                                if (cfg.useAlbumArt !== undefined && Boolean(cfg.useAlbumArt) !== service.useAlbumArt) {
+                                                    service.setUseAlbumArt(Boolean(cfg.useAlbumArt))
+                                                }
+                                                if (cfg.asciiMode !== undefined && String(cfg.asciiMode) !== service.asciiMode) {
+                                                    service.setAsciiGlyphMode(String(cfg.asciiMode))
+                                                }
+                                                appVisualiser.applyPersistedConfig(cfg)
+                                                service.saveVisualiserConfig(cfg)
+                                                appVisualiser._applyingRemoteWebConfig = false
+                                            }
+                                            var actSeq = Number(data.actionSeq || 0)
+                                            if (actSeq > appVisualiser.lastWebActionSeq) {
+                                                var isInitialActSync = (appVisualiser.lastWebActionSeq === 0)
+                                                appVisualiser.lastWebActionSeq = actSeq
+                                                if (!isInitialActSync) {
+                                                    appVisualiser.dispatchWebAction(String(data.actionName || ""), data.actionArg)
+                                                }
+                                            }
+                                        } catch (e) {
+                                            appVisualiser._applyingRemoteWebConfig = false
+                                        }
+                                    }
+                                }
+                                xhr.send()
+                            }
+
+                            Timer {
+                                interval: 150
+                                running: true
+                                repeat: true
+                                onTriggered: {
+                                    if (appVisualiser.busyWebPolling) return
+                                    appVisualiser.busyWebPolling = true
+                                    var xhr = new XMLHttpRequest()
+                                    xhr.open("GET", "http://127.0.0.1:8765/api/fast")
+                                    xhr.onreadystatechange = function() {
+                                        if (xhr.readyState === XMLHttpRequest.DONE) {
+                                            appVisualiser.busyWebPolling = false
+                                            if (xhr.status === 200) {
+                                                try {
+                                                    var fast = JSON.parse(xhr.responseText)
+                                                    var srvUpd = Number(fast.updatedAt || 0.0)
+                                                    var actSeq = Number(fast.actionSeq || 0)
+                                                    var pSeq = Number(fast.photoSeq || 0)
+                                                    if (Math.abs(srvUpd - appVisualiser.lastWebUpdatedAt) > 0.0001
+                                                            || actSeq > appVisualiser.lastWebActionSeq
+                                                            || pSeq !== appVisualiser.lastWebPhotoSeq) {
+                                                        appVisualiser.fetchWebControllerState()
+                                                    }
+                                                } catch (e) {}
+                                            }
+                                        }
+                                    }
+                                    xhr.send()
+                                }
+                            }
+
                             onRequestSaveVisualiserConfig: cfg => {
                                 service.saveVisualiserConfig(cfg)
+                                if (!appVisualiser._applyingRemoteWebConfig) {
+                                    var xhr = new XMLHttpRequest()
+                                    xhr.open("POST", "http://127.0.0.1:8765/api/from-stage")
+                                    xhr.setRequestHeader("Content-Type", "application/json")
+                                    xhr.send(JSON.stringify(cfg || {}))
+                                }
                             }
                             onRequestOpenStatementsFile: {
                                 service.openStatementsFile()

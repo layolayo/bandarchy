@@ -1,0 +1,3061 @@
+#!/usr/bin/env python3
+"""
+bandarchy-web — Full 6-Layer Remote Studio Controller & Headless Stage Server for Bandarchy.
+
+Drives `HeadlessStage.qml` (which wraps the full hardware-accelerated `Visualiser.qml`
+at 60 FPS on `penguinplex`'s HDMI output) and serves the complete 8-tab, 6-layer
+Bandarchy Studio Controller at `http://penguinplex:8765/`.
+"""
+
+import argparse
+import hashlib
+import http.server
+import json
+import math
+import mimetypes
+import os
+import random
+import socket
+import socketserver
+import sys
+import threading
+import time
+import urllib.parse
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_DIR = SCRIPT_DIR.parent if (SCRIPT_DIR.parent / "PsychedelicEngine.js").exists() else SCRIPT_DIR
+CONFIG_DIR = Path.home() / ".config" / "bandarchy"
+CONFIG_PATH = CONFIG_DIR / "visualiser.json"
+EXT_TRACKS_PATH = CONFIG_DIR / "external-tracks.txt"
+TRACK_COLLECTIONS_PATH = CONFIG_DIR / "track-collections.json"
+STATEMENTS_PATH = CONFIG_DIR / "statements.txt"
+STATEMENT_COLLECTIONS_PATH = CONFIG_DIR / "statement-collections.json"
+PHOTO_BASE_DIR = Path.home() / "Pictures" / "bandarchy"
+EXT_ART_DIR = PHOTO_BASE_DIR / "external_art"
+
+STATE_LOCK = threading.Lock()
+ART_CACHE = {"seed": "", "lines": []}
+ACTION_STATE = {"seq": 0, "stageSeq": 0, "name": "", "arg": None}
+PHOTO_STATE = {
+    "seq": 0,
+    "categories": ["all", "brutalist", "architecture", "nature", "objects", "cyberpunk", "characters", "custom"],
+    "categoryCounts": {"all": 0},
+    "totalOriginals": 0,
+    "totalProcessed": 0,
+    "activeCategory": "all",
+    "activeStem": "",
+    "variants": {},
+    "sameEffectPeers": {},
+    "sameEffectByVariant": {},
+    "randomPoolPeers": {},
+    "history": [],
+    "historyIdx": -1,
+}
+LIVE_AUDIO = {
+    "bands": [0] * 64,
+    "lastReceivedAt": 0.0,
+    "source": "laptop",  # "laptop" (only responds to real laptop music; zero when silent) or "synth"
+    "pinnedSender": "auto",  # "auto" (sticky lock onto active sender IP) or specific IP like "192.168.86.249"
+    "activeSender": "",
+    "senders": {},  # ip -> {"bands": [...], "lastReceivedAt": float, "peak": int}
+}
+
+DEFAULT_EXT_TRACKS = [
+    {"artist": "Happy Birthday", "track": "Maya", "album": "youtube", "art": "studio"},
+    {"artist": "Maya", "track": "Minky", "album": "youtube", "art": "studio"},
+    {"artist": "Studio 54", "track": "Maya", "album": "youtube", "art": "studio"},
+]
+
+BUILTIN_TRACK_COLLECTIONS = [
+    {
+        "id": "studio_maya",
+        "name": "Studio & Maya (external-tracks.txt)",
+        "tracks": [
+            {"artist": "Happy Birthday", "track": "Maya", "album": "youtube", "art": "studio"},
+            {"artist": "Maya", "track": "Minky", "album": "youtube", "art": "studio"},
+            {"artist": "Studio 54", "track": "Maya", "album": "youtube", "art": "studio"},
+        ],
+    },
+    {
+        "id": "idm_ambient",
+        "name": "IDM, Ambient & Electronic Classics",
+        "tracks": [
+            {"artist": "The Black Dog", "track": "Cost II", "album": "Music for Real Airports", "art": "studio"},
+            {"artist": "Boards of Canada", "track": "Roygbiv", "album": "Music Has the Right to Children", "art": "studio"},
+            {"artist": "Aphex Twin", "track": "Xtal", "album": "Selected Ambient Works 85-92", "art": "studio"},
+            {"artist": "Autechre", "track": "Nil", "album": "Amber", "art": "studio"},
+            {"artist": "Plaid", "track": "Eyen", "album": "Rest Proof Clockwork", "art": "studio"},
+            {"artist": "Max Richter", "track": "On the Nature of Daylight", "album": "The Blue Notebooks", "art": "studio"},
+        ],
+    },
+    {
+        "id": "psych_prog",
+        "name": "Psychedelic & Prog Album Art",
+        "tracks": [
+            {"artist": "Pink Floyd", "track": "Astronomy Domine", "album": "The Piper at the Gates of Dawn", "art": "008_AlbumArt_Psych_1967_Pink_Floyd_Piper_At_The_Gates_Of_Dawn.jpg"},
+            {"artist": "Porcupine Tree", "track": "Voyage 34 (Phase I)", "album": "Voyage 34: The Complete Trip", "art": "StevenWilson"},
+            {"artist": "Steven Wilson", "track": "Luminol", "album": "The Raven That Refused to Sing", "art": "StevenWilson"},
+            {"artist": "King Gizzard & The Lizard Wizard", "track": "Robot Stop", "album": "Nonagon Infinity", "art": "studio"},
+        ],
+    },
+]
+
+DEFAULT_STATEMENTS = [
+    "WE ARE THE FREQUENCIES",
+    "RESONANCE IS ARCHITECTURE",
+    "SOUND BECOMES GEOMETRY",
+    "ENTER THE VORTEX",
+    "ACID IN THE CIRCUITRY",
+    "SYNTHESISE THE INFINITE",
+    "PULSE OF THE UNDERGROUND",
+    "SUBWOOFER CATHEDRAL",
+    "VOLTAGE AND VELVET",
+    "BEYOND THE EVENT HORIZON",
+    "ANALOGUE SOUL DIGITAL VOID",
+    "HYPNOTIC MOMENTUM",
+    "DANCE IN THE VECTOR FIELD",
+    "FUTURE PRIMITIVE RAVE",
+    "PHOSPHOR DREAMS IN 60HZ",
+    "NO BORDERS IN THE BASSLINE",
+    "LUMINOUS FREQUENCIES",
+    "TRANSMITTING FROM THE DEEP",
+    "KINETIC EUPHORIA",
+    "CYBERNETIC ECSTASY",
+    "EVERY BEAT REWRITES SPACE",
+    "MODULATE REALITY",
+    "ELECTRIC MYCELIUM",
+    "HIGH VOLTAGE SERENITY",
+    "ECHOES OF TOMORROW",
+    "THE FLOOR IS LIQUID LIGHT",
+    "WAREHOUSE TELEPATHY",
+    "OSCILLATE FOREVER",
+    "INFINITE FEEDBACK LOOP",
+    "LASER THROUGH THE FOG",
+    "CHROMATIC TRANSCENDENCE",
+    "SYNTHESIS IS LIBERATION",
+    "DEEP SPACE SUBHARMONICS",
+    "VECTOR HORIZON",
+    "PURE WAVEFORM ALCHEMY",
+    "NIGHT DRIVE TO INFINITY",
+    "NEURAL RAVE SYNCHRONISATION",
+    "SONIC HOLOGRAPHY",
+    "FRACTAL MEMORY",
+    "RHYTHM OF THE COSMOS",
+    "SUBTERRANEAN SUNRISE",
+    "ZERO GRAVITY GROOVE",
+    "PHANTOM OSCILLATOR",
+    "ULTRA VIOLET VELOCITY",
+    "SIGNAL IN THE NOISE",
+    "SILICON AND STARLIGHT",
+    "TIME DISSOLVES IN REVERB",
+    "POLYPHONIC REBELLION",
+    "BASS IS THE FOUNDATION",
+    "LIQUID CHROME HORIZON",
+    "PERPETUAL MOTION ENGINE",
+    "THE MACHINE BREATHES MUSIC",
+    "ASTRAL PROJECTION",
+    "HYPERDIMENSIONAL DUB",
+    "ACID HOUSE FOREVER",
+    "DEMOSCENE FOREVER",
+    "GREETINGS TO ALL NIGHT OWLS",
+    "STAY IN THE FREQUENCY",
+    "WE NEVER STOP DANCING",
+    "LIGHT SPEED ARPEGGIO",
+]
+
+BUILTIN_STATEMENT_COLLECTIONS = [
+    {
+        "id": "rave_demoscene",
+        "name": "Rave & Demoscene Manifestos (60 Default)",
+        "statements": DEFAULT_STATEMENTS,
+    },
+    {
+        "id": "studio_maya",
+        "name": "Studio 54 & Maya Celebration",
+        "statements": [
+            "HAPPY BIRTHDAY MAYA",
+            "STUDIO 54 FOREVER",
+            "MAYA & MINKY ON THE FLOOR",
+            "MIRRORBALL EUPHORIA",
+            "DISCO IN THE CIRCUITRY",
+            "VELVET ROPES AND LASER BEAMS",
+            "WE NEVER STOP DANCING",
+            "GLITTER AND SUBHARMONICS",
+            "ELECTRIC NIGHT AT STUDIO 54",
+            "CHAMPAGNE AND SYNTHESISERS",
+            "PURE DANCEFLOOR ALCHEMY",
+            "MIDNIGHT VELVET GROOVE",
+        ],
+    },
+    {
+        "id": "acid_warehouse",
+        "name": "Acid House & Warehouse Techno",
+        "statements": [
+            "ACID IN THE CIRCUITRY",
+            "303 RESONANCE OVERDRIVE",
+            "WAREHOUSE TELEPATHY",
+            "SUBWOOFER CATHEDRAL",
+            "PHOSPHOR DREAMS IN 60HZ",
+            "909 KICK DRUM ARCHITECTURE",
+            "NO BORDERS IN THE BASSLINE",
+            "INFINITE FEEDBACK LOOP",
+            "RAW ANALOGUE VOLTAGE",
+            "PULSE OF THE UNDERGROUND",
+            "ACID HOUSE FOREVER",
+            "STAY IN THE FREQUENCY",
+        ],
+    },
+    {
+        "id": "cosmic_psychedelic",
+        "name": "Cosmic & Psychedelic Philosophy",
+        "statements": [
+            "BEYOND THE EVENT HORIZON",
+            "RESONANCE IS ARCHITECTURE",
+            "SOUND BECOMES GEOMETRY",
+            "TIME DISSOLVES IN REVERB",
+            "ELECTRIC MYCELIUM",
+            "CHROMATIC TRANSCENDENCE",
+            "ASTRAL PROJECTION",
+            "FRACTAL MEMORY",
+            "RHYTHM OF THE COSMOS",
+            "HYPERDIMENSIONAL DUB",
+            "MODULATE REALITY",
+            "EVERY BEAT REWRITES SPACE",
+        ],
+    },
+    {
+        "id": "minimal_words",
+        "name": "Single Punchy Words",
+        "statements": [
+            "FREQUENCIES",
+            "VORTEX",
+            "RESONANCE",
+            "ECSTASY",
+            "SYNTHESIS",
+            "BASSLINE",
+            "HOLOGRAM",
+            "INFINITY",
+            "OSCILLATE",
+            "EUPHORIA",
+            "VELOCITY",
+            "TRANSCEND",
+        ],
+    },
+]
+
+DEFAULT_CONFIG = {
+    "version": 3,
+    "playing": True,
+    "stageMode": "visualiser",
+    "showHud": False,
+    "palette": 0,
+    "paletteIndex": 0,
+    "paletteRandomMode": 0,
+    "paletteCollectionIndex": 0,
+    "musicDrive": True,
+    "gpuShaderEnabled": True,
+    "antialiasingEnabled": True,
+    "renderQuality": 3,
+    "renderResW": 800,
+    "targetFps": 60,
+    "geometryDetail": 1.00,
+    "audioSensitivity": 1.45,
+    "beatPunch": 1.30,
+    "audioSmoothing": 0.22,
+    "colourCycleSpeed": 1.00,
+    "trackArcMode": 0,
+    "autoCycle": False,
+    "autoCycleIntervalSec": 18,
+    "presetTransitionEnabled": False,
+    "presetTransitionIntervalSec": 16,
+    # Layer 1: Worlds (Background + Photo Realm)
+    "layer1Enabled": True,
+    "layer1FieldEnabled": True,
+    "layer1AutoRandomise": False,
+    "layer1Mode": 12,
+    "layer1Direction": 1,
+    "layer1Speed": 1.00,
+    "layer1Density": 1.00,
+    "layer1Persistence": 0.84,
+    "layer1Dim": 0.16,
+    "layer1Opacity": 1.00,
+    # Layer 1 Mode #12: Stark Photo Realm
+    "photoActiveCategory": "all",
+    "photoPinnedVariant": -1,
+    "photoMotionMode": 0,
+    "photoPoolMode": 0,
+    "photoPlaneShearEnabled": False,
+    "photoPlaneShear": 0.00,
+    "photoAutoMotionEvents": False,
+    "photoRandomiseMotionControls": False,
+    "photoEffectChangeIntervalSec": 18.0,
+    "photoOpacity": 0.88,
+    "photoFadeDuration": 0.35,
+    "photoStrobeSpeed": 1.00,
+    "photoMotionActivity": 1.00,
+    "photoXyzTilt": 1.00,
+    "photoZoomPunch": 1.15,
+    "photoPaletteBloom": 1.20,
+    "photoWarpIntensity": 1.00,
+    "photoBlackOpacity": 1.00,
+    "photoMidOpacity": 1.00,
+    "photoWhiteOpacity": 1.00,
+    "photoColourSnatchOpacity": 1.00,
+    # Layer 2: Equaliser (28 Styles)
+    "layer1EqEnabled": True,
+    "layerEqAutoRandomise": False,
+    "layer1EqStyle": 0,
+    "layer1EqLayout": 0,
+    "layer1EqBandOrder": 0,
+    "layer1EqDamping": 0,
+    "layer1EqScale": 1.00,
+    "layer1EqGain": 0.80,
+    "layer1EqSpin": 1.00,
+    "layer1EqOpacity": 1.00,
+    # Layer 3: Vectors (16 3D Wireframes)
+    "layer1ShapesEnabled": True,
+    "layerVectorsAutoRandomise": False,
+    "layer1ShapeStyle": 0,
+    "layer1ShapeSpin": 1.00,
+    "layer1ShapeSpeed": 1.00,
+    "layer1ShapeScale": 1.00,
+    "layer1ShapeDensity": 1.00,
+    "layer1ShapeLifespan": 1.00,
+    "layer1ShapeFillRatio": 0.35,
+    "layer1ShapeFillOpacity": 0.55,
+    "layer1ShapesOpacity": 1.00,
+    # Layer 4: Geometry (13 Psychedelic Modes + Graded History Tracers)
+    "layer2Enabled": True,
+    "layer2VizEnabled": True,
+    "layer2AutoRandomise": False,
+    "visualMode": 0,
+    "symmetryIndex": 0,
+    "sensitivity": 1.35,
+    "layer2Complexity": 1.00,
+    "layer2Speed": 1.00,
+    "layer2Zoom": 1.00,
+    "layer2Chaos": 0.50,
+    "layer2FillRatio": 0.45,
+    "layer2FillOpacity": 0.55,
+    "layer2Opacity": 1.00,
+    "layer2TracersEnabled": True,
+    "tracerCount": 4,
+    "tracerSpeed": 1.15,
+    "tracerDrift": 1.00,
+    "tracerDirection": 1,
+    # Layer 5: Vortex (16 GPU Tunnels + Dual 2x Blend)
+    "layer4Enabled": False,
+    "backdropEnabled": False,
+    "layer4AutoRandomise": False,
+    "layer4Mode": 0,
+    "backdropMode": 0,
+    "layer4DualEnabled": False,
+    "layer4SecondaryMode": 1,
+    "layer4DualMix": 0.50,
+    "layer4WallPattern": 0,
+    "layer4Twist": 1.00,
+    "layer4Speed": 1.00,
+    "backdropSpeed": 1.00,
+    "layer4Glow": 1.00,
+    "backdropIntensity": 1.00,
+    "layer4Symmetry": 6,
+    "backdropSymmetry": 6,
+    "layer4Direction": 1,
+    "backdropDirection": 1,
+    "layer4Opacity": 0.85,
+    # Layer 6: Typography & Album Art (22 Art Styles / 21 Text Styles)
+    "layer3Enabled": True,
+    "layer3RandomMode": 0,
+    "layer3AutoRandomise": False,
+    "layer3TransitionPauseSec": 5.0,
+    "useAlbumArt": True,
+    "asciiMode": "braille",
+    "layer3Mode": 0,
+    "layer3TextStyle": 21,
+    "layer3FontPreset": 0,
+    "layer3ColourMode": 0,
+    "layer3CylinderDir": 0,
+    "layer3Dismantle": 0.45,
+    "layer3Rebuild": 1.00,
+    "layer3Evolution": 0.85,
+    "layer3Scale": 1.00,
+    "layer3Tracers": 1,
+    "layer3Opacity": 1.00,
+    "layer3ShowArtist": True,
+    "layer3ShowTrack": True,
+    "layer3ShowAlbum": True,
+    "layer3ShowStatements": False,
+    "statementCollectionId": "rave_demoscene",
+    "statementText": "WE ARE THE FREQUENCIES",
+    "statements": list(DEFAULT_STATEMENTS),
+    "trackCollectionId": "studio_maya",
+    "trackArtist": "Happy Birthday",
+    "trackTitle": "Maya",
+    "trackAlbum": "youtube",
+    "artPath": "",
+    "externalArtBranch": "studio",
+    "externalArtImages": [],
+    "externalArtIndex": 0,
+    "externalTrackIndex": 0,
+    "updatedAt": time.time(),
+}
+
+
+def scan_external_art_branches():
+    """Return discovered subfolders and root image files under ~/Pictures/bandarchy/external_art/."""
+    branches = []
+    if not EXT_ART_DIR.is_dir():
+        return branches
+    exts = {".jpg", ".jpeg", ".png", ".webp"}
+    try:
+        for entry in sorted(EXT_ART_DIR.iterdir(), key=lambda p: p.name.lower()):
+            if entry.name.startswith("."):
+                continue
+            if entry.is_dir():
+                imgs = [
+                    str(f)
+                    for f in sorted(entry.rglob("*"), key=lambda p: str(p).lower())
+                    if f.is_file() and f.suffix.lower() in exts
+                ]
+                branches.append({"id": entry.name, "label": f"📁 {entry.name} ({len(imgs)})", "count": len(imgs), "images": imgs})
+            elif entry.is_file() and entry.suffix.lower() in exts:
+                branches.append({"id": entry.name, "label": f"🖼 {entry.name[:28]}", "count": 1, "images": [str(entry)]})
+    except Exception:
+        pass
+    return branches
+
+
+def resolve_external_art_images(art_spec: str) -> tuple[str, list[str]]:
+    """Resolve a track's 4th-column art spec (subfolder like 'studio', relative file, or absolute path) to (primary_path, image_list)."""
+    exts = {".jpg", ".jpeg", ".png", ".webp"}
+    raw = str(art_spec or "").strip()
+    if raw:
+        cand_abs = Path(os.path.expanduser(raw))
+        if cand_abs.is_Absolute() if hasattr(cand_abs, "is_Absolute") else cand_abs.is_absolute():
+            if cand_abs.is_file() and cand_abs.suffix.lower() in exts:
+                return str(cand_abs), [str(cand_abs)]
+            if cand_abs.is_dir():
+                imgs = [str(f) for f in sorted(cand_abs.rglob("*")) if f.is_file() and f.suffix.lower() in exts]
+                if imgs:
+                    return imgs[0], imgs
+        cand_rel = EXT_ART_DIR / raw
+        if cand_rel.is_file() and cand_rel.suffix.lower() in exts:
+            return str(cand_rel), [str(cand_rel)]
+        if cand_rel.is_dir():
+            imgs = [str(f) for f in sorted(cand_rel.rglob("*")) if f.is_file() and f.suffix.lower() in exts]
+            if imgs:
+                return imgs[0], imgs
+    # Fallback: all images inside ~/Pictures/bandarchy/external_art/
+    if EXT_ART_DIR.is_dir():
+        imgs = [str(f) for f in sorted(EXT_ART_DIR.rglob("*")) if f.is_file() and f.suffix.lower() in exts]
+        if imgs:
+            return imgs[0], imgs
+    return "", []
+
+
+def pick_random_statement(stmts: list[str], current: str = "") -> str:
+    pool = [s for s in (stmts or DEFAULT_STATEMENTS) if s]
+    if not pool:
+        return "WE ARE THE FREQUENCIES"
+    cands = [s for s in pool if s != current]
+    return random.choice(cands if cands else pool)
+
+
+def load_statements() -> list[str]:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    if not STATEMENTS_PATH.exists():
+        save_statements(DEFAULT_STATEMENTS)
+        return list(DEFAULT_STATEMENTS)
+    out = []
+    try:
+        for raw in STATEMENTS_PATH.read_text(encoding="utf-8").splitlines():
+            s = raw.strip()
+            if not s or s.startswith("#"):
+                continue
+            out.append(s[:160])
+    except Exception:
+        pass
+    return out or list(DEFAULT_STATEMENTS)
+
+
+def save_statements(items) -> list[str]:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    clean = []
+    lines = ["# Bandarchy — 6: Typography Statements & Words Collection (~/.config/bandarchy/statements.txt)"]
+    if isinstance(items, str):
+        items = items.splitlines()
+    for raw in (items or []):
+        s = str(raw or "").strip()
+        if not s or s.startswith("#"):
+            continue
+        clean.append(s[:160])
+        lines.append(s[:160])
+    if not clean:
+        clean = list(DEFAULT_STATEMENTS)
+        lines.extend(clean)
+    STATEMENTS_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return clean
+
+
+def load_statement_collections() -> list[dict]:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    custom_cols = []
+    if STATEMENT_COLLECTIONS_PATH.exists():
+        try:
+            data = json.loads(STATEMENT_COLLECTIONS_PATH.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                custom_cols = [c for c in data if isinstance(c, dict) and c.get("id") and c.get("statements")]
+        except Exception:
+            pass
+    by_id = {c["id"]: dict(c) for c in BUILTIN_STATEMENT_COLLECTIONS}
+    for c in custom_cols:
+        by_id[str(c["id"])] = {
+            "id": str(c["id"]),
+            "name": str(c.get("name") or c["id"]),
+            "statements": [str(s).strip() for s in c.get("statements", []) if str(s).strip()],
+        }
+    return list(by_id.values())
+
+
+def save_statement_collection(col_id: str, name: str, statements: list[str]) -> list[dict]:
+    cols = load_statement_collections()
+    clean_stmts = [str(s).strip() for s in statements if str(s).strip() and not str(s).strip().startswith("#")]
+    if not clean_stmts:
+        return cols
+    updated = False
+    for c in cols:
+        if c["id"] == col_id:
+            c["name"] = name or c["name"]
+            c["statements"] = clean_stmts
+            updated = True
+            break
+    if not updated:
+        cols.append({"id": col_id, "name": name or col_id, "statements": clean_stmts})
+    STATEMENT_COLLECTIONS_PATH.write_text(json.dumps(cols, indent=2), encoding="utf-8")
+    return cols
+
+
+def load_track_collections() -> list[dict]:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    custom_cols = []
+    if TRACK_COLLECTIONS_PATH.exists():
+        try:
+            data = json.loads(TRACK_COLLECTIONS_PATH.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                custom_cols = [c for c in data if isinstance(c, dict) and c.get("id") and c.get("tracks")]
+        except Exception:
+            pass
+    by_id = {c["id"]: dict(c) for c in BUILTIN_TRACK_COLLECTIONS}
+    for c in custom_cols:
+        by_id[str(c["id"])] = {
+            "id": str(c["id"]),
+            "name": str(c.get("name") or c["id"]),
+            "tracks": c.get("tracks") or [],
+        }
+    return list(by_id.values())
+
+
+def save_track_collection(col_id: str, name: str, tracks: list[dict]) -> list[dict]:
+    cols = load_track_collections()
+    updated = False
+    for c in cols:
+        if c["id"] == col_id:
+            c["name"] = name or c["name"]
+            c["tracks"] = tracks
+            updated = True
+            break
+    if not updated:
+        cols.append({"id": col_id, "name": name or col_id, "tracks": tracks})
+    TRACK_COLLECTIONS_PATH.write_text(json.dumps(cols, indent=2), encoding="utf-8")
+    return cols
+
+
+def load_external_tracks():
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    if not EXT_TRACKS_PATH.exists():
+        save_external_tracks(DEFAULT_EXT_TRACKS)
+        return list(DEFAULT_EXT_TRACKS)
+    rows = []
+    try:
+        for raw in EXT_TRACKS_PATH.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = [p.strip() for p in line.split("|")]
+            rows.append({
+                "artist": parts[0] if len(parts) > 0 else "",
+                "track": parts[1] if len(parts) > 1 else "",
+                "album": parts[2] if len(parts) > 2 else "",
+                "art": parts[3] if len(parts) > 3 else "",
+            })
+    except Exception:
+        pass
+    return rows or list(DEFAULT_EXT_TRACKS)
+
+
+def save_external_tracks(tracks):
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    lines = ["# Bandarchy External Track Metadata (Artist | Track | Album | Optional Image/Folder Path)"]
+    clean = []
+    for item in tracks:
+        if not isinstance(item, dict):
+            continue
+        ar = str(item.get("artist", "")).replace("|", "/").strip()
+        tr = str(item.get("track", "")).replace("|", "/").strip()
+        al = str(item.get("album", "")).replace("|", "/").strip()
+        ap = str(item.get("art", "") or item.get("artPath", "")).replace("|", "/").strip()
+        if not (ar or tr or al):
+            continue
+        clean.append({"artist": ar, "track": tr, "album": al, "art": ap})
+        lines.append(f"{ar} | {tr} | {al} | {ap}" if ap else f"{ar} | {tr} | {al}")
+    EXT_TRACKS_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return clean
+
+
+QUALITY_RES_MAP = {0: 384, 1: 480, 2: 640, 3: 800, 4: 1024, 5: 1280}
+QUALITY_DETAIL_MAP = {0: 0.75, 1: 0.90, 2: 1.00, 3: 1.00, 4: 1.15, 5: 1.25}
+
+
+def apply_active_track_and_art(cfg: dict):
+    tracks = cfg.get("externalTracks") or []
+    if tracks:
+        idx = int(cfg.get("externalTrackIndex", 0) or 0) % len(tracks)
+        cfg["externalTrackIndex"] = idx
+        active = tracks[idx]
+        cfg["trackArtist"] = active.get("artist") or cfg.get("trackArtist", "")
+        cfg["trackTitle"] = active.get("track") or cfg.get("trackTitle", "")
+        cfg["trackAlbum"] = active.get("album") or cfg.get("trackAlbum", "")
+        art_spec = active.get("art") or cfg.get("externalArtBranch", "studio")
+    else:
+        art_spec = cfg.get("externalArtBranch", "studio")
+    primary_img, imgs = resolve_external_art_images(art_spec)
+    cfg["externalArtBranch"] = str(art_spec or "")
+    cfg["externalArtImages"] = imgs
+    if imgs:
+        eidx = int(cfg.get("externalArtIndex", 0) or 0) % len(imgs)
+        cfg["externalArtIndex"] = eidx
+        cfg["artPath"] = imgs[eidx]
+    else:
+        cfg["artPath"] = primary_img
+
+
+def load_state():
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    cfg = dict(DEFAULT_CONFIG)
+    if CONFIG_PATH.exists():
+        try:
+            disk = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+            if isinstance(disk, dict):
+                was_legacy = int(disk.get("version", 0) or 0) < 3
+                for k, v in disk.items():
+                    if k in cfg:
+                        cfg[k] = v
+                if was_legacy:
+                    cfg["version"] = 3
+                    cfg["renderQuality"] = 3
+                    cfg["renderResW"] = 800
+                    cfg["geometryDetail"] = 1.00
+                    cfg["targetFps"] = 60
+        except Exception:
+            pass
+    cfg["version"] = 3
+    if "paletteIndex" in cfg and cfg.get("palette") != cfg.get("paletteIndex"):
+        cfg["palette"] = int(cfg.get("paletteIndex", 0) or 0)
+    cfg["paletteIndex"] = int(cfg.get("palette", 0) or 0)
+    rq = int(cfg.get("renderQuality", 3) or 3)
+    if int(cfg.get("renderResW", 0) or 0) < 320:
+        cfg["renderResW"] = QUALITY_RES_MAP.get(rq, 800)
+    stmts = load_statements()
+    cfg["statements"] = stmts
+    if not cfg.get("statementText") or cfg["statementText"] not in stmts:
+        cfg["statementText"] = pick_random_statement(stmts)
+    tracks = load_external_tracks()
+    cfg["externalTracks"] = tracks
+    apply_active_track_and_art(cfg)
+    cfg["updatedAt"] = time.time()
+    return cfg
+
+
+LIVE_STATE = load_state()
+
+
+def persist_state():
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    disk = {}
+    if CONFIG_PATH.exists():
+        try:
+            disk = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+            if not isinstance(disk, dict):
+                disk = {}
+        except Exception:
+            disk = {}
+    skip_keys = {"externalTracks", "statements", "externalArtImages"}
+    for k, v in LIVE_STATE.items():
+        if k not in skip_keys:
+            disk[k] = v
+    CONFIG_PATH.write_text(json.dumps(disk, indent=2), encoding="utf-8")
+
+
+_BPI_MOD = None
+
+
+def _get_bpi_module():
+    global _BPI_MOD
+    if _BPI_MOD is not None:
+        return _BPI_MOD
+    for cand in (
+        PHOTO_BASE_DIR / "bandarchy_photo_import.py",
+        REPO_DIR / "share" / "photo_engine" / "bandarchy_photo_import.py",
+        SCRIPT_DIR / "bandarchy_photo_import.py",
+    ):
+        if cand.is_file():
+            sdir = str(cand.parent)
+            if sdir not in sys.path:
+                sys.path.insert(0, sdir)
+            try:
+                import bandarchy_photo_import as bpi
+                _BPI_MOD = bpi
+                return bpi
+            except Exception:
+                pass
+    return None
+
+
+def refresh_photo_library():
+    bpi = _get_bpi_module()
+    if not bpi or not (PHOTO_BASE_DIR / "processed").is_dir():
+        return
+    try:
+        parsed = bpi.rebuild_manifests(str(PHOTO_BASE_DIR))
+        if not isinstance(parsed, dict):
+            return
+        cats_dict = parsed.get("categories") or parsed.get("categories_summary") or {}
+        tot_imp = int(parsed.get("total_imported_sources", 0) or 0)
+        tot_proc = int(parsed.get("total_processed_outputs", 0) or 0)
+        counts = {"all": tot_imp}
+        for k, v in cats_dict.items():
+            if isinstance(v, dict):
+                counts[str(k)] = int(v.get("imported_count", 0) or 0)
+        disc = parsed.get("discovered_categories") or sorted(cats_dict.keys())
+        cats = ["all"] + [str(c) for c in disc if str(c) != "all"]
+        with STATE_LOCK:
+            PHOTO_STATE["categories"] = cats
+            PHOTO_STATE["categoryCounts"] = counts
+            PHOTO_STATE["totalOriginals"] = tot_imp
+            PHOTO_STATE["totalProcessed"] = tot_proc
+            PHOTO_STATE["seq"] += 1
+    except Exception:
+        pass
+
+
+def pick_photo_from_library(category: str = None, stem: str = None, step_history: int = 0, touch_updated_at: bool = True):
+    bpi = _get_bpi_module()
+    if not bpi or not (PHOTO_BASE_DIR / "processed").is_dir():
+        return
+    with STATE_LOCK:
+        cat = str(category or PHOTO_STATE.get("activeCategory") or LIVE_STATE.get("photoActiveCategory") or "all")
+        hist = PHOTO_STATE["history"]
+        hidx = PHOTO_STATE["historyIdx"]
+        exclude_stem = PHOTO_STATE.get("activeStem") or None
+
+    if step_history != 0 and hist:
+        new_idx = hidx + step_history
+        if 0 <= new_idx < len(hist):
+            cat, stem = hist[new_idx]
+            with STATE_LOCK:
+                PHOTO_STATE["historyIdx"] = new_idx
+            step_history = 0  # use exact stem from history
+
+    try:
+        res = bpi.pick_category_photo(
+            str(PHOTO_BASE_DIR),
+            category=cat,
+            stem=stem if stem else None,
+            exclude_stem=exclude_stem if not stem else None,
+        )
+        if not isinstance(res, dict) or not res.get("ok"):
+            return
+        picked_stem = str(res.get("source_stem") or res.get("sourceStem") or "")
+        picked_cat = cat
+        with STATE_LOCK:
+            PHOTO_STATE["activeCategory"] = picked_cat
+            LIVE_STATE["photoActiveCategory"] = picked_cat
+            PHOTO_STATE["activeStem"] = picked_stem
+            PHOTO_STATE["variants"] = res.get("variants") or {}
+            PHOTO_STATE["sameEffectPeers"] = res.get("sameEffectPeers") or {}
+            PHOTO_STATE["sameEffectByVariant"] = res.get("sameEffectByVariant") or {}
+            PHOTO_STATE["randomPoolPeers"] = res.get("randomPoolPeers") or {}
+            if not stem and picked_stem:
+                PHOTO_STATE["history"] = hist[: max(0, hidx + 1)] + [(picked_cat, picked_stem)]
+                if len(PHOTO_STATE["history"]) > 40:
+                    PHOTO_STATE["history"] = PHOTO_STATE["history"][-40:]
+                PHOTO_STATE["historyIdx"] = len(PHOTO_STATE["history"]) - 1
+            PHOTO_STATE["seq"] += 1
+            if touch_updated_at:
+                LIVE_STATE["updatedAt"] = time.time()
+    except Exception:
+        pass
+
+
+def get_cached_art_lines(seed_text: str, image_path: str = ""):
+    cache_key = f"{seed_text}::{image_path}"
+    if ART_CACHE["seed"] == cache_key and ART_CACHE["lines"]:
+        return ART_CACHE["lines"]
+    h = hashlib.sha256((seed_text or "bandarchy").encode("utf-8")).digest()
+    h1, h2 = h[0], h[1]
+    lines = []
+    cells = []
+    clusters = []
+    for k in range(8):
+        ang = (k / 8.0) * math.pi * 2.0 + (h1 / 255.0) * math.pi
+        r = int(127 + 115 * math.sin(ang))
+        g = int(127 + 115 * math.sin(ang + 2.094))
+        b = int(127 + 115 * math.sin(ang + 4.188))
+        clusters.append({"r": r, "g": g, "b": b, "hex": f"#{r:02x}{g:02x}{b:02x}"})
+
+    rows, cols = 14, 24
+    for r in range(rows):
+        ny = (r / max(1, rows - 1)) * 2.0 - 1.0
+        row_str = []
+        for c in range(cols):
+            nx = (c / max(1, cols - 1)) * 2.0 - 1.0
+            dist = math.sqrt(nx * nx + ny * ny)
+            ang = math.atan2(ny, nx)
+            wave = 0.5 + 0.5 * math.sin(dist * 5.0 - (h2 / 255.0) * 6.0 + math.cos(ang * 3.0))
+            cid = int(wave * 7.99) % 8
+            cl = clusters[cid]
+            sal = max(0.15, min(1.0, 1.15 - dist * 0.65))
+            edge = max(0.1, min(1.0, abs(math.cos(dist * 6.0)) * 0.85))
+            z_dep = max(-1.0, min(1.0, (0.6 - dist) * 1.2))
+            ch = chr(0x2800 + ((0xFF if sal > 0.45 else 0xDB) & 0xFF))
+            row_str.append(f"\x1b[38;2;{cl['r']};{cl['g']};{cl['b']}m{ch}")
+            cells.append({
+                "r": cl["r"], "g": cl["g"], "b": cl["b"],
+                "hex": cl["hex"],
+                "clusterId": cid,
+                "luma": round(0.299 * cl["r"] / 255 + 0.587 * cl["g"] / 255 + 0.114 * cl["b"] / 255, 3),
+                "salience": round(sal, 3),
+                "edgeMag": round(edge, 3),
+                "tangentRad": round((ang + math.pi * 0.5) % math.pi, 3),
+                "zDepth": round(z_dep, 3),
+                "normX": round(-nx * 0.7, 3),
+                "normY": round(-ny * 0.7, 3),
+                "dogVal": round(edge - 0.35, 3),
+                "contourLvl": int(wave * 7),
+                "thermal": round(wave - 0.5, 3),
+                "brailleMask": 255,
+            })
+        lines.append("".join(row_str) + "\x1b[0m")
+
+    model = {"cols": cols, "rows": rows, "clusters": clusters, "cells": cells, "imagePath": image_path or ""}
+    lines.append("#ARTMODEL:" + json.dumps(model, separators=(",", ":")))
+    ART_CACHE["seed"] = cache_key
+    ART_CACHE["lines"] = lines
+    return lines
+
+
+def get_active_audio_bands(now: float, playing: bool):
+    mode = LIVE_AUDIO.get("source", "laptop")
+    if mode == "synth":
+        return synthesise_audio_bands(now, playing), False
+
+    senders = LIVE_AUDIO.get("senders") or {}
+    pinned = LIVE_AUDIO.get("pinnedSender", "auto")
+    cur_active = LIVE_AUDIO.get("activeSender", "")
+
+    chosen_ip = ""
+    if pinned != "auto" and pinned in senders:
+        if (now - senders[pinned]["lastReceivedAt"]) < 0.30:
+            chosen_ip = pinned
+    else:
+        # Sticky lock: stay locked to cur_active while it is actively transmitting (< 1.0s gap)
+        if cur_active and cur_active in senders and (now - senders[cur_active]["lastReceivedAt"]) < 1.0:
+            if (now - senders[cur_active]["lastReceivedAt"]) < 0.30:
+                chosen_ip = cur_active
+        else:
+            # Pick the most recent / highest-energy active sender (< 0.30s)
+            fresh = [
+                (ip, info)
+                for ip, info in senders.items()
+                if (now - info["lastReceivedAt"]) < 0.30
+            ]
+            if fresh:
+                fresh.sort(key=lambda item: (item[1].get("peak", 0), item[1]["lastReceivedAt"]), reverse=True)
+                chosen_ip = fresh[0][0]
+                LIVE_AUDIO["activeSender"] = chosen_ip
+
+    if playing and chosen_ip and chosen_ip in senders:
+        LIVE_AUDIO["activeSender"] = chosen_ip
+        return senders[chosen_ip]["bands"], True
+    return [0] * 64, False
+
+
+def udp_cava_listener(port: int = 8766):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65536)
+    sock.bind(("0.0.0.0", port))
+    while True:
+        try:
+            sock.setblocking(True)
+            data, addr = sock.recvfrom(4096)
+            latest_by_ip = {addr[0]: data}
+            # Drain any newer UDP packets queued in the kernel socket buffer per sender IP
+            sock.setblocking(False)
+            while True:
+                try:
+                    newer, naddr = sock.recvfrom(4096)
+                    if newer:
+                        latest_by_ip[naddr[0]] = newer
+                except BlockingIOError:
+                    break
+            now = time.time()
+            for sender_ip, pkt in latest_by_ip.items():
+                line = pkt.decode("ascii", errors="ignore").strip()
+                if not line:
+                    continue
+                parts = [p for p in line.split(";") if p]
+                if len(parts) >= 16:
+                    vals = [int(float(x)) for x in parts[:64]]
+                    if len(vals) < 64:
+                        vals.extend([0] * (64 - len(vals)))
+                    peak = max(vals)
+                    if peak >= 10:
+                        LIVE_AUDIO["senders"][sender_ip] = {
+                            "bands": vals,
+                            "lastReceivedAt": now,
+                            "peak": peak,
+                        }
+                        LIVE_AUDIO["bands"] = vals
+                        LIVE_AUDIO["lastReceivedAt"] = now
+        except Exception:
+            pass
+
+
+def synthesise_audio_bands(t: float, playing: bool):
+    if not playing:
+        return [0] * 64
+    kick = max(0.0, math.sin(t * math.pi * 2.1)) ** 6
+    snare = max(0.0, math.sin(t * math.pi * 1.05 + 1.57)) ** 8
+    bands = []
+    for i in range(64):
+        norm = i / 63.0
+        sub = kick * max(0.0, 1.0 - norm * 3.2) * 780.0
+        mid = (0.45 + 0.55 * math.sin(t * 3.4 + i * 0.24)) * math.exp(-((norm - 0.38) ** 2) * 14.0) * 560.0
+        high = (snare * 0.65 + 0.35 * abs(math.sin(t * 7.8 + i * 0.6))) * math.exp(-((norm - 0.78) ** 2) * 18.0) * 480.0
+        bands.append(int(max(12.0, min(1000.0, sub + mid + high))))
+    return bands
+
+
+HTML_CONTROL = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bandarchy 6-Layer Studio Controller — penguinplex</title>
+<style>
+  :root {
+    --bg: #06090f;
+    --panel: #0c121d;
+    --panel2: #111927;
+    --border: rgba(110, 231, 183, 0.24);
+    --accent: #6ee7b7;
+    --urgent: #f472b6;
+    --red: #ef4444;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px;
+  }
+  .top-hud {
+    background: #080c14; border-bottom: 1px solid var(--border);
+    padding: 8px 12px; position: sticky; top: 0; z-index: 50;
+  }
+  .hud-row {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-bottom: 6px;
+  }
+  .hud-row:last-child { margin-bottom: 0; }
+  .brand { font-size: 13px; font-weight: 700; color: var(--accent); margin-right: 8px; }
+  .badge {
+    background: rgba(110,231,183,0.12); border: 1px solid var(--border);
+    padding: 3px 9px; border-radius: 99px; font-size: 11px; color: var(--accent);
+  }
+  .tabs-bar {
+    display: flex; flex-wrap: wrap; gap: 5px; padding: 8px 12px;
+    background: #0a0f19; border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .tab-btn {
+    padding: 6px 11px; font-weight: 700; border-radius: 6px;
+  }
+  .container { padding: 12px; max-width: 1500px; margin: 0 auto; }
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 980px) { .grid-2 { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 9px; padding: 12px; margin-bottom: 12px;
+  }
+  .card h3 {
+    margin: 0 0 9px 0; font-size: 11.5px; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--accent);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .sec-label {
+    margin: 9px 0 5px; color: var(--muted); font-weight: 600; font-size: 11px;
+  }
+  .pill-grid { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+  button {
+    background: rgba(255,255,255,0.045); color: var(--text);
+    border: 1px solid rgba(255,255,255,0.14); border-radius: 5px;
+    padding: 5px 9px; font-family: inherit; font-size: 11px;
+    cursor: pointer; transition: all 0.1s ease;
+  }
+  button:hover { border-color: var(--accent); color: #fff; }
+  button.active {
+    background: rgba(110, 231, 183, 0.24);
+    border-color: var(--accent); color: var(--accent); font-weight: 700;
+  }
+  button.urgent {
+    background: rgba(244, 114, 182, 0.16);
+    border-color: var(--urgent); color: var(--urgent); font-weight: 700;
+  }
+  button.urgent.active {
+    background: rgba(244, 114, 182, 0.34); color: #fff;
+  }
+  .row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; margin: 6px 0;
+  }
+  .row label { color: var(--muted); min-width: 165px; }
+  .row input[type=range] { flex: 1; accent-color: var(--accent); }
+  .row span.val { min-width: 48px; text-align: right; color: var(--accent); font-weight: 700; }
+  input[type=text], select {
+    background: #06090f; color: var(--text); border: 1px solid rgba(255,255,255,0.22);
+    border-radius: 5px; padding: 5px 8px; font-family: inherit; font-size: 11px;
+  }
+  input[type=text] { width: 100%; }
+  select { cursor: pointer; color: var(--accent); font-weight: 600; }
+  .quick-box {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: rgba(110, 231, 183, 0.06); padding: 3px 6px; border-radius: 6px;
+    border: 1px solid rgba(110, 231, 183, 0.25);
+  }
+  .quick-label { font-weight: 700; color: var(--muted); font-size: 10.5px; margin-right: 2px; }
+  .track-row {
+    display: grid; grid-template-columns: 1fr 1fr 1fr 1.2fr auto; gap: 6px;
+    margin-bottom: 6px; align-items: center;
+  }
+  .layer-group {
+    display: inline-flex; align-items: center; gap: 2px;
+    background: rgba(255,255,255,0.03); padding: 2px; border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.09);
+  }
+</style>
+</head>
+<body>
+
+<!-- TOP OMARCHY 6-LAYER HUD BAR -->
+<div class="top-hud">
+  <div class="hud-row">
+    <span class="brand">🎛 BANDARCHY STUDIO DECK (GTX 1660 HDMI)</span>
+    <span class="badge" id="nowPlayingBadge">Loading…</span>
+
+    <!-- Stage Mode Selector -->
+    <button id="st_art" onclick="setPatch({stageMode:'art'})">󰀥 Art</button>
+    <button id="st_turntable" onclick="setPatch({stageMode:'turntable'})">󰀸 Vinyl</button>
+    <button id="st_visualiser" onclick="setPatch({stageMode:'visualiser'})">󰍹 Visualiser</button>
+    <button id="st_off" onclick="setPatch({stageMode:'off'})">󰅖 Off</button>
+
+    <button id="playToggleBtn" class="active" onclick="toggleKey('playing')">▶ Playing</button>
+    <button onclick="window.open('/stage', '_blank')" title="Open Fullscreen Browser Stage in a new tab">🖥 Stage (/stage) ↗</button>
+    <button id="srcLaptopBtn" class="active" onclick="setAudioMode('laptop')" title="Use live music playing on your omarchy laptop">💻 Laptop Music</button>
+    <button id="srcSynthBtn" onclick="setAudioMode('synth')" title="Use server procedural beat generator">🤖 Demo Synth</button>
+    <span class="badge" id="udpSenderBadge" title="Active UDP Audio Sender IP (click to cycle if multiple PCs stream)" style="cursor:pointer" onclick="triggerAction('cycleAudioSender')">📡 UDP: Auto</span>
+    <canvas id="miniMeter" width="96" height="22" style="background:#04060a;border:1px solid var(--border);border-radius:4px;" title="Live 64-Band Audio Spectrum"></canvas>
+    <button id="hudToggleBtn" onclick="toggleKey('showHud')">󰍹 HDMI HUD: OFF</button>
+    <button id="musicDriveBtn" onclick="toggleKey('musicDrive')">🎵 Music Drive</button>
+    <button class="urgent" onclick="triggerAction('randomiseAll')">🎲 RANDOMISE ALL</button>
+    <button id="autoRandAllBtn" class="urgent" onclick="triggerAction('toggleAllRand')">♾ Auto-Rand All</button>
+    <button onclick="triggerAction('shatter')">💥 Shatter</button>
+  </div>
+
+  <!-- Row 2: All 6 Vivid Layers + Individual Layer Randomise Switches -->
+  <div class="hud-row">
+    <div class="layer-group">
+      <button id="top_l1" onclick="toggleL1()">1: Worlds</button>
+      <button id="top_l1_rand" onclick="toggleKey('layer1AutoRandomise')" title="Auto-Randomise 1: Worlds">🎲</button>
+    </div>
+    <div class="layer-group">
+      <button id="top_l2eq" onclick="toggleEq()">2: Equaliser</button>
+      <button id="top_l2eq_rand" onclick="toggleKey('layerEqAutoRandomise')" title="Auto-Randomise 2: Equaliser">🎲</button>
+    </div>
+    <div class="layer-group">
+      <button id="top_l3vec" onclick="toggleVectors()">3: Vectors</button>
+      <button id="top_l3vec_rand" onclick="toggleKey('layerVectorsAutoRandomise')" title="Auto-Randomise 3: Vectors">🎲</button>
+    </div>
+    <div class="layer-group">
+      <button id="top_l4geo" onclick="toggleKey('layer2Enabled')">4: Geometry</button>
+      <button id="top_l4geo_rand" onclick="toggleKey('layer2AutoRandomise')" title="Auto-Randomise 4: Geometry">🎲</button>
+    </div>
+    <div class="layer-group">
+      <button id="top_l5vor" onclick="toggleVortex()">5: Vortex</button>
+      <button id="top_l5vor_rand" onclick="toggleKey('layer4AutoRandomise')" title="Auto-Randomise 5: Vortex">🎲</button>
+    </div>
+    <div class="layer-group">
+      <button id="top_l6typ" onclick="toggleKey('layer3Enabled')">6: Typography</button>
+      <button id="top_l6typ_rand" onclick="cycleL3Rand()" title="Cycle Layer 6 Random Mode">🎲 OFF</button>
+    </div>
+  </div>
+
+  <!-- Row 3: Simple Always-Visible Quick Selectors for Photo Category, Track Collection & Statements -->
+  <div class="hud-row" style="margin-top:6px;">
+    <div class="quick-box">
+      <button id="top_photo_mode_btn" onclick="setPatch({layer1Enabled:true, layer1FieldEnabled:true, layer1Mode:11})" title="Switch Layer 1 to #12 Stark Photo Realm">📷 Photos</button>
+      <select id="topPhotoCatSelect" onchange="triggerAction('photoCatSelect', this.value)" title="Select Photo Category"></select>
+      <button onclick="triggerAction('photoPrev')" title="Previous Photo">◀</button>
+      <button onclick="triggerAction('photoNext')" title="Next Random Photo in Category">Next ▶</button>
+      <button class="urgent" onclick="triggerAction('photoRandFx')" title="Randomise Photo & 3D Motion Effect Now">🎲 Rand Now</button>
+      <button id="top_photo_autorand_btn" onclick="setPatch({layer1Enabled:true, layer1FieldEnabled:true, layer1Mode:11, photoAutoMotionEvents:!cfg.photoAutoMotionEvents, photoRandomiseMotionControls:!cfg.photoAutoMotionEvents})" title="Auto-Randomise Photos & 3D Photo Effects every N seconds (stays locked in Photo Realm)">♾ Auto-Rand Photos</button>
+    </div>
+
+    <div class="quick-box">
+      <span class="quick-label">🎵 Tracks:</span>
+      <select id="topTrackColSelect" onchange="triggerAction('selectTrackCollection', this.value)" title="Select Track Collection"></select>
+      <select id="topTrackSelect" onchange="setPatch({externalTrackIndex: Number(this.value)})" title="Select Active Track"></select>
+      <select id="topArtBranchSelect" onchange="triggerAction('selectArtBranch', this.value)" title="Select Cover Art Folder"></select>
+    </div>
+
+    <div class="quick-box">
+      <button id="top_stmt_mode_btn" onclick="setPatch({layer3Enabled:true, useAlbumArt:false, asciiMode:'text', layer3ShowStatements:!cfg.layer3ShowStatements})" title="Toggle Statements on Stage">💬 Statements</button>
+      <select id="topStmtColSelect" onchange="triggerAction('selectStatementCollection', this.value)" title="Select Statements Collection"></select>
+      <select id="topStmtSelect" onchange="setPatch({statementText: this.value, layer3ShowStatements:true, useAlbumArt:false, layer3Enabled:true})" title="Pick Individual Statement" style="max-width:210px;"></select>
+      <button onclick="triggerAction('nextStatement')" title="Next Statement">Next ▶</button>
+    </div>
+  </div>
+</div>
+
+<!-- 8 STUDIO TABS BAR -->
+<div class="tabs-bar">
+  <button class="tab-btn active" onclick="openTab(0, this)">★ Presets & Palettes</button>
+  <button class="tab-btn" onclick="openTab(1, this)">1: Worlds (24 + Photo)</button>
+  <button class="tab-btn" onclick="openTab(2, this)">2: Equaliser (28)</button>
+  <button class="tab-btn" onclick="openTab(3, this)">3: Vectors (16)</button>
+  <button class="tab-btn" onclick="openTab(4, this)">4: Geometry (13 + Tracers)</button>
+  <button class="tab-btn" onclick="openTab(5, this)">5: Vortex (16 + Dual)</button>
+  <button class="tab-btn" onclick="openTab(6, this)">6: Typography (22 Art / 21 Text)</button>
+  <button class="tab-btn" onclick="openTab(7, this)">󰒓 Quality & Tracks</button>
+</div>
+
+<div class="container">
+
+  <!-- TAB 0: PRESETS & PALETTES -->
+  <div class="tab-pane active" id="tab_0">
+    <div class="grid-2">
+      <div class="card">
+        <h3>
+          <span>Collective Multi-Layer Presets (8)</span>
+          <button id="btn_presetTransitionEnabled" onclick="toggleKey('presetTransitionEnabled')">♾ Auto-Cycle Presets</button>
+        </h3>
+        <div id="collectivePresetsGrid" class="pill-grid"></div>
+        <div class="row">
+          <label>Preset Transition Interval (s)</label>
+          <input type="range" min="4" max="60" step="1" id="sl_presetTransitionIntervalSec" oninput="setNum('presetTransitionIntervalSec', this.value)">
+          <span class="val" id="val_presetTransitionIntervalSec">16</span>
+        </div>
+
+        <div class="sec-label">Song / Track Arc Progression Mode (5):</div>
+        <div id="trackArcGrid" class="pill-grid"></div>
+      </div>
+
+      <div class="card">
+        <h3>Global Colour Palettes (54) & Collections (10)</h3>
+        <div class="sec-label">Palette Randomisation Scope:</div>
+        <div id="palRandModesGrid" class="pill-grid"></div>
+        <div class="sec-label">Palette Collection (10):</div>
+        <div id="palCollectionsGrid" class="pill-grid"></div>
+        <div class="sec-label">Active Palette (54):</div>
+        <div id="palettesGrid" class="pill-grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 1: LAYER 1 — WORLDS (24 MODES + STARK PHOTO REALM) -->
+  <div class="tab-pane" id="tab_1">
+    <div class="grid-2">
+      <div class="card">
+        <h3>
+          <span>1: Worlds — 24 Background & 3D Shader Worlds</span>
+          <div>
+            <button id="btn_l1_master" onclick="toggleL1()">1: Worlds ON</button>
+            <button id="btn_l1_rand" onclick="toggleKey('layer1AutoRandomise')">♾ Auto-Rand</button>
+            <button class="urgent" onclick="triggerAction('randL1')">🎲 Randomise Now</button>
+          </div>
+        </h3>
+        <div class="sec-label">World Mode (24 — #12 is Stark Photo Realm, #13–#24 are 3D GPU Worlds):</div>
+        <div id="l1ModesGrid" class="pill-grid"></div>
+
+        <div class="sec-label">Direction:</div>
+        <div class="pill-grid">
+          <button id="l1dir_1" onclick="setPatch({layer1Direction:1})">Towards</button>
+          <button id="l1dir_-1" onclick="setPatch({layer1Direction:-1})">Away</button>
+          <button id="l1dir_0" onclick="setPatch({layer1Direction:0})">Breathe</button>
+        </div>
+
+        <div class="row"><label>World Speed</label><input type="range" min="0.1" max="2.5" step="0.05" id="sl_layer1Speed" oninput="setNum('layer1Speed',this.value)"><span class="val" id="val_layer1Speed">1.00</span></div>
+        <div class="row"><label>Field Density</label><input type="range" min="0.2" max="2.5" step="0.05" id="sl_layer1Density" oninput="setNum('layer1Density',this.value)"><span class="val" id="val_layer1Density">1.00</span></div>
+        <div class="row"><label>Trail Persistence</label><input type="range" min="0.1" max="0.98" step="0.02" id="sl_layer1Persistence" oninput="setNum('layer1Persistence',this.value)"><span class="val" id="val_layer1Persistence">0.84</span></div>
+        <div class="row"><label>Background Dim</label><input type="range" min="0.0" max="0.85" step="0.02" id="sl_layer1Dim" oninput="setNum('layer1Dim',this.value)"><span class="val" id="val_layer1Dim">0.16</span></div>
+        <div class="row"><label>1: Worlds Opacity</label><input type="range" min="0.05" max="1.0" step="0.05" id="sl_layer1Opacity" oninput="setNum('layer1Opacity',this.value)"><span class="val" id="val_layer1Opacity">1.00</span></div>
+      </div>
+
+      <div class="card">
+        <h3>
+          <span>Mode #12: Stark Photo Realm (25 Motion Modes × 17 Variants)</span>
+          <button onclick="setPatch({layer1Enabled:true, layer1FieldEnabled:true, layer1Mode:11})">Activate #12 Photo Realm</button>
+        </h3>
+        <div id="photoStatusBadge" class="badge" style="display:inline-block; margin-bottom:8px;">Loading Photo Library…</div>
+        <div class="pill-grid">
+          <button onclick="triggerAction('photoPrev')">◀ Prev Photo [</button>
+          <button onclick="triggerAction('photoNext')">Next Photo ] ▶</button>
+          <button onclick="triggerAction('photoHold')">⏸ Hold 1m [H]</button>
+          <button onclick="triggerAction('photoCatStep', -1)">◀ Cat {</button>
+          <button onclick="triggerAction('photoCatStep', 1)">Cat } ▶</button>
+          <button class="urgent" onclick="triggerAction('photoRandFx')">🎲 Step Random FX</button>
+          <button onclick="triggerAction('photoRefresh')">🔄 Refresh Library</button>
+        </div>
+        <div class="pill-grid">
+          <button id="btn_photoAutoMotionEvents" onclick="toggleKey('photoAutoMotionEvents')">~ Auto Photo-Motion</button>
+          <button id="btn_photoRandomiseMotionControls" onclick="toggleKey('photoRandomiseMotionControls')">🎲 Rand Controls on Event</button>
+          <button id="btn_photoPlaneShearEnabled" onclick="toggleKey('photoPlaneShearEnabled')">: 3D Plane Shear</button>
+        </div>
+        <div class="sec-label">Photo Category ({ / }):</div>
+        <div id="photoCategoriesGrid" class="pill-grid"></div>
+        <div class="sec-label">Image / Effect Pool Mode (;):</div>
+        <div id="photoPoolGrid" class="pill-grid"></div>
+        <div class="sec-label">25 Audio-Reactive 3D Photo-Effects (' / #):</div>
+        <div id="photoMotionGrid" class="pill-grid"></div>
+        <div class="sec-label">17 Stark Darkroom Variants (Auto-Strobe All 17 or Pin V01–V17):</div>
+        <div id="photoVariantsGrid" class="pill-grid"></div>
+
+        <div class="row"><label>Motion Activity / Speed</label><input type="range" min="0.1" max="3.0" step="0.05" id="sl_photoMotionActivity" oninput="setNum('photoMotionActivity',this.value)"><span class="val" id="val_photoMotionActivity">1.00</span></div>
+        <div class="row"><label>Effect Change Interval (~ s)</label><input type="range" min="2.0" max="60.0" step="1.0" id="sl_photoEffectChangeIntervalSec" oninput="setNum('photoEffectChangeIntervalSec',this.value)"><span class="val" id="val_photoEffectChangeIntervalSec">18</span></div>
+        <div class="row"><label>16-Variant Strobe Rate</label><input type="range" min="0.1" max="4.0" step="0.05" id="sl_photoStrobeSpeed" oninput="setNum('photoStrobeSpeed',this.value)"><span class="val" id="val_photoStrobeSpeed">1.00</span></div>
+        <div class="row"><label>Crossfade Duration (s)</label><input type="range" min="0.0" max="6.0" step="0.05" id="sl_photoFadeDuration" oninput="setNum('photoFadeDuration',this.value)"><span class="val" id="val_photoFadeDuration">0.35</span></div>
+        <div class="row"><label>3D XYZ Plane Tilt</label><input type="range" min="0.0" max="2.5" step="0.05" id="sl_photoXyzTilt" oninput="setNum('photoXyzTilt',this.value)"><span class="val" id="val_photoXyzTilt">1.00</span></div>
+        <div class="row"><label>3D Plane Shear (:)</label><input type="range" min="0.0" max="2.0" step="0.05" id="sl_photoPlaneShear" oninput="setNum('photoPlaneShear',this.value)"><span class="val" id="val_photoPlaneShear">0.00</span></div>
+        <div class="row"><label>Z-Depth Zoom Punch</label><input type="range" min="0.25" max="2.5" step="0.05" id="sl_photoZoomPunch" oninput="setNum('photoZoomPunch',this.value)"><span class="val" id="val_photoZoomPunch">1.15</span></div>
+        <div class="row"><label>Palette Neon Bloom</label><input type="range" min="0.0" max="2.5" step="0.05" id="sl_photoPaletteBloom" oninput="setNum('photoPaletteBloom',this.value)"><span class="val" id="val_photoPaletteBloom">1.20</span></div>
+        <div class="row"><label>Warp Melt Intensity</label><input type="range" min="0.0" max="2.5" step="0.05" id="sl_photoWarpIntensity" oninput="setNum('photoWarpIntensity',this.value)"><span class="val" id="val_photoWarpIntensity">1.00</span></div>
+        <div class="row"><label>Photo Master Opacity</label><input type="range" min="0.05" max="1.0" step="0.05" id="sl_photoOpacity" oninput="setNum('photoOpacity',this.value)"><span class="val" id="val_photoOpacity">0.88</span></div>
+        <div class="row"><label>Shadow Black Opacity</label><input type="range" min="0.0" max="1.0" step="0.05" id="sl_photoBlackOpacity" oninput="setNum('photoBlackOpacity',this.value)"><span class="val" id="val_photoBlackOpacity">1.00</span></div>
+        <div class="row"><label>Mid-Tone Silver Opacity</label><input type="range" min="0.0" max="1.0" step="0.05" id="sl_photoMidOpacity" oninput="setNum('photoMidOpacity',this.value)"><span class="val" id="val_photoMidOpacity">1.00</span></div>
+        <div class="row"><label>Chalk White Opacity</label><input type="range" min="0.0" max="1.0" step="0.05" id="sl_photoWhiteOpacity" oninput="setNum('photoWhiteOpacity',this.value)"><span class="val" id="val_photoWhiteOpacity">1.00</span></div>
+        <div class="row"><label>Colour-Snatch Opacity</label><input type="range" min="0.0" max="1.0" step="0.05" id="sl_photoColourSnatchOpacity" oninput="setNum('photoColourSnatchOpacity',this.value)"><span class="val" id="val_photoColourSnatchOpacity">1.00</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 2: LAYER 2 — EQUALISER (28 STYLES) -->
+  <div class="tab-pane" id="tab_2">
+    <div class="card">
+      <h3>
+        <span>2: SynthGrid Equaliser (28 Styles × Layouts × Band Orders)</span>
+        <div>
+          <button id="btn_l2eq_master" onclick="toggleEq()">2: Equaliser ON</button>
+          <button id="btn_l2eq_rand" onclick="toggleKey('layerEqAutoRandomise')">♾ Auto-Rand</button>
+          <button class="urgent" onclick="triggerAction('randEq')">🎲 Randomise Now</button>
+        </div>
+      </h3>
+      <div class="sec-label">Equaliser Style (28):</div>
+      <div id="l1EqGrid" class="pill-grid"></div>
+
+      <div class="grid-2">
+        <div>
+          <div class="sec-label">Equaliser Layout:</div>
+          <div id="l1EqLayoutGrid" class="pill-grid"></div>
+          <div class="sec-label">Frequency Band Order:</div>
+          <div id="l1EqBandOrderGrid" class="pill-grid"></div>
+          <div class="sec-label">Peak Damping Ballistics:</div>
+          <div id="l1EqDampingGrid" class="pill-grid"></div>
+        </div>
+        <div>
+          <div class="row"><label>EQ Geometry Scale</label><input type="range" min="0.15" max="2.25" step="0.05" id="sl_layer1EqScale" oninput="setNum('layer1EqScale',this.value)"><span class="val" id="val_layer1EqScale">1.00</span></div>
+          <div class="row"><label>EQ Signal Gain</label><input type="range" min="0.10" max="1.00" step="0.02" id="sl_layer1EqGain" oninput="setNum('layer1EqGain',this.value)"><span class="val" id="val_layer1EqGain">0.80</span></div>
+          <div class="row"><label>EQ Spin Velocity</label><input type="range" min="-2.50" max="2.50" step="0.05" id="sl_layer1EqSpin" oninput="setNum('layer1EqSpin',this.value)"><span class="val" id="val_layer1EqSpin">1.00</span></div>
+          <div class="row"><label>2: Equaliser Opacity</label><input type="range" min="0.05" max="1.00" step="0.05" id="sl_layer1EqOpacity" oninput="setNum('layer1EqOpacity',this.value)"><span class="val" id="val_layer1EqOpacity">1.00</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 3: LAYER 3 — VECTORS (16 3D WIREFRAMES) -->
+  <div class="tab-pane" id="tab_3">
+    <div class="card">
+      <h3>
+        <span>3: Vectors — 16 3D Wireframe Polyhedra & Sacred Geometry</span>
+        <div>
+          <button id="btn_l3vec_master" onclick="toggleVectors()">3: Vectors ON</button>
+          <button id="btn_l3vec_rand" onclick="toggleKey('layerVectorsAutoRandomise')">♾ Auto-Rand</button>
+          <button class="urgent" onclick="triggerAction('randVectors')">🎲 Randomise Now</button>
+        </div>
+      </h3>
+      <div class="sec-label">3D Vector Shape Style (16):</div>
+      <div id="l1ShapesGrid" class="pill-grid"></div>
+
+      <div class="grid-2">
+        <div>
+          <div class="row"><label>3D Tumble Spin</label><input type="range" min="0.0" max="2.5" step="0.05" id="sl_layer1ShapeSpin" oninput="setNum('layer1ShapeSpin',this.value)"><span class="val" id="val_layer1ShapeSpin">1.00</span></div>
+          <div class="row"><label>Spawn / Travel Speed</label><input type="range" min="0.1" max="2.5" step="0.05" id="sl_layer1ShapeSpeed" oninput="setNum('layer1ShapeSpeed',this.value)"><span class="val" id="val_layer1ShapeSpeed">1.00</span></div>
+          <div class="row"><label>Polyhedron Scale</label><input type="range" min="0.2" max="2.5" step="0.05" id="sl_layer1ShapeScale" oninput="setNum('layer1ShapeScale',this.value)"><span class="val" id="val_layer1ShapeScale">1.00</span></div>
+          <div class="row"><label>Spawn Density</label><input type="range" min="0.2" max="2.0" step="0.05" id="sl_layer1ShapeDensity" oninput="setNum('layer1ShapeDensity',this.value)"><span class="val" id="val_layer1ShapeDensity">1.00</span></div>
+        </div>
+        <div>
+          <div class="row"><label>Lifespan</label><input type="range" min="0.2" max="2.5" step="0.05" id="sl_layer1ShapeLifespan" oninput="setNum('layer1ShapeLifespan',this.value)"><span class="val" id="val_layer1ShapeLifespan">1.00</span></div>
+          <div class="row"><label>Face Fill Ratio</label><input type="range" min="0.0" max="1.0" step="0.05" id="sl_layer1ShapeFillRatio" oninput="setNum('layer1ShapeFillRatio',this.value)"><span class="val" id="val_layer1ShapeFillRatio">0.35</span></div>
+          <div class="row"><label>Face Fill Opacity</label><input type="range" min="0.05" max="1.0" step="0.05" id="sl_layer1ShapeFillOpacity" oninput="setNum('layer1ShapeFillOpacity',this.value)"><span class="val" id="val_layer1ShapeFillOpacity">0.55</span></div>
+          <div class="row"><label>3: Vectors Opacity</label><input type="range" min="0.05" max="1.0" step="0.05" id="sl_layer1ShapesOpacity" oninput="setNum('layer1ShapesOpacity',this.value)"><span class="val" id="val_layer1ShapesOpacity">1.00</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 4: LAYER 4 — GEOMETRY (13 MODES + GRADED HISTORY TRACERS) -->
+  <div class="tab-pane" id="tab_4">
+    <div class="card">
+      <h3>
+        <span>4: Geometry — 13 Psychedelic Visualiser Modes & 3D Graded Tracers</span>
+        <div>
+          <button id="btn_l4geo_master" onclick="toggleKey('layer2Enabled')">4: Geometry ON</button>
+          <button id="btn_l4geo_viz" onclick="toggleKey('layer2VizEnabled')">Primary Viz ON</button>
+          <button id="btn_l4geo_tracers" onclick="toggleKey('layer2TracersEnabled')">History Tracers ON</button>
+          <button id="btn_l4geo_rand" onclick="toggleKey('layer2AutoRandomise')">♾ Auto-Rand</button>
+          <button class="urgent" onclick="triggerAction('randL2')">🎲 Randomise Now</button>
+        </div>
+      </h3>
+      <div class="sec-label">Psychedelic Geometry Mode (13):</div>
+      <div id="l2ModesGrid" class="pill-grid"></div>
+
+      <div class="sec-label">Kaleidoscope Symmetry Folds (8):</div>
+      <div id="symmetryGrid" class="pill-grid"></div>
+
+      <div class="grid-2">
+        <div>
+          <div class="row"><label>Audio Reactivity</label><input type="range" min="0.35" max="3.0" step="0.05" id="sl_sensitivity" oninput="setNum('sensitivity',this.value)"><span class="val" id="val_sensitivity">1.35</span></div>
+          <div class="row"><label>Harmonic Complexity</label><input type="range" min="0.25" max="2.5" step="0.05" id="sl_layer2Complexity" oninput="setNum('layer2Complexity',this.value)"><span class="val" id="val_layer2Complexity">1.00</span></div>
+          <div class="row"><label>Evolution Speed</label><input type="range" min="0.10" max="2.5" step="0.05" id="sl_layer2Speed" oninput="setNum('layer2Speed',this.value)"><span class="val" id="val_layer2Speed">1.00</span></div>
+          <div class="row"><label>Camera Zoom</label><input type="range" min="0.40" max="2.5" step="0.05" id="sl_layer2Zoom" oninput="setNum('layer2Zoom',this.value)"><span class="val" id="val_layer2Zoom">1.00</span></div>
+          <div class="row"><label>Nonlinear Chaos</label><input type="range" min="0.0" max="1.0" step="0.05" id="sl_layer2Chaos" oninput="setNum('layer2Chaos',this.value)"><span class="val" id="val_layer2Chaos">0.50</span></div>
+          <div class="row"><label>4: Geometry Opacity</label><input type="range" min="0.05" max="1.0" step="0.05" id="sl_layer2Opacity" oninput="setNum('layer2Opacity',this.value)"><span class="val" id="val_layer2Opacity">1.00</span></div>
+        </div>
+        <div>
+          <div class="row"><label>Polygon Fill Ratio</label><input type="range" min="0.0" max="1.0" step="0.05" id="sl_layer2FillRatio" oninput="setNum('layer2FillRatio',this.value)"><span class="val" id="val_layer2FillRatio">0.45</span></div>
+          <div class="row"><label>Polygon Fill Opacity</label><input type="range" min="0.05" max="1.0" step="0.05" id="sl_layer2FillOpacity" oninput="setNum('layer2FillOpacity',this.value)"><span class="val" id="val_layer2FillOpacity">0.55</span></div>
+          <div class="row"><label>3D History Tracer Count</label><input type="range" min="1" max="12" step="1" id="sl_tracerCount" oninput="setNum('tracerCount',this.value)"><span class="val" id="val_tracerCount">4</span></div>
+          <div class="row"><label>Tracer Z-Velocity</label><input type="range" min="0.2" max="2.5" step="0.05" id="sl_tracerSpeed" oninput="setNum('tracerSpeed',this.value)"><span class="val" id="val_tracerSpeed">1.15</span></div>
+          <div class="row"><label>Tracer Lateral Drift</label><input type="range" min="0.0" max="2.5" step="0.05" id="sl_tracerDrift" oninput="setNum('tracerDrift',this.value)"><span class="val" id="val_tracerDrift">1.00</span></div>
+          <div class="sec-label">Tracer Direction:</div>
+          <div class="pill-grid">
+            <button id="trdir_1" onclick="setPatch({tracerDirection:1})">Towards</button>
+            <button id="trdir_-1" onclick="setPatch({tracerDirection:-1})">Away</button>
+            <button id="trdir_0" onclick="setPatch({tracerDirection:0})">Breathe</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 5: LAYER 5 — VORTEX (16 GPU TUNNELS + DUAL 2X BLEND) -->
+  <div class="tab-pane" id="tab_5">
+    <div class="card">
+      <h3>
+        <span>5: Vortex — 16 Hardware GPU Tunnel & Vortex Shaders + Dual 2× Blend</span>
+        <div>
+          <button id="btn_l5vor_master" onclick="toggleVortex()">5: Vortex ON</button>
+          <button id="btn_l5vor_dual" onclick="toggleKey('layer4DualEnabled')">Dual 2× Blend</button>
+          <button id="btn_l5vor_rand" onclick="toggleKey('layer4AutoRandomise')">♾ Auto-Rand</button>
+          <button class="urgent" onclick="triggerAction('randL4')">🎲 Randomise Now</button>
+        </div>
+      </h3>
+      <div class="sec-label">Primary Tunnel / Vortex Mode (16):</div>
+      <div id="l4ModesGrid" class="pill-grid"></div>
+
+      <div class="sec-label">Secondary Dual Tunnel Mode (16 — active when Dual 2× Blend is ON):</div>
+      <div id="l4SecModesGrid" class="pill-grid"></div>
+
+      <div class="grid-2">
+        <div>
+          <div class="sec-label">Tunnel Wall Pattern (5):</div>
+          <div id="l4WallGrid" class="pill-grid"></div>
+          <div class="sec-label">Tunnel Direction:</div>
+          <div class="pill-grid">
+            <button id="l4dir_1" onclick="setPatch({layer4Direction:1, backdropDirection:1})">Towards</button>
+            <button id="l4dir_-1" onclick="setPatch({layer4Direction:-1, backdropDirection:-1})">Away</button>
+            <button id="l4dir_0" onclick="setPatch({layer4Direction:0, backdropDirection:0})">Breathe</button>
+          </div>
+          <div class="row"><label>Dual 2× Mix Balance</label><input type="range" min="0.10" max="0.90" step="0.05" id="sl_layer4DualMix" oninput="setNum('layer4DualMix',this.value)"><span class="val" id="val_layer4DualMix">0.50</span></div>
+        </div>
+        <div>
+          <div class="row"><label>Tunnel Speed</label><input type="range" min="0.1" max="3.0" step="0.05" id="sl_layer4Speed" oninput="setPatch({layer4Speed:Number(this.value),backdropSpeed:Number(this.value)})"><span class="val" id="val_layer4Speed">1.00</span></div>
+          <div class="row"><label>Neon Glow Intensity</label><input type="range" min="0.2" max="2.5" step="0.05" id="sl_layer4Glow" oninput="setPatch({layer4Glow:Number(this.value),backdropIntensity:Number(this.value)})"><span class="val" id="val_layer4Glow">1.00</span></div>
+          <div class="row"><label>Spiral Twist</label><input type="range" min="0.0" max="3.0" step="0.05" id="sl_layer4Twist" oninput="setNum('layer4Twist',this.value)"><span class="val" id="val_layer4Twist">1.00</span></div>
+          <div class="row"><label>Radial Symmetry</label><input type="range" min="2" max="16" step="1" id="sl_layer4Symmetry" oninput="setPatch({layer4Symmetry:Number(this.value),backdropSymmetry:Number(this.value)})"><span class="val" id="val_layer4Symmetry">6</span></div>
+          <div class="row"><label>5: Vortex Opacity</label><input type="range" min="0.05" max="1.0" step="0.05" id="sl_layer4Opacity" oninput="setNum('layer4Opacity',this.value)"><span class="val" id="val_layer4Opacity">0.85</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 6: LAYER 6 — TYPOGRAPHY & ALBUM ART (22 ART / 21 TEXT) -->
+  <div class="tab-pane" id="tab_6">
+    <div class="card">
+      <h3>
+        <span>6: Typography & Album Art Translation (22 Art Styles · 21 Text Styles · 16 Fonts)</span>
+        <div>
+          <button id="btn_l6_master" onclick="toggleKey('layer3Enabled')">6: Typography ON</button>
+          <button class="urgent" onclick="triggerAction('randL3')">🎲 Randomise Now</button>
+        </div>
+      </h3>
+
+      <div class="grid-2">
+        <div>
+          <div class="sec-label">Source & Glyph Matrix:</div>
+          <div class="pill-grid">
+            <button id="btn_src_art" onclick="setPatch({useAlbumArt:true})">󰀥 Album Art</button>
+            <button id="btn_src_words" onclick="setPatch({useAlbumArt:false, asciiMode:'text'})">󰊄 Song Words</button>
+            <button id="btn_glyph_braille" onclick="setPatch({asciiMode:'braille'})">Braille</button>
+            <button id="btn_glyph_block" onclick="setPatch({asciiMode:'block'})">Block</button>
+            <button id="btn_glyph_text" onclick="setPatch({asciiMode:'text'})">Crisp Text</button>
+          </div>
+          <div class="sec-label">Word Lines Included (when Song Words active):</div>
+          <div class="pill-grid">
+            <button id="btn_layer3ShowArtist" onclick="toggleKey('layer3ShowArtist')">Artist</button>
+            <button id="btn_layer3ShowTrack" onclick="toggleKey('layer3ShowTrack')">Track Title</button>
+            <button id="btn_layer3ShowAlbum" onclick="toggleKey('layer3ShowAlbum')">Album</button>
+            <button id="btn_layer3ShowStatements" onclick="toggleKey('layer3ShowStatements')">Statements</button>
+          </div>
+        </div>
+        <div>
+          <div class="sec-label">Layer 6 Auto-Randomiser Mode (3):</div>
+          <div id="l3RandModesGrid" class="pill-grid"></div>
+          <div class="row">
+            <label>Transition Pause (0–30s)</label>
+            <input type="range" min="0" max="30" step="0.5" id="sl_layer3TransitionPauseSec" oninput="setNum('layer3TransitionPauseSec',this.value)">
+            <span class="val" id="val_layer3TransitionPauseSec">5.0</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sec-label">Spatial Choreography Mode (12):</div>
+      <div id="l3ModesGrid" class="pill-grid"></div>
+
+      <div class="sec-label">3D Cylinder / Scroll Direction (6):</div>
+      <div id="l3CylGrid" class="pill-grid"></div>
+
+      <div id="l3StylesLabel" class="sec-label" style="color:var(--accent);">Art Pixel / Block / Halftone / Chromatic Style (22):</div>
+      <div id="l3StylesGrid" class="pill-grid"></div>
+
+      <div class="sec-label">Genre Typeface Preset (16):</div>
+      <div id="l3FontsGrid" class="pill-grid"></div>
+
+      <div class="sec-label">Text / Art Colour Mode (6):</div>
+      <div id="l3ColourGrid" class="pill-grid"></div>
+
+      <div class="grid-2">
+        <div>
+          <div class="row"><label>Dismantle / Shatter</label><input type="range" min="0.0" max="2.5" step="0.05" id="sl_layer3Dismantle" oninput="setNum('layer3Dismantle',this.value)"><span class="val" id="val_layer3Dismantle">0.45</span></div>
+          <div class="row"><label>Spring Rebuild Force</label><input type="range" min="0.2" max="2.5" step="0.05" id="sl_layer3Rebuild" oninput="setNum('layer3Rebuild',this.value)"><span class="val" id="val_layer3Rebuild">1.00</span></div>
+          <div class="row"><label>Morph Evolution Speed</label><input type="range" min="0.1" max="2.5" step="0.05" id="sl_layer3Evolution" oninput="setNum('layer3Evolution',this.value)"><span class="val" id="val_layer3Evolution">0.85</span></div>
+        </div>
+        <div>
+          <div class="row"><label>Stage Scale Size</label><input type="range" min="0.4" max="2.2" step="0.05" id="sl_layer3Scale" oninput="setNum('layer3Scale',this.value)"><span class="val" id="val_layer3Scale">1.00</span></div>
+          <div class="row"><label>Echo Tracers (1–8)</label><input type="range" min="1" max="8" step="1" id="sl_layer3Tracers" oninput="setNum('layer3Tracers',this.value)"><span class="val" id="val_layer3Tracers">1</span></div>
+          <div class="row"><label>6: Typography Opacity</label><input type="range" min="0.05" max="1.0" step="0.05" id="sl_layer3Opacity" oninput="setNum('layer3Opacity',this.value)"><span class="val" id="val_layer3Opacity">1.00</span></div>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-top:12px;">
+        <div class="card" style="margin-bottom:0; background:var(--panel2);">
+          <h3>
+            <span>󰊄 Statements & Statement Collections (statements.txt)</span>
+            <div>
+              <button onclick="triggerAction('nextStatement')">🎲 Next Statement</button>
+              <button class="active" onclick="setPatch({layer3Enabled:true, useAlbumArt:false, asciiMode:'text', layer3ShowStatements:true})">Beam Statements to Stage</button>
+            </div>
+          </h3>
+          <div class="sec-label">Select Statement Collection (5 Built-In + Custom):</div>
+          <div id="stmtCollectionsGrid" class="pill-grid"></div>
+          <div class="sec-label">Active Statement on Stage (click any statement to display immediately):</div>
+          <div id="statementsPillsGrid" class="pill-grid" style="max-height:135px; overflow-y:auto; padding:4px; border:1px solid rgba(255,255,255,0.08); border-radius:6px;"></div>
+          <div class="sec-label">Edit Active Statements (one statement per line):</div>
+          <textarea id="statementsBulkTextarea" rows="5" style="width:100%; background:#06090f; color:var(--text); border:1px solid rgba(255,255,255,0.18); border-radius:5px; padding:6px; font-family:inherit; font-size:11px;"></textarea>
+          <div style="display:flex; gap:6px; margin-top:6px; align-items:center;">
+            <button class="active" onclick="saveStatementsBulk()">💾 Save to statements.txt</button>
+            <input type="text" id="newStmtColName" placeholder="New Collection Name (e.g. Party Set)" style="max-width:210px;">
+            <button onclick="saveNewStatementCollection()">➕ Save as Collection</button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:0; background:var(--panel2);">
+          <h3>
+            <span>🎵 Quick Track, Collection & Cover Art Selector</span>
+            <div>
+              <button onclick="triggerAction('stepExtArt', -1)">◀ Prev Cover</button>
+              <button onclick="triggerAction('stepExtArt', 1)">Next Cover ▶</button>
+            </div>
+          </h3>
+          <div class="sec-label">Select Track Collection:</div>
+          <div id="tab6TrackCollectionsGrid" class="pill-grid"></div>
+          <div class="sec-label">Select Active Track (Artist — Track · Album):</div>
+          <div id="tab6TracksPillsGrid" class="pill-grid"></div>
+          <div class="sec-label">Cover Art Folder / File in ~/Pictures/bandarchy/external_art/:</div>
+          <div id="tab6ArtBranchesGrid" class="pill-grid"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 7: GENERAL, QUALITY & EXTERNAL TRACKS -->
+  <div class="tab-pane" id="tab_7">
+    <div class="grid-2">
+      <div class="card">
+        <h3>Render Performance & Global Audio Gain</h3>
+        <div class="sec-label">Vector & Canvas Render Resolution (2D/3D Vectors, EQ, Geometry & Type):</div>
+        <div class="pill-grid">
+          <button id="rq_0" onclick="setPatch({version:3,renderQuality:0,renderResW:384,geometryDetail:0.75})">0: Low (384p)</button>
+          <button id="rq_1" onclick="setPatch({version:3,renderQuality:1,renderResW:480,geometryDetail:0.90})">1: Balanced (480p)</button>
+          <button id="rq_2" onclick="setPatch({version:3,renderQuality:2,renderResW:640,geometryDetail:1.00})">2: High (640p · Fast 60 FPS)</button>
+          <button id="rq_3" onclick="setPatch({version:3,renderQuality:3,renderResW:800,geometryDetail:1.00})">3: Crisp HD (800p · Recommended)</button>
+          <button id="rq_4" onclick="setPatch({version:3,renderQuality:4,renderResW:1024,geometryDetail:1.15})">4: Ultra (1024p)</button>
+          <button id="rq_5" onclick="setPatch({version:3,renderQuality:5,renderResW:1280,geometryDetail:1.25})">5: Ultra+ (1280p)</button>
+        </div>
+        <div class="sec-label">Target Frame Rate:</div>
+        <div class="pill-grid">
+          <button id="fps_30" onclick="setPatch({targetFps:30})">30 FPS</button>
+          <button id="fps_48" onclick="setPatch({targetFps:48})">48 FPS</button>
+          <button id="fps_60" onclick="setPatch({targetFps:60})">60 FPS</button>
+        </div>
+        <div class="pill-grid">
+          <button id="btn_gpuShaderEnabled" onclick="toggleKey('gpuShaderEnabled')">⚡ Hardware GPU Shaders</button>
+          <button id="btn_antialiasingEnabled" onclick="toggleKey('antialiasingEnabled')">Vector Anti-Aliasing & Smooth</button>
+        </div>
+        <div class="row"><label>Vector Canvas Width (px)</label><input type="range" min="384" max="1920" step="64" id="sl_renderResW" oninput="setNum('renderResW',this.value)"><span class="val" id="val_renderResW">1280</span></div>
+        <div class="row"><label>Geometry Vertex Detail</label><input type="range" min="0.5" max="2.0" step="0.05" id="sl_geometryDetail" oninput="setNum('geometryDetail',this.value)"><span class="val" id="val_geometryDetail">2.00</span></div>
+        <div class="row"><label>Global Audio Sensitivity</label><input type="range" min="0.35" max="3.0" step="0.05" id="sl_audioSensitivity" oninput="setNum('audioSensitivity',this.value)"><span class="val" id="val_audioSensitivity">1.35</span></div>
+        <div class="row"><label>Beat Kick Impulse</label><input type="range" min="0.25" max="2.5" step="0.05" id="sl_beatPunch" oninput="setNum('beatPunch',this.value)"><span class="val" id="val_beatPunch">1.15</span></div>
+        <div class="row"><label>FFT Attack/Decay Smoothing</label><input type="range" min="0.10" max="0.90" step="0.05" id="sl_audioSmoothing" oninput="setNum('audioSmoothing',this.value)"><span class="val" id="val_audioSmoothing">0.50</span></div>
+        <div class="row"><label>Hue Cycle Speed</label><input type="range" min="0.0" max="2.5" step="0.05" id="sl_colourCycleSpeed" oninput="setNum('colourCycleSpeed',this.value)"><span class="val" id="val_colourCycleSpeed">1.00</span></div>
+        <div class="row"><label>Auto-Randomise Interval (s)</label><input type="range" min="4" max="60" step="1" id="sl_autoCycleIntervalSec" oninput="setNum('autoCycleIntervalSec',this.value)"><span class="val" id="val_autoCycleIntervalSec">18</span></div>
+      </div>
+
+      <div class="card">
+        <h3>External Track Collections & Metadata Editor (external-tracks.txt)</h3>
+        <div class="sec-label">Select Track Collection:</div>
+        <div id="trackCollectionsGrid" class="pill-grid"></div>
+        <div class="sec-label">Click a Track to Activate on Stage:</div>
+        <div id="activeTracksPills" class="pill-grid"></div>
+        <div class="sec-label">Available Cover Art Folders / Files in ~/Pictures/bandarchy/external_art/:</div>
+        <div id="artBranchesGrid" class="pill-grid"></div>
+        <div class="sec-label">Edit Track Rows (Artist | Track | Album | Subfolder or File in external_art):</div>
+        <div id="trackEditorRows"></div>
+        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; align-items:center;">
+          <button onclick="addTrackRow()">+ Add Track</button>
+          <button class="active" onclick="saveTracks()">💾 Save to external-tracks.txt</button>
+          <input type="text" id="newTrackColName" placeholder="New Track Collection Name" style="max-width:210px;">
+          <button onclick="saveNewTrackCollection()">➕ Save as Track Collection</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="/PhotoMotionEngine.js"></script>
+<script src="/PsychedelicEngine.js"></script>
+<script>
+const COLLECTIVE_PRESET_NAMES = [
+  "Geiss Plasma MilkDrop & Battlezone",
+  "Cthugha Plasma Flame Tunnel",
+  "Minter VLM Curved Morphing Tube",
+  "Infinite Julia Fractal Zoom",
+  "Braille Cover Art Shatter & MilkDrop",
+  "Neon Song Words TTE Lotus Dome",
+  "Pure Battlezone LED Equaliser (L1 Only)",
+  "Classic Matrix Digital Rain Waterfall"
+];
+
+let cfg = {};
+let tracks = [];
+let trackCollections = [];
+let statementCollections = [];
+let artBranches = [];
+let photoInfo = {};
+let lastCatsKey = '';
+let lastStmtsKey = '';
+let lastTracksKey = '';
+let builtGrids = false;
+
+function openTab(idx, btn) {
+  document.querySelectorAll('.tab-pane').forEach((el, i) => el.classList.toggle('active', i === idx));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function buildStaticGrids() {
+  if (builtGrids) return;
+  builtGrids = true;
+
+  const mkPills = (containerId, arr, idPrefix, onClickFn) => {
+    const g = document.getElementById(containerId);
+    if (!g || !arr) return;
+    arr.forEach((item, i) => {
+      const b = document.createElement('button');
+      b.id = idPrefix + '_' + i;
+      const label = (typeof item === 'object' && item !== null) ? (item.name || item.code || String(i+1)) : String(item);
+      b.textContent = label.startsWith('#') || /^\d+[\.:\/]/.test(label) ? label : `${i+1}. ${label}`;
+      b.onclick = () => onClickFn(i, item);
+      g.appendChild(b);
+    });
+  };
+
+  mkPills('collectivePresetsGrid', COLLECTIVE_PRESET_NAMES, 'cpres', i => triggerAction('applyPreset', i));
+  mkPills('trackArcGrid', TRACK_ARC_MODES, 'tarc', i => setPatch({trackArcMode: i}));
+  mkPills('palRandModesGrid', PALETTE_RANDOM_MODES, 'prm', i => setPatch({paletteRandomMode: i}));
+  mkPills('palCollectionsGrid', PALETTE_COLLECTIONS, 'pcol', i => setPatch({paletteCollectionIndex: i, paletteRandomMode: 1}));
+  mkPills('palettesGrid', PALETTE_NAMES, 'pal', i => setPatch({palette: i, paletteIndex: i}));
+
+  mkPills('l1ModesGrid', ALL_LAYER1_MODES, 'l1m', i => setPatch({layer1Mode: i, layer1Enabled: true, layer1FieldEnabled: true}));
+  mkPills('photoPoolGrid', PhotoMotion.PHOTO_POOL_MODES, 'ppool', i => setPatch({photoPoolMode: i, layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: 11}));
+  mkPills('photoMotionGrid', PhotoMotion.PHOTO_MOTION_MODES, 'pmot', i => setPatch({photoMotionMode: i, layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: 11}));
+
+  const vg = document.getElementById('photoVariantsGrid');
+  if (vg && PhotoMotion.STAGE1_EFFECT_IDS) {
+    const bAuto = document.createElement('button');
+    bAuto.id = 'pvar_-1';
+    bAuto.textContent = '🔄 Auto-Strobe All 17';
+    bAuto.onclick = () => setPatch({photoPinnedVariant: -1, layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: 11});
+    vg.appendChild(bAuto);
+    PhotoMotion.STAGE1_EFFECT_IDS.forEach((effId, i) => {
+      const b = document.createElement('button');
+      b.id = 'pvar_' + i;
+      b.textContent = `V${i < 9 ? '0' + (i + 1) : (i + 1)}: ${effId.replace(/^\d+_/, '').replace(/_/g, ' ')}`;
+      b.onclick = () => setPatch({photoPinnedVariant: cfg.photoPinnedVariant === i ? -1 : i, layer1Enabled: true, layer1FieldEnabled: true, layer1Mode: 11});
+      vg.appendChild(b);
+    });
+  }
+
+  mkPills('l1EqGrid', ALL_LAYER1_EQ_STYLES, 'l1eq', i => setPatch({layer1EqStyle: i, layer1Enabled: true, layer1EqEnabled: true}));
+  mkPills('l1EqLayoutGrid', LAYER1_EQ_LAYOUTS, 'l1eql', i => setPatch({layer1EqLayout: i}));
+  mkPills('l1EqBandOrderGrid', LAYER1_EQ_BAND_ORDERS, 'l1eqb', i => setPatch({layer1EqBandOrder: i}));
+  mkPills('l1EqDampingGrid', LAYER1_EQ_DAMPING, 'l1eqd', i => setPatch({layer1EqDamping: i}));
+
+  mkPills('l1ShapesGrid', LAYER1_SHAPE_STYLES, 'l1sh', i => setPatch({layer1ShapeStyle: i, layer1Enabled: true, layer1ShapesEnabled: true}));
+
+  mkPills('l2ModesGrid', ALL_MODE_NAMES, 'l2m', i => setPatch({visualMode: i, layer2Enabled: true, layer2VizEnabled: true}));
+  mkPills('symmetryGrid', SYMMETRY_OPTIONS.map(n => `${n}-Fold`), 'sym', i => setPatch({symmetryIndex: i}));
+
+  mkPills('l4ModesGrid', LAYER4_MODES, 'l4m', i => setPatch({layer4Mode: i, backdropMode: i, layer4Enabled: true, backdropEnabled: true}));
+  mkPills('l4SecModesGrid', LAYER4_MODES, 'l4sm', i => setPatch({layer4SecondaryMode: i, layer4DualEnabled: true}));
+  mkPills('l4WallGrid', LAYER4_WALL_PATTERNS, 'l4w', i => setPatch({layer4WallPattern: i}));
+
+  mkPills('l3RandModesGrid', LAYER3_RANDOM_MODES, 'l3rm', i => setPatch({layer3RandomMode: i, layer3AutoRandomise: i > 0}));
+  mkPills('l3ModesGrid', LAYER3_MODES, 'l3m', i => setPatch({layer3Mode: i, layer3Enabled: true}));
+  mkPills('l3CylGrid', LAYER3_CYLINDER_DIRS, 'l3cyl', i => setPatch({layer3CylinderDir: i}));
+  mkPills('l3FontsGrid', LAYER3_FONT_PRESETS, 'l3fnt', i => setPatch({layer3FontPreset: i}));
+  mkPills('l3ColourGrid', LAYER3_COLOUR_MODES, 'l3col', i => setPatch({layer3ColourMode: i}));
+}
+
+function renderPhotoLibrary() {
+  const badge = document.getElementById('photoStatusBadge');
+  if (badge) {
+    const tot = photoInfo.totalOriginals || 0;
+    const proc = photoInfo.totalProcessed || 0;
+    const cat = photoInfo.activeCategory || cfg.photoActiveCategory || 'all';
+    const stem = photoInfo.activeStem || 'None';
+    badge.textContent = tot > 0
+      ? `📷 Active: ${stem}  ·  Category: ${cat}  ·  Library: ${tot} sources (${proc} darkroom variants)`
+      : `📷 No processed photos found in ~/Pictures/bandarchy/processed`;
+  }
+  const cg = document.getElementById('photoCategoriesGrid');
+  if (!cg) return;
+  const cats = photoInfo.categories || ['all'];
+  const counts = photoInfo.categoryCounts || {};
+  const catsKey = JSON.stringify({cats, counts});
+  if (catsKey !== lastCatsKey) {
+    lastCatsKey = catsKey;
+    cg.innerHTML = '';
+    cats.forEach(c => {
+      const b = document.createElement('button');
+      b.id = 'pcat_' + c;
+      const cnt = counts[c] !== undefined ? ` (${counts[c]})` : '';
+      b.textContent = `${c}${cnt}`;
+      b.onclick = () => triggerAction('photoCatSelect', c);
+      cg.appendChild(b);
+    });
+  }
+  const activeCat = photoInfo.activeCategory || cfg.photoActiveCategory || 'all';
+  cats.forEach(c => setActiveById('pcat_' + c, c === activeCat));
+
+  const topCatSel = document.getElementById('topPhotoCatSelect');
+  if (topCatSel) {
+    if (topCatSel.dataset.catsKey !== catsKey) {
+      topCatSel.dataset.catsKey = catsKey;
+      topCatSel.innerHTML = '';
+      cats.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c;
+        const cnt = counts[c] !== undefined ? ` (${counts[c]})` : '';
+        opt.textContent = `Category: ${c}${cnt}`;
+        topCatSel.appendChild(opt);
+      });
+    }
+    topCatSel.value = activeCat;
+  }
+  setActiveById('top_photo_mode_btn', Boolean(cfg.layer1Enabled && cfg.layer1FieldEnabled && cfg.layer1Mode === 11));
+  setActiveById('top_photo_autorand_btn', Boolean(cfg.photoAutoMotionEvents));
+
+  const pinned = cfg.photoPinnedVariant !== undefined ? Number(cfg.photoPinnedVariant) : -1;
+  setActiveById('pvar_-1', pinned === -1);
+  if (PhotoMotion.STAGE1_EFFECT_IDS) {
+    for (let i = 0; i < PhotoMotion.STAGE1_EFFECT_IDS.length; i++) {
+      setActiveById('pvar_' + i, pinned === i);
+    }
+  }
+}
+
+function renderStatementsAndCollections() {
+  const colGrid = document.getElementById('stmtCollectionsGrid');
+  if (colGrid) {
+    colGrid.innerHTML = '';
+    statementCollections.forEach(col => {
+      const b = document.createElement('button');
+      const cnt = (col.statements || []).length;
+      b.textContent = `${col.name} (${cnt})`;
+      if (cfg.statementCollectionId === col.id) b.classList.add('active');
+      b.onclick = () => triggerAction('selectStatementCollection', col.id);
+      colGrid.appendChild(b);
+    });
+  }
+  const stmts = cfg.statements || [];
+  const pillsGrid = document.getElementById('statementsPillsGrid');
+  if (pillsGrid) {
+    pillsGrid.innerHTML = '';
+    stmts.forEach((s, idx) => {
+      const b = document.createElement('button');
+      b.textContent = s;
+      if (cfg.statementText === s) b.classList.add('active');
+      b.onclick = () => setPatch({statementText: s, layer3ShowStatements: true, useAlbumArt: false, layer3Enabled: true});
+      pillsGrid.appendChild(b);
+    });
+  }
+  const ta = document.getElementById('statementsBulkTextarea');
+  const stmtsKey = stmts.join('\n');
+  if (ta && document.activeElement !== ta && stmtsKey !== lastStmtsKey) {
+    lastStmtsKey = stmtsKey;
+    ta.value = stmtsKey;
+  }
+
+  const topStmtColSel = document.getElementById('topStmtColSelect');
+  if (topStmtColSel) {
+    topStmtColSel.innerHTML = '';
+    statementCollections.forEach(col => {
+      const opt = document.createElement('option');
+      opt.value = col.id;
+      opt.textContent = `${col.name} (${(col.statements || []).length})`;
+      topStmtColSel.appendChild(opt);
+    });
+    if (cfg.statementCollectionId) topStmtColSel.value = cfg.statementCollectionId;
+  }
+  const topStmtSel = document.getElementById('topStmtSelect');
+  if (topStmtSel) {
+    topStmtSel.innerHTML = '';
+    stmts.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = s;
+      topStmtSel.appendChild(opt);
+    });
+    if (cfg.statementText) topStmtSel.value = cfg.statementText;
+  }
+  setActiveById('top_stmt_mode_btn', Boolean(cfg.layer3Enabled && !cfg.useAlbumArt && cfg.layer3ShowStatements));
+}
+
+async function saveStatementsBulk() {
+  const ta = document.getElementById('statementsBulkTextarea');
+  if (!ta) return;
+  const lines = ta.value.split('\n').map(s => s.trim()).filter(s => s && !s.startsWith('#'));
+  const randStmt = lines.length ? lines[Math.floor(Math.random() * lines.length)] : cfg.statementText;
+  await setPatch({statements: lines, statementText: randStmt});
+}
+
+async function saveNewStatementCollection() {
+  const ta = document.getElementById('statementsBulkTextarea');
+  const nameIn = document.getElementById('newStmtColName');
+  if (!ta || !nameIn) return;
+  const name = nameIn.value.trim() || 'Custom Statements';
+  const lines = ta.value.split('\n').map(s => s.trim()).filter(s => s && !s.startsWith('#'));
+  await triggerAction('saveStatementCollection', {name, statements: lines});
+  nameIn.value = '';
+}
+
+function renderL3Styles() {
+  const g = document.getElementById('l3StylesGrid');
+  const styles = cfg.useAlbumArt ? LAYER3_ART_STYLES : LAYER3_TEXT_STYLES;
+  document.getElementById('l3StylesLabel').textContent = cfg.useAlbumArt
+    ? `Art Pixel / Block / Halftone / Chromatic Style (${styles.length}):`
+    : `Psychedelic / Techno / Dance / ASCII Text Style (${styles.length}):`;
+  g.innerHTML = '';
+  styles.forEach((name, i) => {
+    const b = document.createElement('button');
+    b.textContent = `#${i+1}: ${name}`;
+    if (cfg.layer3TextStyle === i) b.classList.add('active');
+    b.onclick = () => setPatch({layer3TextStyle: i, layer3Enabled: true});
+    g.appendChild(b);
+  });
+}
+
+function renderTrackEditor() {
+  // Render Track Collections in both Tab 6 and Tab 7
+  ['trackCollectionsGrid', 'tab6TrackCollectionsGrid'].forEach(gid => {
+    const cg = document.getElementById(gid);
+    if (!cg) return;
+    cg.innerHTML = '';
+    trackCollections.forEach(col => {
+      const b = document.createElement('button');
+      const cnt = (col.tracks || []).length;
+      b.textContent = `${col.name} (${cnt})`;
+      if (cfg.trackCollectionId === col.id) b.classList.add('active');
+      b.onclick = () => triggerAction('selectTrackCollection', col.id);
+      cg.appendChild(b);
+    });
+  });
+
+  // Render Active Track Pills in both Tab 6 and Tab 7
+  ['activeTracksPills', 'tab6TracksPillsGrid'].forEach(gid => {
+    const pills = document.getElementById(gid);
+    if (!pills) return;
+    pills.innerHTML = '';
+    tracks.forEach((t, i) => {
+      const b = document.createElement('button');
+      const artTag = t.art ? ` [${t.art}]` : '';
+      b.textContent = `#${i+1}: ${t.artist} — ${t.track} (${t.album})${artTag}`;
+      if (cfg.externalTrackIndex === i) b.classList.add('active');
+      b.onclick = () => setPatch({externalTrackIndex: i});
+      pills.appendChild(b);
+    });
+  });
+
+  // Render External Art Branches in both Tab 6 and Tab 7
+  ['artBranchesGrid', 'tab6ArtBranchesGrid'].forEach(gid => {
+    const ag = document.getElementById(gid);
+    if (!ag) return;
+    ag.innerHTML = '';
+    artBranches.forEach(br => {
+      const b = document.createElement('button');
+      b.textContent = br.label;
+      if (cfg.externalArtBranch === br.id) b.classList.add('active');
+      b.onclick = () => triggerAction('selectArtBranch', br.id);
+      ag.appendChild(b);
+    });
+  });
+
+  const topTColSel = document.getElementById('topTrackColSelect');
+  if (topTColSel) {
+    topTColSel.innerHTML = '';
+    trackCollections.forEach(col => {
+      const opt = document.createElement('option');
+      opt.value = col.id;
+      opt.textContent = `${col.name} (${(col.tracks || []).length})`;
+      topTColSel.appendChild(opt);
+    });
+    if (cfg.trackCollectionId) topTColSel.value = cfg.trackCollectionId;
+  }
+  const topTSel = document.getElementById('topTrackSelect');
+  if (topTSel) {
+    topTSel.innerHTML = '';
+    tracks.forEach((t, i) => {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = `#${i+1}: ${t.artist} — ${t.track}`;
+      topTSel.appendChild(opt);
+    });
+    topTSel.value = String(cfg.externalTrackIndex || 0);
+  }
+  const topArtSel = document.getElementById('topArtBranchSelect');
+  if (topArtSel) {
+    topArtSel.innerHTML = '';
+    artBranches.forEach(br => {
+      const opt = document.createElement('option');
+      opt.value = br.id;
+      opt.textContent = br.label;
+      topArtSel.appendChild(opt);
+    });
+    if (cfg.externalArtBranch) topArtSel.value = cfg.externalArtBranch;
+  }
+
+  const rows = document.getElementById('trackEditorRows');
+  if (!rows) return;
+  rows.innerHTML = '';
+  tracks.forEach((t, i) => {
+    const div = document.createElement('div');
+    div.className = 'track-row';
+    div.innerHTML = `
+      <input type="text" placeholder="Artist" value="${(t.artist||'').replace(/"/g,'&quot;')}" onchange="tracks[${i}].artist=this.value">
+      <input type="text" placeholder="Track" value="${(t.track||'').replace(/"/g,'&quot;')}" onchange="tracks[${i}].track=this.value">
+      <input type="text" placeholder="Album" value="${(t.album||'').replace(/"/g,'&quot;')}" onchange="tracks[${i}].album=this.value">
+      <input type="text" placeholder="Subfolder/File in external_art (e.g. studio)" value="${(t.art||'').replace(/"/g,'&quot;')}" onchange="tracks[${i}].art=this.value">
+      <button onclick="tracks.splice(${i},1); renderTrackEditor()">✕</button>
+    `;
+    rows.appendChild(div);
+  });
+}
+
+function addTrackRow() {
+  tracks.push({artist: 'New Artist', track: 'Untitled Track', album: 'youtube', art: 'studio'});
+  renderTrackEditor();
+}
+
+async function saveTracks() {
+  await setPatch({externalTracks: tracks});
+}
+
+async function saveNewTrackCollection() {
+  const nameIn = document.getElementById('newTrackColName');
+  const name = (nameIn && nameIn.value.trim()) ? nameIn.value.trim() : 'Custom Tracks';
+  await triggerAction('saveTrackCollection', {name, tracks});
+  if (nameIn) nameIn.value = '';
+}
+
+function setActiveById(id, active) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('active', Boolean(active));
+}
+
+function syncUi() {
+  buildStaticGrids();
+  renderL3Styles();
+  renderPhotoLibrary();
+  renderStatementsAndCollections();
+
+  document.getElementById('nowPlayingBadge').textContent =
+    `${cfg.trackArtist || ''} — ${cfg.trackTitle || ''} (${cfg.trackAlbum || ''})`;
+
+  ['art','turntable','visualiser','off'].forEach(m => setActiveById('st_' + m, cfg.stageMode === m));
+
+  const playBtn = document.getElementById('playToggleBtn');
+  playBtn.classList.toggle('active', Boolean(cfg.playing));
+  playBtn.textContent = cfg.playing ? '▶ Playing' : '⏸ Paused';
+
+  const hudBtn = document.getElementById('hudToggleBtn');
+  hudBtn.classList.toggle('active', Boolean(cfg.showHud));
+  hudBtn.textContent = cfg.showHud ? '󰍹 HDMI HUD: ON' : '󰍹 HDMI HUD: OFF';
+
+  setActiveById('musicDriveBtn', cfg.musicDrive);
+  const anyRand = cfg.layer1AutoRandomise || cfg.layerEqAutoRandomise || cfg.layerVectorsAutoRandomise ||
+                  cfg.layer2AutoRandomise || cfg.layer4AutoRandomise || (cfg.layer3RandomMode > 0);
+  setActiveById('autoRandAllBtn', anyRand);
+
+  // Top 6 Layer Switches
+  const l1On = Boolean(cfg.layer1Enabled && cfg.layer1FieldEnabled);
+  const l2EqOn = Boolean(cfg.layer1Enabled && cfg.layer1EqEnabled);
+  const l3VecOn = Boolean(cfg.layer1Enabled && cfg.layer1ShapesEnabled);
+  const l4GeoOn = Boolean(cfg.layer2Enabled);
+  const l5VorOn = Boolean(cfg.layer4Enabled || cfg.backdropEnabled);
+  const l6TypOn = Boolean(cfg.layer3Enabled);
+
+  setActiveById('top_l1', l1On);
+  setActiveById('top_l1_rand', cfg.layer1AutoRandomise);
+  setActiveById('top_l2eq', l2EqOn);
+  setActiveById('top_l2eq_rand', cfg.layerEqAutoRandomise);
+  setActiveById('top_l3vec', l3VecOn);
+  setActiveById('top_l3vec_rand', cfg.layerVectorsAutoRandomise);
+  setActiveById('top_l4geo', l4GeoOn);
+  setActiveById('top_l4geo_rand', cfg.layer2AutoRandomise);
+  setActiveById('top_l5vor', l5VorOn);
+  setActiveById('top_l5vor_rand', cfg.layer4AutoRandomise);
+  setActiveById('top_l6typ', l6TypOn);
+
+  const l6RandBtn = document.getElementById('top_l6typ_rand');
+  const l6Mode = Number(cfg.layer3RandomMode || 0);
+  l6RandBtn.classList.toggle('active', l6Mode > 0);
+  l6RandBtn.textContent = l6Mode === 0 ? '🎲 OFF' : (l6Mode === 1 ? '🎲 Sel' : '🎲 Art⟷Words');
+
+  // Tab buttons & masters
+  setActiveById('btn_presetTransitionEnabled', cfg.presetTransitionEnabled);
+  setActiveById('btn_l1_master', l1On);
+  setActiveById('btn_l1_rand', cfg.layer1AutoRandomise);
+  setActiveById('btn_photoAutoMotionEvents', cfg.photoAutoMotionEvents);
+  setActiveById('btn_photoRandomiseMotionControls', cfg.photoRandomiseMotionControls);
+  setActiveById('btn_photoPlaneShearEnabled', cfg.photoPlaneShearEnabled);
+
+  setActiveById('btn_l2eq_master', l2EqOn);
+  setActiveById('btn_l2eq_rand', cfg.layerEqAutoRandomise);
+
+  setActiveById('btn_l3vec_master', l3VecOn);
+  setActiveById('btn_l3vec_rand', cfg.layerVectorsAutoRandomise);
+
+  setActiveById('btn_l4geo_master', l4GeoOn);
+  setActiveById('btn_l4geo_viz', cfg.layer2VizEnabled);
+  setActiveById('btn_l4geo_tracers', cfg.layer2TracersEnabled);
+  setActiveById('btn_l4geo_rand', cfg.layer2AutoRandomise);
+
+  setActiveById('btn_l5vor_master', l5VorOn);
+  setActiveById('btn_l5vor_dual', cfg.layer4DualEnabled);
+  setActiveById('btn_l5vor_rand', cfg.layer4AutoRandomise);
+
+  setActiveById('btn_l6_master', l6TypOn);
+  setActiveById('btn_src_art', cfg.useAlbumArt);
+  setActiveById('btn_src_words', !cfg.useAlbumArt);
+  ['braille','block','text'].forEach(m => setActiveById('btn_glyph_' + m, cfg.asciiMode === m));
+  ['layer3ShowArtist','layer3ShowTrack','layer3ShowAlbum','layer3ShowStatements','gpuShaderEnabled','antialiasingEnabled'].forEach(k => setActiveById('btn_' + k, cfg[k]));
+
+  [1, -1, 0].forEach(d => {
+    setActiveById('l1dir_' + d, cfg.layer1Direction === d);
+    setActiveById('trdir_' + d, cfg.tracerDirection === d);
+    setActiveById('l4dir_' + d, cfg.layer4Direction === d);
+  });
+  [0,1,2,3,4,5].forEach(q => setActiveById('rq_' + q, cfg.renderQuality === q));
+  [30,48,60].forEach(f => setActiveById('fps_' + f, cfg.targetFps === f));
+
+  const syncGrid = (prefix, len, activeIdx) => {
+    for (let i = 0; i < len; i++) setActiveById(`${prefix}_${i}`, i === activeIdx);
+  };
+  syncGrid('tarc', TRACK_ARC_MODES.length, cfg.trackArcMode);
+  syncGrid('prm', PALETTE_RANDOM_MODES.length, cfg.paletteRandomMode);
+  syncGrid('pcol', PALETTE_COLLECTIONS.length, cfg.paletteCollectionIndex);
+  syncGrid('pal', PALETTE_NAMES.length, cfg.paletteIndex !== undefined ? cfg.paletteIndex : cfg.palette);
+  syncGrid('l1m', ALL_LAYER1_MODES.length, cfg.layer1Mode);
+  syncGrid('ppool', PhotoMotion.PHOTO_POOL_MODES.length, cfg.photoPoolMode);
+  syncGrid('pmot', PhotoMotion.PHOTO_MOTION_MODES.length, cfg.photoMotionMode);
+  syncGrid('l1eq', ALL_LAYER1_EQ_STYLES.length, cfg.layer1EqStyle);
+  syncGrid('l1eql', LAYER1_EQ_LAYOUTS.length, cfg.layer1EqLayout);
+  syncGrid('l1eqb', LAYER1_EQ_BAND_ORDERS.length, cfg.layer1EqBandOrder);
+  syncGrid('l1eqd', LAYER1_EQ_DAMPING.length, cfg.layer1EqDamping);
+  syncGrid('l1sh', LAYER1_SHAPE_STYLES.length, cfg.layer1ShapeStyle);
+  syncGrid('l2m', ALL_MODE_NAMES.length, cfg.visualMode);
+  syncGrid('sym', SYMMETRY_OPTIONS.length, cfg.symmetryIndex);
+  syncGrid('l4m', LAYER4_MODES.length, cfg.layer4Mode);
+  syncGrid('l4sm', LAYER4_MODES.length, cfg.layer4SecondaryMode);
+  syncGrid('l4w', LAYER4_WALL_PATTERNS.length, cfg.layer4WallPattern);
+  syncGrid('l3rm', LAYER3_RANDOM_MODES.length, cfg.layer3RandomMode);
+  syncGrid('l3m', LAYER3_MODES.length, cfg.layer3Mode);
+  syncGrid('l3cyl', LAYER3_CYLINDER_DIRS.length, cfg.layer3CylinderDir);
+  syncGrid('l3fnt', LAYER3_FONT_PRESETS.length, cfg.layer3FontPreset);
+  syncGrid('l3col', LAYER3_COLOUR_MODES.length, cfg.layer3ColourMode);
+
+  document.querySelectorAll('input[type=range]').forEach(sl => {
+    const k = sl.id.replace(/^sl_/, '');
+    const vl = document.getElementById('val_' + k);
+    if (cfg[k] !== undefined) {
+      sl.value = cfg[k];
+      if (vl) {
+        const isInt = ['renderResW','tracerCount','layer3Tracers','layer4Symmetry','autoCycleIntervalSec','presetTransitionIntervalSec','photoEffectChangeIntervalSec'].includes(k);
+        vl.textContent = Number(cfg[k]).toFixed(isInt ? 0 : 2);
+      }
+    }
+  });
+}
+
+function toggleL1() {
+  const next = !(cfg.layer1Enabled && cfg.layer1FieldEnabled);
+  setPatch({layer1Enabled: next || cfg.layer1EqEnabled || cfg.layer1ShapesEnabled, layer1FieldEnabled: next});
+}
+function toggleEq() {
+  const next = !(cfg.layer1Enabled && cfg.layer1EqEnabled);
+  setPatch({layer1Enabled: next || cfg.layer1FieldEnabled || cfg.layer1ShapesEnabled, layer1EqEnabled: next});
+}
+function toggleVectors() {
+  const next = !(cfg.layer1Enabled && cfg.layer1ShapesEnabled);
+  setPatch({layer1Enabled: next || cfg.layer1FieldEnabled || cfg.layer1EqEnabled, layer1ShapesEnabled: next});
+}
+function toggleVortex() {
+  const next = !(cfg.layer4Enabled || cfg.backdropEnabled);
+  setPatch({layer4Enabled: next, backdropEnabled: next});
+}
+function cycleL3Rand() {
+  const next = ((Number(cfg.layer3RandomMode) || 0) + 1) % 3;
+  setPatch({layer3RandomMode: next, layer3AutoRandomise: next > 0});
+}
+
+async function setPatch(patch) {
+  Object.assign(cfg, patch);
+  syncUi();
+  const res = await fetch('/api/state', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(patch)
+  });
+  const data = await res.json();
+  cfg = data.config || cfg;
+  if (patch.externalTracks || patch.externalTrackIndex !== undefined) {
+    tracks = cfg.externalTracks || tracks;
+    renderTrackEditor();
+  }
+  syncUi();
+}
+
+async function triggerAction(name, arg) {
+  const res = await fetch('/api/action', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name, arg})
+  });
+  setTimeout(pollControllerState, 100);
+}
+
+async function setAudioMode(mode) {
+  await triggerAction('setAudioSource', mode);
+}
+
+function drawMiniMeter(bands) {
+  const c = document.getElementById('miniMeter');
+  if (!c || !bands) return;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#04060a';
+  ctx.fillRect(0, 0, c.width, c.height);
+  const n = 24;
+  const bw = c.width / n;
+  for (let i = 0; i < n; i++) {
+    const v = Math.min(1.0, (bands[i * 2] || 0) / 850.0);
+    const bh = Math.max(1, v * (c.height - 2));
+    ctx.fillStyle = v > 0.7 ? '#38bdf8' : '#6ee7b7';
+    ctx.fillRect(i * bw + 1, c.height - bh, Math.max(1, bw - 1.5), bh);
+  }
+}
+
+function toggleKey(k) { setPatch({[k]: !cfg[k]}); }
+function setNum(k, v) { setPatch({[k]: Number(v)}); }
+
+async function pollControllerState() {
+  try {
+    const res = await fetch('/api/state');
+    const data = await res.json();
+    cfg = data.config || cfg;
+    if (data.photo) photoInfo = data.photo;
+    if (data.statementCollections) statementCollections = data.statementCollections;
+    if (data.trackCollections) trackCollections = data.trackCollections;
+    if (data.artBranches) artBranches = data.artBranches;
+    const tKey = JSON.stringify({tracks: cfg.externalTracks, idx: cfg.externalTrackIndex, col: cfg.trackCollectionId, br: cfg.externalArtBranch});
+    if (tKey !== lastTracksKey) {
+      lastTracksKey = tKey;
+      tracks = cfg.externalTracks || tracks;
+      renderTrackEditor();
+    }
+    const mode = data.audioSourceMode || 'laptop';
+    const isSynth = (mode === 'synth');
+    setActiveById('srcLaptopBtn', !isSynth);
+    setActiveById('srcSynthBtn', isSynth);
+    const udpBadge = document.getElementById('udpSenderBadge');
+    if (udpBadge) {
+      const pin = data.pinnedSender || 'auto';
+      const act = data.activeSender || '';
+      if (isSynth) {
+        udpBadge.textContent = '🤖 Synth Active';
+      } else if (data.laptopStreamActive && act) {
+        udpBadge.textContent = `📡 UDP Live: ${act}${pin !== 'auto' ? ' (Pinned)' : ''}`;
+      } else {
+        udpBadge.textContent = `📡 UDP Silent (${pin === 'auto' ? 'Auto' : pin})`;
+      }
+    }
+    if (data.bands) drawMiniMeter(data.bands);
+    syncUi();
+  } catch (e) {}
+}
+
+async function init() {
+  const res = await fetch('/api/state');
+  const data = await res.json();
+  cfg = data.config || {};
+  if (data.photo) photoInfo = data.photo;
+  if (data.statementCollections) statementCollections = data.statementCollections;
+  if (data.trackCollections) trackCollections = data.trackCollections;
+  if (data.artBranches) artBranches = data.artBranches;
+  tracks = cfg.externalTracks || [];
+  syncUi();
+  renderTrackEditor();
+  if (data.bands) drawMiniMeter(data.bands);
+  setInterval(pollControllerState, 350);
+}
+init();
+</script>
+</body>
+</html>
+"""
+
+HTML_STAGE = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bandarchy Live Stage Output — penguinplex</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05070b; overflow: hidden;
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #e2e8f0;
+  }
+  canvas {
+    display: block; width: 100vw; height: 100vh;
+  }
+  #hud {
+    position: fixed; top: 12px; right: 14px;
+    display: flex; gap: 8px; align-items: center;
+    background: rgba(9, 13, 22, 0.82);
+    border: 1px solid rgba(110, 231, 183, 0.32);
+    border-radius: 8px; padding: 6px 12px;
+    font-size: 11px; backdrop-filter: blur(8px);
+    transition: opacity 0.3s ease;
+    z-index: 20;
+  }
+  body.hide-hud #hud { opacity: 0; pointer-events: none; }
+  button {
+    background: rgba(110, 231, 183, 0.16);
+    color: #6ee7b7; border: 1px solid rgba(110, 231, 183, 0.4);
+    border-radius: 5px; padding: 4px 9px; cursor: pointer;
+    font-family: inherit; font-size: 11px;
+  }
+  button:hover { background: rgba(110, 231, 183, 0.28); color: #fff; }
+</style>
+</head>
+<body>
+<canvas id="stageCanvas"></canvas>
+<div id="hud">
+  <span id="statusTxt">Connecting…</span>
+  <button onclick="window.open('/', '_blank')" title="Open Studio Controller">🎛 Controller</button>
+  <button id="micBtn" title="Capture live browser/microphone audio">🎙 Mic FFT</button>
+  <button id="fsBtn" title="Toggle Fullscreen (F)">⛶ Fullscreen</button>
+</div>
+<script src="/PhotoMotionEngine.js"></script>
+<script src="/PsychedelicEngine.js"></script>
+<script>
+const canvas = document.getElementById('stageCanvas');
+const ctx = canvas.getContext('2d', { alpha: false });
+const statusTxt = document.getElementById('statusTxt');
+const engineState = createState();
+const photoState = PhotoMotion.createPhotoMotionState();
+const theme = {
+  accent: '#6ee7b7',
+  urgent: '#f472b6',
+  foreground: '#e2e8f0',
+  background: '#05070b'
+};
+
+let serverCfg = {};
+let serverPhoto = {};
+let prevVariants = {};
+let serverBands = new Array(64).fill(0);
+let artLines = [];
+let lastUpdatedAt = -1;
+let lastPhotoSeq = -1;
+let lastActionSeq = -1;
+let lastStageSeq = -1;
+let lastServerPhotoMode = -1;
+let localAnalyser = null;
+let localFreqData = null;
+let fetchingFull = false;
+
+const imgCache = new Map();
+function toHttpUrl(pathOrUrl) {
+  if (!pathOrUrl || typeof pathOrUrl !== 'string') return '';
+  let s = pathOrUrl.trim();
+  if (!s) return '';
+  if (s.startsWith('/api/file?') || s.startsWith('http://') || s.startsWith('https://')) return s;
+  if (s.startsWith('file://')) s = s.slice(7);
+  return '/api/file?path=' + encodeURIComponent(s);
+}
+
+function getOrLoadImg(pathOrUrl) {
+  const url = toHttpUrl(pathOrUrl);
+  if (!url) return null;
+  let entry = imgCache.get(url);
+  if (!entry) {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    entry = { img, loaded: false, failed: false, url };
+    img.onload = () => { entry.loaded = true; };
+    img.onerror = () => { entry.failed = true; };
+    img.src = url;
+    imgCache.set(url, entry);
+    if (imgCache.size > 160) {
+      const firstKey = imgCache.keys().next().value;
+      imgCache.delete(firstKey);
+    }
+  }
+  return entry.loaded ? entry.img : null;
+}
+
+const origDrawImage = ctx.drawImage.bind(ctx);
+ctx.drawImage = function(imgOrUrl, ...args) {
+  if (typeof imgOrUrl === 'string') {
+    const img = getOrLoadImg(imgOrUrl);
+    if (img && img.complete && img.naturalWidth > 0) {
+      return origDrawImage(img, ...args);
+    }
+    return;
+  }
+  if (imgOrUrl) {
+    return origDrawImage(imgOrUrl, ...args);
+  }
+};
+
+function resize() {
+  const targetW = Number(serverCfg.renderResW) || 960;
+  const aspect = window.innerHeight / Math.max(1, window.innerWidth);
+  canvas.width = Math.max(384, Math.min(1920, Math.round(targetW)));
+  canvas.height = Math.max(216, Math.round(canvas.width * aspect));
+}
+window.addEventListener('resize', resize);
+resize();
+
+let hudTimer = null;
+window.addEventListener('mousemove', () => {
+  document.body.classList.remove('hide-hud');
+  clearTimeout(hudTimer);
+  hudTimer = setTimeout(() => document.body.classList.add('hide-hud'), 3200);
+});
+hudTimer = setTimeout(() => document.body.classList.add('hide-hud'), 3200);
+
+document.getElementById('fsBtn').onclick = () => {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+  else document.exitFullscreen();
+};
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'f' || e.key === 'F') document.getElementById('fsBtn').click();
+});
+
+document.getElementById('micBtn').onclick = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const src = ac.createMediaStreamSource(stream);
+    localAnalyser = ac.createAnalyser();
+    localAnalyser.fftSize = 256;
+    localAnalyser.smoothingTimeConstant = 0.65;
+    localFreqData = new Uint8Array(localAnalyser.frequencyBinCount);
+    src.connect(localAnalyser);
+    document.getElementById('micBtn').textContent = '🎙 Mic Active';
+  } catch (err) {
+    alert('Microphone access error: ' + err.message);
+  }
+};
+
+function loadVariantDict(dictObj) {
+  const out = {};
+  if (!dictObj || typeof dictObj !== 'object') return out;
+  for (const [k, rawPath] of Object.entries(dictObj)) {
+    const url = toHttpUrl(String(rawPath || ''));
+    if (!url) continue;
+    const img = getOrLoadImg(url);
+    if (img) out[k] = url;
+  }
+  return out;
+}
+
+function syncPhotoState(forceFromServer = false) {
+  photoState.categories = serverPhoto.categories || PhotoMotion.DEFAULT_PHOTO_CATEGORIES;
+  photoState.categoryCounts = serverPhoto.categoryCounts || {};
+  photoState.activeCategory = serverPhoto.activeCategory || serverCfg.photoActiveCategory || 'all';
+  const srvMode = Number(serverCfg.photoMotionMode) || 0;
+  if (forceFromServer || srvMode !== lastServerPhotoMode) {
+    photoState.motionMode = srvMode;
+    lastServerPhotoMode = srvMode;
+    photoState.photoMotionActivity = Number(serverCfg.photoMotionActivity ?? 1.0);
+    photoState.photoXyzTilt = Number(serverCfg.photoXyzTilt ?? 0.85);
+    photoState.photoZoomPunch = Number(serverCfg.photoZoomPunch ?? 1.05);
+    photoState.photoPaletteBloom = Number(serverCfg.photoPaletteBloom ?? 1.10);
+    photoState.photoWarpIntensity = Number(serverCfg.photoWarpIntensity ?? 0.90);
+    photoState.photoStrobeSpeed = Number(serverCfg.photoStrobeSpeed ?? 0.90);
+  }
+  photoState.poolMode = Number(serverCfg.photoPoolMode) || 0;
+  photoState.photoPlaneShearEnabled = Boolean(serverCfg.photoPlaneShearEnabled);
+  photoState.photoPlaneShear = Number(serverCfg.photoPlaneShear ?? 0.65);
+  photoState.autoMotionEvents = Boolean(serverCfg.photoAutoMotionEvents);
+  photoState.randomiseMotionControls = Boolean(serverCfg.photoRandomiseMotionControls ?? true);
+  photoState.photoEffectChangeIntervalSec = Number(serverCfg.photoEffectChangeIntervalSec ?? 12);
+  photoState.autoMotionMinDwellSec = photoState.photoEffectChangeIntervalSec;
+  photoState.pinnedStage1EffectIndex = Number(serverCfg.photoPinnedVariant ?? -1);
+  photoState.photoOpacity = Number(serverCfg.photoOpacity ?? 0.92);
+  photoState.photoFadeDuration = Number(serverCfg.photoFadeDuration ?? 0.65);
+  photoState.photoBlackOpacity = Number(serverCfg.photoBlackOpacity ?? 0.92);
+  photoState.photoMidOpacity = Number(serverCfg.photoMidOpacity ?? 0.78);
+  photoState.photoWhiteOpacity = Number(serverCfg.photoWhiteOpacity ?? 0.94);
+  photoState.photoColourSnatchOpacity = Number(serverCfg.photoColourSnatchOpacity ?? 1.0);
+}
+
+function renderPhotoStageToCanvas(ctx2d, w, h, engState) {
+  syncPhotoState(false);
+  const activeVars = serverPhoto.variants || {};
+  const effIds = PhotoMotion.STAGE1_EFFECT_IDS;
+  const pinnedIdx = (photoState.pinnedStage1EffectIndex >= 0 && photoState.pinnedStage1EffectIndex < effIds.length)
+    ? photoState.pinnedStage1EffectIndex
+    : ((Math.floor(Number(photoState.primaryVariantIndex) || 0) % effIds.length + effIds.length) % effIds.length);
+  const activeEffId = effIds[pinnedIdx] || effIds[0];
+
+  let loadedMap = {};
+  let poolMaps = null;
+  if (photoState.poolMode === 1) {
+    const rawByVar = serverPhoto.sameEffectByVariant || {};
+    const targetSameMap = rawByVar[activeEffId] || serverPhoto.sameEffectPeers || activeVars;
+    const loadedSame = loadVariantDict(targetSameMap);
+    loadedMap = loadedSame;
+    poolMaps = { sameEffectPeers: loadedSame, sameEffectByVariant: { [activeEffId]: loadedSame }, randomPoolPeers: {} };
+  } else if (photoState.poolMode === 2) {
+    const loadedRand = loadVariantDict(serverPhoto.randomPoolPeers || activeVars);
+    loadedMap = loadedRand;
+    poolMaps = { sameEffectPeers: {}, sameEffectByVariant: {}, randomPoolPeers: loadedRand };
+  } else {
+    loadedMap = loadVariantDict(activeVars);
+  }
+  const prevLoadedMap = loadVariantDict(prevVariants);
+  if (Object.keys(loadedMap).length === 0 && Object.keys(prevLoadedMap).length > 0) {
+    loadedMap = prevLoadedMap;
+  }
+  const audioTel = {
+    bass: engState ? (engState.bassSmooth || 0.0) : 0.0,
+    mid: engState ? (engState.midSmooth || 0.0) : 0.0,
+    high: engState ? (engState.highSmooth || 0.0) : 0.0,
+    beat: engState ? (engState.beatPulse || 0.0) : 0.0,
+    spectrum: serverBands || []
+  };
+  PhotoMotion.renderPhotoMotionLayer(
+    ctx2d, w, h, photoState, loadedMap,
+    Number(serverCfg.palette ?? serverCfg.paletteIndex ?? 0),
+    theme, audioTel, prevLoadedMap, poolMaps
+  );
+}
+
+async function fetchFullState() {
+  if (fetchingFull) return;
+  fetchingFull = true;
+  try {
+    const res = await fetch('/api/state');
+    const data = await res.json();
+    const prevResW = serverCfg.renderResW;
+    serverCfg = data.config || {};
+    syncPhotoState(true);
+    if (serverCfg.renderResW !== prevResW) resize();
+    if (data.photo) {
+      if (data.photo.seq !== lastPhotoSeq && serverPhoto.variants) {
+        prevVariants = serverPhoto.variants;
+      }
+      serverPhoto = data.photo;
+      lastPhotoSeq = Number(data.photo.seq ?? lastPhotoSeq);
+      loadVariantDict(serverPhoto.variants || {});
+    }
+    if (data.bands) serverBands = data.bands;
+    artLines = data.artLines || [];
+    if (serverCfg.artPath) getOrLoadImg(serverCfg.artPath);
+    lastUpdatedAt = Number(serverCfg.updatedAt ?? lastUpdatedAt);
+    lastActionSeq = Number(data.actionSeq ?? lastActionSeq);
+    lastStageSeq = Number(data.stageSeq ?? lastStageSeq);
+    const modeTag = (serverCfg.layer1Enabled && serverCfg.layer1FieldEnabled && Number(serverCfg.layer1Mode) === 11)
+      ? `📷 ${serverPhoto.activeCategory || 'all'} · FX #${(Number(photoState.motionMode)||0)+1}`
+      : `${serverCfg.trackArtist || ''} — ${serverCfg.trackTitle || ''}`;
+    statusTxt.textContent = modeTag;
+  } catch (e) {
+    statusTxt.textContent = 'Reconnecting…';
+  } finally {
+    fetchingFull = false;
+  }
+}
+
+async function pollFast() {
+  try {
+    const res = await fetch('/api/fast');
+    const d = await res.json();
+    if (d.bands && d.bands.length) serverBands = d.bands;
+    if (
+      d.updatedAt !== lastUpdatedAt ||
+      d.photoSeq !== lastPhotoSeq ||
+      d.actionSeq !== lastActionSeq ||
+      d.stageSeq !== lastStageSeq
+    ) {
+      fetchFullState();
+    }
+  } catch (e) {}
+}
+
+fetchFullState();
+setInterval(pollFast, 55);
+
+let lastTs = performance.now();
+function animate(now) {
+  const dt = Math.min(0.05, Math.max(0.005, (now - lastTs) / 1000.0));
+  lastTs = now;
+
+  let activeBands = serverBands;
+  if (localAnalyser && localFreqData) {
+    localAnalyser.getByteFrequencyData(localFreqData);
+    activeBands = new Array(64);
+    for (let i = 0; i < 64; i++) {
+      activeBands[i] = Math.round((localFreqData[i] / 255.0) * 1000);
+    }
+  }
+
+  if (serverCfg.layer1Enabled && serverCfg.layer1FieldEnabled && Number(serverCfg.layer1Mode) === 11) {
+    syncPhotoState(false);
+    const stepInfo = PhotoMotion.stepPhotoMotionState(photoState, dt, {
+      bass: engineState.bassSmooth || 0.0,
+      mid: engineState.midSmooth || 0.0,
+      high: engineState.highSmooth || 0.0,
+      beat: engineState.beatPulse || 0.0,
+      spectrum: activeBands
+    });
+    if (stepInfo && stepInfo.autoMotionEventTriggered) {
+      serverCfg.photoMotionMode = photoState.motionMode;
+      lastServerPhotoMode = photoState.motionMode;
+      fetch('/api/action', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          name: 'photoPick',
+          arg: {
+            category: photoState.activeCategory || 'all',
+            photoMotionMode: photoState.motionMode,
+            photoMotionActivity: photoState.photoMotionActivity,
+            photoXyzTilt: photoState.photoXyzTilt,
+            photoZoomPunch: photoState.photoZoomPunch,
+            photoPaletteBloom: photoState.photoPaletteBloom,
+            photoWarpIntensity: photoState.photoWarpIntensity,
+            photoStrobeSpeed: photoState.photoStrobeSpeed
+          }
+        })
+      }).catch(() => {});
+    }
+  }
+
+  const artUrl = serverCfg.artPath ? toHttpUrl(serverCfg.artPath) : '';
+  const loadedArt = artUrl ? getOrLoadImg(artUrl) : null;
+  const visMode = Number(serverCfg.visualMode ?? serverCfg.layer2Mode ?? 0);
+  const rawCfg = Object.assign({}, serverCfg, {
+    gpuShaderEnabled: false,
+    gpuL1Active: false,
+    palette: Number(serverCfg.palette ?? serverCfg.paletteIndex ?? 0),
+    paletteIndex: Number(serverCfg.palette ?? serverCfg.paletteIndex ?? 0),
+    visualMode: visMode,
+    layer2Mode: visMode,
+    mode: visMode,
+    artLines: artLines,
+    asciiLines: artLines,
+    artImageUrl: loadedArt ? artUrl : '',
+    photoMotionRenderCallback: renderPhotoStageToCanvas
+  });
+  const normCfg = normaliseConfig(rawCfg, visMode, artLines);
+  normCfg.gpuShaderEnabled = false;
+  normCfg.gpuL1Active = false;
+  normCfg.photoMotionRenderCallback = renderPhotoStageToCanvas;
+  stepState(engineState, activeBands, Boolean(normCfg.playing ?? true), normCfg, dt);
+  renderFrame(
+    ctx,
+    canvas.width,
+    canvas.height,
+    engineState,
+    visMode,
+    theme,
+    artLines,
+    normCfg.useAlbumArt ? 'art' : 'words',
+    [],
+    normCfg,
+    canvas
+  );
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
+"""
+
+
+class BandarchyWebHandler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        return
+
+    def _send_bytes(self, data: bytes, content_type: str, status: int = 200, cache_control: str = "no-store"):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", cache_control)
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+
+        if path in ("/", "/control"):
+            self._send_bytes(HTML_CONTROL.encode("utf-8"), "text/html; charset=utf-8")
+            return
+        if path == "/stage":
+            self._send_bytes(HTML_STAGE.encode("utf-8"), "text/html; charset=utf-8")
+            return
+        if path == "/api/file":
+            qs = urllib.parse.parse_qs(parsed.query)
+            req_path = (qs.get("path") or [""])[0].strip()
+            if req_path.startswith("file://"):
+                req_path = req_path[7:]
+            if req_path:
+                p = Path(os.path.expanduser(req_path)).resolve()
+                allowed_roots = [
+                    (Path.home() / "Pictures" / "bandarchy").resolve(),
+                    CONFIG_DIR.resolve(),
+                    REPO_DIR.resolve(),
+                ]
+                if any(str(p).startswith(str(r)) for r in allowed_roots):
+                    if p.is_dir():
+                        imgs = sorted(
+                            [f for f in p.iterdir() if f.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")]
+                        )
+                        p = imgs[0] if imgs else p
+                    if p.is_file() and p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
+                        mime, _ = mimetypes.guess_type(str(p))
+                        self._send_bytes(
+                            p.read_bytes(),
+                            mime or "image/png",
+                            cache_control="public, max-age=86400",
+                        )
+                        return
+            self._send_bytes(b"Not Found", "text/plain", status=404)
+            return
+        if path == "/PsychedelicEngine.js":
+            js_path = REPO_DIR / "PsychedelicEngine.js"
+            src = js_path.read_text(encoding="utf-8")
+            src = src.replace(".pragma library", "// .pragma library (browser mode)")
+            src = src.replace('.import "PhotoMotionEngine.js" as PhotoMotion', "// PhotoMotion loaded globally")
+            self._send_bytes(src.encode("utf-8"), "application/javascript; charset=utf-8")
+            return
+        if path == "/PhotoMotionEngine.js":
+            js_path = REPO_DIR / "PhotoMotionEngine.js"
+            src = js_path.read_text(encoding="utf-8")
+            src = src.replace(".pragma library", "// .pragma library (browser mode)")
+            src += "\nwindow.PhotoMotion = this;\n"
+            self._send_bytes(src.encode("utf-8"), "application/javascript; charset=utf-8")
+            return
+        if path == "/api/fast":
+            now = time.time()
+            with STATE_LOCK:
+                playing = bool(LIVE_STATE.get("playing", True))
+                upd = float(LIVE_STATE.get("updatedAt", 0.0))
+                act_seq = ACTION_STATE["seq"]
+                stage_seq = ACTION_STATE["stageSeq"]
+                photo_seq = PHOTO_STATE["seq"]
+            bands, is_live = get_active_audio_bands(now, playing)
+            payload = {
+                "bands": bands,
+                "audioActive": is_live,
+                "playing": playing,
+                "sourceMode": LIVE_AUDIO.get("source", "laptop"),
+                "updatedAt": upd,
+                "actionSeq": act_seq,
+                "stageSeq": stage_seq,
+                "photoSeq": photo_seq,
+            }
+            self._send_bytes(json.dumps(payload, separators=(",", ":")).encode("utf-8"), "application/json")
+            return
+        if path == "/api/state":
+            now = time.time()
+            with STATE_LOCK:
+                cfg = dict(LIVE_STATE)
+                act_seq = ACTION_STATE["seq"]
+                stage_seq = ACTION_STATE["stageSeq"]
+                act_name = ACTION_STATE["name"]
+                act_arg = ACTION_STATE["arg"]
+                photo_snapshot = {
+                    "seq": PHOTO_STATE["seq"],
+                    "categories": PHOTO_STATE["categories"],
+                    "categoryCounts": PHOTO_STATE["categoryCounts"],
+                    "totalOriginals": PHOTO_STATE["totalOriginals"],
+                    "totalProcessed": PHOTO_STATE["totalProcessed"],
+                    "activeCategory": PHOTO_STATE["activeCategory"],
+                    "activeStem": PHOTO_STATE["activeStem"],
+                    "variants": PHOTO_STATE["variants"],
+                    "sameEffectPeers": PHOTO_STATE["sameEffectPeers"],
+                    "sameEffectByVariant": PHOTO_STATE["sameEffectByVariant"],
+                    "randomPoolPeers": PHOTO_STATE["randomPoolPeers"],
+                }
+            seed = f"{cfg.get('trackArtist','')}|{cfg.get('trackTitle','')}|{cfg.get('trackAlbum','')}"
+            art_lines = get_cached_art_lines(seed, str(cfg.get("artPath") or ""))
+            bands, is_live = get_active_audio_bands(now, bool(cfg.get("playing", True)))
+            payload = {
+                "config": cfg,
+                "photo": photo_snapshot,
+                "statementCollections": load_statement_collections(),
+                "trackCollections": load_track_collections(),
+                "artBranches": scan_external_art_branches(),
+                "bands": bands,
+                "laptopStreamActive": is_live,
+                "audioSourceMode": LIVE_AUDIO.get("source", "laptop"),
+                "pinnedSender": LIVE_AUDIO.get("pinnedSender", "auto"),
+                "activeSender": LIVE_AUDIO.get("activeSender", ""),
+                "knownSenders": sorted((LIVE_AUDIO.get("senders") or {}).keys()),
+                "artSeed": f"{seed}::{cfg.get('artPath','')}",
+                "artLines": art_lines,
+                "actionSeq": act_seq,
+                "stageSeq": stage_seq,
+                "actionName": act_name,
+                "actionArg": act_arg,
+            }
+            self._send_bytes(json.dumps(payload).encode("utf-8"), "application/json; charset=utf-8")
+            return
+
+        self._send_bytes(b"Not Found", "text/plain", status=404)
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(length) if length > 0 else b"{}"
+        try:
+            data = json.loads(body.decode("utf-8"))
+        except Exception:
+            data = {}
+
+        if self.path == "/api/action":
+            act_name = str(data.get("name", ""))
+            arg = data.get("arg")
+            if act_name == "setAudioSource":
+                req_mode = str(arg or "laptop")
+                LIVE_AUDIO["source"] = req_mode if req_mode in ("auto", "laptop", "synth") else "laptop"
+                self._send_bytes(json.dumps({"ok": True, "audioSourceMode": LIVE_AUDIO["source"]}).encode("utf-8"), "application/json")
+                return
+            if act_name == "cycleAudioSender":
+                known = ["auto"] + sorted((LIVE_AUDIO.get("senders") or {}).keys())
+                cur = LIVE_AUDIO.get("pinnedSender", "auto")
+                LIVE_AUDIO["pinnedSender"] = known[(known.index(cur) + 1) % len(known)] if cur in known else "auto"
+                self._send_bytes(json.dumps({"ok": True, "pinnedSender": LIVE_AUDIO["pinnedSender"]}).encode("utf-8"), "application/json")
+                return
+            if act_name == "photoRefresh":
+                refresh_photo_library()
+                pick_photo_from_library()
+                self._send_bytes(json.dumps({"ok": True, "photoSeq": PHOTO_STATE["seq"]}).encode("utf-8"), "application/json")
+                return
+            if act_name == "photoNext":
+                with STATE_LOCK:
+                    LIVE_STATE["layer1Enabled"] = True
+                    LIVE_STATE["layer1FieldEnabled"] = True
+                    LIVE_STATE["layer1Mode"] = 11
+                pick_photo_from_library(step_history=0)
+                self._send_bytes(json.dumps({"ok": True, "photoSeq": PHOTO_STATE["seq"]}).encode("utf-8"), "application/json")
+                return
+            if act_name == "photoPrev":
+                with STATE_LOCK:
+                    LIVE_STATE["layer1Enabled"] = True
+                    LIVE_STATE["layer1FieldEnabled"] = True
+                    LIVE_STATE["layer1Mode"] = 11
+                pick_photo_from_library(step_history=-1)
+                self._send_bytes(json.dumps({"ok": True, "photoSeq": PHOTO_STATE["seq"]}).encode("utf-8"), "application/json")
+                return
+            if act_name == "photoCatSelect":
+                cat = str(arg or "all")
+                with STATE_LOCK:
+                    LIVE_STATE["layer1Enabled"] = True
+                    LIVE_STATE["layer1FieldEnabled"] = True
+                    LIVE_STATE["layer1Mode"] = 11
+                    LIVE_STATE["photoActiveCategory"] = cat
+                    PHOTO_STATE["activeCategory"] = cat
+                pick_photo_from_library(category=cat)
+                self._send_bytes(json.dumps({"ok": True, "photoSeq": PHOTO_STATE["seq"]}).encode("utf-8"), "application/json")
+                return
+            if act_name == "photoCatStep":
+                delta = int(arg or 1)
+                cats = PHOTO_STATE.get("categories") or ["all"]
+                cur_cat = PHOTO_STATE.get("activeCategory") or "all"
+                idx = (cats.index(cur_cat) + delta) % len(cats) if cur_cat in cats else 0
+                next_cat = cats[idx]
+                with STATE_LOCK:
+                    LIVE_STATE["layer1Enabled"] = True
+                    LIVE_STATE["layer1FieldEnabled"] = True
+                    LIVE_STATE["layer1Mode"] = 11
+                    LIVE_STATE["photoActiveCategory"] = next_cat
+                    PHOTO_STATE["activeCategory"] = next_cat
+                pick_photo_from_library(category=next_cat)
+                self._send_bytes(json.dumps({"ok": True, "photoSeq": PHOTO_STATE["seq"]}).encode("utf-8"), "application/json")
+                return
+            if act_name == "photoPick":
+                req_cat = arg.get("category") if isinstance(arg, dict) else None
+                req_stem = arg.get("stem") if isinstance(arg, dict) else None
+                if isinstance(arg, dict):
+                    with STATE_LOCK:
+                        for mk in (
+                            "photoMotionMode", "photoMotionActivity", "photoXyzTilt",
+                            "photoZoomPunch", "photoPaletteBloom", "photoWarpIntensity",
+                            "photoStrobeSpeed", "photoPlaneShearEnabled", "photoPlaneShear",
+                        ):
+                            if mk in arg and arg[mk] is not None:
+                                LIVE_STATE[mk] = arg[mk]
+                        ACTION_STATE["stageSeq"] += 1
+                        persist_state()
+                pick_photo_from_library(category=req_cat, stem=req_stem, touch_updated_at=False)
+                self._send_bytes(json.dumps({"ok": True, "photoSeq": PHOTO_STATE["seq"]}).encode("utf-8"), "application/json")
+                return
+            if act_name == "photoRandFx":
+                with STATE_LOCK:
+                    LIVE_STATE["layer1Enabled"] = True
+                    LIVE_STATE["layer1FieldEnabled"] = True
+                    LIVE_STATE["layer1Mode"] = 11
+                    cur_m = int(LIVE_STATE.get("photoMotionMode", 0) or 0)
+                    LIVE_STATE["photoMotionMode"] = (cur_m + random.randint(1, 24)) % 25
+                    LIVE_STATE["photoMotionActivity"] = round(random.uniform(0.75, 1.85), 2)
+                    LIVE_STATE["photoXyzTilt"] = round(random.uniform(0.55, 1.95), 2)
+                    LIVE_STATE["photoZoomPunch"] = round(random.uniform(0.85, 1.85), 2)
+                    LIVE_STATE["photoWarpIntensity"] = round(random.uniform(0.55, 1.85), 2)
+                    LIVE_STATE["photoStrobeSpeed"] = round(random.uniform(0.55, 1.85), 2)
+                    LIVE_STATE["photoPaletteBloom"] = round(random.uniform(0.80, 1.85), 2)
+                    ACTION_STATE["seq"] += 1
+                    ACTION_STATE["name"] = "photoRandFx"
+                    ACTION_STATE["arg"] = None
+                    persist_state()
+                pick_photo_from_library(touch_updated_at=True)
+                self._send_bytes(json.dumps({"ok": True, "photoSeq": PHOTO_STATE["seq"], "photoMotionMode": LIVE_STATE["photoMotionMode"]}).encode("utf-8"), "application/json")
+                return
+            if act_name == "nextStatement":
+                with STATE_LOCK:
+                    stmts = LIVE_STATE.get("statements") or DEFAULT_STATEMENTS
+                    cur_s = LIVE_STATE.get("statementText") or ""
+                    LIVE_STATE["statementText"] = pick_random_statement(stmts, cur_s)
+                    LIVE_STATE["layer3ShowStatements"] = True
+                    LIVE_STATE["useAlbumArt"] = False
+                    LIVE_STATE["layer3Enabled"] = True
+                    LIVE_STATE["updatedAt"] = time.time()
+                    persist_state()
+                self._send_bytes(b'{"ok":true}', "application/json")
+                return
+            if act_name == "selectStatementCollection":
+                col_id = str(arg or "rave_demoscene")
+                cols = load_statement_collections()
+                chosen = next((c for c in cols if c["id"] == col_id), None)
+                if chosen:
+                    with STATE_LOCK:
+                        stmts = save_statements(chosen["statements"])
+                        LIVE_STATE["statementCollectionId"] = col_id
+                        LIVE_STATE["statements"] = stmts
+                        LIVE_STATE["statementText"] = pick_random_statement(stmts, LIVE_STATE.get("statementText", ""))
+                        LIVE_STATE["layer3ShowStatements"] = True
+                        LIVE_STATE["useAlbumArt"] = False
+                        LIVE_STATE["layer3Enabled"] = True
+                        LIVE_STATE["updatedAt"] = time.time()
+                        persist_state()
+                self._send_bytes(b'{"ok":true}', "application/json")
+                return
+            if act_name == "saveStatementCollection":
+                if isinstance(arg, dict):
+                    name = str(arg.get("name") or "Custom Statements").strip()
+                    col_id = "col_" + "".join(ch if ch.isalnum() else "_" for ch in name.lower()).strip("_")[:24]
+                    stmts = save_statements(arg.get("statements") or [])
+                    save_statement_collection(col_id, name, stmts)
+                    with STATE_LOCK:
+                        LIVE_STATE["statementCollectionId"] = col_id
+                        LIVE_STATE["statements"] = stmts
+                        LIVE_STATE["statementText"] = pick_random_statement(stmts, LIVE_STATE.get("statementText", ""))
+                        LIVE_STATE["layer3ShowStatements"] = True
+                        LIVE_STATE["useAlbumArt"] = False
+                        LIVE_STATE["layer3Enabled"] = True
+                        LIVE_STATE["updatedAt"] = time.time()
+                        persist_state()
+                self._send_bytes(b'{"ok":true}', "application/json")
+                return
+            if act_name == "selectTrackCollection":
+                col_id = str(arg or "studio_maya")
+                cols = load_track_collections()
+                chosen = next((c for c in cols if c["id"] == col_id), None)
+                if chosen:
+                    with STATE_LOCK:
+                        saved = save_external_tracks(chosen["tracks"])
+                        LIVE_STATE["trackCollectionId"] = col_id
+                        LIVE_STATE["externalTracks"] = saved
+                        LIVE_STATE["externalTrackIndex"] = 0
+                        apply_active_track_and_art(LIVE_STATE)
+                        LIVE_STATE["updatedAt"] = time.time()
+                        persist_state()
+                self._send_bytes(b'{"ok":true}', "application/json")
+                return
+            if act_name == "saveTrackCollection":
+                if isinstance(arg, dict):
+                    name = str(arg.get("name") or "Custom Tracks").strip()
+                    col_id = "tcol_" + "".join(ch if ch.isalnum() else "_" for ch in name.lower()).strip("_")[:24]
+                    saved = save_external_tracks(arg.get("tracks") or [])
+                    save_track_collection(col_id, name, saved)
+                    with STATE_LOCK:
+                        LIVE_STATE["trackCollectionId"] = col_id
+                        LIVE_STATE["externalTracks"] = saved
+                        LIVE_STATE["externalTrackIndex"] = 0
+                        apply_active_track_and_art(LIVE_STATE)
+                        LIVE_STATE["updatedAt"] = time.time()
+                        persist_state()
+                self._send_bytes(b'{"ok":true}', "application/json")
+                return
+            if act_name == "selectArtBranch":
+                branch = str(arg or "studio")
+                with STATE_LOCK:
+                    LIVE_STATE["externalArtBranch"] = branch
+                    LIVE_STATE["externalArtIndex"] = 0
+                    tracks_list = LIVE_STATE.get("externalTracks") or []
+                    t_idx = int(LIVE_STATE.get("externalTrackIndex", 0) or 0)
+                    if 0 <= t_idx < len(tracks_list):
+                        tracks_list[t_idx]["art"] = branch
+                        save_external_tracks(tracks_list)
+                    apply_active_track_and_art(LIVE_STATE)
+                    LIVE_STATE["updatedAt"] = time.time()
+                    persist_state()
+                self._send_bytes(b'{"ok":true}', "application/json")
+                return
+            if act_name == "stepExtArt":
+                delta = int(arg or 1)
+                with STATE_LOCK:
+                    imgs = LIVE_STATE.get("externalArtImages") or []
+                    if imgs:
+                        eidx = (int(LIVE_STATE.get("externalArtIndex", 0) or 0) + delta) % len(imgs)
+                        LIVE_STATE["externalArtIndex"] = eidx
+                        LIVE_STATE["artPath"] = imgs[eidx]
+                        LIVE_STATE["updatedAt"] = time.time()
+                        persist_state()
+                self._send_bytes(b'{"ok":true}', "application/json")
+                return
+            with STATE_LOCK:
+                if act_name in ("randomiseAll", "randL1"):
+                    if int(LIVE_STATE.get("layer1Mode", 0) or 0) == 11 and act_name == "randL1":
+                        LIVE_STATE["photoMotionMode"] = (int(LIVE_STATE.get("photoMotionMode", 0) or 0) + random.randint(1, 24)) % 25
+                    else:
+                        cand_l1 = [m for m in range(32) if m != 11 and m != int(LIVE_STATE.get("layer1Mode", 0) or 0)]
+                        LIVE_STATE["layer1Mode"] = random.choice(cand_l1)
+                    LIVE_STATE["layer1Enabled"] = True
+                    LIVE_STATE["layer1FieldEnabled"] = True
+                    LIVE_STATE["layer1Density"] = round(random.uniform(0.55, 1.95), 2)
+                    LIVE_STATE["layer1Speed"] = round(random.uniform(0.60, 1.85), 2)
+                if act_name in ("randomiseAll", "randEq"):
+                    LIVE_STATE["layer1Enabled"] = True
+                    LIVE_STATE["layer1EqEnabled"] = True
+                    LIVE_STATE["layer1EqStyle"] = (int(LIVE_STATE.get("layer1EqStyle", 0) or 0) + random.randint(1, 27)) % 28
+                    LIVE_STATE["layer1EqLayout"] = random.randint(0, 3)
+                if act_name in ("randomiseAll", "randVectors"):
+                    LIVE_STATE["layer1Enabled"] = True
+                    LIVE_STATE["layer1ShapesEnabled"] = True
+                    LIVE_STATE["layer1ShapeStyle"] = (int(LIVE_STATE.get("layer1ShapeStyle", 0) or 0) + random.randint(1, 17)) % 18
+                if act_name in ("randomiseAll", "randL2"):
+                    LIVE_STATE["layer2Enabled"] = True
+                    LIVE_STATE["layer2VizEnabled"] = True
+                    LIVE_STATE["visualMode"] = (int(LIVE_STATE.get("visualMode", 0) or 0) + random.randint(1, 12)) % 13
+                    LIVE_STATE["symmetryFolds"] = random.choice([3, 4, 5, 6, 8, 10, 12])
+                    LIVE_STATE["layer2Complexity"] = round(random.uniform(0.75, 1.75), 2)
+                    LIVE_STATE["layer2Speed"] = round(random.uniform(0.65, 1.85), 2)
+                if act_name in ("randomiseAll", "randL4"):
+                    LIVE_STATE["layer4Enabled"] = True
+                    LIVE_STATE["backdropEnabled"] = True
+                    LIVE_STATE["layer4Mode"] = (int(LIVE_STATE.get("layer4Mode", 0) or 0) + random.randint(1, 9)) % 10
+                    LIVE_STATE["backdropMode"] = LIVE_STATE["layer4Mode"]
+                    LIVE_STATE["layer4WallPattern"] = random.randint(0, 10)
+                    LIVE_STATE["layer4Twist"] = round(random.uniform(-2.0, 2.0), 2)
+                if act_name in ("randomiseAll", "randL3"):
+                    LIVE_STATE["layer3Enabled"] = True
+                    LIVE_STATE["layer3Mode"] = (int(LIVE_STATE.get("layer3Mode", 0) or 0) + random.randint(1, 11)) % 12
+                    LIVE_STATE["layer3TextStyle"] = (int(LIVE_STATE.get("layer3TextStyle", 0) or 0) + random.randint(1, 21)) % 22
+                    LIVE_STATE["layer3Dismantle"] = round(random.uniform(0.35, 1.85), 2)
+                    stmts = LIVE_STATE.get("statements") or DEFAULT_STATEMENTS
+                    LIVE_STATE["statementText"] = pick_random_statement(stmts, LIVE_STATE.get("statementText", ""))
+                if act_name == "randomiseAll":
+                    pal = (int(LIVE_STATE.get("palette", 0) or 0) + random.randint(1, 53)) % 54
+                    LIVE_STATE["palette"] = pal
+                    LIVE_STATE["paletteIndex"] = pal
+                if act_name == "toggleAllRand":
+                    next_on = not bool(LIVE_STATE.get("layer1AutoRandomise"))
+                    LIVE_STATE["layer1AutoRandomise"] = next_on
+                    LIVE_STATE["layerEqAutoRandomise"] = next_on
+                    LIVE_STATE["layerVectorsAutoRandomise"] = next_on
+                    LIVE_STATE["layer2AutoRandomise"] = next_on
+                    LIVE_STATE["layer4AutoRandomise"] = next_on
+                    LIVE_STATE["layer3AutoRandomise"] = next_on
+                    LIVE_STATE["layer3RandomMode"] = 2 if next_on else 0
+                    LIVE_STATE["photoAutoMotionEvents"] = next_on
+                ACTION_STATE["seq"] += 1
+                ACTION_STATE["stageSeq"] += 1
+                ACTION_STATE["name"] = act_name
+                ACTION_STATE["arg"] = arg
+                LIVE_STATE["updatedAt"] = time.time()
+                persist_state()
+            self._send_bytes(json.dumps({"ok": True, "seq": ACTION_STATE["seq"]}).encode("utf-8"), "application/json")
+            return
+
+        if self.path == "/api/from-stage":
+            # Sync autonomous randomiser changes back from HeadlessStage.qml without overwriting quality/FPS
+            protected_keys = {
+                "externalTracks", "statements", "externalArtImages",
+                "version", "renderQuality", "renderResW",
+                "geometryDetail", "targetFps", "gpuShaderEnabled", "antialiasingEnabled",
+            }
+            with STATE_LOCK:
+                if isinstance(data, dict):
+                    for k, v in data.items():
+                        if k not in protected_keys and k in DEFAULT_CONFIG:
+                            LIVE_STATE[k] = v
+                    if "paletteIndex" in data:
+                        LIVE_STATE["palette"] = int(data["paletteIndex"] or 0)
+                        LIVE_STATE["paletteIndex"] = int(data["paletteIndex"] or 0)
+                    LIVE_STATE["version"] = 3
+                    ACTION_STATE["stageSeq"] += 1
+                    persist_state()
+            self._send_bytes(b'{"ok":true}', "application/json")
+            return
+
+        if self.path == "/api/state":
+            with STATE_LOCK:
+                if isinstance(data, dict):
+                    if "externalTracks" in data and isinstance(data["externalTracks"], list):
+                        LIVE_STATE["externalTracks"] = save_external_tracks(data["externalTracks"])
+                    if "statements" in data and isinstance(data["statements"], list):
+                        LIVE_STATE["statements"] = save_statements(data["statements"])
+                    for k, v in data.items():
+                        if k not in ("externalTracks", "statements") and k in DEFAULT_CONFIG:
+                            LIVE_STATE[k] = v
+                    if data.get("layer3ShowStatements") is True and "statementText" not in data:
+                        stmts = LIVE_STATE.get("statements") or DEFAULT_STATEMENTS
+                        LIVE_STATE["statementText"] = pick_random_statement(stmts, LIVE_STATE.get("statementText", ""))
+                    if "palette" in data and "paletteIndex" not in data:
+                        LIVE_STATE["paletteIndex"] = int(data["palette"] or 0)
+                    elif "paletteIndex" in data and "palette" not in data:
+                        LIVE_STATE["palette"] = int(data["paletteIndex"] or 0)
+                    if "renderQuality" in data and "renderResW" not in data:
+                        rq = int(data["renderQuality"] or 0)
+                        LIVE_STATE["renderResW"] = QUALITY_RES_MAP.get(rq, 800)
+                        if "geometryDetail" not in data:
+                            LIVE_STATE["geometryDetail"] = QUALITY_DETAIL_MAP.get(rq, 1.00)
+                    LIVE_STATE["version"] = 3
+                    if "externalTrackIndex" in data or "externalTracks" in data or "externalArtBranch" in data:
+                        apply_active_track_and_art(LIVE_STATE)
+                    LIVE_STATE["updatedAt"] = time.time()
+                    persist_state()
+                cfg = dict(LIVE_STATE)
+            self._send_bytes(json.dumps({"ok": True, "config": cfg}).encode("utf-8"), "application/json; charset=utf-8")
+            return
+
+        self._send_bytes(b"Not Found", "text/plain", status=404)
+
+
+class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Bandarchy 6-Layer Web Studio Controller")
+    parser.add_argument("--host", default="0.0.0.0", help="Bind address (default: 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=8765, help="Bind port (default: 8765)")
+    parser.add_argument("--udp-port", type=int, default=8766, help="UDP port for live Cava FFT stream (default: 8766)")
+    args = parser.parse_args()
+
+    refresh_photo_library()
+    pick_photo_from_library(category=LIVE_STATE.get("photoActiveCategory", "all"))
+
+    t = threading.Thread(target=udp_cava_listener, args=(args.udp_port,), daemon=True)
+    t.start()
+
+    srv = ThreadedHTTPServer((args.host, args.port), BandarchyWebHandler)
+    print(f"Bandarchy 6-Layer Studio Controller running on http://{args.host}:{args.port}/ (UDP FFT on :{args.udp_port})")
+    srv.serve_forever()
+
+
+if __name__ == "__main__":
+    main()
